@@ -279,7 +279,7 @@ def test_text_replace_does_not_trigger_incompatible_payload_finding() -> None:
         LegalOperation(
             op_id="ee-textreplace-A",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "5"),)),
             payload=IRNode(
                 kind=IRNodeKind.CONTENT,
@@ -291,7 +291,7 @@ def test_text_replace_does_not_trigger_incompatible_payload_finding() -> None:
         LegalOperation(
             op_id="ee-textreplace-B",
             sequence=2,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "5"),)),
             payload=IRNode(
                 kind=IRNodeKind.CONTENT,

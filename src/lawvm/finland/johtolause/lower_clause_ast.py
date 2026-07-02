@@ -842,11 +842,9 @@ def _lower_resolved_text_amend(
         )
     return [
         TextAmend(
-            action=(
-                StructuralAction.TEXT_REPLACE
-                if node.new_text
-                else StructuralAction.TEXT_REPEAL
-            ),
+            # Single TEXT_PATCH action (§2.1 O6); the replace-vs-delete
+            # distinction is carried by ``patch.kind`` set just above.
+            action=StructuralAction.TEXT_PATCH,
             target=target,
             text_patch=patch,
         )
@@ -1062,11 +1060,9 @@ def lower_to_clause_ast_with_diagnostics(
         for ta_target in ta_targets:
             supplementary_nodes.append(
                 TextAmend(
-                    action=(
-                        StructuralAction.TEXT_REPLACE
-                        if ta.new_text
-                        else StructuralAction.TEXT_REPEAL
-                    ),
+                    # Single TEXT_PATCH action (§2.1 O6); ``patch.kind`` above
+                    # is the replace-vs-delete discriminator.
+                    action=StructuralAction.TEXT_PATCH,
                     target=ta_target,
                     text_patch=patch,
                 )

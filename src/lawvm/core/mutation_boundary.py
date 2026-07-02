@@ -97,7 +97,7 @@ def operation_storage_boundary_prefixes(
         return dedupe_tree_paths(((), *declared_extra_prefixes))
 
     action = op.action
-    if action in {StructuralAction.TEXT_REPLACE, StructuralAction.TEXT_REPEAL, StructuralAction.HEADING_REPLACE}:
+    if action in {StructuralAction.TEXT_PATCH, StructuralAction.HEADING_REPLACE}:
         return dedupe_tree_paths((target_path, *declared_extra_prefixes))
     if action is StructuralAction.INSERT:
         return dedupe_tree_paths((_parent_tree_path(target_path), *declared_extra_prefixes))

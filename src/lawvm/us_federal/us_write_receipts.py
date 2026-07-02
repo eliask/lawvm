@@ -34,7 +34,7 @@ from __future__ import annotations
 from lawvm.core.ir import IRNode, LegalAddress, LegalOperation
 from lawvm.core.ir_helpers import structural_subtree_hash
 from lawvm.core.mutation_boundary import TreePath, TreePaths
-from lawvm.core.semantic_types import IRNodeKind
+from lawvm.core.semantic_types import IRNodeKind, legacy_text_action_value
 from lawvm.core.write_receipt import WriteReceipt, receipt_address_string
 
 #: IRNode kind used for the synthetic section-text wrapper whose
@@ -86,7 +86,7 @@ def emit_us_op_receipt(
     footprint is categorized by the op's action at the declared target address
     (US dry-run does not claim cross-address migrations except RENUMBER).
     """
-    action_value = op.action.value
+    action_value = legacy_text_action_value(op)
     leaf_kind = op.target.leaf_kind() or "section"
     helper = f"us_dry_run.materialize_one::{action_value}::{leaf_kind}"
     bound_target_path: TreePath = _us_legal_path_to_tree_path(op.target)

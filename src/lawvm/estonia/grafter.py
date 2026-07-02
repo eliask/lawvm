@@ -59,7 +59,12 @@ from lawvm.core.ir import (
 from lawvm.core.diagnostic_records import diagnostic_detail, QuirksDisposition
 from lawvm.core.filter_result import FilterResult, RejectedItem
 from lawvm.core.mutation_boundary import TreePath, diff_ir_paths_identity_pruned
-from lawvm.core.semantic_types import IRNodeKind, structural_action_from_str
+from lawvm.core.semantic_types import (
+    IRNodeKind,
+    is_text_patch_replace,
+    legacy_text_action_value,
+    structural_action_from_str,
+)
 from lawvm.core.statute_facets import is_statute_title_address, replace_statute_title
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.core import tree_ops
@@ -853,7 +858,7 @@ def _parse_ee_amendment_ops_body(
             return tuple(normalized)
 
         def _action_name(op: LegalOperation) -> str:
-            return op.action.value if hasattr(op.action, "value") else str(op.action)
+            return legacy_text_action_value(op)
 
         global_text_ops = [
             op
@@ -965,7 +970,7 @@ def _parse_ee_amendment_ops_body(
         """
 
         def _action_name(op: LegalOperation) -> str:
-            return op.action.value if hasattr(op.action, "value") else str(op.action)
+            return legacy_text_action_value(op)
 
         def _quote_contains_rewrite_surface(text: str, *, old: str, case_inflected: bool) -> bool:
             return any(
@@ -2521,7 +2526,7 @@ def _parse_old_format_direct_title_unnumbered_text_replace_ops(
         return LegalOperation(
             op_id=f"ee-old-format-direct-title-text-replace-{source_id}-{len(body_text)}",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=()),
             payload=IRNode(kind=IRNodeKind.CONTENT, text=new_text, attrs=payload_attrs),
             source=OperationSource(statute_id=source_id, title=target_title, raw_text=body_text[:200]),
@@ -2576,7 +2581,7 @@ def _parse_old_format_direct_title_unnumbered_text_replace_ops(
         text_replace_ops = [
             op
             for op in ops
-            if op.action is StructuralAction.TEXT_REPLACE and op.payload is not None and op.text_patch is not None
+            if is_text_patch_replace(op) and op.payload is not None and op.text_patch is not None
         ]
         if not text_replace_ops:
             continue
@@ -3164,7 +3169,7 @@ def _record_old_format_ref_slice_filtered_ops(
                     ref_effective=ref_effective,
                     op_effective=op_effective,
                     target=str(op.target),
-                    action=op.action.value,
+                    action=legacy_text_action_value(op),
                     target_section_labels=target_section_labels,
                 ),
             )
@@ -6874,7 +6879,7 @@ def _ee_resolved_boundary_prefixes(
     is unchanged — we never widen a boundary for a write that did not land where
     the op points).
     """
-    action = op.action.value if hasattr(op.action, "value") else op.action
+    action = legacy_text_action_value(op)
     target_path = _address_to_path(op.target)
     prefixes: list[tree_ops.Path] = []
 
@@ -6956,7 +6961,7 @@ def _ee_apply_op(
         if declared_recovery_paths_out is not None and recovered:
             declared_recovery_paths_out.append(tuple(recovered))
     path = _address_to_path(op.target)
-    action = op.action.value if isinstance(op.action, StructuralAction) else op.action
+    action = legacy_text_action_value(op)
     payload = op.payload
     special = op.target.special.value if hasattr(op.target.special, "value") else op.target.special
     path_dict = dict(op.target.path)
@@ -9762,14 +9767,13 @@ def apply_ee_ops(
     idx = 0
     while idx < len(sorted_ops):
         op = sorted_ops[idx]
-        action = op.action.value if hasattr(op.action, "value") else op.action
+        action = legacy_text_action_value(op)
         source_id = op.source.statute_id if op.source is not None else ""
         if action == "text_replace":
             run_end = idx + 1
             while (
                 run_end < len(sorted_ops)
-                and (sorted_ops[run_end].action.value if hasattr(sorted_ops[run_end].action, "value") else sorted_ops[run_end].action)
-                == "text_replace"
+                and legacy_text_action_value(sorted_ops[run_end]) == "text_replace"
                 and (getattr(sorted_ops[run_end].source, "statute_id", "") == source_id)
             ):
                 run_end += 1
@@ -9781,7 +9785,7 @@ def apply_ee_ops(
     persistent_postpass_ops = [
         op
         for op in reordered_ops
-        if (op.action.value if hasattr(op.action, "value") else op.action) == "text_replace"
+        if legacy_text_action_value(op) == "text_replace"
         and op.payload is not None
         and read_payload_rewrite_meta(op.payload).persistent_postpass
     ]
@@ -9928,7 +9932,7 @@ def apply_ee_ops(
     )
 
     for op in reordered_ops:
-        action = op.action.value if hasattr(op.action, "value") else op.action
+        action = legacy_text_action_value(op)
         if action == "meta":
             detail: dict[str, str] = {"action": action, "target": str(op.target)}
             if op.payload is not None and op.payload.attrs:

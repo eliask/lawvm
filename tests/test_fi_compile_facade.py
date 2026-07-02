@@ -7,7 +7,7 @@ Run:
     uv run pytest tests/test_fi_compile_facade.py -v
 """
 from __future__ import annotations
-from lawvm.core.ir import IRStatute, LegalAddress, LegalOperation, OperationSource, ProvisionTimeline, ProvisionVersion, ScopePredicate, StructuralAction
+from lawvm.core.ir import IRStatute, LegalAddress, LegalOperation, OperationSource, ProvisionTimeline, ProvisionVersion, ScopePredicate, StructuralAction, TextPatchSpec, TextSelector
 
 from typing import Any, cast
 
@@ -41,7 +41,7 @@ from lawvm.core.compile_views import (
 )
 from lawvm.core.observation_registry import get_finding_spec
 from lawvm.core.ir import IRNode
-from lawvm.core.semantic_types import FacetKind, IRNodeKind
+from lawvm.core.semantic_types import FacetKind, IRNodeKind, TextPatchKindEnum
 from lawvm.core.temporal import ActivationRule, TemporalEvent, TemporalScope
 from lawvm.core.phase_result import Finding, Observation, Obligation, PhaseResult, Violation
 from lawvm.core.timeline import select_active_version
@@ -547,7 +547,13 @@ class TestFromPhaseResult:
                     LegalOperation(
                         op_id="text-repeal-op",
                         sequence=1,
-                        action=StructuralAction.TEXT_REPEAL,
+                        action=StructuralAction.TEXT_PATCH,
+                        # DELETE-kind = the former TEXT_REPEAL (§2.1 O6), which the
+                        # node timeline lane still rejects as unsupported.
+                        text_patch=TextPatchSpec(
+                            kind=TextPatchKindEnum.DELETE,
+                            selector=TextSelector(match_text="x"),
+                        ),
                         target=target,
                         group_id="g:text-repeal",
                         source=OperationSource(statute_id="2024/2"),

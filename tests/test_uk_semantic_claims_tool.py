@@ -6851,7 +6851,10 @@ def test_validate_semantic_claim_rejects_operation_without_target() -> None:
         "operations": [
             {
                 "op_id": "manual-op-1",
-                "action": "text_patch",
+                # A genuinely non-canonical action: "text_patch" IS canonical after
+                # the §2.1 O6 collapse, so this negative test uses a name that no
+                # StructuralAction member (nor a legacy alias) resolves to.
+                "action": "not_a_structural_action",
                 "mutation_boundary": {
                     "changed_paths": ["section:1"],
                     "target_region": ["section:1"],

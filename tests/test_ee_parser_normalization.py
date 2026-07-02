@@ -222,7 +222,7 @@ def test_extract_ee_ops_parses_fused_valja_tekstiosa_delete() -> None:
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target.path == (("section", "5"), ("subsection", "2"), ("item", "5"))
     assert op.payload is not None
     assert op.payload.text == ""
@@ -383,7 +383,7 @@ def test_extract_ee_ops_accepts_left_right_curly_quote_text_replace() -> None:
     ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "34"), ("subsection", "1"))
     assert _payload(ops[0]).attrs["old_text"] == "põllumajandusliku"
     assert _payload(ops[0]).text == "põllu- ja metsamajandusliku"
@@ -416,9 +416,9 @@ def test_extract_ee_ops_emits_unscoped_many_old_single_new_text_replaces() -> No
     ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
 
     assert [(op.action, op.target.path) for op in ops] == [
-        (StructuralAction.TEXT_REPLACE, ()),
-        (StructuralAction.TEXT_REPLACE, ()),
-        (StructuralAction.TEXT_REPLACE, ()),
+        (StructuralAction.TEXT_PATCH, ()),
+        (StructuralAction.TEXT_PATCH, ()),
+        (StructuralAction.TEXT_PATCH, ()),
     ]
     assert [(_payload(op).attrs["old_text"], _payload(op).text) for op in ops] == [
         ("proovivõtupudel", "proovivõtuanum"),
@@ -439,9 +439,9 @@ def test_extract_ee_ops_emits_lauseosad_many_old_single_new_text_replaces() -> N
     ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
 
     assert [(op.action, op.target.path) for op in ops] == [
-        (StructuralAction.TEXT_REPLACE, ()),
-        (StructuralAction.TEXT_REPLACE, ()),
-        (StructuralAction.TEXT_REPLACE, ()),
+        (StructuralAction.TEXT_PATCH, ()),
+        (StructuralAction.TEXT_PATCH, ()),
+        (StructuralAction.TEXT_PATCH, ()),
     ]
     assert [(_payload(op).attrs["old_text"], _payload(op).text) for op in ops] == [
         ("sihtasutuse juhatuse või juhatuse liikme poolt volitatud isik", "sihtasutus"),
@@ -461,8 +461,8 @@ def test_extract_ee_ops_keeps_coordinated_global_text_replace_pairs_separate() -
     ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
 
     assert [(op.action, op.target.path) for op in ops] == [
-        (StructuralAction.TEXT_REPLACE, ()),
-        (StructuralAction.TEXT_REPLACE, ()),
+        (StructuralAction.TEXT_PATCH, ()),
+        (StructuralAction.TEXT_PATCH, ()),
     ]
     assert [(_payload(op).attrs["old_text"], _payload(op).text) for op in ops] == [
         ("alamvesikond", "vesikond"),
@@ -508,12 +508,12 @@ def test_extract_ee_ops_emits_statute_and_annex_global_text_replace_pairs() -> N
 
     assert [(op.action, op.target.path, op.witness_rule_id) for op in ops] == [
         (
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             (),
             "ee_global_text_replace_statute_and_annex_scope",
         ),
         (
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             (),
             "ee_global_text_replace_statute_and_annex_scope",
         ),
@@ -539,7 +539,7 @@ def test_extract_ee_ops_emits_statute_and_annex_heading_global_text_replace() ->
 
     assert [(op.action, op.target.path, op.witness_rule_id) for op in ops] == [
         (
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             (),
             "ee_global_text_replace_statute_and_annex_heading_scope",
         )
@@ -710,7 +710,7 @@ def test_extract_ee_ops_accepts_left_right_curly_quote_heading_delete() -> None:
     ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "18"),)
     assert ops[0].target.special is FacetKind.HEADING
     assert _payload(ops[0]).attrs["old_text"] == "ja projekteerimisnormid"
@@ -727,8 +727,8 @@ def test_extract_ee_ops_accepts_left_right_curly_quote_viide_pairs() -> None:
     ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
 
     assert [(op.action, op.target.path) for op in ops] == [
-        (StructuralAction.TEXT_REPLACE, (("section", "10"), ("subsection", "2"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "10"), ("subsection", "2"))),
+        (StructuralAction.TEXT_PATCH, (("section", "10"), ("subsection", "2"))),
+        (StructuralAction.TEXT_PATCH, (("section", "10"), ("subsection", "2"))),
     ]
     assert [(_payload(op).attrs["old_text"], _payload(op).text) for op in ops] == [
         ("6, 7 ja 8", "5, 6 ja 7"),
@@ -835,7 +835,7 @@ def test_extract_ee_ops_treats_tekstiosa_invalidation_as_text_delete() -> None:
     ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target == LegalAddress(path=(("section", "9"), ("subsection", "3")))
     assert _payload(ops[0]).text == ""
     assert _payload(ops[0]).attrs["old_text"] == "ning ülekande-"
@@ -1192,7 +1192,7 @@ def test_extract_ee_ops_splits_text_replace_plus_last_sentence_insert() -> None:
     ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
 
     assert [(op.action, op.target.path) for op in ops] == [
-        (StructuralAction.TEXT_REPLACE, (("section", "6"), ("subsection", "7"))),
+        (StructuralAction.TEXT_PATCH, (("section", "6"), ("subsection", "7"))),
         (StructuralAction.INSERT, (("section", "6"), ("subsection", "7"))),
     ]
     replace_payload = _payload(ops[0])
@@ -1235,7 +1235,7 @@ def test_parse_ee_amendment_ops_recovers_old_format_regulation_section_items() -
 
     assert [(op.action, op.target) for op in ops] == [
         (
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             LegalAddress(path=(("section", "2"), ("subsection", "1"))),
         ),
         (
@@ -1255,7 +1255,7 @@ def test_parse_ee_amendment_ops_recovers_old_format_regulation_section_items() -
             LegalAddress(path=(("section", "18"), ("subsection", "2"), ("item", "1"))),
         ),
         (
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             LegalAddress(path=(("section", "20_1"),)),
         ),
     ]
@@ -1360,7 +1360,7 @@ def test_parse_ee_amendment_ops_composes_later_text_replace_selectors() -> None:
     provider_rewrite = next(
         op
         for op in ops
-        if op.action is StructuralAction.TEXT_REPLACE
+        if op.action is StructuralAction.TEXT_PATCH
         and op.payload is not None
         and op.payload.text == "teenuseosutaja"
     )
@@ -1436,7 +1436,7 @@ def test_parse_ee_amendment_ops_splits_plaintext_maarust_item_after_text_replace
 
     assert len(ops) == 6
     assert any(
-        op.action is StructuralAction.TEXT_REPLACE
+        op.action is StructuralAction.TEXT_PATCH
         and op.target.path == (("section", "15"), ("subsection", "4"), ("item", "11"))
         and op.payload is not None
         and op.payload.text == "Kirikumäe"
@@ -1635,7 +1635,7 @@ def test_extract_ee_ops_treats_muudetakse_after_word_replace_as_text_replace() -
     ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "7"), ("subsection", "2"))
     assert _payload(ops[0]).attrs["old_text"] == "31. mai"
     assert _payload(ops[0]).text == "30. november"
@@ -1655,7 +1655,7 @@ def test_extract_ee_ops_marks_lahbivalt_after_old_quote_as_all_occurrences() -> 
     ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert _payload(ops[0]).attrs["old_text"] == "kliimaminister"
     assert _payload(ops[0]).text == "valdkonna eest vastutav minister"
     assert _payload(ops[0]).attrs["all_occurrences"] is True
@@ -1672,7 +1672,7 @@ def test_parse_ee_amendment_ops_keeps_archive_after_word_replace_as_text_replace
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "7"), ("subsection", "2"))
     assert _payload(ops[0]).attrs["old_text"] == "31. mai"
     assert _payload(ops[0]).text == "30. november"
@@ -2419,7 +2419,7 @@ def test_text_merge_signature_prefers_typed_text_patch() -> None:
     op = LegalOperation(
         op_id="ee-signature",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=()),
         text_patch=TextPatchSpec(
             kind=TextPatchKindEnum.REPLACE,
@@ -2563,7 +2563,7 @@ def test_extract_ee_ops_fans_out_shared_heading_text_replace_targets() -> None:
         LegalAddress(path=(("chapter", "3"),), special=FacetKind.HEADING),
         LegalAddress(path=(("chapter", "3"), ("division", "3")), special=FacetKind.HEADING),
     ]
-    assert all(op.action is StructuralAction.TEXT_REPLACE for op in ops)
+    assert all(op.action is StructuralAction.TEXT_PATCH for op in ops)
     assert all(op.text_patch is not None for op in ops)
     assert all(op.text_patch.selector.match_text == "reederi ja kapteni" for op in ops if op.text_patch is not None)
     assert all(op.text_patch.replacement == "reederi, kapteni ja riigi" for op in ops if op.text_patch is not None)
@@ -2840,8 +2840,8 @@ def test_extract_ee_ops_fans_out_mixed_text_replace_targets() -> None:
     )
 
     assert [(op.action, op.target.path) for op in ops] == [
-        (StructuralAction.TEXT_REPLACE, (("section", "20"), ("subsection", "6"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "60"), ("subsection", "2"))),
+        (StructuralAction.TEXT_PATCH, (("section", "20"), ("subsection", "6"))),
+        (StructuralAction.TEXT_PATCH, (("section", "60"), ("subsection", "2"))),
     ]
     assert all(_payload(op).attrs.get("old_text") == "politseiseadus" for op in ops)
     assert all(_payload(op).attrs.get("rewrite_mode") == "replace" for op in ops)
@@ -2858,8 +2858,8 @@ def test_extract_ee_ops_fans_out_plural_inessive_section_text_replace_targets() 
     )
 
     assert [(op.action, op.target.path) for op in ops] == [
-        (StructuralAction.TEXT_REPLACE, (("section", "3"),)),
-        (StructuralAction.TEXT_REPLACE, (("section", "4"),)),
+        (StructuralAction.TEXT_PATCH, (("section", "3"),)),
+        (StructuralAction.TEXT_PATCH, (("section", "4"),)),
     ]
     assert all(_payload(op).attrs.get("old_text") == "õppekogunemine" for op in ops)
     assert all(_payload(op).text == "reservteenistus" for op in ops)
@@ -2876,8 +2876,8 @@ def test_extract_ee_ops_treats_document_type_abbreviation_as_text_replace() -> N
     )
 
     assert [(op.action, op.target.path) for op in ops] == [
-        (StructuralAction.TEXT_REPLACE, (("section", "7"), ("subsection", "2"), ("item", "1"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "7"), ("subsection", "3"), ("item", "1"))),
+        (StructuralAction.TEXT_PATCH, (("section", "7"), ("subsection", "2"), ("item", "1"))),
+        (StructuralAction.TEXT_PATCH, (("section", "7"), ("subsection", "3"), ("item", "1"))),
     ]
     assert all(_payload(op).attrs.get("old_text") == "P" for op in ops)
     assert all(_payload(op).text == "PE" for op in ops)
@@ -2893,7 +2893,7 @@ def test_extract_ee_ops_treats_spaced_teksti_osa_as_text_replace() -> None:
     )
 
     assert [(op.action, op.target.path) for op in ops] == [
-        (StructuralAction.TEXT_REPLACE, (("section", "10"), ("subsection", "1"))),
+        (StructuralAction.TEXT_PATCH, (("section", "10"), ("subsection", "1"))),
     ]
     assert _payload(ops[0]).attrs.get("old_text") == "15. novembrini"
     assert _payload(ops[0]).text == "25. novembrini"
@@ -2906,7 +2906,7 @@ def test_extract_ee_ops_keeps_nested_quotes_in_direct_text_delete() -> None:
     )
 
     assert [(op.action, op.target.path) for op in ops] == [
-        (StructuralAction.TEXT_REPLACE, (("section", "2"), ("subsection", "2"))),
+        (StructuralAction.TEXT_PATCH, (("section", "2"), ("subsection", "2"))),
     ]
     assert _payload(ops[0]).attrs.get("old_text") == ", välja arvatud rea „MTA märge”,"
     assert _payload(ops[0]).text == ""
@@ -2923,8 +2923,8 @@ def test_extract_ee_ops_fans_out_item_and_subsection_text_replace_targets() -> N
     )
 
     assert [(op.action, op.target.path) for op in ops] == [
-        (StructuralAction.TEXT_REPLACE, (("section", "36"), ("subsection", "1"), ("item", "3"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "142"), ("subsection", "3"))),
+        (StructuralAction.TEXT_PATCH, (("section", "36"), ("subsection", "1"), ("item", "3"))),
+        (StructuralAction.TEXT_PATCH, (("section", "142"), ("subsection", "3"))),
     ]
 
 
@@ -2952,7 +2952,7 @@ def test_extract_ee_ops_treats_insert_before_word_clause_as_text_replace() -> No
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "14"), ("subsection", "2"))
     assert ops[0].payload is not None
     assert ops[0].payload.attrs.get("old_text") == "sõidukit"
@@ -2974,10 +2974,10 @@ def test_extract_ee_ops_handles_mixed_targets_with_section_inessive_shorthand() 
     )
 
     assert [(op.action, op.target.path) for op in ops] == [
-        (StructuralAction.TEXT_REPLACE, (("section", "11"), ("subsection", "2"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "78"),)),
-        (StructuralAction.TEXT_REPLACE, (("section", "80"), ("subsection", "1"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "80"), ("subsection", "3"))),
+        (StructuralAction.TEXT_PATCH, (("section", "11"), ("subsection", "2"))),
+        (StructuralAction.TEXT_PATCH, (("section", "78"),)),
+        (StructuralAction.TEXT_PATCH, (("section", "80"), ("subsection", "1"))),
+        (StructuralAction.TEXT_PATCH, (("section", "80"), ("subsection", "3"))),
     ]
     assert all(op.text_patch is not None for op in ops)
     assert all(op.text_patch.selector.match_text == "kindlustuskohustuse täitmine" for op in ops if op.text_patch)
@@ -2995,12 +2995,12 @@ def test_extract_ee_ops_handles_mixed_targets_with_section_genitive_shorthand() 
     )
 
     assert [(op.action, op.target.path) for op in ops] == [
-        (StructuralAction.TEXT_REPLACE, (("section", "1"), ("subsection", "2"), ("item", "5"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "2"), ("subsection", "1"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "2"), ("subsection", "3"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "2"), ("subsection", "4"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "2"), ("subsection", "5"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "3"), ("subsection", "2"))),
+        (StructuralAction.TEXT_PATCH, (("section", "1"), ("subsection", "2"), ("item", "5"))),
+        (StructuralAction.TEXT_PATCH, (("section", "2"), ("subsection", "1"))),
+        (StructuralAction.TEXT_PATCH, (("section", "2"), ("subsection", "3"))),
+        (StructuralAction.TEXT_PATCH, (("section", "2"), ("subsection", "4"))),
+        (StructuralAction.TEXT_PATCH, (("section", "2"), ("subsection", "5"))),
+        (StructuralAction.TEXT_PATCH, (("section", "3"), ("subsection", "2"))),
     ]
     assert all(op.text_patch is not None for op in ops)
     assert all(op.text_patch.selector.match_text == "ministeerium" for op in ops if op.text_patch)
@@ -3019,8 +3019,8 @@ def test_extract_ee_ops_recovers_later_same_section_target_after_quoted_pair() -
     )
 
     assert [(op.action, op.target.path) for op in ops] == [
-        (StructuralAction.TEXT_REPLACE, (("section", "21"), ("subsection", "1"), ("item", "3"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "21"), ("subsection", "4"))),
+        (StructuralAction.TEXT_PATCH, (("section", "21"), ("subsection", "1"), ("item", "3"))),
+        (StructuralAction.TEXT_PATCH, (("section", "21"), ("subsection", "4"))),
     ]
 
 
@@ -3036,9 +3036,9 @@ def test_extract_ee_ops_recovers_same_section_heading_and_plural_subsections() -
 
     assert sorted((op.action, op.target.path, op.target.special) for op in ops) == sorted(
         [
-            (StructuralAction.TEXT_REPLACE, (("section", "8"),), FacetKind.HEADING),
-            (StructuralAction.TEXT_REPLACE, (("section", "8"), ("subsection", "1")), None),
-            (StructuralAction.TEXT_REPLACE, (("section", "8"), ("subsection", "3")), None),
+            (StructuralAction.TEXT_PATCH, (("section", "8"),), FacetKind.HEADING),
+            (StructuralAction.TEXT_PATCH, (("section", "8"), ("subsection", "1")), None),
+            (StructuralAction.TEXT_PATCH, (("section", "8"), ("subsection", "3")), None),
         ]
     )
 
@@ -3099,9 +3099,9 @@ def test_extract_ee_ops_recovers_mixed_heading_and_subsection_targets() -> None:
 
     assert sorted((op.action, op.target.path, op.target.special) for op in ops) == sorted(
         [
-            (StructuralAction.TEXT_REPLACE, (("section", "29"),), FacetKind.HEADING),
-            (StructuralAction.TEXT_REPLACE, (("section", "29"), ("subsection", "1")), None),
-            (StructuralAction.TEXT_REPLACE, (("section", "30"),), FacetKind.HEADING),
+            (StructuralAction.TEXT_PATCH, (("section", "29"),), FacetKind.HEADING),
+            (StructuralAction.TEXT_PATCH, (("section", "29"), ("subsection", "1")), None),
+            (StructuralAction.TEXT_PATCH, (("section", "30"),), FacetKind.HEADING),
         ]
     )
 
@@ -3118,9 +3118,9 @@ def test_extract_ee_ops_recovers_heading_with_comma_prefixed_subsection_targets(
 
     assert sorted((op.action, op.target.path, op.target.special) for op in ops) == sorted(
         [
-            (StructuralAction.TEXT_REPLACE, (("section", "87_1"),), FacetKind.HEADING),
-            (StructuralAction.TEXT_REPLACE, (("section", "87_1"), ("subsection", "1")), None),
-            (StructuralAction.TEXT_REPLACE, (("section", "87_1"), ("subsection", "2")), None),
+            (StructuralAction.TEXT_PATCH, (("section", "87_1"),), FacetKind.HEADING),
+            (StructuralAction.TEXT_PATCH, (("section", "87_1"), ("subsection", "1")), None),
+            (StructuralAction.TEXT_PATCH, (("section", "87_1"), ("subsection", "2")), None),
         ]
     )
 
@@ -3137,8 +3137,8 @@ def test_extract_ee_ops_recovers_section_intro_and_item_targets() -> None:
     )
 
     assert sorted((op.action, op.target.path) for op in ops) == [
-        (StructuralAction.TEXT_REPLACE, (("section", "7"),)),
-        (StructuralAction.TEXT_REPLACE, (("section", "7"), ("item", "1"))),
+        (StructuralAction.TEXT_PATCH, (("section", "7"),)),
+        (StructuralAction.TEXT_PATCH, (("section", "7"), ("item", "1"))),
     ]
     scope_meta = read_subsection_text_scope_meta(_payload(ops[0]))
     assert scope_meta is not None
@@ -3154,8 +3154,8 @@ def test_extract_ee_ops_keeps_section_heading_when_same_clause_also_targets_subs
 
     assert sorted((op.action, op.target.path, op.target.special) for op in ops) == sorted(
         [
-            (StructuralAction.TEXT_REPLACE, (("section", "45"),), FacetKind.HEADING),
-            (StructuralAction.TEXT_REPLACE, (("section", "45"), ("subsection", "1")), None),
+            (StructuralAction.TEXT_PATCH, (("section", "45"),), FacetKind.HEADING),
+            (StructuralAction.TEXT_PATCH, (("section", "45"), ("subsection", "1")), None),
         ]
     )
 
@@ -3171,8 +3171,8 @@ def test_extract_ee_ops_recovers_same_section_subsection_and_later_item_target()
 
     assert sorted((op.action, op.target.path, op.target.special) for op in ops) == sorted(
         [
-            (StructuralAction.TEXT_REPLACE, (("section", "29"), ("subsection", "1")), None),
-            (StructuralAction.TEXT_REPLACE, (("section", "29"), ("subsection", "2"), ("item", "7")), None),
+            (StructuralAction.TEXT_PATCH, (("section", "29"), ("subsection", "1")), None),
+            (StructuralAction.TEXT_PATCH, (("section", "29"), ("subsection", "2"), ("item", "7")), None),
         ]
     )
 
@@ -3190,11 +3190,11 @@ def test_extract_ee_ops_recovers_leading_plural_section_targets_before_later_sub
 
     assert sorted((op.action, op.target.path, op.target.special) for op in ops) == sorted(
         [
-            (StructuralAction.TEXT_REPLACE, (("section", "5"),), None),
-            (StructuralAction.TEXT_REPLACE, (("section", "6"),), None),
-            (StructuralAction.TEXT_REPLACE, (("section", "36"), ("subsection", "1")), None),
-            (StructuralAction.TEXT_REPLACE, (("section", "37"), ("subsection", "1")), None),
-            (StructuralAction.TEXT_REPLACE, (("section", "37"), ("subsection", "2")), None),
+            (StructuralAction.TEXT_PATCH, (("section", "5"),), None),
+            (StructuralAction.TEXT_PATCH, (("section", "6"),), None),
+            (StructuralAction.TEXT_PATCH, (("section", "36"), ("subsection", "1")), None),
+            (StructuralAction.TEXT_PATCH, (("section", "37"), ("subsection", "1")), None),
+            (StructuralAction.TEXT_PATCH, (("section", "37"), ("subsection", "2")), None),
         ]
     )
 
@@ -3206,8 +3206,8 @@ def test_extract_ee_ops_splits_combined_replace_and_delete_in_same_clause() -> N
     )
 
     assert [(op.action, op.target.path) for op in ops] == [
-        (StructuralAction.TEXT_REPLACE, (("section", "93"), ("subsection", "7"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "93"), ("subsection", "7"))),
+        (StructuralAction.TEXT_PATCH, (("section", "93"), ("subsection", "7"))),
+        (StructuralAction.TEXT_PATCH, (("section", "93"), ("subsection", "7"))),
     ]
     assert ops[0].payload is not None
     assert ops[0].payload.text == "4 2"
@@ -3293,8 +3293,8 @@ def test_extract_ee_ops_fans_out_plural_item_text_replace_with_punkte_form() -> 
     )
 
     assert [(op.action, op.target.path) for op in ops] == [
-        (StructuralAction.TEXT_REPLACE, (("section", "709"), ("subsection", "15_1"), ("item", "4"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "709"), ("subsection", "15_1"), ("item", "5"))),
+        (StructuralAction.TEXT_PATCH, (("section", "709"), ("subsection", "15_1"), ("item", "4"))),
+        (StructuralAction.TEXT_PATCH, (("section", "709"), ("subsection", "15_1"), ("item", "5"))),
     ]
     assert all(_payload(op).attrs.get("old_text") == "nimetatud makseteenus" for op in ops)
     assert all(_payload(op).text == "nimetatud makseteenus Euroopa Liidu piires" for op in ops)
@@ -3314,8 +3314,8 @@ def test_extract_ee_ops_fans_out_same_section_subsection_text_replace_targets() 
     )
 
     assert [(op.action, op.target.path) for op in ops] == [
-        (StructuralAction.TEXT_REPLACE, (("section", "83_52"), ("subsection", "2"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "83_52"), ("subsection", "3"))),
+        (StructuralAction.TEXT_PATCH, (("section", "83_52"), ("subsection", "2"))),
+        (StructuralAction.TEXT_PATCH, (("section", "83_52"), ("subsection", "3"))),
     ]
     assert all(op.payload is not None for op in ops)
     assert all(op.payload.attrs.get("old_text") == "ettevõtja" for op in ops if op.payload is not None)
@@ -3591,11 +3591,11 @@ def test_extract_ee_ops_keeps_plain_subsections_before_same_section_item_targets
     )
 
     assert {(op.action, op.target.path) for op in ops} == {
-        (StructuralAction.TEXT_REPLACE, (("section", "30"), ("subsection", "4"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "30"), ("subsection", "5"), ("item", "1"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "54_5"), ("subsection", "2"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "54_5"), ("subsection", "4"), ("item", "1"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "62"), ("subsection", "2"))),
+        (StructuralAction.TEXT_PATCH, (("section", "30"), ("subsection", "4"))),
+        (StructuralAction.TEXT_PATCH, (("section", "30"), ("subsection", "5"), ("item", "1"))),
+        (StructuralAction.TEXT_PATCH, (("section", "54_5"), ("subsection", "2"))),
+        (StructuralAction.TEXT_PATCH, (("section", "54_5"), ("subsection", "4"), ("item", "1"))),
+        (StructuralAction.TEXT_PATCH, (("section", "62"), ("subsection", "2"))),
     }
     assert all(_payload(op).text == "§-s 391 või 393" for op in ops)
     assert all(_payload(op).attrs.get("old_text") == "§-des 391–393" for op in ops)
@@ -3682,7 +3682,7 @@ def test_parse_ee_amendment_ops_strictly_filters_similar_statute_titles_in_omnib
     ops = parse_ee_amendment_ops(xml, "ee/test", target_title="Kohtutäituri seadus")
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert all(("section", "9_1") not in op.target.path for op in ops)
 
 
@@ -3831,7 +3831,7 @@ def test_parse_ee_amendment_ops_materializes_generic_justice_ministry_reorg() ->
     ops = parse_ee_amendment_ops(xml, "ee/test", target_title="Kohtutäituri seadus")
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == ()
     assert ops[0].payload is not None
     assert ops[0].payload.attrs.get("old_text") == "Justiitsministeerium"
@@ -3868,7 +3868,7 @@ def test_parse_ee_amendment_ops_splits_plain_tavatekst_inessive_section_clause()
 
     assert [(op.action, op.target.path) for op in ops] == [
         (StructuralAction.REPLACE, (("section", "10"),)),
-        (StructuralAction.TEXT_REPLACE, (("section", "11"),)),
+        (StructuralAction.TEXT_PATCH, (("section", "11"),)),
     ]
     assert ops[1].payload is not None
     assert ops[1].payload.attrs["old_text"] == "kaks"
@@ -4626,7 +4626,7 @@ def test_extract_ee_ops_splits_multiple_old_quotes_to_one_new_global_text_replac
     )
 
     assert len(ops) == 2
-    assert all(op.action is StructuralAction.TEXT_REPLACE for op in ops)
+    assert all(op.action is StructuralAction.TEXT_PATCH for op in ops)
     assert all(op.payload is not None for op in ops)
     assert {op.payload.attrs["old_text"] for op in ops if op.payload is not None} == {
         "sõjarelv, laskemoon",
@@ -4655,7 +4655,7 @@ def test_extract_ee_ops_splits_title_and_text_global_text_replace_pairs() -> Non
     )
 
     assert len(ops) == 2
-    assert all(op.action is StructuralAction.TEXT_REPLACE for op in ops)
+    assert all(op.action is StructuralAction.TEXT_PATCH for op in ops)
     assert all(op.target.path == () for op in ops)
     assert all(op.payload is not None for op in ops)
     assert {
@@ -4705,7 +4705,7 @@ def test_parse_ee_amendment_ops_keeps_title_and_text_clause_as_global_text_repla
     ops = parse_ee_amendment_ops(xml, "ee/test", target_title="Testmäärus")
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == ()
     assert ops[0].target.special is None
     assert _payload(ops[0]).attrs["old_text"] == "õnnemäng"
@@ -4733,7 +4733,7 @@ def test_parse_ee_amendment_ops_keeps_repeated_statute_title_and_text_clause_glo
     ops = parse_ee_amendment_ops(xml, "ee/test", target_title="Testmäärus")
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == ()
     assert ops[0].target.special is None
     assert _payload(ops[0]).attrs["old_text"] == "neto-omavahend"
@@ -4756,7 +4756,7 @@ def test_parse_ee_amendment_ops_replays_108072015008_title_and_text_global_rewri
     leading_rewrites = [
         op
         for op in ops[:2]
-        if op.action is StructuralAction.TEXT_REPLACE
+        if op.action is StructuralAction.TEXT_PATCH
         and op.target.path == ()
         and op.target.special is None
         and op.payload is not None
@@ -4778,7 +4778,7 @@ def test_extract_ee_ops_emits_global_text_replace_with_heading_exclusion() -> No
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target.path == ()
     assert op.payload is not None
     assert op.payload.attrs["old_text"] == "karusloom"
@@ -4887,7 +4887,7 @@ def test_extract_ee_ops_targets_chapter_heading_declension() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("chapter", "8"),)
     assert ops[0].payload is not None
     assert ops[0].payload.attrs["old_text"] == "peatamine,"
@@ -4905,7 +4905,7 @@ def test_extract_ee_ops_keeps_chapter_heading_replace_out_of_body_scope() -> Non
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("chapter", "11_1"),)
     assert ops[0].target.special == FacetKind.HEADING
     assert ops[0].payload is not None
@@ -5573,8 +5573,8 @@ def test_extract_ee_ops_handles_aastaarv_text_replace_across_multiple_subsection
     )
 
     assert [(op.action, op.target.path) for op in ops] == [
-        (StructuralAction.TEXT_REPLACE, (("section", "9_2"), ("subsection", "1_1"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "9_2"), ("subsection", "1_2"))),
+        (StructuralAction.TEXT_PATCH, (("section", "9_2"), ("subsection", "1_1"))),
+        (StructuralAction.TEXT_PATCH, (("section", "9_2"), ("subsection", "1_2"))),
     ]
     assert all(_payload(op).text == "2024" for op in ops)
     assert all(_payload(op).attrs.get("old_text") == "2019" for op in ops)
@@ -5937,8 +5937,8 @@ def test_extract_ee_ops_does_not_case_inflect_symbolic_section_reference_replace
     )
 
     assert [(op.action, op.target.path) for op in ops] == [
-        (StructuralAction.TEXT_REPLACE, (("section", "18"), ("subsection", "1"), ("item", "13"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "23"), ("subsection", "1"), ("item", "5"))),
+        (StructuralAction.TEXT_PATCH, (("section", "18"), ("subsection", "1"), ("item", "13"))),
+        (StructuralAction.TEXT_PATCH, (("section", "23"), ("subsection", "1"), ("item", "5"))),
     ]
     assert all(_payload(op).attrs["old_text"] == "§ 84" for op in ops)
     assert all("case_inflected" not in _payload(op).attrs for op in ops)
@@ -5975,7 +5975,7 @@ def test_parse_ee_amendment_ops_materializes_generic_minister_rename_as_global_t
         op for op in ops if op.payload is not None and op.payload.attrs.get("old_text") == "rahandusminister"
     ]
     assert len(rahandusminister_ops) == 1
-    assert rahandusminister_ops[0].action is StructuralAction.TEXT_REPLACE
+    assert rahandusminister_ops[0].action is StructuralAction.TEXT_PATCH
     assert rahandusminister_ops[0].target.path == ()
     assert _payload(rahandusminister_ops[0]).text == "valdkonna eest vastutav minister"
     assert _payload(rahandusminister_ops[0]).attrs.get("case_inflected") is True
@@ -6008,7 +6008,7 @@ def test_parse_ee_amendment_ops_materializes_generic_ministry_reorganization_as_
         op for op in ops if op.payload is not None and op.payload.attrs.get("old_text") == "Maaeluministeerium"
     ]
     assert len(maaelu_ops) == 1
-    assert maaelu_ops[0].action is StructuralAction.TEXT_REPLACE
+    assert maaelu_ops[0].action is StructuralAction.TEXT_PATCH
     assert maaelu_ops[0].target.path == ()
     assert _payload(maaelu_ops[0]).text == "Regionaal- ja Põllumajandusministeerium"
     assert _payload(maaelu_ops[0]).attrs.get("case_inflected") is True
@@ -6139,7 +6139,7 @@ def test_parse_ee_amendment_ops_materializes_old_format_direct_title_case_inflec
         target_title="Teadlaste ja kalurite koostöötoetus",
     )
 
-    assert [(op.action, op.target.path) for op in ops] == [(StructuralAction.TEXT_REPLACE, ())]
+    assert [(op.action, op.target.path) for op in ops] == [(StructuralAction.TEXT_PATCH, ())]
     assert ops[0].payload is not None
     assert ops[0].payload.attrs["old_text"] == "Maaeluministeerium"
     assert ops[0].payload.text == "Regionaal- ja Põllumajandusministeerium"
@@ -6161,7 +6161,7 @@ def test_parse_ee_amendment_ops_routes_2023_teadlased_ministry_rewrite() -> None
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target.path == ()
     assert op.payload is not None
     assert op.payload.attrs["old_text"] == "Maaeluministeerium"
@@ -6229,7 +6229,7 @@ def test_parse_ee_amendment_ops_excludes_specific_phrase_targets_from_global_tex
     global_ops = [
         op
         for op in ops
-        if op.action is StructuralAction.TEXT_REPLACE
+        if op.action is StructuralAction.TEXT_PATCH
         and op.target.path == ()
         and op.payload is not None
         and op.payload.attrs.get("old_text") in {"Põllumajandusamet", "Veterinaar- ja Toiduamet"}
@@ -6297,7 +6297,7 @@ def test_parse_ee_amendment_ops_extracts_compound_statute_title_text_replace() -
         if op.payload is not None and op.payload.attrs.get("old_text") == "Majandus- ja Kommunikatsiooniministeerium"
     ]
     assert len(targeted_ops) == 1
-    assert targeted_ops[0].action is StructuralAction.TEXT_REPLACE
+    assert targeted_ops[0].action is StructuralAction.TEXT_PATCH
     assert targeted_ops[0].target.path == ()
     assert targeted_ops[0].payload is not None
     assert targeted_ops[0].payload.text == "Kliimaministeerium"
@@ -6318,8 +6318,8 @@ def test_extract_ee_ops_emits_multiple_targeted_text_replace_pairs() -> None:
     )
 
     assert [(op.action, op.target.path) for op in ops] == [
-        (StructuralAction.TEXT_REPLACE, (("section", "46_1"), ("subsection", "5"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "46_1"), ("subsection", "5"))),
+        (StructuralAction.TEXT_PATCH, (("section", "46_1"), ("subsection", "5"))),
+        (StructuralAction.TEXT_PATCH, (("section", "46_1"), ("subsection", "5"))),
     ]
     assert ops[0].payload is not None
 
@@ -6363,7 +6363,7 @@ def test_extract_ee_ops_keeps_section_elative_symbol_scope_for_text_delete() -> 
     ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "91"),)
     assert ops[0].payload is not None
     assert ops[0].payload.attrs["old_text"] == "Eestis"
@@ -6461,7 +6461,7 @@ def test_extract_ee_ops_fans_out_targeted_word_replace_after_explicit_target_lis
     )
 
     assert len(ops) == 11
-    assert all(op.action is StructuralAction.TEXT_REPLACE for op in ops)
+    assert all(op.action is StructuralAction.TEXT_PATCH for op in ops)
     assert all(op.payload is not None for op in ops)
     assert all(_payload(op).attrs["old_text"] == "Siseministeerium" for op in ops)
     assert all(_payload(op).text == "Rahandusministeerium" for op in ops)
@@ -6490,7 +6490,7 @@ def test_extract_ee_ops_strips_nested_quoted_title_before_targeted_word_replace(
     paths = [op.target.path for op in ops]
 
     assert len(ops) == 34
-    assert all(op.action is StructuralAction.TEXT_REPLACE for op in ops)
+    assert all(op.action is StructuralAction.TEXT_PATCH for op in ops)
     assert (("section", "3"), ("subsection", "1")) in paths
     assert (("section", "17_1"), ("subsection", "1_1"), ("item", "1")) in paths
     assert (("section", "23"), ("item", "2")) in paths
@@ -6590,24 +6590,24 @@ def test_extract_ee_ops_fans_out_elative_plural_subsection_text_delete_targets()
     )
 
     assert [(op.action, op.target.path, op.target.special) for op in ops] == [
-        (StructuralAction.TEXT_REPLACE, (("section", "7"), ("subsection", "1"), ("item", "3")), None),
-        (StructuralAction.TEXT_REPLACE, (("section", "37"), ("subsection", "1")), None),
-        (StructuralAction.TEXT_REPLACE, (("section", "38"), ("subsection", "1")), None),
-        (StructuralAction.TEXT_REPLACE, (("section", "38"), ("subsection", "1"), ("item", "2")), None),
-        (StructuralAction.TEXT_REPLACE, (("section", "62"), ("subsection", "1")), None),
-        (StructuralAction.TEXT_REPLACE, (("section", "72"), ("subsection", "1")), None),
-        (StructuralAction.TEXT_REPLACE, (("section", "72"), ("subsection", "2")), None),
-        (StructuralAction.TEXT_REPLACE, (("section", "37"),), FacetKind.HEADING),
-        (StructuralAction.TEXT_REPLACE, (("section", "37"), ("subsection", "6")), None),
-        (StructuralAction.TEXT_REPLACE, (("section", "37"), ("subsection", "7")), None),
-        (StructuralAction.TEXT_REPLACE, (("section", "38"),), FacetKind.HEADING),
-        (StructuralAction.TEXT_REPLACE, (("section", "38"), ("subsection", "3")), None),
-        (StructuralAction.TEXT_REPLACE, (("section", "38"), ("subsection", "4")), None),
-        (StructuralAction.TEXT_REPLACE, (("section", "40"), ("subsection", "1")), None),
-        (StructuralAction.TEXT_REPLACE, (("section", "40"), ("subsection", "2")), None),
-        (StructuralAction.TEXT_REPLACE, (("section", "40"), ("subsection", "4")), None),
-        (StructuralAction.TEXT_REPLACE, (("section", "62"),), FacetKind.HEADING),
-        (StructuralAction.TEXT_REPLACE, (("section", "40"),), FacetKind.HEADING),
+        (StructuralAction.TEXT_PATCH, (("section", "7"), ("subsection", "1"), ("item", "3")), None),
+        (StructuralAction.TEXT_PATCH, (("section", "37"), ("subsection", "1")), None),
+        (StructuralAction.TEXT_PATCH, (("section", "38"), ("subsection", "1")), None),
+        (StructuralAction.TEXT_PATCH, (("section", "38"), ("subsection", "1"), ("item", "2")), None),
+        (StructuralAction.TEXT_PATCH, (("section", "62"), ("subsection", "1")), None),
+        (StructuralAction.TEXT_PATCH, (("section", "72"), ("subsection", "1")), None),
+        (StructuralAction.TEXT_PATCH, (("section", "72"), ("subsection", "2")), None),
+        (StructuralAction.TEXT_PATCH, (("section", "37"),), FacetKind.HEADING),
+        (StructuralAction.TEXT_PATCH, (("section", "37"), ("subsection", "6")), None),
+        (StructuralAction.TEXT_PATCH, (("section", "37"), ("subsection", "7")), None),
+        (StructuralAction.TEXT_PATCH, (("section", "38"),), FacetKind.HEADING),
+        (StructuralAction.TEXT_PATCH, (("section", "38"), ("subsection", "3")), None),
+        (StructuralAction.TEXT_PATCH, (("section", "38"), ("subsection", "4")), None),
+        (StructuralAction.TEXT_PATCH, (("section", "40"), ("subsection", "1")), None),
+        (StructuralAction.TEXT_PATCH, (("section", "40"), ("subsection", "2")), None),
+        (StructuralAction.TEXT_PATCH, (("section", "40"), ("subsection", "4")), None),
+        (StructuralAction.TEXT_PATCH, (("section", "62"),), FacetKind.HEADING),
+        (StructuralAction.TEXT_PATCH, (("section", "40"),), FacetKind.HEADING),
     ]
     assert all(op.payload is not None and op.payload.attrs.get("case_inflected") is True for op in ops)
     section_38_intro = next(op for op in ops if op.target.path == (("section", "38"), ("subsection", "1")))
@@ -6625,7 +6625,7 @@ def test_extract_ee_ops_fans_out_numeric_text_replace_with_rt_quote_prime() -> N
         (("section", "86"), ("subsection", "1")),
         (("section", "87"), ("subsection", "1")),
     ]
-    assert all(op.action is StructuralAction.TEXT_REPLACE for op in ops)
+    assert all(op.action is StructuralAction.TEXT_PATCH for op in ops)
     assert all(op.payload is not None for op in ops)
     assert all(_payload(op).attrs["old_text"] == "200" for op in ops)
     assert all(_payload(op).text == "300" for op in ops)
@@ -6637,7 +6637,7 @@ def test_extract_ee_ops_parses_numeric_text_replace_with_rt_quote_prime_on_secti
     ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "85_1"),)
     assert ops[0].payload is not None
     assert ops[0].payload.attrs["old_text"] == "100"
@@ -6655,7 +6655,7 @@ def test_extract_ee_ops_treats_insert_after_tekstiosa_as_text_replace() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "74_35"), ("subsection", "2"))
     assert ops[0].payload is not None
     assert ops[0].payload.attrs["old_text"] == "kuni 100 trahviühikut"
@@ -6675,14 +6675,14 @@ def test_extract_ee_ops_splits_mixed_multi_target_insert_after_and_replace() -> 
     ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
 
     assert [(op.action, op.target.path) for op in ops] == [
-        (StructuralAction.TEXT_REPLACE, (("section", "5"), ("subsection", "2"), ("item", "4"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "5"), ("subsection", "2"), ("item", "4"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "12"), ("subsection", "10"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "12"), ("subsection", "10"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "13"), ("subsection", "12"), ("item", "7"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "13"), ("subsection", "12"), ("item", "7"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "23"), ("subsection", "4"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "23"), ("subsection", "4"))),
+        (StructuralAction.TEXT_PATCH, (("section", "5"), ("subsection", "2"), ("item", "4"))),
+        (StructuralAction.TEXT_PATCH, (("section", "5"), ("subsection", "2"), ("item", "4"))),
+        (StructuralAction.TEXT_PATCH, (("section", "12"), ("subsection", "10"))),
+        (StructuralAction.TEXT_PATCH, (("section", "12"), ("subsection", "10"))),
+        (StructuralAction.TEXT_PATCH, (("section", "13"), ("subsection", "12"), ("item", "7"))),
+        (StructuralAction.TEXT_PATCH, (("section", "13"), ("subsection", "12"), ("item", "7"))),
+        (StructuralAction.TEXT_PATCH, (("section", "23"), ("subsection", "4"))),
+        (StructuralAction.TEXT_PATCH, (("section", "23"), ("subsection", "4"))),
     ]
     assert [_payload(op).attrs["old_text"] for op in ops[:2]] == [
         "LOADMAN-",
@@ -6722,7 +6722,7 @@ def test_extract_ee_ops_splits_mixed_insert_after_and_delete_same_target() -> No
     ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
 
     assert len(ops) == 2
-    assert [op.action for op in ops] == [StructuralAction.TEXT_REPLACE, StructuralAction.TEXT_REPLACE]
+    assert [op.action for op in ops] == [StructuralAction.TEXT_PATCH, StructuralAction.TEXT_PATCH]
     assert [op.target.path for op in ops] == [
         (("section", "35"), ("subsection", "4"), ("item", "10_1")),
         (("section", "35"), ("subsection", "4"), ("item", "10_1")),
@@ -6824,7 +6824,7 @@ def test_extract_ee_ops_treats_insert_after_arvu_as_text_replace_without_spacing
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "16"), ("subsection", "2"))
     assert ops[0].payload is not None
     assert ops[0].payload.attrs["old_text"] == "15²"
@@ -6841,7 +6841,7 @@ def test_extract_ee_ops_treats_insert_after_sonu_as_insert_after_mode() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "1"), ("subsection", "1"))
     assert ops[0].payload is not None
     assert ops[0].payload.attrs["old_text"] == "teenuse korralduse,"
@@ -6861,7 +6861,7 @@ def test_extract_ee_ops_treats_peale_sona_textosa_as_insert_after_mode() -> None
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target.path == (("section", "4"), ("subsection", "2"), ("item", "7"))
     assert op.payload is not None
     assert op.payload.attrs["old_text"] == "veoteed"
@@ -6889,7 +6889,7 @@ def test_parse_ee_amendment_ops_lowers_peale_sona_archive_clause_as_text_replace
     ]
     assert len(target_ops) == 1
     op = target_ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.payload is not None
     assert op.payload.attrs["old_text"] == "veoteed"
     assert op.payload.attrs["rewrite_mode"] == "insert_after"
@@ -6908,7 +6908,7 @@ def test_extract_ee_ops_treats_lisatakse_after_sona_as_insert_after_mode() -> No
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "39"), ("subsection", "4"), ("item", "10"))
     assert ops[0].payload is not None
     assert ops[0].payload.attrs["old_text"] == "säilitamisele"
@@ -6931,7 +6931,7 @@ def test_extract_ee_ops_marks_insert_after_terminal_punctuation_boundary() -> No
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "5"), ("subsection", "10"), ("item", "3"))
     assert ops[0].payload is not None
     assert ops[0].payload.attrs["old_text"] == "kolme kuu"
@@ -6950,7 +6950,7 @@ def test_extract_ee_ops_does_not_take_subsection_target_from_insert_after_payloa
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "1"),)
     assert ops[0].payload is not None
     assert ops[0].payload.attrs["old_text"] == "tunnistamise kord"
@@ -6970,7 +6970,7 @@ def test_extract_ee_ops_preserves_nested_quote_in_insert_after_payload() -> None
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "21"), ("subsection", "1"), ("item", "1"))
     assert ops[0].payload is not None
     assert ops[0].payload.attrs["old_text"] == "dokumendid"
@@ -7017,7 +7017,7 @@ def test_extract_ee_ops_emits_global_text_replace_with_exclusions() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == ()
     assert ops[0].payload is not None
     assert ops[0].payload.attrs["old_text"] == "Veterinaar- ja Toiduamet"
@@ -7072,7 +7072,7 @@ def test_parse_ee_amendment_ops_extracts_real_104112020001_agency_rename() -> No
     agency_ops = [
         op
         for op in ops
-        if op.action is StructuralAction.TEXT_REPLACE
+        if op.action is StructuralAction.TEXT_PATCH
         and op.payload is not None
         and op.payload.text == "Põllumajandus- ja Toiduamet"
     ]
@@ -7128,7 +7128,7 @@ def test_extract_ee_ops_emits_global_text_replace_with_plural_subsection_exclusi
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == ()
     assert ops[0].payload is not None
     assert ops[0].payload.attrs["old_text"] == "Maanteeamet"
@@ -7610,13 +7610,13 @@ def test_parse_ee_amendment_ops_single_target_preambul_preserves_sections_5_to_1
     section_actions = {dict(op.target.path)["section"]: op.action for op in ops if "section" in dict(op.target.path)}
     assert section_actions == {
         "5": StructuralAction.REPEAL,
-        "6": StructuralAction.TEXT_REPLACE,
+        "6": StructuralAction.TEXT_PATCH,
         "7": StructuralAction.REPEAL,
-        "8": StructuralAction.TEXT_REPLACE,
+        "8": StructuralAction.TEXT_PATCH,
         "9": StructuralAction.REPEAL,
-        "10": StructuralAction.TEXT_REPLACE,
+        "10": StructuralAction.TEXT_PATCH,
     }
-    replace_ops = [op for op in ops if op.action is StructuralAction.TEXT_REPLACE]
+    replace_ops = [op for op in ops if op.action is StructuralAction.TEXT_PATCH]
     assert len(replace_ops) == 3
     assert all(op.text_patch is None for op in replace_ops)
     for op in replace_ops:
@@ -7645,8 +7645,8 @@ def test_parse_ee_amendment_ops_handles_preambul_only_single_target_replace() ->
     )
 
     assert [(op.action, op.target.path) for op in ops] == [
-        (StructuralAction.TEXT_REPLACE, (("section", "21"), ("subsection", "2"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "22"), ("subsection", "1"))),
+        (StructuralAction.TEXT_PATCH, (("section", "21"), ("subsection", "2"))),
+        (StructuralAction.TEXT_PATCH, (("section", "22"), ("subsection", "1"))),
     ]
     assert all(op.payload is not None for op in ops)
     assert all(_payload(op).attrs["old_text"] == "19-aastane" for op in ops)
@@ -7690,7 +7690,7 @@ def test_parse_ee_amendment_ops_keeps_genitive_target_clause_in_pure_tavatekst_p
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "22"), ("subsection", "6"))
     assert ops[0].payload is not None
     assert ops[0].payload.attrs.get("old_text") == "rahvatervise"
@@ -7822,7 +7822,7 @@ def test_parse_ee_amendment_ops_keeps_direct_target_clause_inside_other_act_para
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "8"), ("subsection", "1"), ("item", "1_2"))
     assert ops[0].payload is not None
     assert ops[0].payload.attrs["old_text"] == "koolieelne lasteasutus"
@@ -7894,7 +7894,7 @@ def test_parse_ee_amendment_ops_ignores_direct_target_title_quote_for_text_repla
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "1"), ("subsection", "2"))
     assert ops[0].payload is not None
     assert (
@@ -7930,7 +7930,7 @@ def test_parse_ee_amendment_ops_keeps_direct_target_clause_inside_other_act_wrap
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "8"), ("subsection", "1"), ("item", "1_2"))
     assert ops[0].payload is not None
     assert ops[0].payload.attrs["old_text"] == "koolieelne lasteasutus"
@@ -7959,7 +7959,7 @@ def test_parse_ee_amendment_ops_accepts_adjectival_target_header_match() -> None
     ops = parse_ee_amendment_ops(xml, "ee/test", target_title="Korruptsioonivastane seadus")
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "14"), ("subsection", "8"))
 
 
@@ -8641,7 +8641,7 @@ def test_parse_ee_amendment_ops_reads_old_format_target_from_tavatekst_intro_wit
     ops = parse_ee_amendment_ops(xml, "ee/test", target_title="Liiklusseadus")
     targets = [(op.action, op.target.path) for op in ops]
 
-    assert (StructuralAction.TEXT_REPLACE, (("section", "7"), ("subsection", "1"))) in targets
+    assert (StructuralAction.TEXT_PATCH, (("section", "7"), ("subsection", "1"))) in targets
     assert (StructuralAction.INSERT, (("section", "8_1"),)) in targets
     assert all("old_format_amendment_section:1" in op.provenance_tags for op in ops)
 
@@ -8727,7 +8727,7 @@ def test_parse_ee_amendment_ops_skips_old_format_later_slice_when_target_section
     )
 
     assert [(op.action, str(op.target)) for op in owned_later_ops] == [
-        (StructuralAction.TEXT_REPLACE, "section:7/subsection:1"),
+        (StructuralAction.TEXT_PATCH, "section:7/subsection:1"),
     ]
     assert owned_adjudications == []
 
@@ -9040,8 +9040,8 @@ def test_parse_ee_amendment_ops_carries_section_context_from_new_format_s_inflec
     )
 
     assert [(op.action, op.target.path) for op in ops] == [
-        (StructuralAction.TEXT_REPLACE, (("section", "5_1"), ("subsection", "1"), ("item", "3"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "5_1"), ("subsection", "1"), ("item", "4"))),
+        (StructuralAction.TEXT_PATCH, (("section", "5_1"), ("subsection", "1"), ("item", "3"))),
+        (StructuralAction.TEXT_PATCH, (("section", "5_1"), ("subsection", "1"), ("item", "4"))),
         (StructuralAction.INSERT, (("section", "5_1"), ("subsection", "7"))),
         (StructuralAction.INSERT, (("section", "5_1"), ("subsection", "8"))),
     ]
@@ -9398,7 +9398,7 @@ def test_extract_ee_ops_strips_leading_embedded_reference_wrapper_for_inner_targ
     )
 
     assert [(op.action, op.target.path) for op in ops] == [
-        (StructuralAction.TEXT_REPLACE, (("section", "36_6"), ("subsection", "2_5"), ("item", "5"))),
+        (StructuralAction.TEXT_PATCH, (("section", "36_6"), ("subsection", "2_5"), ("item", "5"))),
     ]
     assert ops[0].payload is not None
     assert ops[0].payload.attrs["old_text"] == "koolijuhtide"
@@ -9496,8 +9496,8 @@ def test_parse_ee_amendment_ops_admits_html_only_year_prefixed_target_with_gener
     )
 
     assert [(op.action, op.target.path) for op in ops] == [
-        (StructuralAction.TEXT_REPLACE, (("section", "2"), ("subsection", "5"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "6"), ("subsection", "1"))),
+        (StructuralAction.TEXT_PATCH, (("section", "2"), ("subsection", "5"))),
+        (StructuralAction.TEXT_PATCH, (("section", "6"), ("subsection", "1"))),
         (StructuralAction.REPLACE, (("section", "10"), ("subsection", "2"))),
     ]
 
@@ -9515,8 +9515,8 @@ def test_parse_ee_amendment_ops_parses_riigieelarve_year_prefixed_corpus_source(
 
     assert [(op.action, op.target.path) for op in ops] == [
         (StructuralAction.META, (("section", "1"), ("subsection", "2"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "2"), ("subsection", "5"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "6"), ("subsection", "1"))),
+        (StructuralAction.TEXT_PATCH, (("section", "2"), ("subsection", "5"))),
+        (StructuralAction.TEXT_PATCH, (("section", "6"), ("subsection", "1"))),
         (StructuralAction.REPLACE, (("section", "10"), ("subsection", "2"))),
     ]
 
@@ -9720,8 +9720,8 @@ def test_parse_ee_amendment_ops_decodes_old_format_numeric_quote_entities_in_wra
     ops = parse_ee_amendment_ops(xml, "ee/test", target_title="Advokatuuriseadus")
 
     assert [(op.action, op.target.path) for op in ops] == [
-        (StructuralAction.TEXT_REPLACE, (("section", "45"), ("subsection", "4_1"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "46"), ("subsection", "3"))),
+        (StructuralAction.TEXT_PATCH, (("section", "45"), ("subsection", "4_1"))),
+        (StructuralAction.TEXT_PATCH, (("section", "46"), ("subsection", "3"))),
     ]
     assert all(op.payload is not None for op in ops)
     assert all(_payload(op).attrs["old_text"] == "Justiitsministeerium" for op in ops)
@@ -9817,7 +9817,7 @@ def test_extract_ee_ops_keeps_single_explicit_subsection_target_in_text_replace(
     )
 
     assert [(op.action, op.target.path) for op in ops] == [
-        (StructuralAction.TEXT_REPLACE, (("section", "65"), ("subsection", "2"))),
+        (StructuralAction.TEXT_PATCH, (("section", "65"), ("subsection", "2"))),
     ]
     assert ops[0].payload is not None
     assert ops[0].payload.attrs.get("old_text") == (
@@ -9862,7 +9862,7 @@ def test_extract_ee_ops_inserts_space_for_after_number_text_replacements() -> No
         OperationSource(statute_id="ee/test"),
     )
 
-    assert all(op.action is StructuralAction.TEXT_REPLACE for op in ops)
+    assert all(op.action is StructuralAction.TEXT_PATCH for op in ops)
     assert any(op.target.path == (("section", "47"), ("subsection", "3")) for op in ops)
     assert all(op.payload is not None for op in ops)
     assert all(op.payload.attrs.get("old_text") == "44" for op in ops if op.payload is not None)
@@ -9879,11 +9879,11 @@ def test_extract_ee_ops_recovers_same_section_partitive_plural_subsection_target
     )
 
     assert {(op.action, op.target.path) for op in ops} == {
-        (StructuralAction.TEXT_REPLACE, (("section", "47"), ("subsection", "3"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "51"), ("subsection", "1"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "51"), ("subsection", "2"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "51"), ("subsection", "5"), ("item", "1"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "54"), ("subsection", "1"))),
+        (StructuralAction.TEXT_PATCH, (("section", "47"), ("subsection", "3"))),
+        (StructuralAction.TEXT_PATCH, (("section", "51"), ("subsection", "1"))),
+        (StructuralAction.TEXT_PATCH, (("section", "51"), ("subsection", "2"))),
+        (StructuralAction.TEXT_PATCH, (("section", "51"), ("subsection", "5"), ("item", "1"))),
+        (StructuralAction.TEXT_PATCH, (("section", "54"), ("subsection", "1"))),
     }
     assert all(op.payload is not None and op.payload.text == "44 lõike 1" for op in ops)
 
@@ -9949,11 +9949,11 @@ def test_extract_ee_ops_fans_out_mixed_section_and_direct_item_text_replace_targ
     )
 
     assert {(op.action, op.target.path) for op in ops} == {
-        (StructuralAction.TEXT_REPLACE, (("section", "12"),)),
-        (StructuralAction.TEXT_REPLACE, (("section", "13"), ("item", "2"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "13"), ("item", "3"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "13"), ("item", "4"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "14"), ("item", "3"))),
+        (StructuralAction.TEXT_PATCH, (("section", "12"),)),
+        (StructuralAction.TEXT_PATCH, (("section", "13"), ("item", "2"))),
+        (StructuralAction.TEXT_PATCH, (("section", "13"), ("item", "3"))),
+        (StructuralAction.TEXT_PATCH, (("section", "13"), ("item", "4"))),
+        (StructuralAction.TEXT_PATCH, (("section", "14"), ("item", "3"))),
     }
 
 
@@ -10112,8 +10112,8 @@ def test_old_format_commencement_scan_ignores_plain_joustumisest_body_text() -> 
     )
 
     assert [(op.action, op.target.path) for op in ops] == [
-        (StructuralAction.TEXT_REPLACE, (("section", "43_4"),)),
-        (StructuralAction.TEXT_REPLACE, (("section", "43_5"),)),
+        (StructuralAction.TEXT_PATCH, (("section", "43_4"),)),
+        (StructuralAction.TEXT_PATCH, (("section", "43_5"),)),
     ]
 
 
@@ -10144,8 +10144,8 @@ def test_parse_ee_amendment_ops_does_not_route_different_programme_year_range_bl
     )
 
     assert [(op.action, op.target.path) for op in ops] == [
-        (StructuralAction.TEXT_REPLACE, (("section", "3"),)),
-        (StructuralAction.TEXT_REPLACE, (("section", "15_1"), ("subsection", "2"))),
+        (StructuralAction.TEXT_PATCH, (("section", "3"),)),
+        (StructuralAction.TEXT_PATCH, (("section", "15_1"), ("subsection", "2"))),
         (StructuralAction.REPLACE, (("section", "15_1"), ("subsection", "9"))),
         (StructuralAction.REPLACE, (("chapter", "4"),)),
         (StructuralAction.INSERT, (("chapter", "4"), ("section", "24_1"))),
@@ -10240,7 +10240,7 @@ def test_extract_ee_ops_keeps_nested_quote_tail_in_insert_after_textosa() -> Non
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action == StructuralAction.TEXT_REPLACE
+    assert op.action == StructuralAction.TEXT_PATCH
     assert op.target.path == (("section", "1"),)
     assert op.payload is not None
     assert op.payload.attrs["old_text"] == "tunnistamise kord"
@@ -10275,7 +10275,7 @@ def test_quoted_ministerial_target_intro_admits_direct_html_items() -> None:
     )
 
     targets = [(op.action, op.target.path) for op in ops]
-    assert (StructuralAction.TEXT_REPLACE, ()) in targets
+    assert (StructuralAction.TEXT_PATCH, ()) in targets
     assert (StructuralAction.REPEAL, (("section", "18"),)) in targets
     assert (StructuralAction.INSERT, (("section", "31_1"),)) in targets
 
@@ -10290,7 +10290,7 @@ def test_extract_ee_ops_stops_at_quote_prime_payload_for_direct_item_text_replac
     )
 
     assert [(op.action, op.target.path) for op in ops] == [
-        (StructuralAction.TEXT_REPLACE, (("section", "14"), ("item", "7"))),
+        (StructuralAction.TEXT_PATCH, (("section", "14"), ("item", "7"))),
     ]
 
 
@@ -10576,7 +10576,7 @@ def test_parse_ee_amendment_ops_uses_direct_old_format_header_target_subsection(
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target.path == (("section", "1"), ("subsection", "2"))
     assert op.witness_rule_id == "ee_old_format_direct_header_target_section"
     assert "ee_old_format_direct_header_target_section" in op.provenance_tags
@@ -10628,11 +10628,11 @@ def test_parse_ee_amendment_ops_collects_xml_alampunkt_items_for_new_format_omni
         (StructuralAction.REPLACE, ()),
         (StructuralAction.META, ()),
         (StructuralAction.REPLACE, (("section", "1"),)),
-        (StructuralAction.TEXT_REPLACE, (("section", "2"), ("item", "2"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "2"), ("item", "3"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "2"), ("item", "4"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "2"), ("item", "5"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "2"), ("item", "6"))),
+        (StructuralAction.TEXT_PATCH, (("section", "2"), ("item", "2"))),
+        (StructuralAction.TEXT_PATCH, (("section", "2"), ("item", "3"))),
+        (StructuralAction.TEXT_PATCH, (("section", "2"), ("item", "4"))),
+        (StructuralAction.TEXT_PATCH, (("section", "2"), ("item", "5"))),
+        (StructuralAction.TEXT_PATCH, (("section", "2"), ("item", "6"))),
         (StructuralAction.REPEAL, (("section", "3"),)),
         (StructuralAction.META, ()),
     ]
@@ -10659,7 +10659,7 @@ def test_parse_ee_amendment_ops_marks_2016_register_infosusteem_rewrite_family()
 
     assert [(op.action, op.target.path) for op in ops] == [
         (StructuralAction.REPLACE, ()),
-        (StructuralAction.TEXT_REPLACE, ()),
+        (StructuralAction.TEXT_PATCH, ()),
         (StructuralAction.REPLACE, (("section", "4"), ("subsection", "2"))),
     ]
     assert ops[0].target.special is FacetKind.HEADING
@@ -10688,7 +10688,7 @@ def test_parse_ee_amendment_ops_slices_parenthesized_multi_regulation_block() ->
     assert (StructuralAction.INSERT, (("section", "2"), ("subsection", "1"), ("item", "54"))) in targets
     assert (StructuralAction.INSERT, (("section", "2"), ("subsection", "1"))) not in targets
     assert (StructuralAction.REPLACE, (("section", "2"), ("subsection", "2_2"), ("item", "1"))) in targets
-    assert (StructuralAction.TEXT_REPLACE, (("section", "4"), ("subsection", "9"))) in targets
+    assert (StructuralAction.TEXT_PATCH, (("section", "4"), ("subsection", "9"))) in targets
     assert (StructuralAction.INSERT, (("section", "5"),)) in targets
     assert any(
         op.witness_rule_id == "ee_parenthesized_target_html_block_sliced"
@@ -10726,19 +10726,19 @@ def test_parse_ee_amendment_ops_does_not_smuggle_target_act_header_into_items() 
     )
 
     assert [(op.action, op.target.path) for op in ops] == [
-        (StructuralAction.TEXT_REPLACE, (("section", "1"),)),
-        (StructuralAction.TEXT_REPLACE, (("section", "2"),)),
-        (StructuralAction.TEXT_REPLACE, (("section", "2"),)),
-        (StructuralAction.TEXT_REPLACE, (("section", "2"),)),
+        (StructuralAction.TEXT_PATCH, (("section", "1"),)),
+        (StructuralAction.TEXT_PATCH, (("section", "2"),)),
+        (StructuralAction.TEXT_PATCH, (("section", "2"),)),
+        (StructuralAction.TEXT_PATCH, (("section", "2"),)),
         (StructuralAction.REPLACE, (("section", "2"), ("item", "1"))),
         (StructuralAction.INSERT, (("section", "2"), ("item", "1_1"))),
         (StructuralAction.INSERT, (("section", "2"), ("subsection", "2"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "3"),)),
-        (StructuralAction.TEXT_REPLACE, (("section", "4"),)),
-        (StructuralAction.TEXT_REPLACE, (("section", "5"),)),
-        (StructuralAction.TEXT_REPLACE, (("section", "6"),)),
+        (StructuralAction.TEXT_PATCH, (("section", "3"),)),
+        (StructuralAction.TEXT_PATCH, (("section", "4"),)),
+        (StructuralAction.TEXT_PATCH, (("section", "5"),)),
+        (StructuralAction.TEXT_PATCH, (("section", "6"),)),
     ]
-    assert all(op.target.path != (("section", "1"),) or op.action is StructuralAction.TEXT_REPLACE for op in ops)
+    assert all(op.target.path != (("section", "1"),) or op.action is StructuralAction.TEXT_PATCH for op in ops)
     assert any(
         "ee_new_format_target_act_header_not_wrapper_instruction" in op.provenance_tags
         for op in ops
@@ -10786,7 +10786,7 @@ def test_extract_ee_ops_recovers_flat_sectionless_singleton_subsection_item_scop
     prefixed_ops = extract_ee_ops(prefixed_text, OperationSource(statute_id="ee/test", raw_text=prefixed_text))
 
     assert [(op.action, op.target.path) for op in prefixed_ops] == [
-        (StructuralAction.TEXT_REPLACE, (("section", "1"), ("subsection", "3"), ("item", "3"))),
+        (StructuralAction.TEXT_PATCH, (("section", "1"), ("subsection", "3"), ("item", "3"))),
     ]
     assert prefixed_ops[0].witness_rule_id == "ee_flat_sectionless_singleton_subsection_scope"
 
@@ -10797,8 +10797,8 @@ def test_extract_ee_ops_handles_plural_elative_section_text_replace() -> None:
     ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
 
     assert [(op.action, op.target.path) for op in ops] == [
-        (StructuralAction.TEXT_REPLACE, (("section", "9"),)),
-        (StructuralAction.TEXT_REPLACE, (("section", "12"),)),
+        (StructuralAction.TEXT_PATCH, (("section", "9"),)),
+        (StructuralAction.TEXT_PATCH, (("section", "12"),)),
     ]
     assert [op.payload.text for op in ops if op.payload is not None] == [
         ", elektrišokirelva",
@@ -11078,7 +11078,7 @@ def test_extract_ee_ops_splits_same_target_text_replace_and_sentence_replace_cla
 
     assert [(op.action.value, op.target.path, _payload(op).text) for op in ops] == [
         (
-            "text_replace",
+            "text_patch",
             (("section", "28"), ("subsection", "2"), ("item", "2")),
             "10 000 eurot",
         ),
@@ -11173,7 +11173,7 @@ def test_extract_ee_ops_marks_fraktsioneeritud_source_typo_delete_variant() -> N
     ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "14"), ("subsection", "2"))
     assert _payload(ops[0]).attrs["old_text"] == "fraktsioneeritud"
     assert _payload(ops[0]).attrs["all_occurrences"] is True
@@ -11441,7 +11441,7 @@ def test_parse_ee_amendment_ops_keeps_excluded_global_rewrite_selectors_source_l
         op
         for op in ops
         if op.target.path == (("section", "2"), ("subsection", "1_1"))
-        and op.action is StructuralAction.TEXT_REPLACE
+        and op.action is StructuralAction.TEXT_PATCH
     )
 
     assert op.payload is not None
@@ -11468,7 +11468,7 @@ def test_parse_ee_amendment_ops_keeps_selector_exclusion_out_of_global_replay_sc
         op
         for op in ops
         if op.target.path == ()
-        and op.action is StructuralAction.TEXT_REPLACE
+        and op.action is StructuralAction.TEXT_PATCH
         and op.payload is not None
         and op.payload.attrs.get("old_text") == "reagent"
     )
@@ -11476,7 +11476,7 @@ def test_parse_ee_amendment_ops_keeps_selector_exclusion_out_of_global_replay_sc
         op
         for op in ops
         if op.target.path == (("section", "3"), ("subsection", "3"))
-        and op.action is StructuralAction.TEXT_REPLACE
+        and op.action is StructuralAction.TEXT_PATCH
     )
 
     assert global_op.payload is not None
@@ -11544,7 +11544,7 @@ def test_parse_ee_amendment_ops_does_not_infer_selector_exclusion_without_old_te
         op
         for op in ops
         if op.target.path == ()
-        and op.action is StructuralAction.TEXT_REPLACE
+        and op.action is StructuralAction.TEXT_PATCH
         and op.payload is not None
         and op.payload.attrs.get("old_text") == "reagent"
     )
@@ -11817,7 +11817,7 @@ def test_mark_old_format_out_of_body_clause_clears_text_patch_for_meta() -> None
     text_replace_op = LegalOperation(
         op_id="ee-text-replace-test-1",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=()),
         text_patch=TextPatchSpec(
             kind=TextPatchKindEnum.REPLACE,
@@ -12019,7 +12019,7 @@ def test_parse_ee_amendment_ops_does_not_carry_section_scope_into_chapter_headin
 
     assert [(op.action, op.target.path, op.target.special) for op in ops] == [
         (StructuralAction.INSERT, (("section", "7"), ("subsection", "2")), None),
-        (StructuralAction.TEXT_REPLACE, (("chapter", "3"),), FacetKind.HEADING),
+        (StructuralAction.TEXT_PATCH, (("chapter", "3"),), FacetKind.HEADING),
     ]
     assert "ee_old_format_container_heading_target_blocks_section_carry" in ops[1].provenance_tags
     assert "ee_old_format_carried_section_scope" not in ops[1].provenance_tags
@@ -12301,7 +12301,7 @@ def test_parse_ee_amendment_ops_real_107072020001_extracts_ops_for_nbsp_wrapper_
     # The amendment rewrites the base act title via ``pealkirjas asendatakse``
     # and replaces multiple subsections of § 1, § 2.
     assert any(
-        op.action is StructuralAction.TEXT_REPLACE and op.target.path[:1] == (("section", "1"),)
+        op.action is StructuralAction.TEXT_PATCH and op.target.path[:1] == (("section", "1"),)
         for op in ops
     )
     assert any(

@@ -585,7 +585,7 @@ def test_filter_ops_for_ref_slice_keeps_later_local_ops_when_no_later_ref_slice_
         LegalOperation(
             op_id="earliest-local-op",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "26_1"), ("subsection", "4_4"))),
             source=OperationSource(statute_id="ee/127122016002", effective="2018-01-01", raw_text="§ 1 p 3"),
         ),
@@ -600,7 +600,7 @@ def test_filter_ops_for_ref_slice_keeps_later_local_ops_when_no_later_ref_slice_
         LegalOperation(
             op_id="latest-local-op",
             sequence=3,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "26_1"), ("subsection", "14"))),
             source=OperationSource(statute_id="ee/127122016002", effective="2019-01-01", raw_text="§ 1 p 12"),
         ),

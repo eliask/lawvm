@@ -396,23 +396,23 @@ def test_build_effect_candidate_surface_emits_text_replace_candidate_from_owned_
     payload = report.to_jsonable()
 
     assert report.summary()["candidate_status_counts"] == {"candidate_emitted": 1}
-    assert report.summary()["candidate_action_counts"] == {"text_replace": 1}
+    assert report.summary()["candidate_action_counts"] == {"text_patch": 1}
     assert report.summary()["instruction_subfamily_status_counts"] == {
         "candidate_direct_single_text_substitution": 1,
     }
     assert report.summary()["latest_oracle_text_status_counts"] == {"oracle_new_text_only": 1}
     assert report.summary()["candidate_action_source_change_text_witness_status_counts"] == {
-        "text_replace|observed_single_replacement": 1,
+        "text_patch|observed_single_replacement": 1,
     }
     assert report.summary()["text_replace_witness_support_status_counts"] == {
         "latest_oracle_and_source_change_observed": 1,
     }
     assert report.summary()["candidate_action_text_replace_witness_support_status_counts"] == {
-        "text_replace|latest_oracle_and_source_change_observed": 1,
+        "text_patch|latest_oracle_and_source_change_observed": 1,
     }
     assert report.summary()["blocked_operation_family_source_change_text_witness_status_counts"] == {}
     row = report.rows[0]
-    assert row.action == "text_replace"
+    assert row.action == "text_patch"
     assert row.target_address == "section:21"
     assert row.amendment_date_iso == "2025-01-01"
     assert row.source_version_date_window_status == "source_version_date_window_available"
@@ -463,7 +463,7 @@ def test_build_effect_candidate_surface_emits_text_replace_candidate_from_owned_
     }
     evidence_row = report.operation_evidence_rows()[0].to_dict()
     assert evidence_row["evidence_status"] == "accepted"
-    assert evidence_row["canonical_family"] == "text_replace"
+    assert evidence_row["canonical_family"] == "text_patch"
     assert evidence_row["detail"]["instruction_subfamily"] == "direct_single_text_substitution"
     assert evidence_row["detail"]["latest_oracle_text_status"] == "oracle_new_text_only"
     assert evidence_row["detail"]["source_version_date_window_status"] == "source_version_date_window_available"
@@ -580,7 +580,7 @@ def test_build_effect_candidate_surface_emits_text_replace_candidate_from_matchi
     row = report.rows[0]
 
     assert report.summary()["candidate_status_counts"] == {"candidate_emitted": 1}
-    assert row.action == "text_replace"
+    assert row.action == "text_patch"
     assert row.operation is not None
     assert row.operation.text_patch is not None
     assert row.operation.text_patch.selector.occurrence == 1
@@ -648,14 +648,14 @@ def test_build_effect_candidate_surface_emits_each_place_text_replace_candidate(
     row = report.rows[0]
 
     assert report.summary()["candidate_status_counts"] == {"candidate_emitted": 1}
-    assert report.summary()["candidate_action_counts"] == {"text_replace": 1}
+    assert report.summary()["candidate_action_counts"] == {"text_patch": 1}
     assert report.summary()["instruction_subfamily_status_counts"] == {
         "candidate_direct_each_place_text_substitution": 1,
     }
     assert report.summary()["latest_oracle_text_status_counts"] == {
         "oracle_new_text_only_each_place": 1,
     }
-    assert row.action == "text_replace"
+    assert row.action == "text_patch"
     assert row.instruction_subfamily == "direct_each_place_text_substitution"
     assert row.text_substitution_scope == "inline_text_each_place"
     assert row.latest_oracle_old_text_occurrences == 0
@@ -726,7 +726,7 @@ def test_build_effect_candidate_surface_emits_text_replace_candidate_from_omitti
     row = report.rows[0]
 
     assert report.summary()["candidate_status_counts"] == {"candidate_emitted": 1}
-    assert row.action == "text_replace"
+    assert row.action == "text_patch"
     assert row.operation is not None
     assert row.operation.text_patch is not None
     assert row.operation.text_patch.selector.occurrence == 1
@@ -800,7 +800,7 @@ def test_build_effect_candidate_surface_emits_deletion_candidate_from_typed_omit
     row = report.rows[0]
 
     assert report.summary()["candidate_status_counts"] == {"candidate_emitted": 1}
-    assert row.action == "text_replace"
+    assert row.action == "text_patch"
     assert row.instruction_subfamily_status == "candidate_direct_typed_amend_in_omit_deletion"
     assert row.latest_oracle_text_status == "oracle_old_text_deleted"
     assert row.operation is not None
@@ -948,7 +948,7 @@ def test_build_effect_candidate_surface_emits_text_replace_from_archived_source_
     assert report.summary()["candidate_witness_rule_counts"] == {
         "nz_text_replace_candidate_from_archived_source_change_witness": 1,
     }
-    assert row.action == "text_replace"
+    assert row.action == "text_patch"
     assert row.operation is not None
     assert row.operation.witness_rule_id == "nz_text_replace_candidate_from_archived_source_change_witness"
     assert "source_change_text_witness" in row.operation.provenance_tags

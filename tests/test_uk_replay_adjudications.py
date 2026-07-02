@@ -2276,7 +2276,7 @@ def test_executor_classifies_direct_section_paragraph_missing_carrier_as_source_
         LegalOperation(
             op_id="uk_test_direct_section_paragraph_missing_carrier",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "48"), ("paragraph", "a"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -2310,7 +2310,7 @@ def test_uk_table_entry_inline_text_insertion_lowers_to_owned_table_cell_selecto
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target == LegalAddress(path=(("section", "159"), ("subsection", "5")))
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == "(performance of principal councils)"
@@ -2366,7 +2366,7 @@ def test_uk_preposed_passive_word_substitution_lowers_to_text_replace() -> None:
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target == LegalAddress(path=(("section", "9"), ("subsection", "5")))
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == "or 8 above"
@@ -2407,7 +2407,7 @@ def test_uk_preposed_beginning_word_insert_lowers_to_text_replace() -> None:
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target == LegalAddress(path=(("section", "40"), ("subsection", "4"), ("paragraph", "a")))
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == "TEXT_BEGINNING"
@@ -2447,7 +2447,7 @@ def test_uk_passive_quoted_word_omission_lowers_to_text_repeal() -> None:
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPEAL
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target == LegalAddress(path=(("section", "9"), ("subsection", "1")))
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == "or"
@@ -2487,7 +2487,7 @@ def test_uk_post_child_quoted_word_repeal_lowers_to_text_repeal() -> None:
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPEAL
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target == LegalAddress(path=(("section", "9"), ("subsection", "3")))
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == "and"
@@ -2529,7 +2529,7 @@ def test_uk_after_reference_section_insert_lowers_to_text_replace() -> None:
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target == LegalAddress(path=(("section", "79"), ("subsection", "1")))
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == "section 273 (offences by corporations),"
@@ -2578,7 +2578,7 @@ def test_uk_from_beginning_passive_substitution_lowers_to_text_replace() -> None
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target == LegalAddress(path=(("section", "10"), ("subsection", "1")))
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == "TEXT_FROM__TO_a person"
@@ -2619,7 +2619,7 @@ def test_uk_from_beginning_active_comma_substitution_lowers_to_text_replace() ->
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target == LegalAddress(path=(("section", "34"), ("subsection", "2")))
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == "TEXT_FROM__TO_taken"
@@ -2660,7 +2660,7 @@ def test_uk_passive_range_to_end_repeal_lowers_to_text_repeal() -> None:
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPEAL
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target == LegalAddress(path=(("section", "114"), ("subsection", "1")))
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == "TEXT_FROM_to_TO_END"
@@ -2699,7 +2699,7 @@ def test_uk_after_parenthesized_anchor_insert_lowers_to_text_replace() -> None:
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target == LegalAddress(path=(("section", "48"), ("subsection", "5")))
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == "(3)"
@@ -2743,7 +2743,7 @@ def test_uk_bare_range_unquoted_substitution_lowers_to_text_replace() -> None:
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target == LegalAddress(path=(("section", "48"), ("subsection", "5")))
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == "TEXT_FROM_are to_TO_licence"
@@ -2786,7 +2786,7 @@ def test_uk_insert_text_at_end_lowers_to_append_patch() -> None:
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target == LegalAddress(
         path=(("section", "103"), ("subsection", "4"), ("paragraph", "a"), ("subparagraph", "ii"))
     )
@@ -2835,7 +2835,7 @@ def test_uk_nested_quote_definition_after_anchor_insert_lowers_to_text_replace()
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target == LegalAddress(path=(("section", "115b"), ("subsection", "9")))
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == (
@@ -2885,7 +2885,7 @@ def test_uk_compound_subsection_child_insert_lowers_to_child_selector() -> None:
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target == LegalAddress(
         path=(("section", "103"), ("subsection", "4"), ("paragraph", "a"))
     )
@@ -2949,7 +2949,7 @@ def test_uk_grouped_after_insert_child_row_lowers_from_source_parent_payload() -
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target == LegalAddress(path=(("section", "138"), ("subsection", "1")))
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == "a child"
@@ -3014,7 +3014,7 @@ def test_uk_grouped_after_insert_all_occurrences_child_row_lowers_from_source_pa
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target == LegalAddress(path=(("section", "138"), ("subsection", "1")))
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == "of the child"
@@ -3061,7 +3061,7 @@ def test_uk_final_bare_quoted_word_repeal_lowers_to_final_text_repeal() -> None:
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPEAL
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target == LegalAddress(path=(("section", "103"), ("subsection", "4"), ("paragraph", "aa")))
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == "and"
@@ -3234,7 +3234,7 @@ def test_executor_records_text_match_missing() -> None:
         LegalOperation(
             op_id="uk_test_text_replace_no_match",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "1"),)),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -3259,7 +3259,7 @@ def test_executor_records_missing_structured_text_patch_payload() -> None:
         LegalOperation(
             op_id="uk_test_text_replace_missing_structured_payload",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "1"),)),
             source=_source(),
         )
@@ -3312,7 +3312,7 @@ def test_executor_recovers_implicit_first_subparagraph_parent_text_patch() -> No
         LegalOperation(
             op_id="uk_test_implicit_first_subparagraph_parent_text",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(
                 path=(
                     ("schedule", "6"),
@@ -3382,7 +3382,7 @@ def test_executor_recovers_direct_section_paragraph_text_patch_from_unique_child
         LegalOperation(
             op_id="uk_test_direct_section_paragraph_child_text",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "48"), ("paragraph", "a"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -3434,7 +3434,7 @@ def test_executor_blocks_direct_section_paragraph_text_patch_when_child_text_amb
         LegalOperation(
             op_id="uk_test_direct_section_paragraph_ambiguous_child_text",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "48"), ("paragraph", "a"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -3477,7 +3477,7 @@ def test_executor_records_punctuation_spacing_text_match_recovery() -> None:
         LegalOperation(
             op_id="uk_test_text_replace_citation_spacing",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "1"),)),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -3528,7 +3528,7 @@ def test_executor_records_punctuation_spacing_text_match_recovery_when_feed_has_
         LegalOperation(
             op_id="uk_test_text_replace_citation_feed_spacing",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "26B"),)),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -3578,7 +3578,7 @@ def test_executor_records_punctuation_spacing_text_match_recovery_with_trailing_
         LegalOperation(
             op_id="uk_test_text_replace_trailing_feed_space",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "22"),)),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -3628,7 +3628,7 @@ def test_executor_records_punctuation_spacing_text_from_to_recovery() -> None:
         LegalOperation(
             op_id="uk_test_text_from_to_citation_spacing",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "1"),)),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -3688,7 +3688,7 @@ def test_executor_text_from_to_occurrence_counts_single_word_tokens() -> None:
         LegalOperation(
             op_id="uk_test_range_occurrence_word_token",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "16"), ("subsection", "1"), ("paragraph", "a"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -3742,7 +3742,7 @@ def test_executor_records_word_punctuation_elision_text_match_recovery() -> None
         LegalOperation(
             op_id="uk_test_text_replace_word_punctuation_elision",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "21"),)),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -3788,7 +3788,7 @@ def test_executor_does_not_word_punctuation_recover_across_whitespace() -> None:
         LegalOperation(
             op_id="uk_test_text_replace_word_punctuation_elision_negative",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "21"),)),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -3833,7 +3833,7 @@ def test_executor_records_rotated_trailing_comma_omission_recovery() -> None:
         LegalOperation(
             op_id="uk_test_rotated_trailing_comma_omission",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "1"),)),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.DELETE,
@@ -3881,7 +3881,7 @@ def test_executor_does_not_rotate_trailing_comma_omission_when_phrase_is_not_uni
         LegalOperation(
             op_id="uk_test_rotated_trailing_comma_omission_not_unique",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "1"),)),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.DELETE,
@@ -3917,7 +3917,7 @@ def test_executor_classifies_text_match_already_rewritten() -> None:
         LegalOperation(
             op_id="uk_test_text_replace_already_rewritten",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "1"),)),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -3954,7 +3954,7 @@ def test_executor_uses_typed_text_patch_without_legacy_text_fields() -> None:
         LegalOperation(
             op_id="uk_test_text_replace_typed_patch",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "1"),)),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -3990,7 +3990,7 @@ def test_executor_treats_regex_fallback_replacement_as_literal_source_text() -> 
         LegalOperation(
             op_id="uk_test_text_replace_literal_backslash_digit",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "1"),)),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -4024,7 +4024,7 @@ def test_executor_classifies_same_target_text_patch_preimage_drift() -> None:
         LegalOperation(
             op_id="uk_test_text_replace_first",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "1"),)),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -4038,7 +4038,7 @@ def test_executor_classifies_same_target_text_patch_preimage_drift() -> None:
         LegalOperation(
             op_id="uk_test_text_replace_preimage_drift",
             sequence=2,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "1"),)),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -4080,7 +4080,7 @@ def test_executor_records_normalized_replacement_already_present_before_preimage
         LegalOperation(
             op_id="uk_test_text_replace_first",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "1"),)),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -4094,7 +4094,7 @@ def test_executor_records_normalized_replacement_already_present_before_preimage
         LegalOperation(
             op_id="uk_test_text_replace_replacement_normalized_present",
             sequence=2,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "1"),)),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -4139,7 +4139,7 @@ def test_executor_classifies_multi_prior_same_target_text_patch_preimage_drift()
             LegalOperation(
                 op_id=op_id,
                 sequence=sequence,
-                action=StructuralAction.TEXT_REPLACE,
+                action=StructuralAction.TEXT_PATCH,
                 target=LegalAddress(path=(("section", "1"),)),
                 text_patch=TextPatchSpec(
                     kind=TextPatchKindEnum.REPLACE,
@@ -4190,7 +4190,7 @@ def test_executor_recovers_unique_numeric_list_trailing_comma_anchor() -> None:
             LegalOperation(
                 op_id=op_id,
                 sequence=sequence,
-                action=StructuralAction.TEXT_REPLACE,
+                action=StructuralAction.TEXT_PATCH,
                 target=LegalAddress(path=(("section", "17"),)),
                 text_patch=TextPatchSpec(
                     kind=TextPatchKindEnum.REPLACE,
@@ -4243,7 +4243,7 @@ def test_executor_rejects_ambiguous_numeric_list_trailing_comma_anchor() -> None
             LegalOperation(
                 op_id=op_id,
                 sequence=sequence,
-                action=StructuralAction.TEXT_REPLACE,
+                action=StructuralAction.TEXT_PATCH,
                 target=LegalAddress(path=(("section", "17"),)),
                 text_patch=TextPatchSpec(
                     kind=TextPatchKindEnum.REPLACE,
@@ -4270,7 +4270,7 @@ def test_executor_classifies_synthetic_text_selector_gap() -> None:
         LegalOperation(
             op_id="uk_test_synthetic_text_selector_gap",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "1"),)),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -4295,7 +4295,7 @@ def test_executor_classifies_range_synthetic_text_selector_gap() -> None:
         LegalOperation(
             op_id="uk_test_range_synthetic_text_selector_gap",
             sequence=1,
-            action=StructuralAction.TEXT_REPEAL,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "1"),)),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.DELETE,
@@ -4361,7 +4361,7 @@ def test_executor_applies_labeled_child_end_range_without_target_hijack() -> Non
         LegalOperation(
             op_id="uk_test_labeled_child_end_range",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "58"), ("subsection", "6"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -4424,7 +4424,7 @@ def test_executor_blocks_labeled_child_end_range_when_child_missing() -> None:
         LegalOperation(
             op_id="uk_test_labeled_child_end_range_missing_child",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "58"), ("subsection", "6"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -4483,7 +4483,7 @@ def test_executor_applies_after_anchor_to_end_text_patch_without_flattening_chil
         LegalOperation(
             op_id="uk_test_after_anchor_to_end",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "224"), ("subsection", "2"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -4546,7 +4546,7 @@ def test_executor_applies_after_anchor_before_final_word_patch_without_flattenin
         LegalOperation(
             op_id="uk_test_after_anchor_before_final_word",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(
                 path=(
                     ("schedule", "1"),
@@ -4615,7 +4615,7 @@ def test_executor_applies_before_child_text_patch_without_flattening_children() 
         LegalOperation(
             op_id="uk_test_before_child_text_replace",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "323"), ("subsection", "2"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -4682,7 +4682,7 @@ def test_executor_blocks_after_child_text_patch_when_anchor_is_ambiguous() -> No
         LegalOperation(
             op_id="uk_test_after_child_ambiguous_anchor",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "11"), ("subsection", "1"), ("paragraph", "b"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -4726,7 +4726,7 @@ def test_executor_classifies_normalized_preimage_present_text_match_gap() -> Non
         LegalOperation(
             op_id="uk_test_normalized_preimage_present",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "1"),)),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -4752,7 +4752,7 @@ def test_executor_classifies_non_substantive_text_selector_gap() -> None:
         LegalOperation(
             op_id="uk_test_non_substantive_text_selector_gap",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "1"),)),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -4794,7 +4794,7 @@ def test_executor_classifies_multi_fragment_text_selector_gap() -> None:
         LegalOperation(
             op_id="uk_test_multi_fragment_text_selector_gap",
             sequence=1,
-            action=StructuralAction.TEXT_REPEAL,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "1"),)),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.DELETE,
@@ -4844,7 +4844,7 @@ def test_executor_classifies_citation_tail_surface_gap() -> None:
         LegalOperation(
             op_id="uk_test_citation_tail_surface_gap",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "1"),)),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -4983,7 +4983,7 @@ def test_executor_preserves_direct_section_paragraph_descendant_target_shape() -
         LegalOperation(
             op_id="uk_test_direct_section_paragraph_descendant_patch",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "399"), ("paragraph", "c"), ("subparagraph", "ii"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -5046,7 +5046,7 @@ def test_executor_classifies_missing_schedule_range_gap_for_text_patch() -> None
         LegalOperation(
             op_id="uk_test_missing_schedule_range_text_gap",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("schedule", "2"),)),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -5076,7 +5076,7 @@ def test_executor_classifies_missing_schedule_branch_gap_separately_from_repeal(
         LegalOperation(
             op_id="uk_test_missing_schedule_branch_gap",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("schedule", "2"), ("paragraph", "1"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -5101,7 +5101,7 @@ def test_executor_classifies_missing_heading_carrier_for_text_patch() -> None:
         LegalOperation(
             op_id="uk_test_missing_heading_carrier_text_gap",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "13"),), special=FacetKind.HEADING),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -5321,7 +5321,7 @@ def test_executor_applies_same_provision_descendant_renumber_then_text_patch() -
         LegalOperation(
             op_id="uk_test_patch_132_1",
             sequence=2,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(
                 path=(("schedule", "9"), ("paragraph", "132"), ("subparagraph", "1"))
             ),
@@ -5892,7 +5892,7 @@ def test_executor_records_alpha_subsection_under_numeric_subsections_as_malforme
         LegalOperation(
             op_id="uk_test_text_replace_alpha_subsection_malformed",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "48"), ("subsection", "a"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -5940,7 +5940,7 @@ def test_executor_records_placeholder_label_malformed_target_gap() -> None:
         LegalOperation(
             op_id="uk_test_placeholder_label_malformed",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "1"), ("subsection", "1"), ("paragraph", "[inserted]"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -5987,7 +5987,7 @@ def test_executor_records_note_or_crossheading_malformed_target_gap() -> None:
         LegalOperation(
             op_id="uk_test_note_label_malformed",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "1"), ("subsection", "1"), ("paragraph", "note"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -6031,7 +6031,7 @@ def test_executor_records_granularity_collapse_malformed_target_gap() -> None:
         LegalOperation(
             op_id="uk_test_granularity_collapse_malformed",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "48"), ("subsection", "a"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -6056,7 +6056,7 @@ def test_executor_records_sectionlike_label_malformed_target_gap() -> None:
         LegalOperation(
             op_id="uk_test_sectionlike_label_malformed",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "and"),)),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -6080,7 +6080,7 @@ def test_executor_records_nested_sectionlike_label_malformed_before_missing_pare
         LegalOperation(
             op_id="uk_test_nested_sectionlike_label_malformed",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "appt"), ("subsection", "day"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -6104,7 +6104,7 @@ def test_executor_records_schedule_root_label_malformed_target_gap() -> None:
         LegalOperation(
             op_id="uk_test_schedule_root_label_malformed",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("schedule", ""),)),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -6155,7 +6155,7 @@ def test_executor_records_schedule_partition_target_gap() -> None:
         LegalOperation(
             op_id="uk_test_schedule_partition_target_gap",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("schedule", "2"), ("paragraph", "80"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -6394,7 +6394,7 @@ def test_executor_recovers_empty_descendant_text_patch_on_parent_text() -> None:
         LegalOperation(
             op_id="uk_test_empty_descendant_parent_text_recovery",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("schedule", "1"), ("paragraph", "1"), ("item", "d"), ("item", "i"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -6461,7 +6461,7 @@ def test_executor_materializes_source_carried_labeled_child_text_substitution() 
         LegalOperation(
             op_id="uk_test_source_carried_labeled_child_text_substitution",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "11"), ("subsection", "4"), ("paragraph", "b"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -6563,7 +6563,7 @@ def test_executor_materializes_source_carried_labeled_child_text_substitution_pr
         LegalOperation(
             op_id="uk_test_source_carried_labeled_child_text_substitution_prefix",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(
                 path=(("section", "5"), ("subsection", "2"), ("paragraph", "a"))
             ),
@@ -6646,7 +6646,7 @@ def test_executor_materializes_source_carried_alpha_child_text_substitution() ->
         LegalOperation(
             op_id="uk_test_source_carried_alpha_child_text_substitution",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "130"), ("subsection", "3"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -6775,7 +6775,7 @@ def test_prepare_replay_uk_ops_canonicalizes_point_alias_before_overlap_classifi
     broad = LegalOperation(
         op_id="uk_test_point_alias_broad",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(
             path=(("section", "1"), ("subsection", "1"), ("paragraph", "a"), ("item", "i"))
         ),
@@ -6789,7 +6789,7 @@ def test_prepare_replay_uk_ops_canonicalizes_point_alias_before_overlap_classifi
     ordinal = LegalOperation(
         op_id="uk_test_point_alias_ordinal",
         sequence=2,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(
             path=(("section", "1"), ("subsection", "1"), ("paragraph", "a"), ("point", "i"))
         ),
@@ -6863,7 +6863,7 @@ def test_executor_canonicalizes_source_point_alias_in_labeled_child_recovery() -
         LegalOperation(
             op_id="uk_test_source_point_alias_child_text_substitution",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(
                 path=(("section", "1"), ("subsection", "1"), ("paragraph", "a"), ("item", "i"))
             ),
@@ -6980,7 +6980,7 @@ def test_executor_does_not_materialize_labeled_child_text_without_source_rule() 
         LegalOperation(
             op_id="uk_test_plain_labeled_text_substitution",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "11"), ("subsection", "4"), ("paragraph", "b"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -7202,7 +7202,7 @@ def test_executor_records_schedule_unlabeled_paragraph_target_gap() -> None:
         LegalOperation(
             op_id="uk_test_schedule_unlabeled_paragraph_target_gap",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("schedule", "1"), ("paragraph", "1"), ("subparagraph", "2"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -7227,7 +7227,7 @@ def test_executor_records_annex_schedule_reference_gap() -> None:
         LegalOperation(
             op_id="uk_test_annex_schedule_reference_gap",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("schedule", "1"),)),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -7272,7 +7272,7 @@ def test_executor_records_schedule_container_text_target_gap() -> None:
         LegalOperation(
             op_id="uk_test_schedule_container_text_target_gap",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("schedule", "1"), ("part", "2"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -7324,7 +7324,7 @@ def test_executor_records_heading_text_preimage_gap_without_mutating_heading_car
         LegalOperation(
             op_id="uk_test_heading_text_preimage_gap",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "9"),), special=FacetKind.HEADING),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -7385,7 +7385,7 @@ def test_executor_records_text_insert_anchor_preimage_gap_without_inserting_by_g
         LegalOperation(
             op_id="uk_test_text_insert_anchor_preimage_gap",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "14"), ("subsection", "5"), ("paragraph", "b"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -7440,7 +7440,7 @@ def test_executor_records_monetary_amount_preimage_gap_without_substituting_amou
         LegalOperation(
             op_id="uk_test_monetary_amount_preimage_gap",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "4"), ("subsection", "1"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -7493,7 +7493,7 @@ def test_executor_records_parenthetical_omission_preimage_gap_without_deleting_p
         LegalOperation(
             op_id="uk_test_parenthetical_omission_preimage_gap",
             sequence=1,
-            action=StructuralAction.TEXT_REPEAL,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "9"), ("subsection", "1"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.DELETE,
@@ -7556,7 +7556,7 @@ def test_executor_records_citation_connector_surface_gap_without_fuzzy_replace()
         LegalOperation(
             op_id="uk_test_citation_connector_surface_gap",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "39"), ("subsection", "1"), ("paragraph", "b"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -7619,7 +7619,7 @@ def test_executor_records_article_phrase_surface_gap_without_fuzzy_replace() -> 
         LegalOperation(
             op_id="uk_test_article_phrase_surface_gap",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "57"), ("subsection", "3"), ("paragraph", "a"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -7675,7 +7675,7 @@ def test_executor_applies_definition_entry_repeal_without_phrase_deletion() -> N
         LegalOperation(
             op_id="uk_test_definition_entry_repeal",
             sequence=1,
-            action=StructuralAction.TEXT_REPEAL,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "48"), ("subsection", "1"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.DELETE,
@@ -7734,7 +7734,7 @@ def test_executor_applies_definition_entry_repeal_with_qualifier_before_predicat
         LegalOperation(
             op_id="uk_test_definition_entry_qualifier_repeal",
             sequence=1,
-            action=StructuralAction.TEXT_REPEAL,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "31"), ("subsection", "1"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.DELETE,
@@ -7793,7 +7793,7 @@ def test_executor_applies_definition_entry_repeal_with_orphan_separator() -> Non
         LegalOperation(
             op_id="uk_test_definition_entry_orphan_separator_repeal",
             sequence=1,
-            action=StructuralAction.TEXT_REPEAL,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "31"), ("subsection", "1"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.DELETE,
@@ -7852,7 +7852,7 @@ def test_executor_does_not_treat_plain_comma_as_definition_entry_separator() -> 
         LegalOperation(
             op_id="uk_test_definition_entry_plain_comma_repeal",
             sequence=1,
-            action=StructuralAction.TEXT_REPEAL,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "31"), ("subsection", "1"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.DELETE,
@@ -7903,7 +7903,7 @@ def test_executor_records_absent_definition_entry_repeal_without_shape_gap() -> 
         LegalOperation(
             op_id="uk_test_definition_entry_already_absent",
             sequence=1,
-            action=StructuralAction.TEXT_REPEAL,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "28"), ("subsection", "1"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.DELETE,
@@ -7962,7 +7962,7 @@ def test_executor_applies_bilingual_definition_entry_repeal_without_phrase_delet
         LegalOperation(
             op_id="uk_test_bilingual_definition_entry_repeal",
             sequence=1,
-            action=StructuralAction.TEXT_REPEAL,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "45"), ("subsection", "1"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.DELETE,
@@ -8022,7 +8022,7 @@ def test_executor_applies_definition_entry_substitution_without_phrase_deletion(
         LegalOperation(
             op_id="uk_test_definition_entry_substitution",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "42"), ("subsection", "2"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -8085,7 +8085,7 @@ def test_executor_applies_definition_entry_repeal_with_shall_be_construed_predic
         LegalOperation(
             op_id="uk_test_definition_entry_repeal_shall_construed",
             sequence=1,
-            action=StructuralAction.TEXT_REPEAL,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "48"), ("subsection", "1"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.DELETE,
@@ -8143,7 +8143,7 @@ def test_executor_applies_in_definition_after_anchor_insert_without_global_rewri
         LegalOperation(
             op_id="uk_test_in_definition_after_anchor_insert",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "17"), ("subsection", "6"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -8208,7 +8208,7 @@ def test_executor_applies_in_definition_range_to_end_without_global_rewrite() ->
         LegalOperation(
             op_id="uk_test_definition_range_to_end_substitution",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "87"), ("subsection", "1"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -8275,7 +8275,7 @@ def test_executor_applies_in_definition_bounded_range_with_observation() -> None
         LegalOperation(
             op_id="uk_test_definition_bounded_range_substitution",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "82"), ("subsection", "1"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -8359,7 +8359,7 @@ def test_executor_applies_after_definition_insert_to_unique_definition_text_chil
         LegalOperation(
             op_id="uk_test_after_definition_child_insert",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "87"), ("subsection", "1"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -8426,7 +8426,7 @@ def test_executor_records_definition_anchor_education_lexical_variant_recovery()
         LegalOperation(
             op_id="uk_test_definition_anchor_education_variant",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "58"), ("subsection", "1"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -8497,7 +8497,7 @@ def test_executor_applies_after_definition_insert_for_conjoined_qualified_anchor
         LegalOperation(
             op_id="uk_test_after_definition_conjoined_qualified_anchor",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "31"), ("subsection", "1"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -8563,7 +8563,7 @@ def test_executor_does_not_apply_after_definition_insert_for_unbounded_conjoined
         LegalOperation(
             op_id="uk_test_after_definition_unbounded_conjoined_anchor",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "31"), ("subsection", "1"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -8615,7 +8615,7 @@ def test_executor_normalizes_space_before_nested_quote_in_text_match() -> None:
         LegalOperation(
             op_id="uk_test_nested_quote_spacing_text_match",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "50"), ("subsection", "4"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -8676,7 +8676,7 @@ def test_replay_prepare_blocks_same_source_ordinal_patch_overlapping_broader_sel
         LegalOperation(
             op_id="uk_test_overlap_broad_first",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=target,
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -8694,7 +8694,7 @@ def test_replay_prepare_blocks_same_source_ordinal_patch_overlapping_broader_sel
         LegalOperation(
             op_id="uk_test_overlap_short_ordinal",
             sequence=2,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=target,
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -8706,7 +8706,7 @@ def test_replay_prepare_blocks_same_source_ordinal_patch_overlapping_broader_sel
         LegalOperation(
             op_id="uk_test_overlap_broader_nested",
             sequence=3,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=target,
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -8767,7 +8767,7 @@ def test_replay_prepare_allows_same_source_disjoint_ordinal_patch() -> None:
         LegalOperation(
             op_id="uk_test_disjoint_broad_first",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=target,
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -8779,7 +8779,7 @@ def test_replay_prepare_allows_same_source_disjoint_ordinal_patch() -> None:
         LegalOperation(
             op_id="uk_test_disjoint_broad_second",
             sequence=2,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=target,
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -8791,7 +8791,7 @@ def test_replay_prepare_allows_same_source_disjoint_ordinal_patch() -> None:
         LegalOperation(
             op_id="uk_test_disjoint_ordinal",
             sequence=3,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=target,
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -8861,7 +8861,7 @@ def test_replay_prepare_preserves_duplicate_effect_id_structural_ops_with_text_b
         LegalOperation(
             op_id="uk_test_disjoint_ordinal",
             sequence=0,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=target_text,
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -8873,7 +8873,7 @@ def test_replay_prepare_preserves_duplicate_effect_id_structural_ops_with_text_b
         LegalOperation(
             op_id="uk_test_broad_scheme",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=target_text,
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -9005,7 +9005,7 @@ def test_executor_applies_before_definition_insert_at_explicit_definition_anchor
         LegalOperation(
             op_id="uk_test_before_definition_insert",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "17"), ("subsection", "6"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -9068,7 +9068,7 @@ def test_executor_applies_definition_final_punctuation_rewrite_at_named_anchor()
     op = LegalOperation(
         op_id="uk_test_definition_final_punctuation",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "105"), ("subsection", "10"))),
         text_patch=TextPatchSpec(
             kind=TextPatchKindEnum.REPLACE,
@@ -9131,7 +9131,7 @@ def test_executor_applies_before_definition_insert_when_term_has_comma_qualifier
         LegalOperation(
             op_id="uk_test_before_definition_insert_comma_qualifier",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "17"), ("subsection", "6"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -9197,7 +9197,7 @@ def test_executor_blocks_before_definition_insert_when_target_has_children() -> 
         LegalOperation(
             op_id="uk_test_before_definition_insert_with_children",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "17"), ("subsection", "6"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -9256,7 +9256,7 @@ def test_executor_applies_after_definition_insert_to_comma_separated_definition_
         LegalOperation(
             op_id="uk_test_after_definition_insert_comma_list",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "23"), ("subsection", "1"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -9324,7 +9324,7 @@ def test_executor_applies_at_end_definition_insert_to_named_definition_only() ->
         LegalOperation(
             op_id="uk_test_in_definition_at_end_insert",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "23"), ("subsection", "1"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -9389,7 +9389,7 @@ def test_executor_applies_definition_child_repeal_without_bare_term_deletion() -
         LegalOperation(
             op_id="uk_test_definition_child_repeal",
             sequence=1,
-            action=StructuralAction.TEXT_REPEAL,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "42"), ("subsection", "2"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.DELETE,
@@ -9469,7 +9469,7 @@ def test_executor_applies_definition_child_repeal_to_preserved_ordered_list_chil
         LegalOperation(
             op_id="uk_test_definition_child_repeal_preserved_ordered_list",
             sequence=1,
-            action=StructuralAction.TEXT_REPEAL,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "42"), ("subsection", "2"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.DELETE,
@@ -9530,7 +9530,7 @@ def test_executor_applies_definition_child_substitution_inside_definition_entry(
         LegalOperation(
             op_id="uk_test_definition_child_substitution",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "36"), ("subsection", "1"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -9611,7 +9611,7 @@ def test_executor_inserts_source_carried_definition_children_after_anchor() -> N
         LegalOperation(
             op_id="uk_test_source_carried_definition_child_insert",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "82"), ("subsection", "1"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -9696,7 +9696,7 @@ def test_executor_inserts_definition_child_and_appends_anchor_connector() -> Non
         LegalOperation(
             op_id="uk_test_source_carried_definition_child_insert_suffix",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "82"), ("subsection", "1"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -9765,7 +9765,7 @@ def test_executor_scopes_source_carried_anchor_insert_to_definition_entry() -> N
         LegalOperation(
             op_id="uk_test_scoped_definition_anchor_insert",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "82"), ("subsection", "1"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -9833,7 +9833,7 @@ def test_executor_applies_definition_scoped_from_to_range() -> None:
         LegalOperation(
             op_id="uk_test_definition_scoped_from_to_range",
             sequence=1,
-            action=StructuralAction.TEXT_REPEAL,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "82"), ("subsection", "1"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.DELETE,
@@ -9918,7 +9918,7 @@ def test_executor_applies_definition_child_scoped_word_omission() -> None:
         LegalOperation(
             op_id="uk_test_definition_child_scoped_word_omission",
             sequence=1,
-            action=StructuralAction.TEXT_REPEAL,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "82"), ("subsection", "1"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.DELETE,
@@ -9983,7 +9983,7 @@ def test_executor_applies_definition_child_scoped_word_omission_to_flat_entry() 
         LegalOperation(
             op_id="uk_test_definition_child_scoped_word_omission_flat",
             sequence=1,
-            action=StructuralAction.TEXT_REPEAL,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "82"), ("subsection", "1"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.DELETE,
@@ -10067,7 +10067,7 @@ def test_executor_applies_definition_child_scoped_after_insert_to_structured_ent
         LegalOperation(
             op_id="uk_test_definition_child_scoped_after_insert_structured",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "48"),)),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -10145,7 +10145,7 @@ def test_executor_applies_definition_child_scoped_at_end_insert_to_structured_en
         LegalOperation(
             op_id="uk_test_definition_child_scoped_at_end_insert_structured",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "48"),)),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -10216,7 +10216,7 @@ def test_executor_applies_definition_child_scoped_after_insert_to_flat_entry() -
         LegalOperation(
             op_id="uk_test_definition_child_scoped_after_insert_flat",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "48"),)),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -10295,7 +10295,7 @@ def test_executor_deletes_source_carried_child_tail_from_collapsed_parent_text()
         LegalOperation(
             op_id="uk_test_source_carried_child_tail_repeal",
             sequence=1,
-            action=StructuralAction.TEXT_REPEAL,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "21"), ("subsection", "5"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.DELETE,
@@ -10357,7 +10357,7 @@ def test_executor_replaces_source_carried_child_tail_in_collapsed_parent_text() 
         LegalOperation(
             op_id="uk_test_source_carried_child_tail_substitution",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "224"), ("subsection", "1"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -10414,7 +10414,7 @@ def test_executor_replaces_source_carried_child_tail_when_tail_is_not_connector_
         LegalOperation(
             op_id="uk_test_source_carried_child_tail_substitution_non_connector_tail",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "224"), ("subsection", "1"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -10472,7 +10472,7 @@ def test_executor_rejects_child_tail_delete_when_anchor_is_not_last_child() -> N
         LegalOperation(
             op_id="uk_test_source_carried_child_tail_repeal_not_last",
             sequence=1,
-            action=StructuralAction.TEXT_REPEAL,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "21"), ("subsection", "5"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.DELETE,
@@ -10526,7 +10526,7 @@ def test_executor_deletes_source_carried_child_list_tail_from_collapsed_parent_t
         LegalOperation(
             op_id="uk_test_source_carried_child_list_tail_repeal",
             sequence=1,
-            action=StructuralAction.TEXT_REPEAL,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "9"), ("subsection", "3"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.DELETE,
@@ -10585,7 +10585,7 @@ def test_executor_rejects_child_list_tail_delete_when_final_child_is_not_in_list
         LegalOperation(
             op_id="uk_test_source_carried_child_list_tail_repeal_blocked",
             sequence=1,
-            action=StructuralAction.TEXT_REPEAL,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "9"), ("subsection", "3"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.DELETE,
@@ -10650,7 +10650,7 @@ def test_executor_deletes_source_carried_subparagraph_tail_from_collapsed_parent
         LegalOperation(
             op_id="uk_test_source_carried_subparagraph_tail_repeal",
             sequence=1,
-            action=StructuralAction.TEXT_REPEAL,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "9"), ("subsection", "3"), ("paragraph", "a"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.DELETE,
@@ -10722,7 +10722,7 @@ def test_executor_rejects_subparagraph_tail_delete_when_anchor_is_not_last_child
         LegalOperation(
             op_id="uk_test_source_carried_subparagraph_tail_repeal_not_last",
             sequence=1,
-            action=StructuralAction.TEXT_REPEAL,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "9"), ("subsection", "3"), ("paragraph", "a"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.DELETE,
@@ -10781,7 +10781,7 @@ def test_executor_deletes_source_carried_multi_subunit_text_only_from_named_chil
         LegalOperation(
             op_id="uk_test_source_carried_multi_subunit_repeal",
             sequence=1,
-            action=StructuralAction.TEXT_REPEAL,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "22"),)),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.DELETE,
@@ -10840,7 +10840,7 @@ def test_executor_replaces_source_carried_multi_subunit_text_only_in_named_child
         LegalOperation(
             op_id="uk_test_source_carried_multi_subunit_substitution",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "285"),)),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -10893,7 +10893,7 @@ def test_executor_rejects_multi_subunit_text_delete_when_named_child_missing() -
         LegalOperation(
             op_id="uk_test_source_carried_multi_subunit_missing_child",
             sequence=1,
-            action=StructuralAction.TEXT_REPEAL,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "22"),)),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.DELETE,
@@ -10946,7 +10946,7 @@ def test_executor_rewrites_inserted_payload_of_target_amendment_instruction() ->
         LegalOperation(
             op_id="uk_test_amendment_inserted_text_substitution",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("schedule", "5"), ("paragraph", "17"), ("item", "a"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -11007,7 +11007,7 @@ def test_executor_rejects_inserted_payload_rewrite_without_insert_verb() -> None
         LegalOperation(
             op_id="uk_test_amendment_inserted_text_substitution_no_insert",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("schedule", "5"), ("paragraph", "17"), ("item", "a"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -11057,7 +11057,7 @@ def test_executor_occurrence_text_replacements_preserve_later_occurrences() -> N
             LegalOperation(
                 op_id=f"uk_test_first_second_occurrence_{occurrence}",
                 sequence=sequence,
-                action=StructuralAction.TEXT_REPLACE,
+                action=StructuralAction.TEXT_PATCH,
                 target=target,
                 text_patch=TextPatchSpec(
                     kind=TextPatchKindEnum.REPLACE,
@@ -11108,7 +11108,7 @@ def test_executor_zero_occurrence_text_replacement_updates_all_matches() -> None
         LegalOperation(
             op_id="uk_test_all_occurrences_grouped_after_insert",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "138"), ("subsection", "1"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -11151,7 +11151,7 @@ def test_executor_final_occurrence_text_repeal_preserves_earlier_occurrences() -
         LegalOperation(
             op_id="uk_test_final_and_omission",
             sequence=1,
-            action=StructuralAction.TEXT_REPEAL,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "1"),)),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -11200,7 +11200,7 @@ def test_executor_does_not_definition_entry_repeal_bare_phrase_occurrence() -> N
         LegalOperation(
             op_id="uk_test_definition_entry_repeal_negative",
             sequence=1,
-            action=StructuralAction.TEXT_REPEAL,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "48"), ("subsection", "1"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.DELETE,
@@ -11243,7 +11243,7 @@ def test_executor_classifies_broad_schedule_text_miss_without_table_shape() -> N
         LegalOperation(
             op_id="uk_test_broad_schedule_table_shape_gap",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("schedule", "1"),)),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -11290,7 +11290,7 @@ def test_executor_classifies_broad_schedule_part_text_miss_without_table_shape()
         LegalOperation(
             op_id="uk_test_broad_schedule_part_table_shape_gap",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("schedule", "2"), ("part", "3"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -11336,7 +11336,7 @@ def test_executor_records_paragraph_schedule_monetary_amount_preimage_gap() -> N
         LegalOperation(
             op_id="uk_test_broad_schedule_paragraph_text_miss",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("schedule", "1"),)),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -11382,7 +11382,7 @@ def test_executor_records_text_target_empty_surface_gap() -> None:
         LegalOperation(
             op_id="uk_test_text_target_empty_surface_gap",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "1"), ("subsection", "1"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,

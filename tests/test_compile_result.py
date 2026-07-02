@@ -1880,7 +1880,7 @@ class TestStrictFailReasonsFromFindingLedger:
                 LegalOperation(
                     op_id="op",
                     sequence=1,
-                    action=StructuralAction.TEXT_REPLACE,
+                    action=StructuralAction.TEXT_PATCH,
                     target=LegalAddress(path=(("section", "1"),)),
                 ),
             ),

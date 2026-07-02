@@ -843,7 +843,7 @@ def test_parse_corrigendum_populates_structured_text_replace_fields() -> None:
     ops = corr.parse_corrigendum(pdf_text, "442/2016")
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "väärä teksti"
     assert ops[0].text_patch.replacement == "oikea teksti"

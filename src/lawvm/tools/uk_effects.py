@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, Iterable, Mapping, NamedTuple, Optional
 from lawvm.core.agreement_residual import AgreementResidual, AgreementResidualFamily
 from lawvm.core.compile_records import CompileRecord, is_blocking_compile_record
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
+from lawvm.core.semantic_types import legacy_text_action_value
 from lawvm.core.source_witness import (
     source_witness_digest_coverage,
     source_witness_role_key,
@@ -544,7 +545,7 @@ def summarize_uk_effect(
     oracle_has_text = False
     oracle_has_children = False
     for op in ops:
-        op_actions.append(op.action.value)
+        op_actions.append(legacy_text_action_value(op))
         if op.payload is not None and op.payload.text:
             payload_texts.append(op.payload.text)
         if op.text_patch is not None:
@@ -1818,7 +1819,7 @@ def _compiled_text_patch_evidence(ops: Iterable[Any]) -> tuple[dict[str, Any], .
             continue
         row = {
             "op_id": str(op.op_id),
-            "action": str(op.action.value),
+            "action": legacy_text_action_value(op),
             "target": _format_legal_address_path(op.target),
             "patch_kind": str(patch.kind.value),
             "match_text": str(patch.selector.match_text),

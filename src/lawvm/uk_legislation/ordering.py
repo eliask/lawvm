@@ -11,9 +11,8 @@ from lawvm.core.cross_act_same_moment import (
 )
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.ir import LegalOperation
-from lawvm.core.semantic_types import TextPatchKindEnum
+from lawvm.core.semantic_types import TextPatchKindEnum, legacy_text_action_value
 from lawvm.roman import roman_to_arabic as _shared_roman_to_arabic
-from lawvm.uk_legislation.addressing import _action_name
 from lawvm.uk_legislation.effects import STRUCTURAL_EFFECT_TYPES, UKEffectRecord
 from lawvm.uk_legislation.uk_grafter import _clean_num
 
@@ -555,7 +554,7 @@ def _emit_uk_same_moment_cross_act_conflict_findings(
 
 
 def _text_replace_preimage_chain_key(op: LegalOperation) -> Optional[tuple[str, str]]:
-    if _action_name(op.action) != "text_replace" or op.text_patch is None:
+    if legacy_text_action_value(op) != "text_replace" or op.text_patch is None:
         return None
     if op.text_patch.kind is not TextPatchKindEnum.REPLACE:
         return None

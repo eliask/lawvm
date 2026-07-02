@@ -2981,7 +2981,7 @@ def test_compile_se_official_act_ops_replays_word_substitution_sections() -> Non
     replayed = apply_se_ops(statute, ops)
     section_map = se_section_text_map(replayed)
 
-    assert [op.action.value for op in ops] == ["text_replace", "text_replace"]
+    assert [op.action.value for op in ops] == ["text_patch", "text_patch"]
     assert [op.target.leaf_label() for op in ops] == ["2", "6"]
     assert all(op.text_patch is not None for op in ops)
     assert all(op.text_patch is not None for op in ops)
@@ -3246,7 +3246,7 @@ def test_apply_se_ops_records_replay_failures_as_adjudications() -> None:
         LegalOperation(
             op_id="unsupported-section-action",
             sequence=5,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "2"),)),
             payload=IRNode(kind=IRNodeKind.SECTION, label="2", text="Ny text."),
             source=OperationSource(statute_id="2026:999"),
@@ -4329,7 +4329,7 @@ def test_sweden_legal_operation_roundtrips_typed_text_patch() -> None:
     op = LegalOperation(
         op_id="se-text-patch",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "1"),)),
         text_patch=TextPatchSpec(
             kind=TextPatchKindEnum.REPLACE,

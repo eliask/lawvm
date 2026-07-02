@@ -235,7 +235,7 @@ def _text_replace_operation(
     return LegalOperation(
         op_id=f"nz:{_WORK_ID}:nz-opw-1:text_replace",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "108"), ("subsection", "1"))),
         payload=None,
         text_patch=TextPatchSpec(
@@ -263,7 +263,7 @@ def _text_replace_row(
         operation_row_id="nz-opw-1",
         effect_readiness_row_id="nz-readiness-1",
         candidate_status="candidate_emitted",
-        action=str(StructuralAction.TEXT_REPLACE),
+        action=str(StructuralAction.TEXT_PATCH),
         target_address="section:108/subsection:1",
         operation=operation
         if operation is not None
@@ -333,7 +333,7 @@ def test_text_replace_applies_substitution_and_agrees_with_oracle() -> None:
     assert summary["dry_run_claims"] is True
 
     proof = report.proofs[0]
-    assert proof.action == str(StructuralAction.TEXT_REPLACE)
+    assert proof.action == str(StructuralAction.TEXT_PATCH)
     assert proof.selected_source_path == ("prov:108", "subprov:1")
     # Boring kernel: node stays substantive and addressable; only text changed.
     assert proof.occupancy_before == "substantive"
@@ -407,7 +407,7 @@ def test_text_replace_omit_only_deletion_applies_and_agrees() -> None:
     assert summary["dry_run_oracle_residuals"] == 0
 
     proof = report.proofs[0]
-    assert proof.action == str(StructuralAction.TEXT_REPLACE)
+    assert proof.action == str(StructuralAction.TEXT_PATCH)
     assert proof.text_old_occurrences_before == 1
     assert proof.text_old_occurrences_after == 0
     assert proof.oracle_match == "agrees"

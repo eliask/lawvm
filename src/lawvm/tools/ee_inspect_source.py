@@ -95,6 +95,7 @@ def _build_ee_inspect_source_payload(
         fetch_rt_xml,
         open_rt_archive,
     )
+    from lawvm.core.semantic_types import legacy_text_action_value
     from lawvm.estonia.grafter import parse_ee_amendment_ops, parse_ee_statute
 
     archive = open_rt_archive()
@@ -121,7 +122,7 @@ def _build_ee_inspect_source_payload(
 
     op_rows = []
     for op in ops[: max(op_limit, 0)]:
-        action = op.action.value if hasattr(op.action, "value") else str(op.action)
+        action = legacy_text_action_value(op)
         row: dict[str, Any] = {
             "sequence": op.sequence,
             "action": action,

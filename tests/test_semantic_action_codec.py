@@ -175,7 +175,7 @@ def test_structural_action_from_str_raises_on_unknown_action_string() -> None:
     # Known boundary strings map to their singleton members.
     assert (
         structural_action_from_str("text_replace", on_unknown="raise")
-        is StructuralAction.TEXT_REPLACE
+        is StructuralAction.TEXT_PATCH
     )
     assert (
         structural_action_from_str("heading_replace", on_unknown="raise")
@@ -259,7 +259,7 @@ def test_uk_legislation_lowering_to_structural_action_fires_loud_on_unknown() ->
     # A known string round-trips to the typed enum.
     assert (
         uk_lowering_actions._to_structural_action("text_repeal")
-        is StructuralAction.TEXT_REPEAL
+        is StructuralAction.TEXT_PATCH
     )
 
 

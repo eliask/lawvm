@@ -91,7 +91,7 @@ def _text_replace_op_targeting_section_1(op_id: str = "ee/op/test/1") -> LegalOp
     return LegalOperation(
         op_id=op_id,
         sequence=0,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("chapter", "1"), ("section", "1"))),
         source=OperationSource(statute_id="ee/boundary/1"),
     )
@@ -213,7 +213,7 @@ class TestEEMutationBoundaryProbe:
         op = LegalOperation(
             op_id="ee/op/recovery/retarget",
             sequence=0,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "1"), ("item", "6"))),
             source=OperationSource(statute_id="ee/boundary/recovery"),
         )
@@ -346,7 +346,7 @@ class TestEEMutationBoundaryProbe:
         op = LegalOperation(
             op_id="ee/op/smoke/1",
             sequence=0,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("chapter", "1"), ("section", "1"))),
             payload=IRNode(kind=IRNodeKind.SECTION, label="1", text="rewritten"),
             source=OperationSource(statute_id="ee/boundary/smoke"),

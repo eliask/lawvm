@@ -103,7 +103,7 @@ def test_text_amend_in_clause_ast():
     text_amends = [n for n in all_nodes if isinstance(n, ClauseASTTextAmend)]
     assert len(text_amends) >= 1
     ta = text_amends[0]
-    assert ta.action == StructuralAction.TEXT_REPLACE
+    assert ta.action == StructuralAction.TEXT_PATCH
     assert ta.text_patch is not None
     assert ta.text_patch.selector.match_text == "lääninhallitus"
     assert ta.text_patch.replacement == "aluehallintovirasto"

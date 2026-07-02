@@ -947,7 +947,7 @@ def try_lower_schedule_list_entry_mutation(
         connector_witness = UKLoweredOperationWitness(
             op_id=f"{effect.effect_id}_connector_preceding_child",
             sequence=sequence,
-            action=StructuralAction.TEXT_REPEAL,
+            action=StructuralAction.TEXT_PATCH,
             target=target,
             payload=None,
             source=src,

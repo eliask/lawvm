@@ -9,6 +9,7 @@ from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.quirks_disposition import coerce_quirks_disposition
 from lawvm.core.compile_records import CompileRecord, is_blocking_compile_record
 from lawvm.core.ir import IRNode, LegalOperation
+from lawvm.core.semantic_types import legacy_text_action_value
 from lawvm.uk_legislation.addressing import _action_name
 from lawvm.uk_legislation.execution_authorization import (
     uk_execution_authorization_from_manual_frontier,
@@ -811,7 +812,7 @@ def append_replay_applicability_filter_diagnostic(
             blocking=False,
             compiled_op_count=len(compiled_ops),
             compiled_op_ids=[str(op.op_id or "") for op in compiled_ops],
-            compiled_op_actions=[_action_name(op.action) for op in compiled_ops],
+            compiled_op_actions=[legacy_text_action_value(op) for op in compiled_ops],
             structural_for_replay=structural_for_replay,
             replay_applicable=replay_applicable,
             nonstructural_replay_family=uk_nonstructural_replay_candidate_family(

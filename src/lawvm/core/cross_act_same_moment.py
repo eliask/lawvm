@@ -130,7 +130,7 @@ from typing import Any, Callable, NamedTuple, Optional, Sequence, TypeVar
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.ir import LegalOperation
 from lawvm.core.regex_safety import compile_classifier_regex
-from lawvm.core.semantic_types import StructuralAction
+from lawvm.core.semantic_types import StructuralAction, legacy_text_action_value
 from lawvm.replay_adjudication import CompileAdjudication
 
 # Record-shape generic for the shared same-moment grouping algorithm. The op
@@ -190,8 +190,7 @@ DEFAULT_UNPROVEN_RESOLUTION_LABEL = "sequence_order_unproven"
 # ``_EE_WHOLE_TARGET_STRUCTURAL_ACTIONS`` complement).
 DEFAULT_FRAGMENT_ACTIONS: frozenset[StructuralAction] = frozenset(
     {
-        StructuralAction.TEXT_REPLACE,
-        StructuralAction.TEXT_REPEAL,
+        StructuralAction.TEXT_PATCH,
         StructuralAction.HEADING_REPLACE,
         StructuralAction.META,
         StructuralAction.INSERT,
@@ -317,8 +316,15 @@ class _SameMomentTargetKey(NamedTuple):
 
 
 def _action_value(op: LegalOperation) -> str:
-    """Return the canonical string for an op's action, enum or string either way."""
+    """Return the canonical string for an op's action, enum or string either way.
+
+    Routes a collapsed ``TEXT_PATCH`` action (§2.1 O6) back through
+    ``legacy_text_action_value`` so a same-moment ``conflicting_ops`` detail keeps
+    reporting ``"text_replace"`` / ``"text_repeal"`` byte-identically.
+    """
     action = op.action
+    if isinstance(action, StructuralAction):
+        return legacy_text_action_value(op)
     if hasattr(action, "value"):
         return str(action.value or "")
     return str(action or "")

@@ -686,7 +686,7 @@ def test_parse_no_amendment_ops_unstructured_supports_global_text_replace_clause
 
     ops = parse_no_amendment_ops(amendment_xml, "no/lovtid/2022-06-10-39")
 
-    text_ops = [op for op in ops if op.action is StructuralAction.TEXT_REPLACE]
+    text_ops = [op for op in ops if op.action is StructuralAction.TEXT_PATCH]
     assert len(text_ops) == 4
     assert {op.source.title for op in text_ops if op.source is not None} == {
         "no/lov/2003-07-04-84",
@@ -854,7 +854,7 @@ def test_apply_no_ops_supports_global_text_replace() -> None:
         LegalOperation(
             op_id="no/lovtid/2022-06-10-39:1",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=()),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -888,7 +888,7 @@ def test_apply_no_ops_supports_typed_text_patch() -> None:
         LegalOperation(
             op_id="no/lovtid/2022-06-10-39:1",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=()),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -3894,7 +3894,12 @@ def test_apply_no_ops_collects_unsupported_action() -> None:
     op = LegalOperation(
         op_id="unsupported-text-repeal",
         sequence=1,
-        action=StructuralAction.TEXT_REPEAL,
+        action=StructuralAction.TEXT_PATCH,
+        # DELETE-kind = the former TEXT_REPEAL (§2.1 O6); NO does not support it.
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.DELETE,
+            selector=TextSelector(match_text="x"),
+        ),
         target=LegalAddress(path=(("section", "1"),)),
         source=source,
     )

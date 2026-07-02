@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from typing import Any, Optional
 
 from lawvm.core.ir import LegalOperation
+from lawvm.core.semantic_types import StructuralAction
 from lawvm.uk_legislation.addressing import _action_name
 from lawvm.uk_legislation.effects import (
     UKEffectRecord,
@@ -140,7 +141,7 @@ def should_replay_nonstructural_ops(
         )
     if effect_type == "amended":
         return bool(compiled_ops) and all(
-            _action_name(op.action) in {"text_replace", "text_repeal"}
+            op.action is StructuralAction.TEXT_PATCH
             for op in compiled_ops
         )
     return False

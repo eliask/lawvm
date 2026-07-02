@@ -85,7 +85,7 @@ def _op(
     return LegalOperation(
         op_id=op_id,
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(
             path=(
                 ("title", "10"),

@@ -15,8 +15,15 @@ from __future__ import annotations
 
 import pytest
 
-from lawvm.core.ir import IRNode, LegalAddress, LegalOperation, StructuralAction
-from lawvm.core.semantic_types import IRNodeKind
+from lawvm.core.ir import (
+    IRNode,
+    LegalAddress,
+    LegalOperation,
+    StructuralAction,
+    TextPatchSpec,
+    TextSelector,
+)
+from lawvm.core.semantic_types import IRNodeKind, TextPatchKindEnum
 from lawvm.finland.ops import (
     AmendmentOp,
     FinlandRepealPayloadError,
@@ -48,12 +55,20 @@ def _tombstone_payload() -> IRNode:
 
 
 def _repeal_lo(payload: IRNode | None, *, action: StructuralAction = StructuralAction.REPEAL) -> LegalOperation:
+    # A TEXT_PATCH action IS the text patch (§2.1 O6); the DELETE kind is the
+    # former TEXT_REPEAL that the FI repeal-payload invariant gates on.
+    text_patch = (
+        TextPatchSpec(kind=TextPatchKindEnum.DELETE, selector=TextSelector(match_text="x"))
+        if action is StructuralAction.TEXT_PATCH
+        else None
+    )
     return LegalOperation(
         op_id="repeal_5",
         sequence=0,
         action=action,
         target=_section_target(),
         payload=payload,
+        text_patch=text_patch,
     )
 
 
@@ -69,7 +84,7 @@ def test_repeal_with_tombstone_payload_is_accepted() -> None:
 
 
 def test_text_repeal_with_none_payload_is_accepted() -> None:
-    validate_fi_repeal_payload(_repeal_lo(None, action=StructuralAction.TEXT_REPEAL))
+    validate_fi_repeal_payload(_repeal_lo(None, action=StructuralAction.TEXT_PATCH))
 
 
 def test_repeal_with_substantive_payload_raises() -> None:
@@ -85,7 +100,7 @@ def test_repeal_with_substantive_payload_raises() -> None:
 def test_text_repeal_with_substantive_payload_raises() -> None:
     with pytest.raises(FinlandRepealPayloadError):
         validate_fi_repeal_payload(
-            _repeal_lo(_substantive_payload(), action=StructuralAction.TEXT_REPEAL)
+            _repeal_lo(_substantive_payload(), action=StructuralAction.TEXT_PATCH)
         )
 
 

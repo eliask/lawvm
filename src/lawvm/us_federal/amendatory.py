@@ -3835,7 +3835,7 @@ def _lower_instruction(
                     # survives (the op is a bounded deletion, not a to-end cut).
                     old, end, new = quoted[0], quoted[1], quoted[2]
                     op = _make_op(
-                        StructuralAction.TEXT_REPLACE,
+                        StructuralAction.TEXT_PATCH,
                         rule_id=RULE_STRIKE_INSERT_THROUGH_TAIL,
                         text_patch=TextPatchSpec(
                             kind=TextPatchKindEnum.REPLACE,
@@ -3853,7 +3853,7 @@ def _lower_instruction(
                 elif through_match is None and len(quoted) >= 2:
                     old, new = quoted[0], quoted[1]
                     op = _make_op(
-                        StructuralAction.TEXT_REPLACE,
+                        StructuralAction.TEXT_PATCH,
                         rule_id=RULE_STRIKE_INSERT_TAIL,
                         text_patch=TextPatchSpec(
                             kind=TextPatchKindEnum.REPLACE,
@@ -3902,7 +3902,7 @@ def _lower_instruction(
                     old = quoted[0]
                     new = payload_node.text or ""
                     op = _make_op(
-                        StructuralAction.TEXT_REPLACE,
+                        StructuralAction.TEXT_PATCH,
                         rule_id=RULE_STRIKE_INSERT_TAIL,
                         text_patch=TextPatchSpec(
                             kind=TextPatchKindEnum.REPLACE,
@@ -3926,7 +3926,7 @@ def _lower_instruction(
         elif len(quoted) >= 2:
             old, new = quoted[0], quoted[1]
             op = _make_op(
-                StructuralAction.TEXT_REPLACE,
+                StructuralAction.TEXT_PATCH,
                 rule_id=RULE_STRIKE_INSERT,
                 text_patch=TextPatchSpec(
                     kind=TextPatchKindEnum.REPLACE,
@@ -4054,7 +4054,7 @@ def _lower_instruction(
                     path=(*address.path, (sub_kind.lower(), sub_label))
                 )
             op = _make_op(
-                StructuralAction.TEXT_REPLACE,
+                StructuralAction.TEXT_PATCH,
                 rule_id=RULE_STRIKE_INSERT_END_PUNCT,
                 text_patch=TextPatchSpec(
                     kind=TextPatchKindEnum.REPLACE,
@@ -4082,7 +4082,7 @@ def _lower_instruction(
             new_char = _punctuation_word_to_char(m.group("ins_word"))
             if new_char is not None:
                 op = _make_op(
-                    StructuralAction.TEXT_REPLACE,
+                    StructuralAction.TEXT_PATCH,
                     rule_id=RULE_STRIKE_INSERT_PUNCT_WORD,
                     text_patch=TextPatchSpec(
                         kind=TextPatchKindEnum.REPLACE,
@@ -4126,7 +4126,7 @@ def _lower_instruction(
                 where = m.group("where")
                 replacement = ins + punct if where == "before" else punct + ins
                 op = _make_op(
-                    StructuralAction.TEXT_REPLACE,
+                    StructuralAction.TEXT_PATCH,
                     rule_id=RULE_INSERT_END_PUNCT,
                     text_patch=TextPatchSpec(
                         kind=TextPatchKindEnum.REPLACE,
@@ -4165,7 +4165,7 @@ def _lower_instruction(
         elif _THROUGH_TAIL_STRIKE_RE.search(raw_text) and len(quoted) >= 2:
             old, end = quoted[0], quoted[1]
             op = _make_op(
-                StructuralAction.TEXT_REPEAL,
+                StructuralAction.TEXT_PATCH,
                 rule_id=RULE_STRIKE_INSERT_THROUGH_TAIL,
                 text_patch=TextPatchSpec(
                     kind=TextPatchKindEnum.DELETE,
@@ -4186,7 +4186,7 @@ def _lower_instruction(
             )
         elif quoted:
             op = _make_op(
-                StructuralAction.TEXT_REPEAL,
+                StructuralAction.TEXT_PATCH,
                 rule_id=RULE_STRIKE,
                 text_patch=TextPatchSpec(
                     kind=TextPatchKindEnum.DELETE,
@@ -4268,7 +4268,7 @@ def _lower_instruction(
                 # following: '(a) Design of Programs.—'"); PL 110-254
                 # ("by striking the following: 'CHAPTER 1201—[RESERVED]'").
                 op = _make_op(
-                    StructuralAction.TEXT_REPEAL,
+                    StructuralAction.TEXT_PATCH,
                     rule_id=RULE_STRIKE,
                     text_patch=TextPatchSpec(
                         kind=TextPatchKindEnum.DELETE,
@@ -4390,7 +4390,7 @@ def _lower_instruction(
                 replacement = _join_insert_after(anchor_text, new_text)
                 rule_id = RULE_INSERT_AFTER
             op = _make_op(
-                StructuralAction.TEXT_REPLACE,
+                StructuralAction.TEXT_PATCH,
                 rule_id=rule_id,
                 text_patch=TextPatchSpec(
                     kind=TextPatchKindEnum.REPLACE,
@@ -4506,7 +4506,7 @@ def _lower_instruction(
                     replacement = _join_insert_after(anchor_text, punct_char)
                     rule_id = RULE_INSERT_AFTER
                 op = _make_op(
-                    StructuralAction.TEXT_REPLACE,
+                    StructuralAction.TEXT_PATCH,
                     rule_id=RULE_INSERT_PUNCT_WORD_ANCHOR,
                     text_patch=TextPatchSpec(
                         kind=TextPatchKindEnum.REPLACE,
@@ -4544,7 +4544,7 @@ def _lower_instruction(
             replacement = _join_insert_after(anchor_text, ins_text)
             rule_id = RULE_INSERT_AFTER
             op = _make_op(
-                StructuralAction.TEXT_REPLACE,
+                StructuralAction.TEXT_PATCH,
                 rule_id=rule_id,
                 text_patch=TextPatchSpec(
                     kind=TextPatchKindEnum.REPLACE,

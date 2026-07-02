@@ -2024,7 +2024,7 @@ def _build_repeal_table_text_ops(
                 else f"{effect.effect_id}{op_id_suffix}_{original_index}"
             ),
             sequence=sequence,
-            action=StructuralAction.TEXT_REPEAL,
+            action=StructuralAction.TEXT_PATCH,
             target=target,
             payload=None,
             source=src,
@@ -2038,7 +2038,7 @@ def _build_repeal_table_text_ops(
             LegalOperation(
                 op_id=lowered_witness.op_id,
                 sequence=lowered_witness.sequence,
-                action=StructuralAction.TEXT_REPEAL,
+                action=StructuralAction.TEXT_PATCH,
                 target=target,
                 payload=None,
                 source=src,

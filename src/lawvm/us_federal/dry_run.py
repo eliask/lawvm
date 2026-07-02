@@ -2024,7 +2024,7 @@ def _materialize_one(
     op_id = operation.op_id
     is_subsection = _is_subsection_target(operation.target)
 
-    if action in (StructuralAction.TEXT_REPLACE, StructuralAction.TEXT_REPEAL):
+    if action is StructuralAction.TEXT_PATCH:
         patch = operation.text_patch
         if patch is None:
             return USDryRunRefusal(

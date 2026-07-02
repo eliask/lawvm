@@ -76,16 +76,16 @@ def build_se_totalization_table() -> TotalizationTable:
             ),
             # TEXT_REPLACE selector finds no match in the target subtree
             # (grafter.py:3998 se_replay_text_replace_no_match).
-            (StructuralAction.TEXT_REPLACE, FailureClass.SELECTOR_NO_MATCH): Reject(
+            (StructuralAction.TEXT_PATCH, FailureClass.SELECTOR_NO_MATCH): Reject(
                 "se_replay_text_replace_no_match"
             ),
             # TEXT_REPLACE target not found (grafter.py:3938/3953).
-            (StructuralAction.TEXT_REPLACE, FailureClass.TARGET_ABSENT): Reject(
+            (StructuralAction.TEXT_PATCH, FailureClass.TARGET_ABSENT): Reject(
                 "se_replay_target_not_found"
             ),
             # TEXT_REPLACE with a null patch / missing old/new text
             # (grafter.py:3963/3978).
-            (StructuralAction.TEXT_REPLACE, FailureClass.PAYLOAD_MISSING): Reject(
+            (StructuralAction.TEXT_PATCH, FailureClass.PAYLOAD_MISSING): Reject(
                 "se_replay_payload_missing"
             ),
             # A content-identical REPLACE / TEXT_REPLACE / INSERT — the op
@@ -95,7 +95,7 @@ def build_se_totalization_table() -> TotalizationTable:
             (StructuralAction.REPLACE, FailureClass.CONTENT_IDENTICAL): NoopIdempotent(
                 "se_replay_noop"
             ),
-            (StructuralAction.TEXT_REPLACE, FailureClass.CONTENT_IDENTICAL): NoopIdempotent(
+            (StructuralAction.TEXT_PATCH, FailureClass.CONTENT_IDENTICAL): NoopIdempotent(
                 "se_replay_noop"
             ),
         },

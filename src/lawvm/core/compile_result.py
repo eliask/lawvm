@@ -1292,7 +1292,7 @@ def strict_fail_reasons_from_finding_ledger(
             triggered.add("APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED")
 
     if any(
-        op.action in {StructuralAction.TEXT_REPLACE, StructuralAction.TEXT_REPEAL}
+        op.action is StructuralAction.TEXT_PATCH
         for op in canonical_ops_list
     ):
         triggered.add("APPLY.WORD_SUBSTITUTION")

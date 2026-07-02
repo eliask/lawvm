@@ -8,9 +8,8 @@ from dataclasses import dataclass, replace as dc_replace
 from typing import Any, Optional
 
 from lawvm.core.ir import LegalOperation
-from lawvm.core.semantic_types import StructuralAction
+from lawvm.core.semantic_types import StructuralAction, legacy_text_action_value
 from lawvm.uk_legislation.addressing import (
-    _action_name,
     _addr_leaf_label,
     _uk_canonicalize_eid_letter_case,
 )
@@ -423,7 +422,7 @@ def _withhold_repeal_table_replacement_ops(
             "withheld_ops": tuple(
                 {
                     "op_id": str(op.op_id or ""),
-                    "action": _action_name(op.action),
+                    "action": legacy_text_action_value(op),
                     "target": str(op.target or ""),
                 }
                 for op in structural_replaces

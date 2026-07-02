@@ -1401,8 +1401,7 @@ def _derive_parsed_ops_from_ast(clause_ast: ClauseAST) -> list[ParsedOp]:
         StructuralAction.RENUMBER: "S",
         StructuralAction.HEADING_REPLACE: "M",
         StructuralAction.META: "M",
-        StructuralAction.TEXT_REPLACE: "M",
-        StructuralAction.TEXT_REPEAL: "M",
+        StructuralAction.TEXT_PATCH: "M",
     }
     for vg in clause_ast.verb_groups:
         # VerbGroup.verb is a shared StructuralAction enum.

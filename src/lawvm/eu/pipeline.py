@@ -20,6 +20,7 @@ from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.filter_result import FilterResult, RejectedItem
 from lawvm.core.invariant_profiles import CORE_REPLAY_DELTA_MINIMAL_FAMILIES
 from lawvm.core.ir import IRNode, IRStatute, LegalAddress, LegalOperation, OperationSource, StructuralAction
+from lawvm.core.semantic_types import legacy_text_action_value
 from lawvm.core.ir_helpers import structural_subtree_hash
 from lawvm.core.mutation_boundary import TreePath, TreePaths, diff_ir_paths_identity_pruned
 from lawvm.core.temporal import TemporalEvent
@@ -431,7 +432,7 @@ def apply_eu_ops(
         _eu_op_applied = False
         target = _map_address(op.target)
         path_steps = list(target.path)
-        action = op.action.value if hasattr(op.action, "value") else op.action
+        action = legacy_text_action_value(op)
 
         def _mark_applied() -> None:
             nonlocal applied, _eu_op_applied
@@ -1103,7 +1104,7 @@ def _eu_emit_one_op_receipt(
         # carry the witness instead.
         return None
 
-    action_value = op.action.value if op.action else "unknown"
+    action_value = legacy_text_action_value(op) if op.action else "unknown"
     leaf_kind = op.target.leaf_kind() or "unknown"
     helper = f"apply_eu_ops::{action_value}::{leaf_kind}"
     bound_target_path = _eu_legal_path_to_tree_path(op.target)

@@ -84,7 +84,15 @@ from lawvm.core.mutation_boundary import (
     diff_ir_paths_identity_pruned,
     unexplained_changed_paths,
 )
-from lawvm.core.semantic_types import FacetKind, IRNodeKind, StructuralAction, TextPatchKindEnum
+from lawvm.core.semantic_types import (
+    FacetKind,
+    IRNodeKind,
+    StructuralAction,
+    TextPatchKindEnum,
+    is_text_patch_replace,
+    legacy_text_action_value,
+    structural_action_from_str,
+)
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.sweden.mutation_boundary_per_op_probe import (
     drain_seam_boundary_observations as _se_drain_seam_boundary_observations,
@@ -959,7 +967,10 @@ def se_legal_operation_to_dict(op: LegalOperation) -> dict[str, Any]:
 
 def se_legal_operation_from_dict(data: dict[str, Any]) -> LegalOperation:
     action_str = str(data.get("action") or "replace")
-    action = StructuralAction(action_str)
+    # Route through the codec so persisted rows written before the TEXT_PATCH
+    # collapse (§2.1 O6) — action strings "text_replace" / "text_repeal" — still
+    # round-trip; both alias to StructuralAction.TEXT_PATCH.
+    action = structural_action_from_str(action_str)
     target_dict = data.get("target") or {}
     target = LegalAddress(
         path=tuple((str(kind), str(label)) for kind, label in target_dict.get("path", [])),
@@ -1009,7 +1020,9 @@ def se_legal_operation_from_dict(data: dict[str, Any]) -> LegalOperation:
         if legacy_match:
             legacy_replacement = data.get("text_replacement")
             legacy_occurrence = int(data.get("text_occurrence") or 0)
-            if action == StructuralAction.TEXT_REPEAL or legacy_replacement is None:
+            # ``action_str == "text_repeal"`` preserves the pre-collapse
+            # TEXT_REPEAL signal now that both text actions parse to TEXT_PATCH.
+            if action_str == "text_repeal" or legacy_replacement is None:
                 text_patch = TextPatchSpec(
                     kind=TextPatchKindEnum.DELETE,
                     selector=TextSelector(
@@ -2841,7 +2854,7 @@ def _lower_se_official_effect_plan_item(
         op = LegalOperation(
             op_id=f"se_official_text_replace_{surface.sfs_id}_{item.target_label}",
             sequence=sequence,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", item.target_label),)),
             source=_se_op_source_with_clause(source, new_text),
             text_patch=text_patch,
@@ -3979,13 +3992,13 @@ def apply_se_ops(
                     body = tree_ops.remove_at(body, section_path)
                     _mark_applied()
                     return
-                if op.action is StructuralAction.TEXT_REPLACE:
+                if is_text_patch_replace(op):
                     section_label = op.target.leaf_label()
                     section_path = tree_ops.find(body, "section", section_label)
                     if section_path is None:
                         # θ: (TEXT_REPLACE, target_absent) — table-sourced Reject.
                         disposition = SE_TOTALIZATION_TABLE.lookup(
-                            StructuralAction.TEXT_REPLACE, FailureClass.TARGET_ABSENT
+                            StructuralAction.TEXT_PATCH, FailureClass.TARGET_ABSENT
                         )
                         assert isinstance(disposition, Reject)
                         _append_se_replay_adjudication(
@@ -4000,7 +4013,7 @@ def apply_se_ops(
                     if patch is None:
                         # θ: (TEXT_REPLACE, payload_missing) — table-sourced Reject.
                         disposition = SE_TOTALIZATION_TABLE.lookup(
-                            StructuralAction.TEXT_REPLACE, FailureClass.PAYLOAD_MISSING
+                            StructuralAction.TEXT_PATCH, FailureClass.PAYLOAD_MISSING
                         )
                         assert isinstance(disposition, Reject)
                         _append_se_replay_adjudication(
@@ -4021,7 +4034,7 @@ def apply_se_ops(
                         # θ: (TEXT_REPLACE, payload_missing) — the patch resolved
                         # but lacks old/new text; same strict Reject cell.
                         disposition = SE_TOTALIZATION_TABLE.lookup(
-                            StructuralAction.TEXT_REPLACE, FailureClass.PAYLOAD_MISSING
+                            StructuralAction.TEXT_PATCH, FailureClass.PAYLOAD_MISSING
                         )
                         assert isinstance(disposition, Reject)
                         _append_se_replay_adjudication(
@@ -4037,7 +4050,7 @@ def apply_se_ops(
                         # θ: (TEXT_REPLACE, target_absent) — resolved a path but
                         # the node is gone; same strict Reject cell.
                         disposition = SE_TOTALIZATION_TABLE.lookup(
-                            StructuralAction.TEXT_REPLACE, FailureClass.TARGET_ABSENT
+                            StructuralAction.TEXT_PATCH, FailureClass.TARGET_ABSENT
                         )
                         assert isinstance(disposition, Reject)
                         _append_se_replay_adjudication(
@@ -4053,7 +4066,7 @@ def apply_se_ops(
                         # θ: (TEXT_REPLACE, selector_no_match) — the selector
                         # found no match; table-sourced Reject.
                         disposition = SE_TOTALIZATION_TABLE.lookup(
-                            StructuralAction.TEXT_REPLACE, FailureClass.SELECTOR_NO_MATCH
+                            StructuralAction.TEXT_PATCH, FailureClass.SELECTOR_NO_MATCH
                         )
                         assert isinstance(disposition, Reject)
                         _append_se_replay_adjudication(
@@ -4748,7 +4761,7 @@ def _se_emit_one_op_receipt(
         # carry the witness instead.
         return None
 
-    action_value = op.action.value if op.action else "unknown"
+    action_value = legacy_text_action_value(op) if op.action else "unknown"
     leaf_kind = op.target.leaf_kind() or "unknown"
     helper = f"apply_se_ops::{action_value}::{leaf_kind}"
     bound_target_path = _se_legal_path_to_tree_path(op.target)

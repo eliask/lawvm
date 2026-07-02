@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
 from lawvm.core.ir import LegalAddress, LegalOperation
-from lawvm.uk_legislation.addressing import _action_name
+from lawvm.core.semantic_types import legacy_text_action_value
 
 
 @dataclass(frozen=True)
@@ -41,7 +41,7 @@ def uk_compiled_effect_facts(
         if value
     )
     return UKCompiledEffectFacts(
-        op_actions=tuple(_action_name(op.action) for op in compiled_ops),
+        op_actions=tuple(legacy_text_action_value(op) for op in compiled_ops),
         payload_kinds=tuple(str(payload.kind) for payload in payloads),
         payload_texts=tuple(
             format_payload_text(payload.text or "") for payload in payloads

@@ -39,7 +39,7 @@ def _section_op(op_id: str, action: StructuralAction, section: str) -> LegalOper
 
 def test_emit_us_op_receipt_records_audited_fields_and_text_hashes() -> None:
     """A text_replace records op_id/action/target and differing section-text hashes."""
-    op = _section_op("us-1", StructuralAction.TEXT_REPLACE, "109")
+    op = _section_op("us-1", StructuralAction.TEXT_PATCH, "109")
     receipt = emit_us_op_receipt(op, before_text="old payload", after_text="new payload")
 
     assert receipt.op_id == "us-1"
@@ -66,7 +66,7 @@ def test_us_receipt_text_hash_uses_documented_synthetic_kind() -> None:
     from lawvm.core.ir import IRNode
     from lawvm.core.ir_helpers import structural_subtree_hash
 
-    op = _section_op("us-h", StructuralAction.TEXT_REPLACE, "109")
+    op = _section_op("us-h", StructuralAction.TEXT_PATCH, "109")
     receipt = emit_us_op_receipt(op, before_text="abc", after_text="xyz")
     expected_pre = structural_subtree_hash(
         IRNode(kind=US_SECTION_TEXT_KIND, label="", text="abc")

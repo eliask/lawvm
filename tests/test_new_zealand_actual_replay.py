@@ -163,7 +163,7 @@ def _text_replace_operation() -> LegalOperation:
     return LegalOperation(
         op_id=f"nz:{_WORK_ID}:nz-opw-2:text_replace",
         sequence=2,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "110"), ("subsection", "1"))),
         payload=None,
         text_patch=TextPatchSpec(
@@ -183,7 +183,7 @@ def _text_replace_row() -> NZCanonicalEffectCandidateRow:
         operation_row_id="nz-opw-2",
         effect_readiness_row_id="nz-readiness-2",
         candidate_status="candidate_emitted",
-        action=str(StructuralAction.TEXT_REPLACE),
+        action=str(StructuralAction.TEXT_PATCH),
         target_address="section:110/subsection:1",
         operation=_text_replace_operation(),
         amendment_date_iso="2019-10-24",
@@ -523,7 +523,7 @@ def test_apply_verified_mutation_each_place_replaces_every_occurrence() -> None:
     def _proof(each_place: bool) -> NZMutationBoundaryProof:
         return NZMutationBoundaryProof(
             op_id="nz:x:1:text_replace",
-            action=str(StructuralAction.TEXT_REPLACE),
+            action=str(StructuralAction.TEXT_PATCH),
             target_address="section:108/subsection:1",
             selected_source_path=("prov:108", "subprov:1"),
             target_xml_id="DLM1",

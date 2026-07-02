@@ -33,7 +33,7 @@ from lawvm.core.mutation_boundary import (
     diff_ir_paths_identity_pruned,
 )
 from lawvm.core.write_receipt import WriteReceipt, receipt_address_string
-from lawvm.uk_legislation.addressing import _action_name
+from lawvm.core.semantic_types import legacy_text_action_value
 
 #: Named migration rule id owning the bound→landed divergence on a UK RENUMBER
 #: op (source label → destination label). Mirrors SE's ``se_renumber_relabel``
@@ -102,7 +102,7 @@ def emit_uk_op_receipt(
         # witness instead; no receipt for a no-op apply.
         return None
 
-    action_value = _action_name(op.action)
+    action_value = legacy_text_action_value(op)
     leaf_kind = op.target.leaf_kind() or "unknown"
     helper = f"UKReplayExecutor.apply_op::{action_value}::{leaf_kind}"
     bound_target_path: TreePath = _uk_legal_path_to_tree_path(op.target)

@@ -389,7 +389,7 @@ def test_to_ee_parsed_instructions_preserves_subsection_text_scope_and_postpass_
         LegalOperation(
             op_id="ee_test_subsection_scope_meta",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "6"), ("subsection", "10"))),
             payload=IRNode(
                 kind=IRNodeKind.CONTENT,
@@ -417,7 +417,7 @@ def test_to_ee_parsed_instructions_leaves_scope_and_postpass_defaults_without_pa
         LegalOperation(
             op_id="ee_test_no_subsection_scope_meta",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "6"), ("subsection", "10"))),
             payload=IRNode(
                 kind=IRNodeKind.CONTENT,
@@ -441,7 +441,7 @@ def test_to_ee_parsed_instructions_preserves_source_family() -> None:
         LegalOperation(
             op_id="ee_test_generic_ministry_reorg",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=()),
             payload=IRNode(
                 kind=IRNodeKind.CONTENT,
@@ -492,7 +492,7 @@ def test_to_ee_parsed_instructions_maps_wrapper_quoted_payload_family() -> None:
     assert all(inst.is_wrapper_payload for inst in instructions)
     assert instructions[0].rewrite is not None
     assert instructions[0].rewrite.old_surface == "koolieelne lasteasutus"
-    assert instructions[0].action == StructuralAction.TEXT_REPLACE
+    assert instructions[0].action == StructuralAction.TEXT_PATCH
     assert instructions[0].target.path == (("section", "8"), ("subsection", "1"), ("item", "1_2"))
 
 

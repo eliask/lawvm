@@ -19,8 +19,8 @@ from lawvm.core.target_resolution import (
     TargetResolutionCandidate,
     TargetResolutionCoverage,
 )
+from lawvm.core.semantic_types import legacy_text_action_value
 from lawvm.replay_adjudication import CompileAdjudication
-from lawvm.uk_legislation.addressing import _action_name
 from lawvm.core.quirks_disposition import QuirksDisposition
 
 
@@ -127,7 +127,7 @@ def uk_replay_action_target_detail(
         rule_id=explicit_rule_id or "_pending_uk_replay_rule",
         phase="replay",
         blocking=blocking,
-        action=_action_name(op.action),
+        action=legacy_text_action_value(op),
         target=str(target),
         **extra,
     )
@@ -184,7 +184,7 @@ def uk_replay_recovery_action_target_detail(
             strict_disposition="block",
             quirks_disposition=QuirksDisposition.APPLY,
             detail={
-                "action": _action_name(op.action),
+                "action": legacy_text_action_value(op),
                 "op_id": op.op_id,
                 "recovery_family": family,
             },
@@ -206,7 +206,7 @@ def append_schedule_entry_repeal_granularity_blocked_adjudication(
         ),
         op=op,
         detail={
-            "action": _action_name(op.action),
+            "action": legacy_text_action_value(op),
             "target": str(op.target),
             "reason": "schedule_entry_repeal_widened_to_schedule",
             "family": "source_schedule_list_entry_elaboration",
@@ -235,7 +235,7 @@ def append_same_source_text_patch_overlap_disjoint_adjudication(
         ),
         op=op,
         detail={
-            "action": _action_name(op.action),
+            "action": legacy_text_action_value(op),
             "target": str(op.target),
             "match_text": match_text,
             "occurrence": occurrence,
@@ -265,7 +265,7 @@ def append_same_source_text_patch_overlap_blocked_adjudication(
         ),
         op=op,
         detail={
-            "action": _action_name(op.action),
+            "action": legacy_text_action_value(op),
             "target": str(op.target),
             "match_text": match_text,
             "occurrence": occurrence,
@@ -289,7 +289,7 @@ def append_unsupported_whole_act_prepare_filter_adjudication(
         message="UK replay prepare step skipped unsupported whole-act target before replay apply.",
         op=op,
         detail={
-            "action": _action_name(op.action),
+            "action": legacy_text_action_value(op),
             "target": str(op.target),
             "reason": "whole_act_prepare_filter",
         },

@@ -58,7 +58,7 @@ def test_generic_insert_tagged_with_insert_family() -> None:
 
 def test_generic_text_replace_tagged_with_text_replace_family() -> None:
     ops = _attributed_ops('paragrahvi 5 lõikes 2 asendatakse sõna „vana” sõnaga „uus”')
-    op = next(o for o in ops if o.action is StructuralAction.TEXT_REPLACE)
+    op = next(o for o in ops if o.action is StructuralAction.TEXT_PATCH)
     assert op.witness_rule_id == "ee_structural_text_replace_from_amending_act"
 
 

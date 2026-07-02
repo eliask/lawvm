@@ -32,7 +32,7 @@ def test_apply_filter_result_carries_accepted_rejected_partition() -> None:
     accepted_op = LegalOperation(
         op_id="accepted-op-1",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "1"),)),
         source=OperationSource(statute_id="ee/amendment"),
     )

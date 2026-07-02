@@ -64,7 +64,7 @@ from lawvm.core.ir import (
     TextPatchSpec,
     TextSelector,
 )
-from lawvm.core.semantic_types import FacetKind
+from lawvm.core.semantic_types import FacetKind, is_text_patch_delete, is_text_patch_replace
 from lawvm.core.unicode_folds import CF_FORMAT_CPS, PD_DASH_CPS, ZS_NON_ASCII_SPACE_CPS
 from lawvm.estonia.text_morphology import (
     _EE_ARUANDED_ARUANNE_FORMS_RULE,
@@ -106,15 +106,20 @@ def _normalize_ee_parse_text(text: str) -> str:
 
 
 def _to_structural_action(action: str) -> StructuralAction:
-    """Map string action to StructuralAction, preserving text-level variants."""
+    """Map string action to StructuralAction, preserving text-level variants.
+
+    ``text_replace`` / ``text_repeal`` both name the single TEXT_PATCH action
+    (§2.1 O6); the replace-vs-repeal distinction now lives on the op's
+    ``TextPatchSpec.kind``, which the caller sets alongside the action.
+    """
     if action == "replace":
         return StructuralAction.REPLACE
     if action == "text_replace":
-        return StructuralAction.TEXT_REPLACE
+        return StructuralAction.TEXT_PATCH
     if action == "repeal":
         return StructuralAction.REPEAL
     if action == "text_repeal":
-        return StructuralAction.TEXT_REPEAL
+        return StructuralAction.TEXT_PATCH
     if action == "insert":
         return StructuralAction.INSERT
     if action == "renumber":
@@ -145,12 +150,14 @@ _EE_STRUCTURAL_HEADING_REPLACE_FROM_AMENDING_ACT_RULE = "ee_structural_heading_r
 # intentionally absent: META ops are non-body/out-of-band and RENUMBER ops are
 # already tagged at their (lineage-bearing) construction sites, so leaving them
 # untouched keeps this pass conservatively additive.
+# Non-text families map by action directly. The two text families now share the
+# single ``TEXT_PATCH`` action (§2.1 O6), so they are discriminated by the op's
+# ``TextPatchSpec.kind`` in ``_structural_family_witness_rule_id`` rather than by
+# a distinct action key (a dict keyed on TEXT_PATCH could only hold one).
 _EE_STRUCTURAL_FAMILY_WITNESS: dict[StructuralAction, str] = {
     StructuralAction.REPLACE: _EE_STRUCTURAL_REPLACE_FROM_AMENDING_ACT_RULE,
     StructuralAction.INSERT: _EE_STRUCTURAL_INSERT_FROM_AMENDING_ACT_RULE,
     StructuralAction.REPEAL: _EE_STRUCTURAL_REPEAL_FROM_AMENDING_ACT_RULE,
-    StructuralAction.TEXT_REPLACE: _EE_STRUCTURAL_TEXT_REPLACE_FROM_AMENDING_ACT_RULE,
-    StructuralAction.TEXT_REPEAL: _EE_STRUCTURAL_TEXT_REPEAL_FROM_AMENDING_ACT_RULE,
     StructuralAction.HEADING_REPLACE: _EE_STRUCTURAL_HEADING_REPLACE_FROM_AMENDING_ACT_RULE,
 }
 
@@ -163,11 +170,15 @@ def _structural_family_witness_rule_id(op: LegalOperation) -> Optional[str]:
     parser-rule id.  Heading-target replace/text_replace ops are attributed to
     the heading family so title edits are not conflated with body edits.
     """
-    if op.target is not None and op.target.special is FacetKind.HEADING and op.action in {
-        StructuralAction.REPLACE,
-        StructuralAction.TEXT_REPLACE,
-    }:
+    if op.target is not None and op.target.special is FacetKind.HEADING and (
+        op.action is StructuralAction.REPLACE or is_text_patch_replace(op)
+    ):
         return _EE_STRUCTURAL_HEADING_REPLACE_FROM_AMENDING_ACT_RULE
+    # TEXT_PATCH: discriminate replace-vs-repeal families by patch kind.
+    if op.action is StructuralAction.TEXT_PATCH:
+        if is_text_patch_delete(op):
+            return _EE_STRUCTURAL_TEXT_REPEAL_FROM_AMENDING_ACT_RULE
+        return _EE_STRUCTURAL_TEXT_REPLACE_FROM_AMENDING_ACT_RULE
     return _EE_STRUCTURAL_FAMILY_WITNESS.get(op.action)
 
 

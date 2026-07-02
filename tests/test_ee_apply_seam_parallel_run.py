@@ -132,7 +132,7 @@ def _text_replace(
     return LegalOperation(
         op_id=op_id,
         sequence=sequence,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=_section_addr(label),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,

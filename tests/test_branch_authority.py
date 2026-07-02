@@ -21,9 +21,9 @@ from lawvm.core.branch_authority import (
     branch_materialization_ops,
     branch_overlay_materialization_ops,
 )
-from lawvm.core.ir import LegalAddress, LegalOperation
+from lawvm.core.ir import LegalAddress, LegalOperation, TextPatchSpec, TextSelector
 from lawvm.core.provenance import ExpiryOverride, MigrationEvent, OperationSource
-from lawvm.core.semantic_types import StructuralAction
+from lawvm.core.semantic_types import StructuralAction, TextPatchKindEnum
 
 
 def _op(op_id: str, *, source: OperationSource | None = None) -> LegalOperation:
@@ -197,9 +197,23 @@ def test_branch_graph_edges_from_operations_filters_enacted_ops() -> None:
 def test_branch_edge_kind_for_action_maps_structural_actions() -> None:
     assert branch_edge_kind_for_action(StructuralAction.INSERT) == "would_insert"
     assert branch_edge_kind_for_action(StructuralAction.REPLACE) == "would_replace"
-    assert branch_edge_kind_for_action(StructuralAction.TEXT_REPLACE) == "would_replace"
+    # TEXT_PATCH edge kind is discriminated by patch kind (§2.1 O6): a
+    # REPLACE-kind patch is a would_replace, a DELETE-kind patch a would_repeal.
+    _replace_patch = TextPatchSpec(
+        kind=TextPatchKindEnum.REPLACE,
+        selector=TextSelector(match_text="a"),
+        replacement="b",
+    )
+    _delete_patch = TextPatchSpec(kind=TextPatchKindEnum.DELETE, selector=TextSelector(match_text="a"))
+    assert (
+        branch_edge_kind_for_action(StructuralAction.TEXT_PATCH, text_patch=_replace_patch)
+        == "would_replace"
+    )
+    assert (
+        branch_edge_kind_for_action(StructuralAction.TEXT_PATCH, text_patch=_delete_patch)
+        == "would_repeal"
+    )
     assert branch_edge_kind_for_action(StructuralAction.REPEAL) == "would_repeal"
-    assert branch_edge_kind_for_action(StructuralAction.TEXT_REPEAL) == "would_repeal"
     assert branch_edge_kind_for_action(StructuralAction.RENUMBER) == "would_amend"
 
 

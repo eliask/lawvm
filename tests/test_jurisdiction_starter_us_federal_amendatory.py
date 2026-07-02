@@ -300,7 +300,7 @@ def test_plaw_116_51_each_place_text_replace():
     assert len(accepted) == 1
     op = accepted[0].operation
     assert op is not None
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.text_patch is not None
     assert op.text_patch.kind is TextPatchKindEnum.REPLACE
     assert op.text_patch.selector.match_text == "$3,237,000"
@@ -348,7 +348,7 @@ def test_precise_text_strike_with_roman_ambiguous_subsection_head_is_section_sco
     )
     op = instr.operation
     assert op is not None
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     # But the emitted OP target is section-scoped (drops the roman-ambiguous head),
     # so the strike anchors on its unique match_text, not the phantom split node.
     assert op.target == LegalAddress(path=(("title", "11"), ("section", "284")))
@@ -564,7 +564,7 @@ def test_plaw_117_177_strike_insert_off_title_11_is_needs_review_with_finding():
     assert instr.action == "strike_insert"
     assert instr.instruction_status == "needs_review"
     assert instr.operation is not None
-    assert instr.operation.action is StructuralAction.TEXT_REPLACE
+    assert instr.operation.action is StructuralAction.TEXT_PATCH
     assert instr.target_address is not None
     assert instr.target_address.path[0] == ("title", "18")
     assert instr.finding is not None
@@ -2952,7 +2952,7 @@ def test_precise_text_strike_with_subsection_letter_d_keeps_full_path():
     assert instr.target_address == LegalAddress(path=(("title", "11"), ("section", "522"), ("subsection", "d")))
     op = instr.operation
     assert op is not None
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target == instr.target_address
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == "; and"
@@ -3788,7 +3788,7 @@ def test_through_tail_strike_lowers_to_bounded_text_repeal():
     assert instr.witness_rule_id == RULE_STRIKE_INSERT_THROUGH_TAIL
     op = instr.operation
     assert op is not None
-    assert op.action is StructuralAction.TEXT_REPEAL
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == "unless the trustee"
     assert op.text_patch.selector.end_match_text == "the holder"
@@ -3817,7 +3817,7 @@ def test_through_tail_strike_insert_lowers_to_bounded_text_replace():
     assert instr.witness_rule_id == RULE_STRIKE_INSERT_THROUGH_TAIL
     op = instr.operation
     assert op is not None
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == "Definitions"
     assert op.text_patch.selector.end_match_text == "(1) The term"
@@ -4174,7 +4174,7 @@ def test_open_ended_tail_strike_insert_with_quoted_content_payload_lowers_to_tex
     assert instr.witness_rule_id == RULE_STRIKE_INSERT_TAIL
     op = instr.operation
     assert op is not None
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     patch = _patch(instr)
     assert patch.selector.match_text == "shall commence"
     assert patch.selector.occurrence == 0
@@ -4382,7 +4382,7 @@ def test_strike_the_following_with_quoted_content_payload_lowers_to_text_repeal(
     assert instr.witness_rule_id == "us_amend_strike"
     op = instr.operation
     assert op is not None
-    assert op.action is StructuralAction.TEXT_REPEAL
+    assert op.action is StructuralAction.TEXT_PATCH
     patch = _patch(instr)
     assert patch.kind is TextPatchKindEnum.DELETE
     assert "(a) Design of Programs.—" in patch.selector.match_text

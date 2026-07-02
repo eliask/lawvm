@@ -32,6 +32,7 @@ from lawvm.core.source_lane import SourceLaneAttempt, SourceLaneSelectionEvidenc
 from lawvm.core.temporal import TemporalEvent, TemporalScope
 from lawvm.replay_adjudication import CompileAdjudication, SourceAdjudication
 from lawvm.core.ir import IRStatute, LegalAddress, LegalOperation, OperationSource, ProvisionTimeline, StructuralAction
+from lawvm.core.semantic_types import legacy_text_action_value
 from lawvm.core.replay_contracts import ReplaySummary
 from lawvm.core.timeline import compile_timelines, materialize_pit
 from lawvm.core.timeline_consistency import ingest_consolidated, verify_consistency
@@ -873,7 +874,7 @@ def _ee_filter_ops_for_ref_slice(
                     "next_later_ref_effective": next_later_ref_date,
                     "as_of": as_of,
                     "target": str(op.target),
-                    "action": op.action.value,
+                    "action": legacy_text_action_value(op),
                 },
             )
         )

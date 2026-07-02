@@ -15,7 +15,7 @@ def test_legal_operation_accepts_explicit_text_patch_spec() -> None:
     op = LegalOperation(
         op_id="txt-1",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=_addr(),
         text_patch=TextPatchSpec(
             kind=TextPatchKindEnum.REPLACE,
@@ -56,7 +56,7 @@ def test_payload_rewrite_witness_is_opaque_diagnostic_payload() -> None:
     op = LegalOperation(
         op_id="txt-opaque",
         sequence=4,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=_addr(),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -128,7 +128,7 @@ def test_explicit_text_patch_is_authoritative() -> None:
     op = LegalOperation(
         op_id="txt-4",
         sequence=5,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=_addr(),
         text_patch=TextPatchSpec(
             kind=TextPatchKindEnum.REPLACE,

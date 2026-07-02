@@ -306,7 +306,7 @@ class TestExtractLawLevelTextPatches:
         lo = LegalOperation(
             op_id="legacy_tp",
             sequence=0,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=()),
             text_patch=_replace_patch("old_word", "new_word"),
             source=OperationSource(statute_id="2024/100", effective="2024-06-01"),

@@ -16,6 +16,7 @@ from lawvm.core.target_resolution import (
     TargetResolutionCandidate,
     TargetResolutionCoverage,
 )
+from lawvm.core.semantic_types import legacy_text_action_value
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.addressing import _action_name, _addr_container, _addr_leaf_kind, _addr_leaf_label, _uk_kind_value
 from lawvm.uk_legislation.canonicalize import (
@@ -385,7 +386,7 @@ class UKReplayTargetLookupMixin:
                                             strict_disposition="record",
                                             quirks_disposition=QuirksDisposition.APPLY,
                                             detail={
-                                                "action": _action_name(target_resolution_op.action),
+                                                "action": legacy_text_action_value(target_resolution_op),
                                                 "op_id": target_resolution_op.op_id,
                                                 "recovery_family": "target_resolution_recovery",
                                             },
@@ -456,7 +457,7 @@ class UKReplayTargetLookupMixin:
                                                     strict_disposition="record",
                                                     quirks_disposition=QuirksDisposition.APPLY,
                                                     detail={
-                                                        "action": _action_name(target_resolution_op.action),
+                                                        "action": legacy_text_action_value(target_resolution_op),
                                                         "op_id": target_resolution_op.op_id,
                                                         "recovery_family": "target_resolution_recovery",
                                                     },
@@ -553,7 +554,7 @@ class UKReplayTargetLookupMixin:
                                                 strict_disposition="block",
                                                 quirks_disposition=QuirksDisposition.APPLY,
                                                 detail={
-                                                    "action": _action_name(target_resolution_op.action),
+                                                    "action": legacy_text_action_value(target_resolution_op),
                                                     "op_id": target_resolution_op.op_id,
                                                     "recovery_family": "target_resolution_recovery",
                                                 },
@@ -635,7 +636,7 @@ class UKReplayTargetLookupMixin:
                                                 strict_disposition="block",
                                                 quirks_disposition=QuirksDisposition.RECORD,
                                                 detail={
-                                                    "action": _action_name(target_resolution_op.action),
+                                                    "action": legacy_text_action_value(target_resolution_op),
                                                     "op_id": target_resolution_op.op_id,
                                                     "recovery_family": "target_resolution_recovery",
                                                 },

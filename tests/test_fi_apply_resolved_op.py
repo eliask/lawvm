@@ -293,7 +293,7 @@ def _ls01_rop_target_section_1() -> ResolvedOp:
     lo = LegalOperation(
         op_id="replace_1",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "1"),)),
         source=OperationSource(statute_id="12/2015"),
     )

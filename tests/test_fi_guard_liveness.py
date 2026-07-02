@@ -3284,7 +3284,7 @@ def _per_op_gate_rop(*, op_id: str = "replace_1", with_lo: bool = False) -> Any:
         lo = LegalOperation(
             op_id=op_id or "replace_1",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "1"),)),
             source=OperationSource(statute_id="12/2015"),
         )

@@ -259,14 +259,21 @@ class LegalOperation:
                 f"{type(self.move_destination).__name__}"
             )
         if self.text_patch is not None and self.action not in {
-            StructuralAction.TEXT_REPLACE,
-            StructuralAction.TEXT_REPEAL,
+            StructuralAction.TEXT_PATCH,
             StructuralAction.REPLACE,
         }:
             raise ValueError(
-                "LegalOperation text_patch is only valid for text_replace/text_repeal/replace "
+                "LegalOperation text_patch is only valid for text_patch/replace "
                 f"got action={self.action!r}"
             )
+        # NB: a TEXT_PATCH action does NOT require a structured ``text_patch``
+        # carrier. Some frontends (EE) legitimately convey the old/new text on
+        # the op ``payload`` (attrs["old_text"]/text) rather than a TextPatchSpec;
+        # the former TEXT_REPLACE member was likewise valid without one. The
+        # replace-vs-delete discriminator is ``text_patch.kind`` WHEN a text_patch
+        # is present (``is_text_patch_replace`` / ``is_text_patch_delete`` treat an
+        # absent patch as non-delete, i.e. the replace family — preserving the
+        # pre-collapse default where a bare TEXT_REPLACE was the replace family).
         # Fail loud at the core semantic waist: a bare ``str`` here means a
         # frontend bypassed its typed ``ScopeConfidence`` dataclass and is
         # smuggling a free-form rung string (AGENTS.md §1.9, §1.10). ``None``

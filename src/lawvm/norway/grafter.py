@@ -66,6 +66,7 @@ from lawvm.core.semantic_types import (
     IRNodeKind,
     StructuralAction,
     TextPatchKindEnum,
+    legacy_text_action_value,
     structural_action_from_str,
     structural_action_value,
 )
@@ -1580,7 +1581,7 @@ def _iter_unstructured_no_change_groups(
                             LegalOperation(
                                 op_id=f"{source_id}:{sequence}",
                                 sequence=sequence,
-                                action=StructuralAction.TEXT_REPLACE,
+                                action=StructuralAction.TEXT_PATCH,
                                 target=LegalAddress(path=()),
                                 text_patch=TextPatchSpec(
                                     kind=TextPatchKindEnum.REPLACE,
@@ -3709,7 +3710,7 @@ def apply_no_ops(
                 message="Norway sort_order invariant violation downgraded as spurious.",
                 op=op,
                 detail={
-                    "action": _no_action_value(op.action),
+                    "action": legacy_text_action_value(op),
                     "target": str(op.target),
                     "nonblocking_reclassification_rule_id": (
                         "no_sort_order_spurious_roman_single_letter_recheck"
@@ -3734,7 +3735,7 @@ def apply_no_ops(
             message="Norway replay violated order/duplication invariant.",
             op=op,
             detail={
-                "action": _no_action_value(op.action),
+                "action": legacy_text_action_value(op),
                 "target": str(op.target),
                 "violations": joined,
                 "invariant_violations": tuple(violation.to_dict() for violation in typed_violations),
@@ -3875,7 +3876,7 @@ def apply_no_ops(
             mutation semantics byte-identical.
             """
             nonlocal body
-            if _no_action_value(op.action) == "text_replace":
+            if legacy_text_action_value(op) == "text_replace":
                 patch = op.text_patch
                 if patch is None:
                     _append_no_replay_adjudication(
@@ -3883,7 +3884,7 @@ def apply_no_ops(
                         kind="replay_unsupported_action",
                         message="Norway replay skipped text_replace without structured text_patch.",
                         op=op,
-                        detail={"action": _no_action_value(op.action), "target": str(op.target)},
+                        detail={"action": legacy_text_action_value(op), "target": str(op.target)},
                     )
                     _assert_no_invariant_violations(op)
                     return
@@ -3895,7 +3896,7 @@ def apply_no_ops(
                         kind="replay_unsupported_action",
                         message="Norway replay skipped text_replace without match/replacement.",
                         op=op,
-                        detail={"action": _no_action_value(op.action), "target": str(op.target)},
+                        detail={"action": legacy_text_action_value(op), "target": str(op.target)},
                     )
                     _assert_no_invariant_violations(op)
                     return
@@ -3910,7 +3911,7 @@ def apply_no_ops(
                         kind="replay_unresolved_target",
                         message="Norway replay skipped text_replace: target not found.",
                         op=op,
-                        detail={"action": _no_action_value(op.action), "target": str(op.target)},
+                        detail={"action": legacy_text_action_value(op), "target": str(op.target)},
                     )
                     _assert_no_invariant_violations(op)
                     return
@@ -3921,7 +3922,7 @@ def apply_no_ops(
                         kind="replay_unresolved_target",
                         message="Norway replay skipped text_replace: target not found.",
                         op=op,
-                        detail={"action": _no_action_value(op.action), "target": str(op.target)},
+                        detail={"action": legacy_text_action_value(op), "target": str(op.target)},
                     )
                     _assert_no_invariant_violations(op)
                     return
@@ -3938,7 +3939,7 @@ def apply_no_ops(
                     kind="replay_noop",
                     message="Norway replay skipped operation with missing target path.",
                     op=op,
-                    detail={"action": _no_action_value(op.action)},
+                    detail={"action": legacy_text_action_value(op)},
                 )
                 _assert_no_invariant_violations(op)
                 return
@@ -3953,7 +3954,7 @@ def apply_no_ops(
                     kind="replay_unsupported_action",
                     message="Norway replay skipped unsupported action.",
                     op=op,
-                    detail={"action": _no_action_value(op.action), "target": str(op.target)},
+                    detail={"action": legacy_text_action_value(op), "target": str(op.target)},
                 )
                 _assert_no_invariant_violations(op)
                 return
@@ -4203,7 +4204,7 @@ def apply_no_ops(
                                         message="Norway replay skipped operation: parent not found.",
                                         op=op,
                                         detail={
-                                            "action": _no_action_value(op.action),
+                                            "action": legacy_text_action_value(op),
                                             "target": str(op.target),
                                             "target_parent": str(target_parent),
                                         },
@@ -4236,7 +4237,7 @@ def apply_no_ops(
                             op=op,
                             detail={
                                 "rule_id": disposition.rule_id,
-                                "original_action": _no_action_value(op.action),
+                                "original_action": legacy_text_action_value(op),
                                 "executed_action": _no_action_value(
                                     disposition.rewritten_action
                                 ),
@@ -4259,7 +4260,7 @@ def apply_no_ops(
                         kind="replay_unresolved_target",
                         message="Norway replay skipped operation: target not found.",
                         op=op,
-                        detail={"action": _no_action_value(op.action), "target": str(op.target)},
+                        detail={"action": legacy_text_action_value(op), "target": str(op.target)},
                     )
                     _assert_no_invariant_violations(op)
                     return
@@ -4304,7 +4305,7 @@ def apply_no_ops(
                         kind=disposition.code,
                         message="Norway replay skipped operation: target not found.",
                         op=op,
-                        detail={"action": _no_action_value(op.action), "target": str(op.target)},
+                        detail={"action": legacy_text_action_value(op), "target": str(op.target)},
                     )
                     _assert_no_invariant_violations(op)
                     return
@@ -4353,7 +4354,7 @@ def apply_no_ops(
                                 message="Norway replay skipped operation: parent not found.",
                                 op=op,
                                 detail={
-                                    "action": _no_action_value(op.action),
+                                    "action": legacy_text_action_value(op),
                                     "target": str(op.target),
                                     "target_parent": str(target_parent),
                                 },
@@ -4418,7 +4419,7 @@ def apply_no_ops(
                         kind="replay_unresolved_target",
                         message="Norway replay skipped operation: target not found.",
                         op=op,
-                        detail={"action": _no_action_value(op.action), "target": str(op.target)},
+                        detail={"action": legacy_text_action_value(op), "target": str(op.target)},
                     )
                     _assert_no_invariant_violations(op)
                     return
@@ -4429,7 +4430,7 @@ def apply_no_ops(
                         kind="replay_unresolved_target",
                         message="Norway replay skipped operation: target not found.",
                         op=op,
-                        detail={"action": _no_action_value(op.action), "target": str(op.target)},
+                        detail={"action": legacy_text_action_value(op), "target": str(op.target)},
                     )
                     _assert_no_invariant_violations(op)
                     return
@@ -4606,7 +4607,7 @@ def apply_no_ops(
                 kind=disposition.code,
                 message="Norway replay emitted a content-identical no-op for operation.",
                 op=op,
-                detail={"action": _no_action_value(op.action), "target": str(op.target)},
+                detail={"action": legacy_text_action_value(op), "target": str(op.target)},
             )
 
         # ── B-enforcement (LS-01): drain the seam's OBSERVE lane. ─────────────
@@ -4954,7 +4955,7 @@ def _no_emit_one_op_receipt(
         # carry the witness instead.
         return None
 
-    action_value = op.action.value if op.action else "unknown"
+    action_value = legacy_text_action_value(op) if op.action else "unknown"
     leaf_kind = op.target.leaf_kind() or "unknown"
     helper = f"apply_no_ops::{action_value}::{leaf_kind}"
     bound_target_path = _no_legal_path_to_tree_path(op.target)

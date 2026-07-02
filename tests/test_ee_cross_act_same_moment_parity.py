@@ -82,7 +82,7 @@ def _text_replace_op(
     return LegalOperation(
         op_id=op_id,
         sequence=seq,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", section),)),
         payload=IRNode(kind=IRNodeKind.CONTENT, text="x", attrs={"old_text": "y"}),
         source=OperationSource(statute_id=src_id, effective=effective),

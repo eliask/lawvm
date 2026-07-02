@@ -652,7 +652,7 @@ def test_text_replace_on_bare_leaf_target_materializes_via_suffix_match_recovery
     op = LegalOperation(
         op_id="strike-15y-in-para-1",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(
             path=(("title", "10"), ("section", "2432"), ("paragraph", "1"))
         ),
@@ -711,7 +711,7 @@ def test_text_replace_on_bare_leaf_target_refuses_when_suffix_match_ambiguous() 
     op = LegalOperation(
         op_id="strike-15y-in-para-1-ambiguous",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(
             path=(("title", "10"), ("section", "2432-amb"), ("paragraph", "1"))
         ),
@@ -757,7 +757,7 @@ def test_repeated_bare_leaf_patches_compose_via_resolved_node_overrides() -> Non
     op_full = LegalOperation(
         op_id="patch-1-full",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=full_target,
         text_patch=TextPatchSpec(
             kind=TextPatchKindEnum.REPLACE,
@@ -768,7 +768,7 @@ def test_repeated_bare_leaf_patches_compose_via_resolved_node_overrides() -> Non
     op_bare = LegalOperation(
         op_id="patch-2-bare",
         sequence=2,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=bare_leaf,
         text_patch=TextPatchSpec(
             kind=TextPatchKindEnum.REPLACE,
@@ -1168,7 +1168,7 @@ def test_real_pl118_42_lowers_one_title11_text_replace_op() -> None:
     ]
     assert len(title11_ops) == 1
     op = title11_ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.text_patch is not None
     assert op.text_patch.kind is TextPatchKindEnum.REPLACE
 
@@ -1665,7 +1665,7 @@ def test_subsection_text_replace_is_scoped_to_the_target_node() -> None:
     op = LegalOperation(
         op_id="synthetic-subsection-text-replace",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(
             path=(("title", "11"), ("section", "77"), ("subsection", "b"), ("paragraph", "1"))
         ),
@@ -1765,7 +1765,7 @@ def test_node_scoped_single_occurrence_patch_edits_only_inside_the_target_node()
     op = LegalOperation(
         op_id="repeated-anchor-replace",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(
             path=(("title", "11"), ("section", "78"), ("subsection", "b"), ("paragraph", "1"))
         ),
@@ -1796,7 +1796,7 @@ def test_node_scoped_each_place_patch_with_repeated_anchor_replaces_every_node_o
     op = LegalOperation(
         op_id="repeated-anchor-each-place",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(
             path=(("title", "11"), ("section", "78"), ("subsection", "b"), ("paragraph", "1"))
         ),
@@ -1904,7 +1904,7 @@ def test_text_replace_against_an_absent_anchor_is_refused_not_a_section_tanking_
     op = LegalOperation(
         op_id="text-replace-absent-anchor",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("title", "99"), ("section", "10"))),
         text_patch=TextPatchSpec(
             kind=TextPatchKindEnum.REPLACE,
@@ -1924,7 +1924,7 @@ def test_present_node_text_replace_still_materializes_normally() -> None:
     op = LegalOperation(
         op_id="text-replace-present-anchor",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("title", "99"), ("section", "10"))),
         text_patch=TextPatchSpec(
             kind=TextPatchKindEnum.REPLACE,
@@ -2676,7 +2676,7 @@ def _dual_anchor_op(op_id: str, sequence: int) -> LegalOperation:
     return LegalOperation(
         op_id=op_id,
         sequence=sequence,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(
             path=(
                 ("title", "10"),
@@ -2816,7 +2816,7 @@ def test_basic_composite_two_ops_on_one_node_compose_on_running_node_text() -> N
         return LegalOperation(
             op_id=op_id,
             sequence=seq,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=target,
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -2881,7 +2881,7 @@ def test_container_level_token_replace_applies_to_descendants_when_anchor_lives_
     op = LegalOperation(
         op_id="strike-120-each-place-in-para-1",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=target,
         text_patch=TextPatchSpec(
             kind=TextPatchKindEnum.REPLACE,

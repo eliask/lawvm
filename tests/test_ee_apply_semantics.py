@@ -13,8 +13,10 @@ from lawvm.core.ir import (
     LegalOperation,
     OperationSource,
     StructuralAction,
+    TextPatchSpec,
+    TextSelector,
 )
-from lawvm.core.semantic_types import FacetKind, IRNodeKind
+from lawvm.core.semantic_types import FacetKind, IRNodeKind, TextPatchKindEnum
 from lawvm.estonia.ee_instruction_waist import (
     EEInstructionFamily,
     EEParsedInstruction,
@@ -93,7 +95,7 @@ def test_text_replace_on_section_target_rewrites_descendant_text() -> None:
     op = LegalOperation(
         op_id="ee_test_replace_descendant",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "1"),)),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -175,7 +177,7 @@ def test_apply_ee_ops_records_case_only_source_text_recovery() -> None:
     op = LegalOperation(
         op_id="ee_case_delete",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "8"), ("subsection", "2"))),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -211,7 +213,7 @@ def test_apply_ee_ops_blocks_ambiguous_case_only_source_text_recovery() -> None:
     op = LegalOperation(
         op_id="ee_case_ambiguous_delete",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "8"), ("subsection", "2"))),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -311,7 +313,7 @@ def test_global_lowercase_text_replace_rewrites_sentence_initial_capitalized_mat
     op = LegalOperation(
         op_id="ee_test_global_lowercase_sentence_initial",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=()),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -1383,7 +1385,7 @@ def test_text_replace_with_typed_rewrite_mode_insert_after() -> None:
     op = LegalOperation(
         op_id="ee_test_replace_typed_mode_after",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "1"), ("subsection", "1"))),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -1478,7 +1480,7 @@ def test_text_replace_with_intro_only_subsection_scope_preserves_items() -> None
     op = LegalOperation(
         op_id="ee_test_replace_intro_only_subsection_scope",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "26_7"), ("subsection", "2"))),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -1757,7 +1759,7 @@ def test_item_text_replace_preserves_lowercase_sentence_start_from_source() -> N
     op = LegalOperation(
         op_id="ee_test_item_lowercase_sentence_start",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "24"), ("subsection", "1"), ("item", "2"))),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -1788,7 +1790,7 @@ def test_subsection_text_replace_keeps_lowercase_mid_sentence_replacement() -> N
     op = LegalOperation(
         op_id="ee_test_subsection_lowercase_mid_sentence",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "158"), ("subsection", "1"))),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -1819,7 +1821,7 @@ def test_text_replace_after_words_does_not_leave_double_terminal_period() -> Non
     op = LegalOperation(
         op_id="ee_test_after_words_period",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "74_22"), ("subsection", "3"))),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -2471,7 +2473,7 @@ def test_global_case_inflected_text_replace_handles_coordinated_relvaseadus_phra
     op = LegalOperation(
         op_id="ee_test_relvaseadus_global_case_phrase",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=()),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -2567,7 +2569,7 @@ def test_case_inflected_text_replace_handles_lepinguriik_phrase() -> None:
     op = LegalOperation(
         op_id="ee_test_lepinguriik_case_phrase",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "66"), ("subsection", "2"))),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -2651,7 +2653,7 @@ def test_global_case_inflected_text_replace_handles_relvaseadus_plural_coordinat
     op = LegalOperation(
         op_id="ee_test_relvaseadus_plural_coordination",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=()),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -3525,7 +3527,7 @@ def test_text_replace_insert_after_phrase_does_not_duplicate_inserted_suffix() -
     op = LegalOperation(
         op_id="ee_test_insert_after_phrase_once",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "103"), ("subsection", "3"))),
         payload=payload,
         provenance_tags=(
@@ -3734,7 +3736,7 @@ def test_global_case_inflected_text_replace_rewrites_estonian_case_forms() -> No
     op = LegalOperation(
         op_id="ee_test_case_inflected_global_replace",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=()),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -3765,7 +3767,7 @@ def test_global_case_inflected_text_replace_rewrites_nik_partitive() -> None:
     op = LegalOperation(
         op_id="ee_test_case_inflected_nik_replace",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=()),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -3797,7 +3799,7 @@ def test_global_case_inflected_text_replace_consumes_waist_instruction(monkeypat
     op = LegalOperation(
         op_id="ee_test_case_inflected_global_replace_waist",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=()),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -3839,7 +3841,7 @@ def test_global_case_inflected_text_replace_consumes_waist_instruction(monkeypat
     op2 = LegalOperation(
         op_id="ee_test_case_inflected_global_replace_2",
         sequence=2,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=()),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -3907,7 +3909,7 @@ def test_global_text_replace_consumes_typed_scope_and_exclusions(monkeypatch) ->
     op = LegalOperation(
         op_id="ee_test_text_replace_global_scope_waist",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=()),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -3998,7 +4000,7 @@ def test_case_inflected_text_replace_handles_mine_nominalizations() -> None:
     op = LegalOperation(
         op_id="ee_test_case_inflected_mine_replace",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "36"), ("subsection", "1"), ("item", "3"))),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -4114,7 +4116,7 @@ def test_global_case_inflected_text_replace_honors_excluded_paths() -> None:
     op = LegalOperation(
         op_id="ee_test_global_replace_with_exclusions",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=()),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -4204,7 +4206,7 @@ def test_global_case_inflected_text_replace_handles_minister_phrase_genitive() -
     op = LegalOperation(
         op_id="ee_test_minister_phrase_case",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=()),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -4259,7 +4261,7 @@ def test_global_case_inflected_text_replace_handles_multiword_minister_phrase_ca
     op = LegalOperation(
         op_id="ee_test_generic_minister_phrase_case",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=()),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -4310,7 +4312,7 @@ def test_global_case_inflected_text_replace_handles_ambiguous_genitive_phrase_co
     op = LegalOperation(
         op_id="ee_test_ambiguous_genitive_phrase_case",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=()),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -4354,7 +4356,7 @@ def test_global_case_inflected_text_replace_handles_taotlusel_after_finite_verb(
     op = LegalOperation(
         op_id="ee_test_finite_verb_taotlusel_case",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=()),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -4656,7 +4658,7 @@ def test_aruanded_global_rewrite_projects_chapter_heading_agreement() -> None:
     op = LegalOperation(
         op_id="ee_test_aruanded_heading_agreement",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=()),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -4715,7 +4717,7 @@ def test_global_normitehniline_markus_insert_after_uses_typed_rewrite_spec() -> 
     op = LegalOperation(
         op_id="ee_test_normitehniline_global",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=()),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -4965,7 +4967,7 @@ def test_text_replace_skips_match_inside_existing_replacement_surface() -> None:
     op = LegalOperation(
         op_id="ee_test_skip_nested_existing_replacement_surface",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "5"), ("subsection", "2_1"))),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -5124,7 +5126,7 @@ def test_global_case_inflected_text_replace_keeps_nominative_before_regular_noun
     op = LegalOperation(
         op_id="ee_test_keep_nominative_before_regular_noun_phrase",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=()),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -5160,7 +5162,7 @@ def test_global_case_inflected_text_replace_handles_teabevaldaja_possessive_cont
     op = LegalOperation(
         op_id="ee_test_teabevaldaja_possessive_contexts",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=()),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -5194,7 +5196,7 @@ def test_case_inflected_text_replace_handles_ametikoht_phrase_forms() -> None:
     op = LegalOperation(
         op_id="ee_test_ametikoht_phrase_forms",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "58"), ("subsection", "1"))),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -5227,7 +5229,7 @@ def test_case_inflected_text_replace_handles_kaitsevagi_genitive_through() -> No
     op = LegalOperation(
         op_id="ee_test_kaitsevagi_genitive_through",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "51"), ("subsection", "1"))),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -5255,7 +5257,7 @@ def test_global_case_inflected_text_replace_handles_plural_a_noun_phrase_forms()
     op = LegalOperation(
         op_id="ee_test_plural_a_noun_phrase_case",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=()),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -5282,7 +5284,7 @@ def test_global_case_inflected_text_replace_uses_genitive_modifier_for_comitativ
     op = LegalOperation(
         op_id="ee_test_minister_phrase_comitative",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=()),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -5318,7 +5320,7 @@ def test_global_text_replace_preserves_all_caps_heading_case() -> None:
     op = LegalOperation(
         op_id="ee_test_uppercase_heading_replace",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=()),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -5412,7 +5414,7 @@ def test_generic_minister_plural_text_replace_collapses_lists_and_shared_head_pa
     op = LegalOperation(
         op_id="ee_test_generic_minister_plural",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=()),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -5457,7 +5459,7 @@ def test_generic_minister_plural_text_replace_collapses_redundant_tail_before_no
     op = LegalOperation(
         op_id="ee_test_generic_minister_plural_tail",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=()),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -5511,7 +5513,7 @@ def test_generic_minister_plural_text_replace_consumes_typed_metadata(monkeypatc
     op = LegalOperation(
         op_id="ee_test_generic_minister_plural_typed",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=()),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -5524,7 +5526,7 @@ def test_generic_minister_plural_text_replace_consumes_typed_metadata(monkeypatc
     )
     typed_instruction = EEParsedInstruction(
         family=EEInstructionFamily.text_replace,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=op.target,
         source_statute_id="ee/test",
         source_title="Testseadus",
@@ -5563,7 +5565,7 @@ def test_global_case_inflected_text_replace_handles_coordinated_old_phrase_varia
     op = LegalOperation(
         op_id="ee_test_coordinated_old_phrase_case",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=()),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -5593,7 +5595,7 @@ def test_global_case_inflected_text_replace_handles_coordinated_person_list_vari
     op = LegalOperation(
         op_id="ee_test_coordinated_person_list_case",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=()),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -5636,7 +5638,7 @@ def test_targeted_text_replace_can_extend_shadowed_teabevaldajale_phrase() -> No
     op = LegalOperation(
         op_id="ee_test_shadowed_teabevaldajale_phrase",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "22"), ("subsection", "3"))),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -5662,7 +5664,7 @@ def test_targeted_text_replace_can_extend_shadowed_teabevaldaja_subject_phrase()
     op = LegalOperation(
         op_id="ee_test_shadowed_teabevaldaja_subject_phrase",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "25"), ("subsection", "1"))),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -5689,7 +5691,7 @@ def test_global_case_inflected_text_replace_handles_genitive_before_poolt() -> N
     op = LegalOperation(
         op_id="ee_test_genitive_before_poolt",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=()),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -5877,7 +5879,7 @@ def test_global_case_inflected_text_replace_handles_coordinated_or_phrase_cases(
     op = LegalOperation(
         op_id="ee_test_coordinated_or_phrase_case",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=()),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -6079,7 +6081,7 @@ def test_sentence_scoped_text_replace_applies_multiple_typed_sentence_indexes() 
     op = LegalOperation(
         op_id="ee_test_sentence_scoped_note_indexes",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "155"), ("subsection", "1"))),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -6132,7 +6134,7 @@ def test_global_case_inflected_text_replace_handles_amet_and_ministeerium_forms(
     op_1 = LegalOperation(
         op_id="ee_test_amet_case",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=()),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -6143,7 +6145,7 @@ def test_global_case_inflected_text_replace_handles_amet_and_ministeerium_forms(
     op_2 = LegalOperation(
         op_id="ee_test_ministeerium_case",
         sequence=2,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=()),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -6364,7 +6366,7 @@ def test_global_case_inflected_text_replace_handles_ameti_kohalik_asutus_phrase_
     op = LegalOperation(
         op_id="ee_test_ameti_kohalik_asutus_case",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=()),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -6409,7 +6411,7 @@ def test_global_case_inflected_text_replace_handles_ameti_kohaliku_asutuse_juht_
     op = LegalOperation(
         op_id="ee_test_ameti_kohaliku_asutuse_juht_case",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=()),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -6480,7 +6482,7 @@ def test_global_case_inflected_text_replace_handles_hyphenated_aastane_forms() -
     op = LegalOperation(
         op_id="ee_test_case_inflected_hyphenated_aastane",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=()),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -6508,7 +6510,7 @@ def test_global_case_inflected_text_replace_handles_meri_irregular_forms() -> No
     op = LegalOperation(
         op_id="ee_test_case_inflected_veekogu_meri",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=()),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -6706,7 +6708,7 @@ def test_global_case_inflected_text_replace_does_not_reapply_inside_inserted_suf
     op = LegalOperation(
         op_id="ee_test_no_self_reapply_inside_inserted_suffix",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=()),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -6754,7 +6756,7 @@ def test_global_case_inflected_text_replace_handles_maavanem_forms() -> None:
     op = LegalOperation(
         op_id="ee_test_maavanem_case",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=()),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -6784,7 +6786,7 @@ def test_global_case_inflected_text_replace_handles_ioon_family_forms() -> None:
     op = LegalOperation(
         op_id="ee_test_ioon_family_case",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=()),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -6812,7 +6814,7 @@ def test_global_case_inflected_text_replace_handles_ambiguous_ioon_object_after_
     op = LegalOperation(
         op_id="ee_test_ioon_partitive_object",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=()),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -6847,7 +6849,7 @@ def test_global_case_inflected_text_replace_handles_mine_to_olu_phrase_family() 
     op = LegalOperation(
         op_id="ee_test_mine_to_olu_phrase_family",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=()),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -6871,7 +6873,7 @@ def test_global_case_inflected_text_replace_handles_tud_modifier_phrase() -> Non
     op = LegalOperation(
         op_id="ee_test_tud_modifier_phrase",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=()),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -6920,7 +6922,7 @@ def test_global_case_inflected_text_replace_handles_line_adjective_forms() -> No
     op = LegalOperation(
         op_id="ee_test_line_case",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=()),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -6965,7 +6967,7 @@ def test_global_case_inflected_text_replace_handles_liit_genitive_family() -> No
     op = LegalOperation(
         op_id="ee_test_yhendus_liit_case",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=()),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -7012,7 +7014,7 @@ def test_global_case_inflected_text_replace_honors_augmented_exclusions_with_wit
     op = LegalOperation(
         op_id="ee_test_augmented_exclusion_witness",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=()),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -7066,7 +7068,7 @@ def test_case_preserving_replace_keeps_lowercase_common_noun_mid_sentence() -> N
     op = LegalOperation(
         op_id="ee_test_mid_sentence_lowercase_replace",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "44_4"), ("subsection", "5"))),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -7097,7 +7099,7 @@ def test_text_replace_second_sentence_scope_only_rewrites_target_sentence() -> N
     op = LegalOperation(
         op_id="ee_test_second_sentence_text_replace",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "9"), ("subsection", "5"))),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -7130,7 +7132,7 @@ def test_case_inflected_phrase_deletion_handles_inflected_old_forms() -> None:
     op = LegalOperation(
         op_id="ee_test_case_inflected_phrase_deletion",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "46_1"),)),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -7240,7 +7242,7 @@ def test_text_replace_handles_inflected_paragraph_marker_citations() -> None:
         LegalOperation(
             op_id="ee_test_section_reference_replace_1",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "18"), ("subsection", "1"), ("item", "13"))),
             payload=IRNode(
                 kind=IRNodeKind.CONTENT,
@@ -7251,7 +7253,7 @@ def test_text_replace_handles_inflected_paragraph_marker_citations() -> None:
         LegalOperation(
             op_id="ee_test_section_reference_replace_2",
             sequence=2,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "23"), ("subsection", "1"), ("item", "5"))),
             payload=IRNode(
                 kind=IRNodeKind.CONTENT,
@@ -7301,7 +7303,7 @@ def test_text_replace_on_subsection_target_rewrites_all_descendant_items() -> No
     op = LegalOperation(
         op_id="ee_test_subtree_replace_all",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "12"), ("subsection", "1"))),
         payload=IRNode(kind=IRNodeKind.CONTENT, text="õppetasu", attrs={"old_text": "õppemaksu"}),
     )
@@ -7326,7 +7328,7 @@ def test_text_replace_on_subsection_target_normalizes_numeric_range_spacing() ->
     op = LegalOperation(
         op_id="ee_test_range_spacing_text_replace",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "74_35"), ("subsection", "1"))),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -7350,7 +7352,7 @@ def test_text_replace_on_subsection_target_tolerates_minus_sign_range_surface() 
     op = LegalOperation(
         op_id="ee_test_minus_sign_range_delete",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "93"), ("subsection", "7"))),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -7374,7 +7376,7 @@ def test_text_replace_on_subsection_target_tolerates_hyphen_spacing_surface() ->
     op = LegalOperation(
         op_id="ee_test_hyphen_surface_text_replace",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "20"), ("subsection", "3"))),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -7431,7 +7433,7 @@ def test_text_replace_single_word_does_not_overmatch_inside_hyphen_compound() ->
     op = LegalOperation(
         op_id="ee_test_single_word_no_compound_overmatch",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "2"), ("subsection", "2"))),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -7455,7 +7457,7 @@ def test_text_replace_case_inflected_is_word_family() -> None:
     op = LegalOperation(
         op_id="ee_test_case_inflected_is_family",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "12_1"), ("subsection", "3"))),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -7526,7 +7528,7 @@ def test_section_text_replace_phrase_removal_normalizes_descendant_spacing() -> 
     op = LegalOperation(
         op_id="ee_test_section_text_replace_phrase_removal",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "46_1"),)),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -7584,7 +7586,7 @@ def test_global_text_replace_can_be_scoped_to_selected_chapters() -> None:
     op = LegalOperation(
         op_id="ee_test_scoped_global_replace",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=()),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -8183,7 +8185,7 @@ def test_text_replace_scoped_to_first_sentence_recognizes_esimeses_lauses_note()
     op = LegalOperation(
         op_id="ee_test_text_replace_first_sentence_esimeses_lauses",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "20"), ("subsection", "2"))),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -8216,7 +8218,7 @@ def test_text_replace_scoped_to_first_sentence_does_not_fallback_to_second_sente
     op = LegalOperation(
         op_id="ee_test_text_replace_first_sentence_no_broader_fallback",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "99"), ("subsection", "1"))),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -8248,7 +8250,7 @@ def test_text_replace_scoped_to_first_sentence_ignores_ordinal_periods() -> None
     op = LegalOperation(
         op_id="ee_test_text_replace_first_sentence_ordinal_period",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "12"), ("subsection", "2"))),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -8280,7 +8282,7 @@ def test_text_replace_scoped_to_first_sentence_prefers_typed_sentence_target_met
     op = LegalOperation(
         op_id="ee_test_text_replace_prefers_typed_sentence_target_meta",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "20"), ("subsection", "2"))),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -8309,7 +8311,7 @@ def test_text_replace_scoped_to_first_sentence_consumes_waist_instruction(monkey
     op = LegalOperation(
         op_id="ee_test_text_replace_first_sentence_esimeses_lauses_waist",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "20"), ("subsection", "2"))),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -8332,7 +8334,7 @@ def test_text_replace_scoped_to_first_sentence_consumes_waist_instruction(monkey
         return [
             EEParsedInstruction(
                 family=EEInstructionFamily.text_replace,
-                action=StructuralAction.TEXT_REPLACE,
+                action=StructuralAction.TEXT_PATCH,
                 target=op.target,
                 source_statute_id="ee/test",
                 source_title="",
@@ -8735,7 +8737,7 @@ def test_apply_ee_ops_sorts_same_source_text_replace_run_by_specificity() -> Non
         LegalOperation(
             op_id="global-text-replace",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=()),
             payload=IRNode(
                 kind=IRNodeKind.CONTENT,
@@ -8747,7 +8749,7 @@ def test_apply_ee_ops_sorts_same_source_text_replace_run_by_specificity() -> Non
         LegalOperation(
             op_id="specific-text-replace",
             sequence=2,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "20"), ("subsection", "3"))),
             payload=IRNode(
                 kind=IRNodeKind.CONTENT,
@@ -8806,7 +8808,7 @@ def test_apply_ee_ops_prefers_explicit_target_law_replace_over_generic_ministry_
     generic_op = LegalOperation(
         op_id="ee-generic-ministry-reorg",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=()),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -8822,7 +8824,7 @@ def test_apply_ee_ops_prefers_explicit_target_law_replace_over_generic_ministry_
     explicit_op = LegalOperation(
         op_id="ee-target-law-ministry-replace",
         sequence=2,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=()),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -8877,7 +8879,7 @@ def test_exact_target_insert_after_with_repeated_source_surface_emits_ambiguity(
     op = LegalOperation(
         op_id="ee-test-ambiguous-insert-after",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "26_7"), ("subsection", "1"))),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -8911,7 +8913,13 @@ def test_apply_ee_ops_records_unsupported_action() -> None:
         LegalOperation(
             op_id="ee-unsupported",
             sequence=1,
-            action=StructuralAction.TEXT_REPEAL,
+            action=StructuralAction.TEXT_PATCH,
+            # DELETE-kind text_patch = the former TEXT_REPEAL (§2.1 O6), which EE
+            # apply does not support (only replace-family text patches).
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.DELETE,
+                selector=TextSelector(match_text="x"),
+            ),
             target=LegalAddress(path=(("section", "1"),)),
             source=OperationSource(statute_id="2026/1"),
         )
@@ -9118,7 +9126,7 @@ def test_apply_ee_ops_retargets_section_item_text_replace_to_unique_descendant_o
         LegalOperation(
             op_id="ee-replace-old-item-6",
             sequence=3,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "23"), ("item", "6"))),
             payload=IRNode(
                 kind=IRNodeKind.CONTENT,
@@ -9185,7 +9193,7 @@ def test_apply_ee_ops_retargets_section_item_text_replace_to_same_number_subsect
     op = LegalOperation(
         op_id="ee-replace-section-item-2-same-number-subsection",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "8"), ("item", "2"))),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -9252,7 +9260,7 @@ def test_same_number_subsection_retarget_recovery_declares_boundary_no_escape(mo
     op = LegalOperation(
         op_id="ee-replace-section-item-2-same-number-subsection",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "8"), ("item", "2"))),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -9306,7 +9314,7 @@ def test_section_item_text_replace_does_not_retarget_same_number_subsection_with
     op = LegalOperation(
         op_id="ee-replace-section-item-2-no-old-text",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "8"), ("item", "2"))),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -9500,7 +9508,7 @@ def test_apply_ee_ops_records_unresolved_target_and_noop() -> None:
         LegalOperation(
             op_id="ee-noop",
             sequence=2,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "1"),)),
             payload=IRNode(
                 kind=IRNodeKind.CONTENT,
@@ -9843,7 +9851,7 @@ def test_text_replace_on_chapter_heading_only_updates_title() -> None:
     op = LegalOperation(
         op_id="ee_test_text_replace_chapter_heading",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("chapter", "8"),), special=FacetKind.HEADING),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -9881,7 +9889,7 @@ def test_text_replace_on_chapter_heading_consumes_waist_instruction(monkeypatch)
     op = LegalOperation(
         op_id="ee_test_text_replace_chapter_heading_waist",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("chapter", "8"),), special=FacetKind.HEADING),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
@@ -9902,7 +9910,7 @@ def test_text_replace_on_chapter_heading_consumes_waist_instruction(monkeypatch)
         return [
             EEParsedInstruction(
                 family=EEInstructionFamily.text_replace,
-                action=StructuralAction.TEXT_REPLACE,
+                action=StructuralAction.TEXT_PATCH,
                 target=op.target,
                 source_statute_id="ee/test",
                 source_title="",

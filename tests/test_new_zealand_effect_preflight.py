@@ -138,7 +138,7 @@ def test_effect_candidate_preflight_accepts_complete_text_replace_candidate_set_
     assert summary["blocked_rows"] == 0
     assert summary["operations_to_replay"] == 1
     assert len(report.operations_for_dry_run_replay()) == 1
-    assert evidence_row["canonical_family"] == "text_replace"
+    assert evidence_row["canonical_family"] == "text_patch"
     assert evidence_row["detail"]["instruction_subfamily"] == "direct_single_text_substitution"
     assert evidence_row["detail"]["latest_oracle_text_status"] == "oracle_new_text_only"
     assert evidence_row["detail"]["replay_claims"] is False
@@ -690,7 +690,7 @@ def _text_replace_operation(*, op_id: str, witness_rule_id: str) -> LegalOperati
     return LegalOperation(
         op_id=op_id,
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "21"),)),
         payload=None,
         text_patch=TextPatchSpec(

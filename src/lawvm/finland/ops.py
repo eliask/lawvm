@@ -33,6 +33,7 @@ from lawvm.core.semantic_types import (
     IRNodeKind,
     StructuralAction,
     TextPatchKindEnum,
+    is_text_patch_delete,
 )
 from lawvm.core.tree_ops import Path
 from lawvm.core.elaboration_context import TargetUnitKind
@@ -101,9 +102,18 @@ class OpType(StrEnum):
 # ops legitimately attach selection-meta payloads); it was reverted. The lesson:
 # "repeal carries no content" is a FINLAND drafting convention, not a universal
 # property of the cross-jurisdiction operation type. Keep it inside ``finland/``.
-_FI_REPEAL_ACTIONS: frozenset[StructuralAction] = frozenset(
-    {StructuralAction.REPEAL, StructuralAction.TEXT_REPEAL}
+# A whole-provision REPEAL, or a DELETE-kind TEXT_PATCH (the former TEXT_REPEAL,
+# §2.1 O6), both delete text and so are subject to the repeal-payload invariant.
+# A REPLACE/APPEND-kind TEXT_PATCH (the former TEXT_REPLACE) writes content and
+# is NOT a repeal — it is deliberately excluded, matching the pre-collapse set.
+_FI_REPEAL_STRUCTURAL_ACTIONS: frozenset[StructuralAction] = frozenset(
+    {StructuralAction.REPEAL}
 )
+
+
+def _fi_op_is_repeal_like(lo: _LegalOperation) -> bool:
+    """Whether ``lo`` deletes a provision/text (REPEAL or DELETE-kind TEXT_PATCH)."""
+    return lo.action in _FI_REPEAL_STRUCTURAL_ACTIONS or is_text_patch_delete(lo)
 
 
 class FinlandRepealPayloadError(ValueError):
@@ -136,7 +146,7 @@ def validate_fi_repeal_payload(lo: _LegalOperation) -> None:
     the tombstone), so it changes no replay output — it locks the convention in
     as a type-level fail-loud instead of a silent assumption.
     """
-    if lo.action not in _FI_REPEAL_ACTIONS:
+    if not _fi_op_is_repeal_like(lo):
         return
     payload = lo.payload
     if payload is None or _payload_is_repeal_tombstone(payload):
@@ -1386,8 +1396,7 @@ class AmendmentOp:
             StructuralAction.RENUMBER: OpType.RENUMBER,
             StructuralAction.HEADING_REPLACE: OpType.REPLACE,
             StructuralAction.META: OpType.REPLACE,
-            StructuralAction.TEXT_REPLACE: OpType.REPLACE,
-            StructuralAction.TEXT_REPEAL: OpType.REPLACE,
+            StructuralAction.TEXT_PATCH: OpType.REPLACE,
         }
         op_type: OpType | None = _ACTION_MAP.get(lo.action)
         if op_type is None:

@@ -271,7 +271,7 @@ def test_replay_words_in_brackets_replaces_unique_parenthesized_span() -> None:
     op = LegalOperation(
         op_id="uk_test_words_in_brackets_replay",
         sequence=0,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "100"), ("subsection", "6"))),
         text_patch=_replace_patch("TEXT_IN_BRACKETS", "(including a nil liability)"),
     )
@@ -315,7 +315,7 @@ def test_replay_words_in_brackets_blocks_ambiguous_parenthesized_spans() -> None
     op = LegalOperation(
         op_id="uk_test_words_in_brackets_ambiguous",
         sequence=0,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "100"), ("subsection", "6"))),
         text_patch=_replace_patch("TEXT_IN_BRACKETS", "(replacement)"),
     )
@@ -360,7 +360,7 @@ def test_replay_after_words_in_brackets_inserts_after_unique_parenthesized_span(
     op = LegalOperation(
         op_id="uk_test_after_words_in_brackets_replay",
         sequence=0,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "1"), ("subsection", "5"), ("paragraph", "c"))),
         text_patch=_replace_patch("TEXT_AFTER_WORDS_IN_BRACKETS", " and Part 1A of Schedule 7A"),
     )
@@ -414,7 +414,7 @@ def test_replay_after_words_in_brackets_blocks_ambiguous_parenthesized_spans() -
     op = LegalOperation(
         op_id="uk_test_after_words_in_brackets_ambiguous",
         sequence=0,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "1"), ("subsection", "5"), ("paragraph", "c"))),
         text_patch=_replace_patch("TEXT_AFTER_WORDS_IN_BRACKETS", " inserted words"),
     )
@@ -464,7 +464,7 @@ def test_replay_at_end_words_in_parentheses_inserts_inside_unique_span() -> None
     op = LegalOperation(
         op_id="uk_test_at_end_words_in_parentheses_replay",
         sequence=0,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "13"), ("subsection", "3"))),
         text_patch=_replace_patch("TEXT_AT_END_WORDS_IN_PARENTHESES", " or 11B"),
     )
@@ -508,7 +508,7 @@ def test_replay_at_end_words_in_parentheses_blocks_ambiguous_parenthesized_spans
     op = LegalOperation(
         op_id="uk_test_at_end_words_in_parentheses_ambiguous",
         sequence=0,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "13"), ("subsection", "3"))),
         text_patch=_replace_patch("TEXT_AT_END_WORDS_IN_PARENTHESES", " or 11B"),
     )
@@ -551,7 +551,7 @@ def test_replay_at_end_step_insert_appends_to_unique_step_child() -> None:
     op = LegalOperation(
         op_id="uk_test_at_end_step_replay",
         sequence=0,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "23"),)),
         text_patch=_replace_patch(
             f"TEXT_AT_END_OF_STEP{US}4",
@@ -608,7 +608,7 @@ def test_replay_at_end_step_insert_blocks_ambiguous_step_children() -> None:
     op = LegalOperation(
         op_id="uk_test_at_end_step_ambiguous",
         sequence=0,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "23"),)),
         text_patch=_replace_patch(f"TEXT_AT_END_OF_STEP{US}4", "extra"),
     )
@@ -656,7 +656,7 @@ def test_replay_before_step_insert_inserts_before_unique_flat_step_boundary() ->
     op = LegalOperation(
         op_id="uk_test_before_step_replay",
         sequence=0,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "809q"), ("subsection", "3"))),
         text_patch=_replace_patch(
             f"TEXT_BEFORE_STEP{US}1",
@@ -709,7 +709,7 @@ def test_replay_before_step_insert_blocks_ambiguous_step_boundaries() -> None:
     op = LegalOperation(
         op_id="uk_test_before_step_ambiguous",
         sequence=0,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "809q"), ("subsection", "3"))),
         text_patch=_replace_patch(f"TEXT_BEFORE_STEP{US}1", "Step A1 Inserted."),
     )
@@ -752,7 +752,7 @@ def test_replay_words_before_type_substitution_replaces_intro_only() -> None:
     op = LegalOperation(
         op_id="uk_test_words_before_type_replay",
         sequence=0,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "558"),)),
         text_patch=_replace_patch(
             "TEXT_BEFORE_CHILD_type_1",
@@ -802,7 +802,7 @@ def test_replay_unique_fee_sum_replaces_single_currency_amount() -> None:
     op = LegalOperation(
         op_id="uk_test_unique_fee_sum_replay",
         sequence=0,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "12"), ("subsection", "3"))),
         text_patch=_replace_patch("TEXT_UNIQUE_FEE_SUM", "\u00a35000"),
     )
@@ -846,7 +846,7 @@ def test_replay_unique_fee_sum_blocks_multiple_currency_amounts() -> None:
     op = LegalOperation(
         op_id="uk_test_unique_fee_sum_ambiguous",
         sequence=0,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "12"), ("subsection", "3"))),
         text_patch=_replace_patch("TEXT_UNIQUE_FEE_SUM", "\u00a35000"),
     )
@@ -889,7 +889,7 @@ def test_replay_unique_literal_repeal_deletes_single_literal_only() -> None:
     op = LegalOperation(
         op_id="uk_test_unique_literal_repeal",
         sequence=0,
-        action=StructuralAction.TEXT_REPEAL,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "558"), ("subsection", "2"))),
         text_patch=TextPatchSpec(
             kind=TextPatchKindEnum.DELETE,
@@ -937,7 +937,7 @@ def test_replay_unique_literal_repeal_blocks_multiple_literals() -> None:
     op = LegalOperation(
         op_id="uk_test_unique_literal_repeal_ambiguous",
         sequence=0,
-        action=StructuralAction.TEXT_REPEAL,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "558"), ("subsection", "2"))),
         text_patch=TextPatchSpec(
             kind=TextPatchKindEnum.DELETE,
@@ -998,7 +998,7 @@ def test_replay_alternate_unique_literal_replaces_single_matching_alternate() ->
     op = LegalOperation(
         op_id="uk_test_alternate_unique_literal_replace",
         sequence=0,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "95"), ("subsection", "2"), ("paragraph", "b"))),
         text_patch=_replace_patch(f"TEXT_ALTERNATE_UNIQUE{US}seven{US}7", "14"),
     )
@@ -1049,7 +1049,7 @@ def test_replay_alternate_unique_literal_blocks_multiple_matching_alternates() -
     op = LegalOperation(
         op_id="uk_test_alternate_unique_literal_replace_ambiguous",
         sequence=0,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "95"), ("subsection", "2"), ("paragraph", "b"))),
         text_patch=_replace_patch(f"TEXT_ALTERNATE_UNIQUE{US}seven{US}7", "14"),
     )
@@ -1133,7 +1133,7 @@ def test_uk_amended_effect_type_can_require_source_for_text_patch_replay() -> No
     op = LegalOperation(
         op_id="uk_test_amended_source_text_patch",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("schedule", "14"),)),
         text_patch=TextPatchSpec(
             kind=TextPatchKindEnum.REPLACE,
@@ -1201,7 +1201,7 @@ def test_fragment_substitution_provenance_only_swallows_json_decode_errors(
     valid_op = LegalOperation(
         op_id="op-1",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "1"),)),
         provenance_tags=(
             _NOTE_FRAGMENT_SUB + '[{"original": "old text", "replacement": "new text"}]',
@@ -1210,14 +1210,14 @@ def test_fragment_substitution_provenance_only_swallows_json_decode_errors(
     malformed_op = LegalOperation(
         op_id="op-2",
         sequence=2,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "1"),)),
         provenance_tags=(_NOTE_FRAGMENT_SUB + "{not json",),
     )
     unexpected_op = LegalOperation(
         op_id="op-3",
         sequence=3,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "1"),)),
         provenance_tags=(_NOTE_FRAGMENT_SUB + "[]",),
     )
@@ -3359,7 +3359,7 @@ def test_compile_after_quoted_anchor_insert_accepts_comma_after_insert() -> None
     inserted = "and section 82 of the Courts Reform (Scotland) Act 2014 (appeals from simple procedure cases)"
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "103"), ("subsection", "1"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == anchor
@@ -3426,7 +3426,7 @@ def test_compile_after_quoted_anchor_include_from_source_context() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action == StructuralAction.TEXT_REPLACE
+    assert ops[0].action == StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (
         ("section", "284"),
         ("subsection", "1"),
@@ -3479,7 +3479,7 @@ def test_compile_after_quoted_anchor_insert_recovers_closing_open_quote() -> Non
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "enforcement notice"
     assert ops[0].text_patch.replacement == "enforcement notice, enforcement warning notice,"
@@ -3549,7 +3549,7 @@ def test_compile_after_quoted_anchor_insert_recovers_dangling_payload_quote() ->
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "62c"), ("subsection", "3"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "Schedule 1"
@@ -3607,7 +3607,7 @@ def test_compile_quoted_substitution_records_parenthetical_scope_note() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "The regulations may"
     assert ops[0].text_patch.replacement == "Regulations under this section may"
@@ -3687,7 +3687,7 @@ def test_compile_words_before_quoted_anchor_substitution_preserves_anchor() -> N
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (
         ("section", "11"),
         ("subsection", "5"),
@@ -3817,7 +3817,7 @@ def test_compile_passive_before_quoted_anchor_insert_lowers_text_patch() -> None
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (
         ("schedule", "2"),
         ("paragraph", "1a"),
@@ -3905,7 +3905,7 @@ def test_compile_subsequently_occurs_substitution_uses_source_sibling_boundary()
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "28a"), ("subsection", "2"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == (
@@ -3992,7 +3992,7 @@ def test_compile_second_place_deictic_substitution_uses_nearest_source_sibling()
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target.path == (("section", "23"), ("subsection", "2a"))
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == (
@@ -4155,7 +4155,7 @@ def test_compile_after_quoted_anchor_ordinal_block_insert_lowers_text_patch() ->
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "references to"
     assert ops[0].text_patch.selector.occurrence == 2
@@ -4212,7 +4212,7 @@ def test_compile_parenthesized_ordinal_places_substitution_lowers_text_patches()
     )
 
     assert len(ops) == 2
-    assert [op.action for op in ops] == [StructuralAction.TEXT_REPLACE, StructuralAction.TEXT_REPLACE]
+    assert [op.action for op in ops] == [StructuralAction.TEXT_PATCH, StructuralAction.TEXT_PATCH]
     assert all(op.text_patch is not None for op in ops)
     assert [op.text_patch.selector.match_text for op in ops if op.text_patch] == ["GDPR", "GDPR"]
     assert [op.text_patch.selector.occurrence for op in ops if op.text_patch] == [3, 2]
@@ -4891,7 +4891,7 @@ def test_compile_words_substituted_uses_explicit_source_schedule_paragraph_targe
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
 
     assert len(ops) == 1
-    assert ops[0].action == StructuralAction.TEXT_REPLACE
+    assert ops[0].action == StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("schedule", "3"), ("paragraph", "5"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "rent assessment"
@@ -7243,7 +7243,7 @@ def test_compile_definition_child_structural_insert_before_tail_connector() -> N
     )
 
     assert [op.action for op in ops] == [
-        StructuralAction.TEXT_REPLACE,
+        StructuralAction.TEXT_PATCH,
         StructuralAction.INSERT,
     ]
     assert ops[0].target.path == (("section", "374"),)
@@ -7614,7 +7614,7 @@ def test_compile_words_inserted_after_fragment_to_text_replace() -> None:
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 2
-    assert [op.action.value for op in ops] == ["text_replace", "text_replace"]
+    assert [op.action.value for op in ops] == ["text_patch", "text_patch"]
     assert [op.payload for op in ops] == [None, None]
     assert [op.target.path for op in ops] == [
         (("schedule", "7a"), ("paragraph", "1"), ("subparagraph", "1")),
@@ -7670,7 +7670,7 @@ def test_compile_empty_type_quoted_anchor_insert_infers_text_replace() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (
         ("schedule", "1"),
         ("paragraph", "8"),
@@ -7778,8 +7778,8 @@ def test_compile_empty_type_compound_quoted_anchor_inserts_split_text_patches() 
 
     assert len(ops) == 2
     assert [op.action for op in ops] == [
-        StructuralAction.TEXT_REPLACE,
-        StructuralAction.TEXT_REPLACE,
+        StructuralAction.TEXT_PATCH,
+        StructuralAction.TEXT_PATCH,
     ]
     assert [op.target.path for op in ops] == [
         (("section", "86"), ("subsection", "4")),
@@ -7897,8 +7897,8 @@ def test_compile_empty_type_compound_target_local_text_insertions_split_text_pat
 
     assert len(ops) == 2
     assert [op.action for op in ops] == [
-        StructuralAction.TEXT_REPLACE,
-        StructuralAction.TEXT_REPLACE,
+        StructuralAction.TEXT_PATCH,
+        StructuralAction.TEXT_PATCH,
     ]
     assert [op.target.path for op in ops] == [
         (("section", "91"), ("subsection", "2")),
@@ -8005,7 +8005,7 @@ def test_compile_words_inserted_before_fragment_to_text_replace() -> None:
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].payload is None
     assert ops[0].target.path == (("section", "106"), ("subsection", "7"))
     assert ops[0].text_patch is not None
@@ -8052,7 +8052,7 @@ def test_compile_payload_before_anchor_insert_lowers_to_text_replace() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].payload is None
     assert ops[0].target.path == (
         ("schedule", "3"),
@@ -8159,7 +8159,7 @@ def test_compile_before_nested_quoted_anchor_block_insert() -> None:
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target.path == (("section", "67a"), ("subsection", "1"))
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == "\u201cregulated modification\u201d"
@@ -8214,7 +8214,7 @@ def test_compile_before_nested_quoted_anchor_inline_insert() -> None:
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target.path == (
         ("section", "4"),
         ("subsection", "1"),
@@ -8273,7 +8273,7 @@ def test_compile_before_quoted_anchor_nested_payload_insert() -> None:
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target.path == (
         ("section", "18"),
         ("subsection", "2"),
@@ -8327,7 +8327,7 @@ def test_compile_words_inserted_at_end_to_text_replace() -> None:
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].payload is None
     assert ops[0].target.path == (("section", "33"), ("subsection", "1a"))
     assert ops[0].text_patch is not None
@@ -8369,7 +8369,7 @@ def test_compile_words_inserted_at_end_of_that_paragraph_to_text_replace() -> No
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].payload is None
     assert ops[0].target.path == (
         ("section", "11"),
@@ -8414,7 +8414,7 @@ def test_compile_words_inserted_at_end_of_nested_target_to_text_replace() -> Non
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].payload is None
     assert ops[0].target.path == (
         ("section", "263"),
@@ -8490,7 +8490,7 @@ def test_compile_insert_at_end_not_as_part_to_text_append() -> None:
     assert observations[0]["strict_disposition"] == "record"
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target.path == (("section", "809e"), ("subsection", "1"))
     assert op.text_patch is not None
     assert op.text_patch.kind is TextPatchKindEnum.APPEND
@@ -8550,7 +8550,7 @@ def test_compile_preposed_words_inserted_at_end_to_text_append() -> None:
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target.path == (("section", "8a"), ("subsection", "1a"))
     assert op.text_patch is not None
     assert op.text_patch.kind is TextPatchKindEnum.APPEND
@@ -8633,7 +8633,7 @@ def test_compile_at_end_subsection_of_section_unquoted_dash_insert_to_text_appen
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target.path == (("section", "100"), ("subsection", "2"))
     assert op.text_patch is not None
     assert op.text_patch.kind is TextPatchKindEnum.APPEND
@@ -8699,7 +8699,7 @@ def test_compile_unquoted_anchor_quoted_substitution_to_text_patch() -> None:
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target.path == (("schedule", "7"), ("paragraph", "2"), ("item", "a"))
     assert op.text_patch is not None
     assert op.text_patch.kind is TextPatchKindEnum.REPLACE
@@ -8805,7 +8805,7 @@ def test_compile_at_end_stray_full_stop_insert_to_text_append() -> None:
     )
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target.path == (
         ("section", "23"),
         ("subsection", "2"),
@@ -8883,7 +8883,7 @@ def test_compile_at_end_dangling_insert_quote_to_text_append() -> None:
     assert observations[0]["replacement"] == ", but this is subject to section 733A."
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target.path == (("section", "731"), ("subsection", "3"))
     assert op.text_patch is not None
     assert op.text_patch.kind is TextPatchKindEnum.APPEND
@@ -8944,7 +8944,7 @@ def test_compile_schedule_qualified_at_end_insert_to_text_append() -> None:
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target.path == (("schedule", "5"), ("paragraph", "31"))
     assert op.text_patch is not None
     assert op.text_patch.kind is TextPatchKindEnum.APPEND
@@ -9014,7 +9014,7 @@ def test_compile_words_inserted_at_end_unquoted_dash_payload_to_text_replace() -
     assert observations[0]["blocking"] is False
     assert observations[0]["strict_disposition"] == "record"
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "10"), ("subsection", "1"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.kind is TextPatchKindEnum.APPEND
@@ -9131,7 +9131,7 @@ def test_compile_at_end_following_sentence_insert_to_text_append() -> None:
     assert observations[0]["reason_code"] == "explicit_at_end_quoted_dash_text_insertion_patch"
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target.path == (("section", "3"), ("subsection", "2"))
     assert op.text_patch is not None
     assert op.text_patch.kind is TextPatchKindEnum.APPEND
@@ -9185,7 +9185,7 @@ def test_compile_sentence_bounded_at_end_insert_ignores_following_source_row() -
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "276"), ("subsection", "3"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.kind is TextPatchKindEnum.APPEND
@@ -9244,7 +9244,7 @@ def test_compile_at_end_new_line_unquoted_insert_to_text_append() -> None:
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.payload is None
     assert op.target.path == (("section", "12aa"), ("subsection", "6"))
     assert op.text_patch is not None
@@ -9320,7 +9320,7 @@ def test_compile_words_substituted_from_quoted_anchor_to_end_with_block_payload(
 
     assert lowering_rejections == []
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "25"), ("subsection", "2"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_FROM_with_TO_END"
@@ -9390,7 +9390,7 @@ def test_compile_words_inserted_after_definition_with_block_payload() -> None:
 
     assert lowering_rejections == []
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "171"), ("subsection", "1"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_AFTER_DEFINITION_2013 Act"
@@ -9439,7 +9439,7 @@ def test_replay_after_definition_insert_allows_parenthetical_translation_anchor(
     op = LegalOperation(
         op_id="uk_test_after_definition_parenthetical_translation",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "171"), ("subsection", "1"))),
         text_patch=TextPatchSpec(
             kind=TextPatchKindEnum.REPLACE,
@@ -9501,7 +9501,7 @@ def test_replay_after_definition_insert_stops_before_plural_conjoined_definition
     op = LegalOperation(
         op_id="uk_test_after_definition_before_plural_conjoined",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "31"), ("subsection", "1"))),
         text_patch=TextPatchSpec(
             kind=TextPatchKindEnum.REPLACE,
@@ -9595,7 +9595,7 @@ def test_compile_words_inserted_after_definition_with_optional_article() -> None
 
     assert lowering_records == []
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "221"),)
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_AFTER_DEFINITION_2002 Act"
@@ -9744,7 +9744,7 @@ def test_compile_child_qualified_quoted_substitution() -> None:
 
     assert lowering_records == []
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("schedule", "2"), ("paragraph", "44"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "Scottish Homes"
@@ -9793,7 +9793,7 @@ def test_compile_child_qualified_word_omission() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (
         ("section", "54"),
         ("subsection", "3"),
@@ -9859,7 +9859,7 @@ def test_compile_metadata_carried_quoted_words_repeal_from_source_fragment() -> 
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (
         ("section", "98"),
         ("subsection", "3"),
@@ -9911,7 +9911,7 @@ def test_compile_metadata_carried_scoped_quoted_words_repeal_splits_fragments() 
 
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
 
-    assert [op.action for op in ops] == [StructuralAction.TEXT_REPEAL, StructuralAction.TEXT_REPEAL]
+    assert [op.action for op in ops] == [StructuralAction.TEXT_PATCH, StructuralAction.TEXT_PATCH]
     assert [op.target.path for op in ops] == [
         (("section", "42"), ("subsection", "7"), ("paragraph", "a")),
         (("section", "42"), ("subsection", "7"), ("paragraph", "a")),
@@ -9968,7 +9968,7 @@ def test_compile_metadata_carried_omitting_words_repeal_from_section_subsection_
 
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
 
-    assert [op.action for op in ops] == [StructuralAction.TEXT_REPEAL, StructuralAction.TEXT_REPEAL]
+    assert [op.action for op in ops] == [StructuralAction.TEXT_PATCH, StructuralAction.TEXT_PATCH]
     assert [op.text_patch.selector.match_text for op in ops if op.text_patch is not None] == [
         "(l) Bulgaria",
         "(q) Romania",
@@ -10021,7 +10021,7 @@ def test_compile_metadata_carried_substituting_words_from_scoped_source() -> Non
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == (
         "neither retired from regular employment nor otherwise"
@@ -10113,7 +10113,7 @@ def test_compile_mixed_structural_text_rewrite_lowers_only_text_half() -> None:
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "42"), ("subsection", "5"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == (
@@ -10244,7 +10244,7 @@ def test_compile_metadata_carried_scoped_quoted_words_repeal_accepts_full_sectio
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "43a"), ("subsection", "2a"), ("paragraph", "a"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "section 257BA of the principal Act or"
@@ -10287,7 +10287,7 @@ def test_compile_metadata_carried_definition_quoted_word_repeal_scopes_to_defini
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "118"), ("subsection", "1"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == f"TEXT_IN_DEFINITION_tax{US}DELETE{US}, 20C"
@@ -10371,7 +10371,7 @@ def test_compile_section_qualified_quote_only_word_omission_for_subsection() -> 
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "36"), ("subsection", "3a"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "section 257BA of the principal Act or"
@@ -10417,7 +10417,7 @@ def test_compile_child_qualified_word_omission_accepts_semicolon_terminated_row(
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "17"), ("subsection", "2"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "Subject to subsection (3) below,"
@@ -10463,7 +10463,7 @@ def test_compile_child_qualified_range_substitution_requires_target_match() -> N
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "11zd"), ("subsection", "1"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_FROM_on any ground_TO_or (4)"
@@ -10581,7 +10581,7 @@ def test_compile_prefix_subsection_paragraph_word_omission() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (
         ("section", "412"),
         ("subsection", "1"),
@@ -10687,7 +10687,7 @@ def test_compile_prefix_subparagraph_item_word_omission() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (
         ("schedule", "2"),
         ("part", "2"),
@@ -10791,7 +10791,7 @@ def test_compile_prefix_subparagraph_word_omission() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (
         ("schedule", "2"),
         ("part", "2"),
@@ -10892,7 +10892,7 @@ def test_compile_conjoined_prefix_subsection_paragraph_word_omission() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (
         ("section", "103a"),
         ("subsection", "3"),
@@ -10995,7 +10995,7 @@ def test_compile_child_qualified_final_word_omission() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (
         ("section", "60"),
         ("subsection", "2a"),
@@ -11110,7 +11110,7 @@ def test_compile_at_end_definition_insert() -> None:
 
     assert lowering_records == []
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "23"), ("subsection", "1"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == (
@@ -11161,7 +11161,7 @@ def test_compile_at_end_definition_unquoted_dash_insert() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "103"), ("subsection", "1"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == (
@@ -11259,7 +11259,7 @@ def test_compile_at_end_definition_target_context_insert() -> None:
     assert observations[0]["text_match"] == f"TEXT_IN_DEFINITION_harm{US}AT_END"
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target.path == (("section", "31"),)
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == f"TEXT_IN_DEFINITION_harm{US}AT_END"
@@ -11310,7 +11310,7 @@ def test_compile_at_end_definition_unquoted_insert() -> None:
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "13"), ("subsection", "5"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_IN_DEFINITION_permitted purposes\x1fAT_END"
@@ -11361,7 +11361,7 @@ def test_compile_in_definition_after_anchor_add_lowers_owned_insert_synonym() ->
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (
         ("schedule", "2"),
         ("paragraph", "1"),
@@ -11461,7 +11461,7 @@ def test_compile_in_definition_after_paragraphs_insert_lowers_definition_tail() 
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "45"),)
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == (
@@ -11577,7 +11577,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
 
     assert lowering_rejections == []
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "31"), ("subsection", "1"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_AFTER_DEFINITION_intrusive"
@@ -11648,7 +11648,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "TEXT_BEGINNING",
             "Subject to subsection (4A),",
             0,
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_beginning_text_insertion_patch",
         ),
         (
@@ -11659,7 +11659,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "TEXT_BEGINNING",
             "except where the account and the report are published by the body,",
             0,
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_beginning_text_insertion_patch",
         ),
         (
@@ -11670,7 +11670,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "TEXT_BEGINNING",
             "Subject to subsection (6A) below,",
             0,
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_beginning_text_insertion_patch",
         ),
         (
@@ -11680,7 +11680,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "TEXT_BEGINNING",
             "Subject to regulation 13C(6)",
             0,
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_beginning_text_insertion_patch",
         ),
         (
@@ -11691,7 +11691,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "(1)",
             "(1) or subsection (1A) ",
             0,
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_after_quoted_anchor_insert_text_patch",
         ),
         (
@@ -11702,7 +11702,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "Act",
             "Act or under section 56 or 63 of the Title Conditions (Scotland) Act 2003 (asp 9) ",
             0,
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_after_quoted_anchor_insert_text_patch",
         ),
         (
@@ -11712,7 +11712,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "18,",
             "18, 18A, 18B, 18C, ",
             0,
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_bare_quoted_anchor_insert_text_patch",
         ),
         (
@@ -11722,7 +11722,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "28",
             "28 , 28A ",
             0,
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_bare_quoted_anchor_insert_text_patch",
         ),
         (
@@ -11732,7 +11732,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "Act",
             "Act and to sections 52 to 56 ",
             0,
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_bare_quoted_anchor_insert_text_patch",
         ),
         (
@@ -11742,7 +11742,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "or",
             "",
             -1,
-            StructuralAction.TEXT_REPEAL,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_final_quoted_word_repeal_text_patch",
         ),
         (
@@ -11752,7 +11752,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "TEXT_WORD_and_IMMEDIATELY_FOLLOWING_paragraph_a",
             "",
             0,
-            StructuralAction.TEXT_REPEAL,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_contextual_adjacent_word_repeal_text_patch",
         ),
         (
@@ -11762,7 +11762,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "TEXT_WORD_or_IMMEDIATELY_FOLLOWING_paragraph_b",
             "",
             0,
-            StructuralAction.TEXT_REPEAL,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_contextual_adjacent_word_repeal_text_patch",
         ),
         (
@@ -11772,7 +11772,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "is",
             "is not",
             2,
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_word_inserted_after_word_where_ordinal_text_patch",
         ),
         (
@@ -11783,7 +11783,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "section",
             "section or any other section ",
             1,
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_after_quoted_anchor_where_ordinal_insert_text_patch",
         ),
         (
@@ -11794,7 +11794,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "by",
             "by varying or",
             1,
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_after_quoted_anchor_ordinal_insert_text_patch",
         ),
         (
@@ -11805,7 +11805,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "or",
             "or on ",
             2,
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_after_quoted_anchor_where_ordinal_insert_text_patch",
         ),
         (
@@ -11816,7 +11816,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "parent",
             "parent, child",
             0,
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_target_scoped_each_child_after_word_insert_text_patch",
         ),
         (
@@ -11827,7 +11827,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "board",
             "board , a Transport Partnership ",
             2,
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_after_quoted_anchor_where_ordinal_insert_text_patch",
         ),
         (
@@ -11838,7 +11838,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "provision",
             "provision, assistance in provision or performance",
             0,
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_after_quoted_anchor_all_occurrences_insert_text_patch",
         ),
         (
@@ -11849,7 +11849,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "specified scheme",
             "specified scheme or specified section, as applicable",
             0,
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_after_quoted_anchor_all_occurrences_insert_text_patch",
         ),
         (
@@ -11859,7 +11859,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "authority",
             "authority responsible for the school education",
             0,
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_metadata_carried_after_substitute_insert_text_patch",
         ),
         (
@@ -11870,7 +11870,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "TEXT_AFTER_Lord Chancellor may_TO_END",
             ", after consulting the Lord Chief Justice,",
             0,
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_after_anchor_substitute_tail_substitution_text_patch",
         ),
         (
@@ -11881,7 +11881,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "provision",
             "provision (whether or not educational provision)",
             1,
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_metadata_carried_after_substitute_insert_text_patch",
         ),
         (
@@ -11892,7 +11892,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "TEXT_END",
             "by such time as the Tribunal may require",
             0,
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_metadata_carried_at_end_substitute_insert_text_patch",
         ),
         (
@@ -11902,7 +11902,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "TEXT_END",
             ", subject to subsection (5) of this section",
             0,
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_metadata_carried_at_end_add_insert_text_patch",
         ),
         (
@@ -11913,7 +11913,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "TEXT_END",
             "or under section 18 of the Justice Act (Northern Ireland) 2011",
             0,
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_metadata_carried_at_end_add_insert_text_patch",
         ),
         (
@@ -11924,7 +11924,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "TEXT_END",
             "or section 5(6AA) to (6AD) of the Broadcasting Act 1990",
             0,
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_metadata_carried_at_end_add_insert_text_patch",
         ),
         (
@@ -11939,7 +11939,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
                 "of regulation 6(5) and (6)"
             ),
             0,
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_at_end_text_insertion_patch",
         ),
         (
@@ -11951,7 +11951,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "TEXT_FROM_The tenancy_TO_devolved",
             "The tenancy has devolved on a person (the “ new tenant ”)",
             0,
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_metadata_carried_range_insert_substitution_text_patch",
         ),
         (
@@ -11961,7 +11961,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "or to the Scottish Crime and Drug Enforcement Agency",
             "",
             0,
-            StructuralAction.TEXT_REPEAL,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_repeal_quoted_words_text_patch",
         ),
         (
@@ -11972,7 +11972,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "TEXT_FROM_an_TO_surveillance",
             "the authorisation",
             2,
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_range_occurrence_substitution_text_patch",
         ),
         (
@@ -11982,7 +11982,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "poinding",
             "attachment",
             1,
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_post_quoted_where_ordinal_substitution_text_patch",
         ),
         (
@@ -11992,7 +11992,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "a poinding",
             "an attaching",
             2,
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_post_quoted_where_ordinal_substitution_text_patch",
         ),
         (
@@ -12002,7 +12002,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "the",
             "a",
             2,
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_post_quoted_where_ordinal_substitution_text_patch",
         ),
         (
@@ -12013,7 +12013,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "TEXT_FROM_member_TO_and",
             "constable of the Police Service; and aa another case.",
             0,
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_range_unquoted_substitution_text_patch",
         ),
         (
@@ -12023,7 +12023,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "in other respects,",
             "",
             0,
-            StructuralAction.TEXT_REPEAL,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_direct_quoted_word_omission_text_patch",
         ),
         (
@@ -12033,7 +12033,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "TEXT_DEFINITION_ENTRY_permitted third countries",
             "",
             0,
-            StructuralAction.TEXT_REPEAL,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_definition_entry_repeal_text_patch",
         ),
         (
@@ -12044,7 +12044,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "Audit",
             "Public Audit",
             0,
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_immediately_before_word_insert_text_patch",
         ),
         (
@@ -12055,7 +12055,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "Audit",
             "Public Audit",
             2,
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_immediately_before_word_ordinal_insert_text_patch",
         ),
         (
@@ -12066,7 +12066,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "Health Authority",
             "Strategic Health Authority or by a Health Authority",
             0,
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_before_quoted_anchor_insert_text_patch",
         ),
         (
@@ -12077,7 +12077,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "A National Crime Agency officer",
             "A National Crime Agency officer A member of the Royal Navy Police.",
             0,
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_after_quoted_anchor_block_insert_text_patch",
         ),
         (
@@ -12088,7 +12088,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "Part—",
             "Part— “ central institution ” means— the Bank of England;",
             0,
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_after_quoted_anchor_definition_entry_block_insert_text_patch",
         ),
         (
@@ -12106,7 +12106,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
                 "Business and Trade."
             ),
             0,
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_quoted_anchor_block_substitution_text_patch",
         ),
         (
@@ -12122,7 +12122,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
                 "REGULATIONS 2002"
             ),
             0,
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_quoted_substitute_dash_quoted_payload_text_patch",
         ),
         (
@@ -12139,7 +12139,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
                 "REGULATIONS 2002"
             ),
             0,
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_quoted_substitute_dash_quoted_payload_text_patch",
         ),
         (
@@ -12149,7 +12149,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "a solicitor",
             "a practising solicitor",
             0,
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_leave_out_and_insert_text_patch",
         ),
         (
@@ -12160,7 +12160,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "caution",
             "caution or to give such other security as the sheriff thinks fit ",
             -1,
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_after_quoted_anchor_last_occurrence_insert_text_patch",
         ),
         (
@@ -12171,7 +12171,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "not exceeding one year from",
             "not exceeding— i one year; or ii 3 years, from ;",
             0,
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_quoted_anchor_block_substitution_text_patch",
         ),
         (
@@ -12181,7 +12181,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "the adult",
             "an adult with incapacity",
             1,
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_post_quoted_where_ordinal_substitution_text_patch",
         ),
         (
@@ -12192,7 +12192,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "association",
             "association (in this Part, the “professional association”) ",
             1,
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_after_quoted_anchor_where_ordinal_nested_quote_insert_text_patch",
         ),
         (
@@ -12204,7 +12204,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "TEXT_FROM_to the period_TO_END",
             "a in the case of a public body, the end date;",
             0,
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_anchor_to_end_block_substitution_text_patch",
         ),
         (
@@ -12219,7 +12219,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
                 "meanings in that subsection as in that Act;"
             ),
             1,
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_range_to_end_ordinal_block_substitution_text_patch",
         ),
         (
@@ -12231,7 +12231,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "TEXT_FROM_, any of the following provisions of the ANO 2016_TO_END",
             "a article 265E(2)(b)(ii) of the ANO 2016; b regulation 3(5)(b).",
             0,
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_range_to_end_open_quote_block_substitution_text_patch",
         ),
         (
@@ -12243,7 +12243,7 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "TEXT_FROM_there_TO_END",
             "the things mentioned in any of paragraphs (a), (b), (ba) and (c) of section 18(4) occur.",
             0,
-            StructuralAction.TEXT_REPLACE,
+            StructuralAction.TEXT_PATCH,
             "uk_effect_range_to_end_quoted_dash_substitution_text_patch",
         ),
     ],
@@ -12318,7 +12318,10 @@ def test_compile_additional_frontier_text_patch_idioms(
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == expected_match
     assert ops[0].text_patch.selector.occurrence == expected_occurrence
-    if expected_action is StructuralAction.TEXT_REPEAL:
+    # §2.1 O6: the former TEXT_REPEAL is a DELETE-kind TEXT_PATCH (no replacement
+    # payload); the former TEXT_REPLACE is a REPLACE/APPEND-kind TEXT_PATCH that
+    # carries the replacement. Discriminate on the patch kind, not the action.
+    if ops[0].text_patch.kind is TextPatchKindEnum.DELETE:
         assert ops[0].text_patch.replacement is None
     else:
         assert ops[0].text_patch.replacement == expected_replacement
@@ -12405,7 +12408,7 @@ def test_compile_at_end_add_insert_scopes_definition_target() -> None:
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target.path == (("section", "176"), ("subsection", "1"))
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == (
@@ -12474,7 +12477,7 @@ def test_compile_source_parent_carried_after_word_ordinal_insert() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "parent"
     assert ops[0].text_patch.selector.occurrence == 1
@@ -12529,7 +12532,7 @@ def test_compile_beginning_insert_each_child_expands_parent_target() -> None:
         (("section", "17aa"), ("subsection", "3"), ("paragraph", "b")),
         (("section", "17aa"), ("subsection", "3"), ("paragraph", "c")),
     ]
-    assert all(op.action is StructuralAction.TEXT_REPLACE for op in ops)
+    assert all(op.action is StructuralAction.TEXT_PATCH for op in ops)
     assert all(op.text_patch is not None for op in ops)
     assert [op.text_patch.selector.match_text for op in ops if op.text_patch] == [
         "TEXT_BEGINNING",
@@ -12636,7 +12639,7 @@ def test_compile_at_end_insert_each_child_lowers_listed_child_target() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (
         ("section", "18"),
         ("subsection", "1"),
@@ -12742,7 +12745,7 @@ def test_compile_ordinal_sentence_beginning_omission_lowers_bounded_selector() -
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "20"), ("subsection", "2"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.kind is TextPatchKindEnum.DELETE
@@ -12825,7 +12828,7 @@ def test_compile_multiple_ordinal_sentence_omission_lowers_descending_selectors(
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 2
-    assert [op.action for op in ops] == [StructuralAction.TEXT_REPEAL, StructuralAction.TEXT_REPEAL]
+    assert [op.action for op in ops] == [StructuralAction.TEXT_PATCH, StructuralAction.TEXT_PATCH]
     assert [op.text_patch.selector.match_text for op in ops if op.text_patch is not None] == [
         "TEXT_SENTENCE_3",
         "TEXT_SENTENCE_2",
@@ -12898,7 +12901,7 @@ def test_compile_ordinal_paragraph_omission_lowers_bounded_selector() -> None:
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.kind is TextPatchKindEnum.DELETE
     assert ops[0].text_patch.selector.match_text == "TEXT_PARAGRAPH_2"
@@ -13125,7 +13128,7 @@ def test_compile_imperative_contextual_word_omission_records_child_anchor_observ
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPEAL
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target.path == (("section", "39"), ("subsection", "1"))
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == "TEXT_WORD_or_IMMEDIATELY_FOLLOWING_paragraph_b"
@@ -13200,7 +13203,7 @@ def test_compile_grouped_anchor_occurrence_substitution_uses_parent_source_conte
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("schedule", "1"), ("paragraph", "1"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "the Regulation of Care (Scotland) Act 2001"
@@ -13301,7 +13304,7 @@ def test_compile_grouped_anchor_place_substitution_uses_parent_source_context() 
         )
 
         assert len(ops) == 1
-        assert ops[0].action is StructuralAction.TEXT_REPLACE
+        assert ops[0].action is StructuralAction.TEXT_PATCH
         assert ops[0].target.path == (("section", "25"), ("subsection", "4"))
         assert ops[0].text_patch is not None
         assert ops[0].text_patch.selector.match_text == "Authority"
@@ -13381,8 +13384,8 @@ def test_compile_source_parent_each_provision_substitution_from_child_target_row
 
     assert len(ops) == 2
     assert [op.action for op in ops] == [
-        StructuralAction.TEXT_REPLACE,
-        StructuralAction.TEXT_REPLACE,
+        StructuralAction.TEXT_PATCH,
+        StructuralAction.TEXT_PATCH,
     ]
     assert [op.target.path for op in ops] == [
         (("schedule", "6"), ("paragraph", "27"), ("subparagraph", "4")),
@@ -13466,7 +13469,7 @@ def test_compile_source_parent_prefix_substitute_from_child_target_row() -> None
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "59a"), ("subsection", "8"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "the said section 203"
@@ -13573,7 +13576,7 @@ def test_compile_source_parent_following_provisions_substitution_from_child_targ
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "7"), ("subsection", "6"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "or the lower rate"
@@ -13637,7 +13640,7 @@ def test_compile_source_parent_following_enactments_reversed_substitution() -> N
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "108"), ("subsection", "2"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "the Companies Act 1985 or any other"
@@ -13745,7 +13748,7 @@ def test_compile_source_parent_tail_substitution_from_child_target_row() -> None
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "8"), ("subsection", "1aa"), ("paragraph", "b"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "397A(2)"
@@ -13895,7 +13898,7 @@ def test_compile_labeled_end_range_preserves_parent_target_with_child_endpoint_s
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "58"), ("subsection", "6"))
     assert ops[0].text_patch is not None
     assert (
@@ -13955,7 +13958,7 @@ def test_compile_labeled_end_range_block_preserves_child_endpoint_selector() -> 
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "17aa"), ("subsection", "3"))
     assert ops[0].text_patch is not None
     assert (
@@ -14026,7 +14029,7 @@ def test_compile_labeled_end_range_ordinal_comma_block() -> None:
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target.path == (("section", "12"), ("subsection", "1"))
     assert op.text_patch is not None
     assert (
@@ -14129,7 +14132,7 @@ def test_compile_definition_entry_repeal_uses_definition_selector() -> None:
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "48"), ("subsection", "1"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_DEFINITION_ENTRY_quality contract"
@@ -14205,7 +14208,7 @@ def test_compile_definition_relating_repeal_uses_definition_selector() -> None:
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "374"),)
     assert ops[0].text_patch is not None
     assert (
@@ -14250,7 +14253,7 @@ def test_compile_quoted_entry_repeal_uses_definition_entry_selector() -> None:
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_DEFINITION_ENTRY_working day"
     assert (
@@ -14400,7 +14403,7 @@ def test_compile_definition_anchor_tail_insert_lowers_two_narrow_text_patches() 
     )
 
     assert len(substitute_ops) == 1
-    assert substitute_ops[0].action is StructuralAction.TEXT_REPLACE
+    assert substitute_ops[0].action is StructuralAction.TEXT_PATCH
     assert substitute_ops[0].text_patch is not None
     assert substitute_ops[0].text_patch.selector.match_text == (
         f"TEXT_IN_DEFINITION_REMIT requirement{US}FINAL_PUNCT{US}."
@@ -14413,7 +14416,7 @@ def test_compile_definition_anchor_tail_insert_lowers_two_narrow_text_patches() 
     )
 
     assert len(insert_ops) == 1
-    assert insert_ops[0].action is StructuralAction.TEXT_REPLACE
+    assert insert_ops[0].action is StructuralAction.TEXT_PATCH
     assert insert_ops[0].text_patch is not None
     assert insert_ops[0].text_patch.selector.match_text == "TEXT_AFTER_DEFINITION_REMIT requirement"
     assert insert_ops[0].text_patch.replacement == (
@@ -14538,7 +14541,7 @@ def test_compile_source_carried_definition_entry_insert_from_parent_context() ->
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "31"), ("subsection", "1"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_AFTER_DEFINITION_police force"
@@ -14644,7 +14647,7 @@ def test_compile_source_carried_deictic_definition_entry_insert_from_sibling_con
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "833"), ("subsection", "7"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_AFTER_DEFINITION_designated"
@@ -14820,8 +14823,8 @@ def test_compile_source_range_pseudo_definition_entry_inserts_with_explicit_anch
     ]
     assert [op.action for op in ops] == [
         StructuralAction.INSERT,
-        StructuralAction.TEXT_REPLACE,
-        StructuralAction.TEXT_REPLACE,
+        StructuralAction.TEXT_PATCH,
+        StructuralAction.TEXT_PATCH,
     ]
     assert ops[0].payload is not None
     assert ops[0].payload.kind is IRNodeKind.SCHEDULE_ENTRY
@@ -15468,7 +15471,7 @@ def test_compile_source_carried_definition_entry_insert_does_not_smuggle_sibling
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "87"), ("subsection", "1"))
     assert ops[0].text_patch is not None
     assert (
@@ -15661,7 +15664,7 @@ def test_compile_source_carried_following_words_repeal_from_block_payload() -> N
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "82"), ("subsection", "2"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == (
@@ -15820,7 +15823,7 @@ def test_compile_source_carried_definition_entry_substitution_from_parent_contex
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "28"), ("subsection", "1"))
     assert ops[0].text_patch is not None
     assert (
@@ -15974,7 +15977,7 @@ def test_compile_source_carried_after_quoted_anchor_insert_from_parent_context()
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "82"), ("subsection", "1"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == (
@@ -16114,7 +16117,7 @@ def test_compile_source_carried_after_word_anchor_insert_from_parent_context() -
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (
         ("section", "29b"),
         ("subsection", "2"),
@@ -16215,7 +16218,7 @@ def test_compile_source_carried_quoted_substitution_from_parent_context() -> Non
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "11"), ("subsection", "4"), ("paragraph", "b"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "a police force,"
@@ -16336,7 +16339,7 @@ def test_compile_source_carried_words_quoted_substitution_with_structured_prefix
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (
         ("section", "5"),
         ("subsection", "2"),
@@ -16390,8 +16393,8 @@ def test_compile_multiple_definition_entry_repeals_preserves_each_selector() -> 
 
     assert len(ops) == 2
     assert [op.action for op in ops] == [
-        StructuralAction.TEXT_REPEAL,
-        StructuralAction.TEXT_REPEAL,
+        StructuralAction.TEXT_PATCH,
+        StructuralAction.TEXT_PATCH,
     ]
     assert [op.target.path for op in ops] == [
         (("schedule", "8"), ("paragraph", "1"), ("subparagraph", "1")),
@@ -16479,7 +16482,7 @@ def test_compile_multiple_quoted_entry_repeals_preserves_each_selector() -> None
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 2
-    assert all(op.action is StructuralAction.TEXT_REPEAL for op in ops)
+    assert all(op.action is StructuralAction.TEXT_PATCH for op in ops)
     assert [op.text_patch.selector.match_text for op in ops if op.text_patch is not None] == [
         "TEXT_DEFINITION_ENTRY_the applied Chapter 2",
         "TEXT_DEFINITION_ENTRY_the applied GDPR",
@@ -16523,7 +16526,7 @@ def test_compile_following_definition_repeals_preserves_each_selector() -> None:
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 2
-    assert all(op.action is StructuralAction.TEXT_REPEAL for op in ops)
+    assert all(op.action is StructuralAction.TEXT_PATCH for op in ops)
     assert [op.text_patch.selector.match_text for op in ops if op.text_patch is not None] == [
         "TEXT_DEFINITION_ENTRY_development corporation",
         "TEXT_DEFINITION_ENTRY_the 1964 Act",
@@ -16568,8 +16571,8 @@ def test_compile_multiple_declarative_definition_entry_repeals_preserves_each_se
 
     assert len(ops) == 2
     assert [op.action for op in ops] == [
-        StructuralAction.TEXT_REPEAL,
-        StructuralAction.TEXT_REPEAL,
+        StructuralAction.TEXT_PATCH,
+        StructuralAction.TEXT_PATCH,
     ]
     assert [op.target.path for op in ops] == [
         (("section", "28"), ("subsection", "1")),
@@ -16620,8 +16623,8 @@ def test_compile_interpretation_entries_relating_repeal_preserves_each_selector(
 
     assert len(ops) == 2
     assert [op.action for op in ops] == [
-        StructuralAction.TEXT_REPEAL,
-        StructuralAction.TEXT_REPEAL,
+        StructuralAction.TEXT_PATCH,
+        StructuralAction.TEXT_PATCH,
     ]
     assert [op.text_patch.selector.match_text for op in ops if op.text_patch is not None] == [
         "TEXT_DEFINITION_ENTRY_the Hospital Trust",
@@ -16709,7 +16712,7 @@ def test_compile_metadata_carried_definition_entry_repeal_preserves_each_selecto
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
 
     assert len(ops) == 3
-    assert all(op.action is StructuralAction.TEXT_REPEAL for op in ops)
+    assert all(op.action is StructuralAction.TEXT_PATCH for op in ops)
     assert [op.text_patch.selector.match_text for op in ops if op.text_patch is not None] == [
         "TEXT_DEFINITION_ENTRY_existing",
         "TEXT_DEFINITION_ENTRY_international services",
@@ -16831,7 +16834,7 @@ def test_compile_definition_child_repeal_uses_bounded_definition_child_selector(
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "42"), ("subsection", "2"))
     assert ops[0].text_patch is not None
     assert (
@@ -16876,7 +16879,7 @@ def test_compile_definition_child_substitution_uses_bounded_definition_child_sel
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "36"), ("subsection", "1"))
     assert ops[0].text_patch is not None
     assert (
@@ -16970,9 +16973,9 @@ def test_compile_definition_child_range_substitution_lowers_same_label_children(
 
     rule_id = "uk_effect_definition_child_range_substitution_text_patch"
     assert [op.action for op in ops] == [
-        StructuralAction.TEXT_REPLACE,
-        StructuralAction.TEXT_REPLACE,
-        StructuralAction.TEXT_REPLACE,
+        StructuralAction.TEXT_PATCH,
+        StructuralAction.TEXT_PATCH,
+        StructuralAction.TEXT_PATCH,
     ]
     assert all(op.target.path == (("section", "127"), ("subsection", "7")) for op in ops)
     assert [op.text_patch.selector.match_text for op in ops if op.text_patch is not None] == [
@@ -17262,7 +17265,7 @@ def test_compile_postpositive_definition_child_repeal_uses_bounded_selector() ->
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "15"), ("subsection", "7"))
     assert ops[0].text_patch is not None
     assert (
@@ -17311,7 +17314,7 @@ def test_compile_postpositive_definition_child_substitution_uses_bounded_selecto
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "15"), ("subsection", "7"))
     assert ops[0].text_patch is not None
     assert (
@@ -17369,7 +17372,7 @@ def test_compile_definition_child_and_tail_substitution_uses_bounded_selector() 
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "15"), ("subsection", "7"))
     assert ops[0].text_patch is not None
     assert (
@@ -17484,7 +17487,7 @@ def test_compile_definition_range_to_end_substitution_uses_bounded_selector() ->
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "87"), ("subsection", "1"))
     assert ops[0].text_patch is not None
     assert (
@@ -17544,7 +17547,7 @@ def test_compile_unquoted_definition_range_to_end_substitution() -> None:
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target.path == (("section", "13"), ("subsection", "5"))
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == (
@@ -17607,7 +17610,7 @@ def test_compile_definition_range_to_end_substitution_preserves_occurrence() -> 
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "61"),)
     assert ops[0].text_patch is not None
     assert (
@@ -17849,7 +17852,7 @@ def test_compile_admits_simple_whole_act_all_occurrences_substitution() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target == LegalAddress(path=(), special=FacetKind.WHOLE_ACT)
     assert ops[0].text_patch == _replace_patch("local education authority", "local authority")
     assert (
@@ -17901,7 +17904,7 @@ def test_compile_admits_target_carried_whole_act_all_occurrences_substitution() 
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target == LegalAddress(path=(), special=FacetKind.WHOLE_ACT)
     assert ops[0].text_patch == _replace_patch(
         "an industrial and provident society",
@@ -18212,7 +18215,7 @@ def test_compile_source_carried_definition_child_insert_from_parent_context() ->
 
     assert lowering_rejections == []
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "82"), ("subsection", "1"))
     assert ops[0].text_patch is not None
     assert (
@@ -18288,7 +18291,7 @@ def test_compile_source_carried_definition_child_text_omission_from_parent_conte
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "82"), ("subsection", "1"))
     assert ops[0].text_patch is not None
     assert (
@@ -18366,7 +18369,7 @@ def test_compile_source_carried_definition_child_omission_ignores_unrelated_broa
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "39"), ("subsection", "4"), ("paragraph", "b"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "or continued"
@@ -18421,7 +18424,7 @@ def test_compile_source_carried_child_tail_repeal_from_exact_subsection_context(
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "21"), ("subsection", "5"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.kind is TextPatchKindEnum.DELETE
@@ -18477,7 +18480,7 @@ def test_compile_source_carried_child_list_tail_repeal_from_subsection_context()
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "9"), ("subsection", "3"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.kind is TextPatchKindEnum.DELETE
@@ -18670,7 +18673,7 @@ def test_compile_source_carried_child_tail_omit_after_paragraph_from_exact_subse
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "56"), ("subsection", "1"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.kind is TextPatchKindEnum.DELETE
@@ -18723,7 +18726,7 @@ def test_compile_child_tail_omit_uses_exact_feed_subsection_context() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "120"), ("subsection", "5"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.kind is TextPatchKindEnum.DELETE
@@ -18778,7 +18781,7 @@ def test_compile_child_tail_omit_uses_exact_feed_paragraph_context() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("schedule", "4"), ("paragraph", "9"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_AFTER_CHILD_TAIL_paragraph_c"
@@ -18830,7 +18833,7 @@ def test_compile_child_tail_omit_uses_exact_feed_schedule_subparagraph_context()
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (
         ("schedule", "8"),
         ("paragraph", "2"),
@@ -18890,7 +18893,7 @@ def test_compile_child_tail_substitution_accepts_following_to_end() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "58a"), ("subsection", "1"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_AFTER_CHILD_TAIL_paragraph_c"
@@ -18965,7 +18968,7 @@ def test_compile_deictic_child_tail_omit_uses_previous_source_sibling_context() 
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "74"), ("subsection", "1b"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.kind is TextPatchKindEnum.DELETE
@@ -19179,7 +19182,7 @@ def test_compile_source_carried_subparagraph_tail_repeal_from_exact_paragraph_co
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (
         ("section", "9"),
         ("subsection", "3"),
@@ -19289,7 +19292,7 @@ def test_compile_source_carried_child_tail_substitution_from_exact_subsection_co
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "224"), ("subsection", "1"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.kind is TextPatchKindEnum.REPLACE
@@ -19345,7 +19348,7 @@ def test_compile_source_carried_child_tail_substitution_uses_feed_subsection_con
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "42"), ("subsection", "9"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_AFTER_CHILD_TAIL_paragraph_d"
@@ -19414,7 +19417,7 @@ def test_compile_source_carried_between_paragraphs_substitution_refines_to_first
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (
         ("section", "148"),
         ("subsection", "1"),
@@ -19769,7 +19772,7 @@ def test_compile_source_carried_parent_quoted_child_substitution_to_parent_patch
     )
 
     assert len(ops) == 1
-    assert ops[0].action == StructuralAction.TEXT_REPLACE
+    assert ops[0].action == StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "130"), ("subsection", "3"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "if the charge is amended after referral."
@@ -20311,7 +20314,7 @@ def test_compile_source_carried_multi_subunit_repeal_from_exact_section_context(
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "22"),)
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.kind is TextPatchKindEnum.DELETE
@@ -20416,7 +20419,7 @@ def test_compile_source_carried_multi_subunit_substitution_from_child_effect_tar
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "285"), ("subsection", "1"))
     assert ops[0].text_patch == _replace_patch("poinding", "attachment")
     assert (
@@ -20518,7 +20521,7 @@ def test_compile_amendment_inserted_text_substitution_from_exact_schedule_instru
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("schedule", "5"), ("paragraph", "17"), ("item", "a"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.kind is TextPatchKindEnum.REPLACE
@@ -20617,7 +20620,7 @@ def test_compile_words_inserted_at_end_of_numbered_subparagraph_to_text_replace(
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].payload is None
     assert ops[0].target.path == (
         ("schedule", "1"),
@@ -20662,7 +20665,7 @@ def test_compile_for_the_words_substitute_to_text_replace() -> None:
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].payload is None
     assert ops[0].target.path == (
         ("schedule", "7"),
@@ -20752,7 +20755,7 @@ def test_compile_corresponding_table_entry_word_substitution_with_rowspan_source
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "14f"), ("subsection", "6"))
     assert ops[0].text_patch is not None
     assert (
@@ -20823,7 +20826,7 @@ def test_compile_source_parent_final_column_table_entry_paragraph_text_patch() -
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "60"), ("subsection", "4"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "Regulator's consent"
@@ -20879,7 +20882,7 @@ def test_compile_broad_schedule_table_column_text_patch_selector() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("schedule", "1"),)
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "£56,340,000"
@@ -20951,7 +20954,7 @@ def test_compile_range_substitution_ignores_table_words_inside_replacement_quote
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (
         ("section", "178"),
         ("subsection", "1"),
@@ -20982,7 +20985,7 @@ def test_replay_broad_schedule_table_column_text_patch_mutates_unique_cell() -> 
     op = LegalOperation(
         op_id="uk_test_broad_table_column_patch",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("schedule", "1"),)),
         provenance_tags=(f"{_NOTE_TABLE_CELL_SELECTOR}{json.dumps(selector)}",),
         text_patch=TextPatchSpec(
@@ -21041,7 +21044,7 @@ def test_replay_broad_schedule_table_column_text_patch_blocks_ambiguous_cell() -
     op = LegalOperation(
         op_id="uk_test_broad_table_column_patch_ambiguous",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("schedule", "1"),)),
         provenance_tags=(f"{_NOTE_TABLE_CELL_SELECTOR}{json.dumps(selector)}",),
         text_patch=TextPatchSpec(
@@ -21100,7 +21103,7 @@ def test_replay_table_column_text_patch_anchor_filters_descendant_tables() -> No
     op = LegalOperation(
         op_id="uk_test_table_column_text_patch_anchor_filtered_descendant",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "98"),)),
         provenance_tags=(f"{_NOTE_TABLE_CELL_SELECTOR}{json.dumps(selector)}",),
         text_patch=TextPatchSpec(
@@ -21241,7 +21244,7 @@ def test_replay_table_entry_relating_text_patch_mutates_unique_cell() -> None:
     op = LegalOperation(
         op_id="uk_test_table_entry_relating_text_patch",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "174"),)),
         provenance_tags=(f"{_NOTE_TABLE_CELL_SELECTOR}{json.dumps(selector)}",),
         text_patch=TextPatchSpec(
@@ -21306,7 +21309,7 @@ def test_replay_table_entry_relating_text_patch_anchor_filters_descendant_tables
     op = LegalOperation(
         op_id="uk_test_table_entry_relating_text_patch_anchor_filtered_descendant",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "174"),)),
         provenance_tags=(f"{_NOTE_TABLE_CELL_SELECTOR}{json.dumps(selector)}",),
         text_patch=TextPatchSpec(
@@ -21448,7 +21451,7 @@ def test_replay_table_row_column_text_patch_requires_source_row_index() -> None:
     op = LegalOperation(
         op_id="uk_test_table_row_column_text_patch",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "132"),)),
         provenance_tags=(f"{_NOTE_TABLE_CELL_SELECTOR}{json.dumps(selector)}",),
         text_patch=TextPatchSpec(
@@ -21515,7 +21518,7 @@ def test_replay_table_row_column_text_patch_resolves_source_row_number_label() -
     op = LegalOperation(
         op_id="uk_test_table_row_column_text_patch_source_row_label",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "132"),)),
         provenance_tags=(f"{_NOTE_TABLE_CELL_SELECTOR}{json.dumps(selector)}",),
         text_patch=TextPatchSpec(
@@ -21671,7 +21674,7 @@ def test_compile_direct_table_column_entry_omission_deletes_owned_cell_text() ->
     ops = compile_effect_to_ir_ops(effect, extracted_el, lowering_rejections_out=lowering_records)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "98"),)
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.kind is TextPatchKindEnum.DELETE
@@ -21786,7 +21789,7 @@ def test_compile_table_column_entry_omission_uses_previous_column_context() -> N
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "98"),)
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.kind is TextPatchKindEnum.DELETE
@@ -21903,7 +21906,7 @@ def test_compile_source_parent_grouped_table_entry_omission_deletes_child_cell_t
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "98"),)
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.kind is TextPatchKindEnum.DELETE
@@ -22044,7 +22047,7 @@ def test_compile_source_parent_omitted_table_entry_child_fragment() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "98"),)
     assert ops[0].text_patch is not None
     assert (
@@ -22140,7 +22143,7 @@ def test_replay_direct_table_column_entry_omission_requires_full_cell_match() ->
     op = LegalOperation(
         op_id="uk_test_direct_table_column_entry_omission_replay",
         sequence=1,
-        action=StructuralAction.TEXT_REPEAL,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "98"),)),
         provenance_tags=(f"{_NOTE_TABLE_CELL_SELECTOR}{json.dumps(selector)}",),
         text_patch=TextPatchSpec(
@@ -22264,7 +22267,7 @@ def test_replay_table_entry_for_column_after_anchor_insert_mutates_one_cell() ->
     op = LegalOperation(
         op_id="uk_test_table_entry_for_column_patch",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "98"),)),
         provenance_tags=(f"{_NOTE_TABLE_CELL_SELECTOR}{json.dumps(selector)}",),
         text_patch=TextPatchSpec(
@@ -22332,7 +22335,7 @@ def test_replay_table_entry_for_column_patch_anchor_filters_descendant_tables() 
     op = LegalOperation(
         op_id="uk_test_table_entry_for_column_patch_anchor_filtered_descendant",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "98"),)),
         provenance_tags=(f"{_NOTE_TABLE_CELL_SELECTOR}{json.dumps(selector)}",),
         text_patch=TextPatchSpec(
@@ -22794,7 +22797,7 @@ def test_replay_table_entry_for_column_omit_mutates_selected_cell_only() -> None
     op = LegalOperation(
         op_id="uk_test_table_entry_for_column_omit",
         sequence=1,
-        action=StructuralAction.TEXT_REPEAL,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "160"), ("subsection", "2"))),
         provenance_tags=(f"{_NOTE_TABLE_CELL_SELECTOR}{json.dumps(selector)}",),
         text_patch=TextPatchSpec(
@@ -22896,7 +22899,7 @@ def test_compile_relating_cell_text_patch_uses_clean_preimage() -> None:
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == "section 832(1) of ICTA"
     # The relating preamble and the column wording must not leak into the preimage.
@@ -22925,7 +22928,7 @@ def test_replay_relating_cell_descendant_recovery_mutates_correct_cell() -> None
     op = LegalOperation(
         op_id="uk_test_relating_cell_descendant_recovery",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("schedule", "1"), ("part", "2"))),
         provenance_tags=(f"{_NOTE_TABLE_CELL_SELECTOR}{json.dumps(selector)}",),
         text_patch=TextPatchSpec(
@@ -23032,7 +23035,7 @@ def test_compile_source_carried_table_entry_subparagraph_substitution() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("schedule", "5"),)
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_TABLE_CELL_PARAGRAPH_1_SUBPARAGRAPH_a"
@@ -23110,7 +23113,7 @@ def test_replay_source_carried_table_entry_paragraph_substitution_mutates_cell_o
     op = LegalOperation(
         op_id="uk_test_table_entry_paragraph_substitution",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("schedule", "5"),)),
         provenance_tags=(f"{_NOTE_TABLE_CELL_SELECTOR}{json.dumps(selector)}",),
         text_patch=TextPatchSpec(
@@ -23196,7 +23199,7 @@ def test_replay_source_carried_table_entry_paragraph_substitution_blocks_duplica
     op = LegalOperation(
         op_id="uk_test_table_entry_paragraph_substitution_duplicate",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("schedule", "5"),)),
         provenance_tags=(f"{_NOTE_TABLE_CELL_SELECTOR}{json.dumps(selector)}",),
         text_patch=TextPatchSpec(
@@ -23471,7 +23474,7 @@ def test_replay_table_entry_text_patch_mutates_unique_cell() -> None:
     op = LegalOperation(
         op_id="uk_test_table_entry_text_patch",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "98"),)),
         provenance_tags=(f"{_NOTE_TABLE_CELL_SELECTOR}{json.dumps(selector)}",),
         text_patch=TextPatchSpec(
@@ -23535,7 +23538,7 @@ def test_replay_table_entry_text_patch_anchor_filters_descendant_tables() -> Non
     op = LegalOperation(
         op_id="uk_test_table_entry_text_patch_anchor_filtered_descendant",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "98"),)),
         provenance_tags=(f"{_NOTE_TABLE_CELL_SELECTOR}{json.dumps(selector)}",),
         text_patch=TextPatchSpec(
@@ -23616,7 +23619,7 @@ def test_replay_table_entry_text_patch_requires_whole_cell_anchor() -> None:
     op = LegalOperation(
         op_id="uk_test_table_entry_text_patch_partial_cell",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "98"),)),
         provenance_tags=(f"{_NOTE_TABLE_CELL_SELECTOR}{json.dumps(selector)}",),
         text_patch=TextPatchSpec(
@@ -24219,7 +24222,7 @@ def test_replay_table_entry_label_column_append_mutates_selected_cell_only() -> 
     op = LegalOperation(
         op_id="uk_test_table_entry_label_column_append",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "166"), ("subsection", "5"))),
         provenance_tags=(f"{_NOTE_TABLE_CELL_SELECTOR}{json.dumps(selector)}",),
         text_patch=TextPatchSpec(
@@ -24344,7 +24347,7 @@ def test_replay_table_entry_labels_column_substitution_mutates_all_selected_cell
     op = LegalOperation(
         op_id="uk_test_table_entry_labels_column_substitution",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "166"), ("subsection", "5"))),
         provenance_tags=(f"{_NOTE_TABLE_CELL_SELECTOR}{json.dumps(selector)}",),
         text_patch=TextPatchSpec(
@@ -24430,7 +24433,7 @@ def test_replay_table_entry_labels_column_substitution_blocks_without_partial_mu
     op = LegalOperation(
         op_id="uk_test_table_entry_labels_column_substitution_gap",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "166"), ("subsection", "5"))),
         provenance_tags=(f"{_NOTE_TABLE_CELL_SELECTOR}{json.dumps(selector)}",),
         text_patch=TextPatchSpec(
@@ -24659,7 +24662,7 @@ def test_compile_repeal_table_quoted_words_text_repeal() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "17"), ("subsection", "1"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.kind is TextPatchKindEnum.DELETE
@@ -24744,7 +24747,7 @@ def test_compile_repeal_table_quoted_words_after_source_notes_header() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "42"),)
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.kind is TextPatchKindEnum.DELETE
@@ -24811,7 +24814,7 @@ def test_compile_repeal_table_quoted_word_immediately_preceding_it_targets_paren
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "28"), ("subsection", "3"))
     assert ops[0].text_patch is not None
     assert (
@@ -24879,7 +24882,7 @@ def test_compile_repeal_table_quoted_word_at_child_end_uses_final_occurrence() -
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "28"), ("subsection", "3"), ("paragraph", "e"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "or"
@@ -24946,7 +24949,7 @@ def test_compile_repeal_table_reference_text_repeal() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "42"), ("subsection", "7"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.kind is TextPatchKindEnum.DELETE
@@ -25075,7 +25078,7 @@ def test_compile_repeal_table_bare_quoted_text_repeal() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "37a"),)
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.kind is TextPatchKindEnum.DELETE
@@ -25201,7 +25204,7 @@ def test_compile_flat_repeal_schedule_quoted_words_text_repeal() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "98"), ("subsection", "table"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.kind is TextPatchKindEnum.DELETE
@@ -25268,7 +25271,7 @@ def test_compile_flat_repeal_schedule_repealed_in_part_word_range_text_repeal() 
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "10"), ("subsection", "6"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.kind is TextPatchKindEnum.DELETE
@@ -25345,7 +25348,7 @@ def test_compile_flat_repeal_schedule_quoted_words_ignores_target_qualifier() ->
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (
         ("section", "42"),
         ("subsection", "7"),
@@ -25835,7 +25838,7 @@ def test_compile_repeal_table_quoted_words_matches_ordinal_schedule_name() -> No
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("schedule", "1"), ("paragraph", "3"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.kind is TextPatchKindEnum.DELETE
@@ -25967,7 +25970,7 @@ def test_compile_repeal_table_quoted_words_allows_blank_feed_type_when_source_cl
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target == LegalAddress(
         path=(("schedule", "22"), ("paragraph", "84"), ("subparagraph", "1"))
     )
@@ -26031,7 +26034,7 @@ def test_compile_repeal_table_quoted_words_accepts_mixed_publisher_quotes() -> N
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].text_patch is not None
     assert (
         ops[0].text_patch.selector.match_text
@@ -27460,7 +27463,7 @@ def test_compile_repeal_table_mixed_structural_and_word_repeal_splits_ops() -> N
 
     assert len(ops) == 2
     assert [op.action for op in ops] == [
-        StructuralAction.TEXT_REPEAL,
+        StructuralAction.TEXT_PATCH,
         StructuralAction.REPEAL,
     ]
     assert ops[0].target.path == (("section", "69"), ("subsection", "3"))
@@ -28080,8 +28083,8 @@ def test_compile_repeal_table_parent_child_text_repeal_splits_ops() -> None:
     )
 
     assert [op.action for op in ops] == [
-        StructuralAction.TEXT_REPEAL,
-        StructuralAction.TEXT_REPEAL,
+        StructuralAction.TEXT_PATCH,
+        StructuralAction.TEXT_PATCH,
         StructuralAction.REPEAL,
     ]
     assert [op.target.path for op in ops] == [
@@ -28215,7 +28218,7 @@ def test_compile_repeal_table_child_and_word_target_uses_source_parent_scope() -
     )
 
     assert [op.action for op in ops] == [
-        StructuralAction.TEXT_REPEAL,
+        StructuralAction.TEXT_PATCH,
         StructuralAction.REPEAL,
     ]
     assert [op.target.path for op in ops] == [
@@ -28453,7 +28456,7 @@ def test_compile_repeal_table_mixed_following_word_repeal_with_section_context()
 
     assert len(ops) == 2
     assert [op.action for op in ops] == [
-        StructuralAction.TEXT_REPEAL,
+        StructuralAction.TEXT_PATCH,
         StructuralAction.REPEAL,
     ]
     assert ops[0].target.path == (("section", "102"), ("subsection", "4"))
@@ -28706,7 +28709,7 @@ def test_compile_repeal_table_column_entry_text_repeal_uses_owned_cell_selector(
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "98"), ("subsection", "table"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.kind is TextPatchKindEnum.DELETE
@@ -28788,7 +28791,7 @@ def test_compile_grouped_repeal_table_column_entry_uses_effect_child_label() -> 
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "paragraph 117 of Schedule 8 to FA 2000"
     selector_tag = next(tag for tag in ops[0].provenance_tags if tag.startswith(_NOTE_TABLE_CELL_SELECTOR))
@@ -28997,7 +29000,7 @@ def test_compile_source_parent_omit_from_table_column_entry_omission() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "paragraph 117 of Schedule 8 to FA 2000"
     assert ops[0].witness_rule_id == "uk_effect_source_parent_table_column_entry_omission_text_patch"
@@ -29123,7 +29126,7 @@ def test_compile_repeal_table_definition_entry_text_repeal() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "58"), ("subsection", "1"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.kind is TextPatchKindEnum.DELETE
@@ -29195,7 +29198,7 @@ def test_compile_repeal_table_schedule_paragraph_definition_entry_text_repeal() 
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("schedule", "20"), ("paragraph", "25"), ("subparagraph", "1"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_DEFINITION_ENTRY_normal accounting practice"
@@ -29258,7 +29261,7 @@ def test_compile_repeal_table_singular_entry_for_text_repeal() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "48"), ("subsection", "1"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_DEFINITION_ENTRY_police area"
@@ -29450,7 +29453,7 @@ def test_compile_repeal_table_sentence_repeal_lowers_ordinal_sentence_selector()
     )
 
     assert len(ops) == 1
-    assert ops[0].action == StructuralAction.TEXT_REPEAL
+    assert ops[0].action == StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("schedule", "15"), ("paragraph", "29"), ("subparagraph", "4"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_SENTENCE_2"
@@ -29893,7 +29896,7 @@ def test_compile_repeal_table_definition_entry_from_pseudo_definition_target() -
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "167"), ("subsection", "1"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_DEFINITION_ENTRY_Joint Authority"
@@ -30001,7 +30004,7 @@ def test_compile_pseudo_definition_entry_insert_uses_source_definition_anchor() 
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (
         ("schedule", "2"),
         ("part", "1"),
@@ -30078,7 +30081,7 @@ def test_compile_pseudo_definition_child_substitution_uses_bounded_selector() ->
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (
         ("schedule", "2"),
         ("part", "1"),
@@ -30267,7 +30270,7 @@ def test_compile_repeal_table_words_range_to_end_text_repeal() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "77"), ("subsection", "4"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_FROM_but_TO_END"
@@ -30453,7 +30456,7 @@ def test_compile_corresponding_table_entry_word_substitution_matches_plural_sect
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (
         ("section", "43"),
         ("subsection", "3"),
@@ -30547,7 +30550,7 @@ def test_compile_range_from_first_occurrence_to_text_replace() -> None:
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].payload is None
     assert ops[0].target.path == (
         ("schedule", "1"),
@@ -30598,7 +30601,7 @@ def test_compile_range_from_bare_first_anchor_to_text_replace() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (
         ("schedule", "1"),
         ("paragraph", "1"),
@@ -30650,7 +30653,7 @@ def test_compile_same_anchor_adjacent_occurrence_range_to_text_replace() -> None
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (
         ("section", "6"),
         ("subsection", "1"),
@@ -30705,7 +30708,7 @@ def test_compile_range_with_independent_end_occurrence_to_text_replace() -> None
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_FROM_notify_TO_Guardian"
     assert ops[0].text_patch.selector.occurrence == 1
@@ -30761,7 +30764,7 @@ def test_compile_range_start_plural_where_occurrence_to_text_replace() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("schedule", "1"), ("paragraph", "5"), ("subparagraph", "2"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_FROM_is to be_TO_2011,"
@@ -30816,7 +30819,7 @@ def test_compile_range_start_place_occurrence_to_text_replace() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "113"), ("subsection", "5"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_FROM_any_TO_order)"
@@ -30869,7 +30872,7 @@ def test_compile_range_end_place_occurrence_to_text_replace() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("schedule", "1"), ("paragraph", "5"), ("subparagraph", "3"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_FROM_an_TO_local planning authority"
@@ -30936,7 +30939,7 @@ def test_compile_insert_after_words_inserted_by_source_sibling() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (
         ("section", "24"),
         ("subsection", "2"),
@@ -31035,7 +31038,7 @@ def test_executor_range_text_patch_uses_independent_end_occurrence() -> None:
     op = LegalOperation(
         op_id="uk_test_range_independent_end_occurrence_apply",
         sequence=0,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "55"),)),
         text_patch=TextPatchSpec(
             kind=TextPatchKindEnum.REPLACE,
@@ -31088,7 +31091,7 @@ def test_executor_bounded_range_text_patch_preserves_node_children_when_own_text
     op = LegalOperation(
         op_id="uk_test_node_local_range_patch_preserves_children",
         sequence=0,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "3"), ("subsection", "1"))),
         text_patch=TextPatchSpec(
             kind=TextPatchKindEnum.REPLACE,
@@ -32014,7 +32017,7 @@ def test_executor_range_to_end_text_patch_records_node_local_leaf_rewrite() -> N
     op = LegalOperation(
         op_id="uk_test_node_local_range_to_end_leaf_patch",
         sequence=0,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "3"), ("subsection", "1"))),
         text_patch=TextPatchSpec(
             kind=TextPatchKindEnum.REPLACE,
@@ -32068,7 +32071,7 @@ def test_compile_range_to_end_second_occurrence_to_text_replace() -> None:
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "10"), ("subsection", "1"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.kind is TextPatchKindEnum.REPLACE
@@ -32112,7 +32115,7 @@ def test_compile_range_comma_before_substitute_to_text_replace() -> None:
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "20"), ("subsection", "1"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_FROM_means\u2014_TO_(and"
@@ -32151,7 +32154,7 @@ def test_compile_range_to_end_of_subsection_to_text_replace() -> None:
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "20"), ("subsection", "2"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_FROM_Act\u2014_TO_END"
@@ -32192,7 +32195,7 @@ def test_compile_labeled_range_to_end_without_words_from_prefix() -> None:
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "88"), ("subsection", "1"), ("paragraph", "a"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_FROM_or (d)_TO_END"
@@ -32237,7 +32240,7 @@ def test_compile_words_following_anchor_block_substitution_lowers_to_after_ancho
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "7"), ("subsection", "2"), ("paragraph", "d"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_AFTER_included references to_TO_END"
@@ -32280,7 +32283,7 @@ def test_compile_wherever_it_appears_to_text_replace() -> None:
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "6"),)
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "exit day"
@@ -32407,7 +32410,7 @@ def test_compile_unquoted_all_occurrences_substitution_records_observation() -> 
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "144"),)
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "London Regional Transport"
@@ -32468,7 +32471,7 @@ def test_compile_multi_wherever_occurring_active_substitution() -> None:
     )
 
     assert len(ops) == 3
-    assert {op.action for op in ops} == {StructuralAction.TEXT_REPLACE}
+    assert {op.action for op in ops} == {StructuralAction.TEXT_PATCH}
     assert {op.target.path for op in ops} == {(
         ("part", "10a"),
     )}
@@ -32539,7 +32542,7 @@ def test_compile_wherever_they_occur_in_any_enactment_substitution() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "65"), ("subsection", "3"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "Supreme Court Act 1981"
@@ -32593,7 +32596,7 @@ def test_compile_except_phrase_substitution_preserves_excluded_phrase_selector()
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == (
         f"TEXT_EXCEPT_PHRASE{US}telecommunications code{US}telecommunications code system"
@@ -32681,7 +32684,7 @@ def test_compile_each_place_except_reference_substitution_preserves_excluded_phr
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "84"), ("subsection", "3a"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == (
@@ -32790,7 +32793,7 @@ def test_replay_except_phrase_substitution_does_not_mutate_excluded_phrase() -> 
     op = LegalOperation(
         op_id="uk_test_except_phrase_replay",
         sequence=0,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("schedule", "4"), ("paragraph", "88"))),
         text_patch=_replace_patch(selector, "electronic communications code"),
     )
@@ -32880,7 +32883,7 @@ def test_replay_except_child_substitution_does_not_mutate_excluded_child() -> No
     op = LegalOperation(
         op_id="uk_test_except_child_replay",
         sequence=0,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "84"),)),
         text_patch=_replace_patch(selector, "relevant authority"),
     )
@@ -32960,7 +32963,7 @@ def test_compile_after_anchor_except_child_insert_preserves_excluded_subsection_
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "30"), ("subsection", "4"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == (
@@ -33038,7 +33041,7 @@ def test_replay_after_anchor_except_child_insert_does_not_mutate_excluded_subpar
     op = LegalOperation(
         op_id="uk_test_after_anchor_except_child_insert",
         sequence=0,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "30"), ("subsection", "4"))),
         text_patch=_replace_patch(selector, "wife or husband or civil partner"),
     )
@@ -33107,7 +33110,7 @@ def test_replay_except_child_selector_blocks_duplicate_excluded_child_labels() -
     op = LegalOperation(
         op_id="uk_test_duplicate_except_child_label",
         sequence=0,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "30"), ("subsection", "4"))),
         text_patch=_replace_patch(selector, "wife or husband or civil partner"),
     )
@@ -33261,7 +33264,7 @@ def test_replay_referent_qualified_substitution_rewrites_only_referent_surfaces(
     op = LegalOperation(
         op_id="uk_test_referent_qualified_his",
         sequence=0,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "21"),)),
         text_patch=_replace_patch(
             f"TEXT_REFERENT_QUALIFIED{US}his{US}the Rail Regulator",
@@ -33349,7 +33352,7 @@ def test_compile_negative_left_context_excluded_children_substitution() -> None:
         f"paragraph:10/subparagraph:2a|paragraph:11/subparagraph:1"
     )
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("schedule", "3zb"),)
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == selector
@@ -33376,7 +33379,7 @@ def test_replay_negative_left_context_excluded_children_substitution() -> None:
     op = LegalOperation(
         op_id="uk_test_negative_left_context_excluded_children",
         sequence=0,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("schedule", "3zb"),)),
         text_patch=_replace_patch(selector, "CT exit charge payment plan"),
     )
@@ -33464,7 +33467,7 @@ def test_replay_negative_left_context_exclusion_blocks_duplicate_child_chain() -
     op = LegalOperation(
         op_id="uk_test_duplicate_negative_left_context_exclusion",
         sequence=0,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("schedule", "3zb"),)),
         text_patch=_replace_patch(selector, "CT exit charge payment plan"),
     )
@@ -33634,7 +33637,7 @@ def test_replay_source_sibling_excluded_occurrence_preserves_only_owned_occurren
     op = LegalOperation(
         op_id="uk_test_source_sibling_except_occurrence_replay",
         sequence=0,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "16"),)),
         text_patch=_replace_patch(selector, "Director General"),
     )
@@ -33761,7 +33764,7 @@ def test_compile_each_place_occurring_records_all_occurrences_lowering_observati
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("schedule", "17"), ("part", "5"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "the Board"
@@ -33825,7 +33828,7 @@ def test_compile_the_prefixed_each_place_appears_substitution() -> None:
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target.path == (("section", "564d"),)
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == " the first owner "
@@ -33891,7 +33894,7 @@ def test_compile_all_occurrences_word_repeal_records_observation() -> None:
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPEAL
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target.path == (("section", "268"), ("subsection", "6"))
     assert op.text_patch is not None
     assert op.text_patch.kind is TextPatchKindEnum.DELETE
@@ -33958,7 +33961,7 @@ def test_compile_imperative_all_occurrences_omission_lowers_text_repeal() -> Non
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPEAL
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target.path == (("section", "76"),)
     assert op.text_patch is not None
     assert op.text_patch.kind is TextPatchKindEnum.DELETE
@@ -34026,7 +34029,7 @@ def test_compile_ordinal_word_repeal_records_observation() -> None:
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPEAL
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target.path == (("section", "268"), ("subsection", "1"))
     assert op.text_patch is not None
     assert op.text_patch.kind is TextPatchKindEnum.DELETE
@@ -34092,7 +34095,7 @@ def test_compile_unquoted_type_label_repeal_lowers_to_unique_literal_delete() ->
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPEAL
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target.path == (("section", "558"), ("subsection", "2"))
     assert op.text_patch is not None
     assert op.text_patch.kind is TextPatchKindEnum.DELETE
@@ -34156,7 +34159,7 @@ def test_compile_each_case_occurs_records_all_occurrences_lowering_observation()
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "109b"),)
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "an exit charge payment plan"
@@ -34216,7 +34219,7 @@ def test_compile_both_places_there_is_substituted_records_all_occurrences_observ
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "41"), ("subsection", "7"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "local"
@@ -34276,7 +34279,7 @@ def test_compile_wherever_it_occurs_there_is_substituted_records_all_occurrences
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "90"),)
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "a poinding"
@@ -34335,8 +34338,8 @@ def test_compile_respectively_there_is_substituted_records_all_occurrences_obser
 
     assert len(ops) == 2
     assert [op.action for op in ops] == [
-        StructuralAction.TEXT_REPLACE,
-        StructuralAction.TEXT_REPLACE,
+        StructuralAction.TEXT_PATCH,
+        StructuralAction.TEXT_PATCH,
     ]
     assert [op.target.path for op in ops] == [(("section", "3"),), (("section", "3"),)]
     assert [
@@ -34399,8 +34402,8 @@ def test_compile_respectively_before_replacements_lowers_all_occurrences() -> No
 
     assert len(ops) == 2
     assert [op.action for op in ops] == [
-        StructuralAction.TEXT_REPLACE,
-        StructuralAction.TEXT_REPLACE,
+        StructuralAction.TEXT_PATCH,
+        StructuralAction.TEXT_PATCH,
     ]
     assert [op.target.path for op in ops] == [
         (("schedule", "28"), ("part", "3"), ("paragraph", "13")),
@@ -34776,7 +34779,7 @@ def test_compile_after_anchor_each_occasion_insert_records_all_occurrences_obser
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "218"),)
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "court"
@@ -34831,7 +34834,7 @@ def test_compile_after_each_occurrence_insert_records_all_occurrences_observatio
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "1"), ("subsection", "2"), ("paragraph", "b"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "spouse"
@@ -34886,7 +34889,7 @@ def test_compile_after_anchor_both_places_where_it_appears_records_all_occurrenc
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "216"), ("subsection", "4"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "court"
@@ -34941,7 +34944,7 @@ def test_compile_after_anchor_wherever_occurring_insert_records_all_occurrences_
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (
         ("section", "118"),
         ("subsection", "4"),
@@ -35001,7 +35004,7 @@ def test_compile_after_anchor_each_place_occurring_records_all_occurrences_obser
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "27"), ("subsection", "6"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "Board"
@@ -35056,7 +35059,7 @@ def test_compile_before_anchor_each_place_insert_records_all_occurrences_observa
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "153"),)
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "miscellaneous"
@@ -35121,7 +35124,7 @@ def test_compile_parenthesized_before_anchor_each_place_insert_records_all_occur
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "9a"),)
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "passenger transport area"
@@ -35187,7 +35190,7 @@ def test_compile_metadata_carried_after_ordinal_insert_preserves_bounded_occurre
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "254"), ("subsection", "7"), ("paragraph", "b"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "hospital"
@@ -35244,7 +35247,7 @@ def test_compile_definition_scoped_all_occurrences_insert_and_replay() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "214"),)
     assert ops[0].text_patch is not None
     assert (
@@ -35333,7 +35336,7 @@ def test_compile_definition_scoped_after_words_insert_with_parenthetical_context
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "11"), ("subsection", "3"))
     assert ops[0].text_patch is not None
     assert (
@@ -35388,7 +35391,7 @@ def test_compile_opening_words_substitution_preserves_children() -> None:
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "27"), ("subsection", "3"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_OPENING_WORDS"
@@ -35468,7 +35471,7 @@ def test_compile_after_child_insert_appends_to_named_child() -> None:
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (
         ("section", "11"),
         ("subsection", "1"),
@@ -35577,7 +35580,7 @@ def test_compile_after_child_insert_with_comma_appends_to_named_child() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (
         ("section", "56j"),
         ("subsection", "1"),
@@ -35632,7 +35635,7 @@ def test_compile_insert_after_child_appends_to_named_child() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "125"), ("subsection", "3"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_AFTER_CHILD_paragraph_a"
@@ -35683,7 +35686,7 @@ def test_compile_unquoted_after_child_insert_appends_to_named_child() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "209"), ("subsection", "2"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_AFTER_CHILD_paragraph_b"
@@ -35729,7 +35732,7 @@ def test_compile_words_inserted_insert_at_end_to_text_replace() -> None:
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].payload is None
     assert ops[0].target.path == (
         ("section", "71"),
@@ -35774,7 +35777,7 @@ def test_compile_direct_words_are_repealed_to_text_repeal() -> None:
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].payload is None
     assert ops[0].target.path == (
         ("schedule", "9"),
@@ -35840,7 +35843,7 @@ def test_compile_direct_words_repealed_ignores_unrelated_source_root_repeal_tabl
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "69"), ("subsection", "8"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == (
@@ -35884,7 +35887,7 @@ def test_compile_contextual_preceding_word_repeal_uses_adjacent_anchor() -> None
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "35"), ("subsection", "3"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == (
@@ -35968,7 +35971,7 @@ def test_compile_contextual_following_word_repeal_uses_anchor_node() -> None:
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == (
         "TEXT_WORD_and_IMMEDIATELY_FOLLOWING_paragraph_c"
@@ -36008,7 +36011,7 @@ def test_contextual_following_word_repeal_records_anchor_kind_recovery() -> None
     op = LegalOperation(
         op_id="uk_test_contextual_following_word_kind_recovery",
         sequence=1,
-        action=StructuralAction.TEXT_REPEAL,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("schedule", "5"), ("paragraph", "8"))),
         text_patch=TextPatchSpec(
             kind=TextPatchKindEnum.DELETE,
@@ -36088,7 +36091,7 @@ def test_compile_contextual_target_word_repeal_uses_target_node() -> None:
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (
         ("section", "14"),
         ("subsection", "4"),
@@ -36176,7 +36179,7 @@ def test_compile_nested_contextual_word_repeal_uses_child_anchor() -> None:
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (
         ("section", "61"),
         ("subsection", "6"),
@@ -36277,7 +36280,7 @@ def test_compile_deep_nested_contextual_word_repeal_uses_child_anchor() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (
         ("section", "12"),
         ("subsection", "1"),
@@ -36331,7 +36334,7 @@ def test_compile_after_second_insert_to_occurrence_text_replace() -> None:
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].payload is None
     assert ops[0].target.path == (("section", "109"), ("subsection", "6"))
     assert ops[0].text_patch is not None
@@ -36373,7 +36376,7 @@ def test_compile_after_the_word_there_is_inserted_to_text_replace() -> None:
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].payload is None
     assert ops[0].target.path == (("schedule", "6"), ("paragraph", "1"))
     assert ops[0].text_patch is not None
@@ -36413,7 +36416,7 @@ def test_compile_opening_words_after_anchor_insert_scopes_to_node_text() -> None
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "21"), ("subsection", "4ba"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_OPENING_WORDS_AFTER\x1fconstable"
@@ -36521,7 +36524,7 @@ def test_compile_for_insert_to_text_replace() -> None:
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "6"
     assert ops[0].text_patch.replacement == "6 12"
@@ -36566,7 +36569,7 @@ def test_compile_for_there_is_inserted_to_replacement_text_patch() -> None:
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "17"), ("subsection", "3"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "(h)"
@@ -36659,7 +36662,7 @@ def test_compile_are_substituted_words_to_text_replace() -> None:
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].payload is None
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "The Post Office"
@@ -36706,7 +36709,7 @@ def test_compile_quote_only_words_omitted_payload_to_text_repeal() -> None:
 
     assert lowering_rejections == []
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].payload is None
     assert ops[0].target.path == (("section", "45"), ("subsection", "1"))
     assert ops[0].text_patch is not None
@@ -36780,7 +36783,7 @@ def test_compile_quote_only_definition_list_omission_uses_definition_selector() 
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_DEFINITION_ENTRY_public works contract"
     assert _fragment_substitution(ops[0]) == [
@@ -36885,7 +36888,7 @@ def test_compile_word_range_substitution_collapses_target_subtree() -> None:
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_FROM_means—_TO_Wales,"
     assert ops[0].text_patch.replacement == "means"
@@ -37019,7 +37022,7 @@ def test_compile_word_range_to_end_substitution_collapses_target_subtree() -> No
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_FROM_of_TO_END"
     assert ops[0].text_patch.replacement == "of a mayor and cabinet executive are to be discharged in accordance with this section"
@@ -37078,7 +37081,7 @@ def test_compile_word_range_to_end_substitution_collapses_target_subtree() -> No
 
 def test_replay_range_to_end_substitution_preserves_children_when_source_marks_post_child_tail() -> None:
     op = LegalOperation(
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress((("section", "1"), ("subsection", "6"))),
         sequence=0,
         text_patch=TextPatchSpec(
@@ -37156,7 +37159,7 @@ def test_replay_range_to_end_substitution_preserves_children_when_source_marks_p
 
 def test_replay_post_child_tail_range_to_end_ignores_same_anchor_in_intro() -> None:
     op = LegalOperation(
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress((("section", "1"), ("subsection", "6"))),
         sequence=0,
         text_patch=TextPatchSpec(
@@ -37260,7 +37263,7 @@ def test_compile_word_range_to_end_there_is_substituted() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "14"), ("subsection", "5"), ("paragraph", "b"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_FROM_member_TO_END"
@@ -37315,7 +37318,7 @@ def test_compile_range_to_end_missing_the_substitution() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (
         ("schedule", "1"),
         ("paragraph", "6a"),
@@ -37381,7 +37384,7 @@ def test_compile_bare_quoted_range_to_end_after_words_context() -> None:
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target.path == (("section", "19"), ("subsection", "2"))
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == "TEXT_FROM_on the remarriage of the applicant_TO_END"
@@ -37459,7 +37462,7 @@ def test_compile_parenthetical_occurrence_range_to_end_substitution() -> None:
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target.path == (("section", "126"), ("paragraph", "a"))
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == "TEXT_FROM_progressively_TO_END"
@@ -37507,7 +37510,7 @@ def test_compile_word_range_to_end_uses_ordinal_start_occurrence() -> None:
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_FROM_and_TO_END"
     assert ops[0].text_patch.selector.occurrence == 2
@@ -37581,7 +37584,7 @@ def test_compile_comma_ordinal_range_to_end_block_substitution() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "29"), ("subsection", "6"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_FROM_list_TO_END"
@@ -37640,7 +37643,7 @@ def test_compile_passive_range_substitution_accepts_words_wrapper() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "61"), ("subsection", "5"))
     assert ops[0].text_patch is not None
     assert (
@@ -37753,7 +37756,7 @@ def test_compile_unquoted_range_independent_end_occurrence_block() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "2"), ("subsection", "7"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_FROM_the_TO_trustee"
@@ -37814,7 +37817,7 @@ def test_compile_parenthetical_end_occurrence_unquoted_range_substitution() -> N
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target.path == (("section", "47"), ("subsection", "6"))
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == "TEXT_FROM_is free_TO_Northern Ireland"
@@ -37864,7 +37867,7 @@ def test_compile_word_range_repeal_uses_parenthesized_ordinal_start_occurrence()
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "82"), ("subsection", "1"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_FROM_in_TO_Act"
@@ -37918,7 +37921,7 @@ def test_compile_word_range_repeal_with_pre_predicate_comma() -> None:
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPEAL
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target.path == (("section", "21a"), ("subsection", "1"))
     assert op.text_patch is not None
     assert op.text_patch.kind is TextPatchKindEnum.DELETE
@@ -37986,7 +37989,7 @@ def test_compile_listed_word_and_range_to_end_repeal() -> None:
     )
 
     assert len(ops) == 2
-    assert [op.action for op in ops] == [StructuralAction.TEXT_REPEAL] * 2
+    assert [op.action for op in ops] == [StructuralAction.TEXT_PATCH] * 2
     assert [op.target.path for op in ops] == [
         (("section", "72"), ("subsection", "3"), ("paragraph", "b")),
         (("section", "72"), ("subsection", "3"), ("paragraph", "b")),
@@ -38441,7 +38444,7 @@ def test_compile_source_carried_definition_child_at_end_block_insert() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "48"),)
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == (
@@ -38501,7 +38504,7 @@ def test_compile_definition_child_before_anchor_insert_replays_inside_child() ->
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "336"), ("subsection", "1"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == (
@@ -40443,7 +40446,7 @@ def test_compile_mixed_body_heading_text_substitution_lowers_current_body_lane()
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "82"),)
     assert ops[0].text_patch == _replace_patch("Commissioner", "appointed person")
     assert any(
@@ -40497,7 +40500,7 @@ def test_compile_each_place_including_heading_substitution_lowers_current_body_l
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target.path == (("section", "87"),)
     assert op.text_patch == _replace_patch("budget", "council tax")
     assert (
@@ -40623,7 +40626,7 @@ def test_compile_mixed_subsection_heading_text_substitution_lowers_current_body_
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "83"), ("subsection", "1"))
     assert ops[0].text_patch == _replace_patch("Commissioner", "appointed person")
     assert any(
@@ -40677,7 +40680,7 @@ def test_compile_mixed_body_heading_text_substitution_lowers_current_heading_lan
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target == LegalAddress(
         path=(("section", "83"),),
         special=FacetKind.HEADING,
@@ -41106,7 +41109,7 @@ def test_compile_multi_enactment_specified_provision_with_listed_target_lowers_a
     )
 
     assert len(ops) == 1
-    assert ops[0].action == StructuralAction.TEXT_REPLACE
+    assert ops[0].action == StructuralAction.TEXT_PATCH
     assert str(ops[0].target) == "section:95/subsection:2/paragraph:b"
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == f"TEXT_ALTERNATE_UNIQUE{US}seven{US}7"
@@ -41160,7 +41163,7 @@ def test_compile_multi_enactment_grouped_section_target_lowers_alternate_selecto
     )
 
     assert len(ops) == 1
-    assert ops[0].action == StructuralAction.TEXT_REPLACE
+    assert ops[0].action == StructuralAction.TEXT_PATCH
     assert str(ops[0].target) == "section:72/subsection:3/paragraph:ii"
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == f"TEXT_ALTERNATE_UNIQUE{US}seven{US}7"
@@ -41214,7 +41217,7 @@ def test_compile_multi_enactment_grouped_schedule_target_lowers_alternate_select
     )
 
     assert len(ops) == 1
-    assert ops[0].action == StructuralAction.TEXT_REPLACE
+    assert ops[0].action == StructuralAction.TEXT_PATCH
     assert str(ops[0].target) == "schedule:7/paragraph:10/subparagraph:3/item:b"
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == f"TEXT_ALTERNATE_UNIQUE{US}seven{US}7"
@@ -41268,7 +41271,7 @@ def test_compile_multi_enactment_plural_schedule_target_lowers_alternate_selecto
     )
 
     assert len(ops) == 1
-    assert ops[0].action == StructuralAction.TEXT_REPLACE
+    assert ops[0].action == StructuralAction.TEXT_PATCH
     assert str(ops[0].target) == "schedule:6/paragraph:94/subparagraph:3/item:b"
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == f"TEXT_ALTERNATE_UNIQUE{US}seven{US}7"
@@ -46863,7 +46866,7 @@ def test_compile_connector_preceding_child_substitution_splits_connector_and_chi
         lowering_rejections_out=lowering_records,
     )
 
-    assert [op.action for op in ops] == [StructuralAction.TEXT_REPEAL, StructuralAction.INSERT]
+    assert [op.action for op in ops] == [StructuralAction.TEXT_PATCH, StructuralAction.INSERT]
     assert all(
         op.witness_rule_id == "uk_effect_connector_preceding_child_list_entry_substitution"
         for op in ops
@@ -49190,7 +49193,7 @@ def test_compile_broad_schedule_column_instruction_lowers_to_table_cell_patch() 
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("schedule", "1"),)
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "£2,149,014,000"
@@ -49490,8 +49493,8 @@ def test_compile_first_second_occurrence_substitution_preserves_bounded_occurren
     assert lowering_rejections == []
     assert len(ops) == 2
     assert [op.action for op in ops] == [
-        StructuralAction.TEXT_REPLACE,
-        StructuralAction.TEXT_REPLACE,
+        StructuralAction.TEXT_PATCH,
+        StructuralAction.TEXT_PATCH,
     ]
     assert [op.text_patch.selector.occurrence for op in ops if op.text_patch is not None] == [2, 1]
     assert [op.text_patch.selector.match_text for op in ops if op.text_patch is not None] == [
@@ -49550,8 +49553,8 @@ def test_compile_first_two_places_substitution_preserves_bounded_occurrences() -
     assert lowering_rejections == []
     assert len(ops) == 2
     assert [op.action for op in ops] == [
-        StructuralAction.TEXT_REPLACE,
-        StructuralAction.TEXT_REPLACE,
+        StructuralAction.TEXT_PATCH,
+        StructuralAction.TEXT_PATCH,
     ]
     assert [op.target.path for op in ops] == [
         (("section", "15"), ("subsection", "1")),
@@ -49614,9 +49617,9 @@ def test_compile_first_three_places_substitution_preserves_bounded_occurrences()
     assert lowering_rejections == []
     assert len(ops) == 3
     assert [op.action for op in ops] == [
-        StructuralAction.TEXT_REPLACE,
-        StructuralAction.TEXT_REPLACE,
-        StructuralAction.TEXT_REPLACE,
+        StructuralAction.TEXT_PATCH,
+        StructuralAction.TEXT_PATCH,
+        StructuralAction.TEXT_PATCH,
     ]
     assert [op.target.path for op in ops] == [
         (("section", "12"), ("subsection", "1")),
@@ -49681,8 +49684,8 @@ def test_compile_quoted_word_where_multiple_ordinal_substitution_preserves_bound
 
     assert len(ops) == 2
     assert [op.action for op in ops] == [
-        StructuralAction.TEXT_REPLACE,
-        StructuralAction.TEXT_REPLACE,
+        StructuralAction.TEXT_PATCH,
+        StructuralAction.TEXT_PATCH,
     ]
     assert [op.text_patch.selector.occurrence for op in ops if op.text_patch is not None] == [3, 1]
     assert [op.text_patch.selector.match_text for op in ops if op.text_patch is not None] == [
@@ -49745,8 +49748,8 @@ def test_compile_quoted_word_ordinal_places_substitution_preserves_bounded_occur
 
     assert len(ops) == 2
     assert [op.action for op in ops] == [
-        StructuralAction.TEXT_REPLACE,
-        StructuralAction.TEXT_REPLACE,
+        StructuralAction.TEXT_PATCH,
+        StructuralAction.TEXT_PATCH,
     ]
     assert [op.target.path for op in ops] == [
         (("section", "17"), ("subsection", "1")),
@@ -49813,8 +49816,8 @@ def test_compile_both_subsequent_places_substitution_preserves_bounded_occurrenc
 
     assert len(ops) == 2
     assert [op.action for op in ops] == [
-        StructuralAction.TEXT_REPLACE,
-        StructuralAction.TEXT_REPLACE,
+        StructuralAction.TEXT_PATCH,
+        StructuralAction.TEXT_PATCH,
     ]
     assert [op.target.path for op in ops] == [
         (("section", "52"), ("subsection", "7")),
@@ -49886,7 +49889,7 @@ def test_compile_where_occurs_ordinal_substitution_preserves_bounded_occurrence(
 
     assert lowering_rejections == []
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("schedule", "1b"), ("paragraph", "3"), ("subparagraph", "3"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "the earlier year"
@@ -49930,7 +49933,7 @@ def test_compile_parenthesized_where_ordinal_substitution_preserves_bounded_occu
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "365"), ("subsection", "1"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "officers"
@@ -49981,7 +49984,7 @@ def test_compile_the_ordinal_substitution_preserves_bounded_occurrence() -> None
 
     assert lowering_rejections == []
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (
         ("schedule", "3za"),
         ("paragraph", "2"),
@@ -50033,7 +50036,7 @@ def test_compile_from_beginning_omission_lowers_to_bounded_text_repeal() -> None
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "20b"), ("subsection", "2"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_FROM__TO_taxpayer; and"
@@ -50091,7 +50094,7 @@ def test_compile_from_beginning_unit_block_substitution_lowers_bounded_selector(
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("schedule", "31"), ("paragraph", "11"), ("subparagraph", "1"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_FROM__TO_of accounts"
@@ -50148,7 +50151,7 @@ def test_compile_from_beginning_block_substitution_strips_wrapping_quotes() -> N
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "3"), ("subsection", "2"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_FROM__TO_1(1)(b) of this Act"
@@ -50207,7 +50210,7 @@ def test_compile_from_beginning_to_words_active_substitution_lowers_text_replace
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target.path == (("section", "105"), ("subsection", "2"))
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == "TEXT_FROM__TO_effect in Scotland"
@@ -50275,7 +50278,7 @@ def test_compile_before_child_block_substitution_strips_source_payload_label() -
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "50"), ("subsection", "6"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_BEFORE_CHILD_paragraph_a"
@@ -50337,7 +50340,7 @@ def test_compile_words_before_type_substitution_lowers_to_before_child_selector(
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "558"), ("subsection", "2"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_BEFORE_CHILD_type_1"
@@ -50398,8 +50401,8 @@ def test_compile_compound_lettered_text_patches_emit_one_op_per_fragment() -> No
 
     assert len(ops) == 2
     assert [op.action for op in ops] == [
-        StructuralAction.TEXT_REPLACE,
-        StructuralAction.TEXT_REPLACE,
+        StructuralAction.TEXT_PATCH,
+        StructuralAction.TEXT_PATCH,
     ]
     assert [str(op.target) for op in ops] == [
         "section:13/subsection:1",
@@ -50465,7 +50468,7 @@ def test_compile_post_quoted_ordinal_substitution_preserves_bounded_occurrence()
     assert lowering_rejections == []
     assert len(ops) == 1
     op = ops[0]
-    assert op.action == StructuralAction.TEXT_REPLACE
+    assert op.action == StructuralAction.TEXT_PATCH
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == "six months"
     assert op.text_patch.selector.occurrence == 1
@@ -50518,7 +50521,7 @@ def test_compile_ordinal_substitution_with_parenthetical_qualifier_preserves_occ
     assert lowering_rejections == []
     assert len(ops) == 1
     op = ops[0]
-    assert op.action == StructuralAction.TEXT_REPLACE
+    assert op.action == StructuralAction.TEXT_PATCH
     assert op.target.path == (("section", "989"),)
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == "or"
@@ -50571,7 +50574,7 @@ def test_compile_post_quoted_ordinal_there_is_substituted_preserves_bounded_occu
     assert lowering_rejections == []
     assert len(ops) == 1
     op = ops[0]
-    assert op.action == StructuralAction.TEXT_REPLACE
+    assert op.action == StructuralAction.TEXT_PATCH
     assert op.target.path == (("section", "30"), ("subsection", "4"))
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == "order"
@@ -50624,7 +50627,7 @@ def test_compile_post_quoted_where_ordinal_substitution_preserves_bounded_occurr
     assert lowering_rejections == []
     assert len(ops) == 1
     op = ops[0]
-    assert op.action == StructuralAction.TEXT_REPLACE
+    assert op.action == StructuralAction.TEXT_PATCH
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == "medical practitioner"
     assert op.text_patch.selector.occurrence == 2
@@ -50676,7 +50679,7 @@ def test_compile_passive_ordinal_place_substitution_with_words_wrapper_preserves
     assert lowering_rejections == []
     assert len(ops) == 1
     op = ops[0]
-    assert op.action == StructuralAction.TEXT_REPLACE
+    assert op.action == StructuralAction.TEXT_PATCH
     assert op.text_patch is not None
     assert op.target.path == (("section", "8a"), ("subsection", "1"))
     assert op.text_patch.selector.match_text == "the trustee"
@@ -50729,7 +50732,7 @@ def test_compile_parenthesized_nested_quote_substitution_lowers_to_text_patch() 
     assert lowering_rejections == []
     assert len(ops) == 1
     op = ops[0]
-    assert op.action == StructuralAction.TEXT_REPLACE
+    assert op.action == StructuralAction.TEXT_PATCH
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == "(\u201ca progress report\u201d)"
     assert op.text_patch.replacement == "(a \u201cprogress report\u201d)"
@@ -50796,7 +50799,7 @@ def test_compile_target_qualified_passive_substitution_lowers_text_patch() -> No
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action == StructuralAction.TEXT_REPLACE
+    assert op.action == StructuralAction.TEXT_PATCH
     assert op.target.path == (("section", "60"), ("subsection", "7a"), ("paragraph", "b"))
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == "on the date he signs the certificate"
@@ -50852,7 +50855,7 @@ def test_compile_words_in_brackets_substitution_lowers_to_bounded_selector() -> 
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action == StructuralAction.TEXT_REPLACE
+    assert op.action == StructuralAction.TEXT_PATCH
     assert op.target.path == (("section", "100"), ("subsection", "6"))
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == "TEXT_IN_BRACKETS"
@@ -50908,7 +50911,7 @@ def test_compile_after_words_in_brackets_insert_lowers_to_bounded_selector() -> 
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action == StructuralAction.TEXT_REPLACE
+    assert op.action == StructuralAction.TEXT_PATCH
     assert op.target.path == (("section", "1"), ("subsection", "5"), ("paragraph", "c"))
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == "TEXT_AFTER_WORDS_IN_BRACKETS"
@@ -50969,7 +50972,7 @@ def test_compile_at_end_words_in_parentheses_insert_lowers_to_inside_parentheses
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action == StructuralAction.TEXT_REPLACE
+    assert op.action == StructuralAction.TEXT_PATCH
     assert op.target.path == (("section", "13"), ("subsection", "3"))
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == "TEXT_AT_END_WORDS_IN_PARENTHESES"
@@ -51030,7 +51033,7 @@ def test_compile_at_end_step_insert_lowers_to_step_boundary_selector() -> None:
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action == StructuralAction.TEXT_REPLACE
+    assert op.action == StructuralAction.TEXT_PATCH
     assert op.target.path == (("section", "23"),)
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == f"TEXT_AT_END_OF_STEP{US}4"
@@ -51089,7 +51092,7 @@ def test_compile_before_step_insert_lowers_to_step_boundary_selector() -> None:
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action == StructuralAction.TEXT_REPLACE
+    assert op.action == StructuralAction.TEXT_PATCH
     assert op.target.path == (("section", "809q"), ("subsection", "3"))
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == f"TEXT_BEFORE_STEP{US}1"
@@ -51148,7 +51151,7 @@ def test_compile_amount_specified_substitution_lowers_to_unique_fee_selector() -
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action == StructuralAction.TEXT_REPLACE
+    assert op.action == StructuralAction.TEXT_PATCH
     assert op.target.path == (("section", "12"), ("subsection", "3"))
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == "TEXT_UNIQUE_FEE_SUM"
@@ -51207,7 +51210,7 @@ def test_compile_amount_specified_replaced_with_tax_year_lowers_to_unique_fee_se
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action == StructuralAction.TEXT_REPLACE
+    assert op.action == StructuralAction.TEXT_PATCH
     assert op.target.path == (("section", "10"), ("subsection", "5"))
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == "TEXT_UNIQUE_FEE_SUM"
@@ -51316,7 +51319,7 @@ def test_compile_relative_amount_specified_replaced_with_lowers_when_suffix_matc
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action == StructuralAction.TEXT_REPLACE
+    assert op.action == StructuralAction.TEXT_PATCH
     assert op.target.path == (
         ("section", "46"),
         ("subsection", "3"),
@@ -51424,7 +51427,7 @@ def test_compile_after_anchor_ordinal_insert_preserves_bounded_occurrence() -> N
     assert lowering_rejections == []
     assert len(ops) == 1
     op = ops[0]
-    assert op.action == StructuralAction.TEXT_REPLACE
+    assert op.action == StructuralAction.TEXT_PATCH
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == "Secretary of State"
     assert op.text_patch.selector.occurrence == 1
@@ -51477,7 +51480,7 @@ def test_compile_after_anchor_ordinal_occurrence_insert_preserves_bounded_occurr
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action == StructuralAction.TEXT_REPLACE
+    assert op.action == StructuralAction.TEXT_PATCH
     assert op.target.path == (("section", "11"), ("subsection", "6"))
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == "made"
@@ -51552,7 +51555,7 @@ def test_compile_passive_after_anchor_ordinal_insert_lowers_text_patch() -> None
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action == StructuralAction.TEXT_REPLACE
+    assert op.action == StructuralAction.TEXT_PATCH
     assert op.target.path == (("section", "16"), ("subsection", "8"))
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == "a"
@@ -51617,7 +51620,7 @@ def test_compile_after_anchor_each_other_place_insert_requires_first_occurrence_
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action == StructuralAction.TEXT_REPLACE
+    assert op.action == StructuralAction.TEXT_PATCH
     assert op.target.path == (("section", "62"), ("subsection", "1"))
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == (
@@ -51669,7 +51672,7 @@ def test_replay_after_anchor_each_other_place_insert_skips_first_occurrence() ->
     op = LegalOperation(
         op_id="uk_test_each_other_place_insert_replay",
         sequence=0,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "62"), ("subsection", "1"))),
         text_patch=_replace_patch(
             f"TEXT_AFTER_EACH_OTHER_OCCURRENCE{US}the British Waterways Board",
@@ -51735,7 +51738,7 @@ def test_compile_each_other_place_substitution_uses_preceding_first_occurrence_s
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action == StructuralAction.TEXT_REPLACE
+    assert op.action == StructuralAction.TEXT_PATCH
     assert op.target.path == (("schedule", "15"), ("part", "4"), ("paragraph", "5"))
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == (
@@ -51791,7 +51794,7 @@ def test_replay_each_other_place_substitution_skips_first_when_sibling_not_appli
     op = LegalOperation(
         op_id="uk_test_each_other_place_substitution_replay",
         sequence=0,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("schedule", "15"), ("part", "4"), ("paragraph", "5"))),
         text_patch=_replace_patch(
             "TEXT_EACH_OTHER_OCCURRENCE_AFTER_FIRST_SIBLING"
@@ -51841,7 +51844,7 @@ def test_replay_each_other_place_substitution_replaces_all_remaining_after_sibli
     op = LegalOperation(
         op_id="uk_test_each_other_place_substitution_after_sibling_replay",
         sequence=0,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("schedule", "15"), ("part", "4"), ("paragraph", "5"))),
         text_patch=_replace_patch(
             "TEXT_EACH_OTHER_OCCURRENCE_AFTER_FIRST_SIBLING"
@@ -51946,8 +51949,8 @@ def test_compile_after_anchor_ordinal_places_insert_preserves_bounded_occurrence
 
     assert len(ops) == 2
     assert [op.action for op in ops] == [
-        StructuralAction.TEXT_REPLACE,
-        StructuralAction.TEXT_REPLACE,
+        StructuralAction.TEXT_PATCH,
+        StructuralAction.TEXT_PATCH,
     ]
     assert [op.text_patch.selector.occurrence for op in ops if op.text_patch is not None] == [2, 1]
     assert [op.text_patch.selector.match_text for op in ops if op.text_patch is not None] == [
@@ -52011,7 +52014,7 @@ def test_compile_after_prefixed_anchor_ordinal_insert_preserves_bounded_occurren
     assert lowering_rejections == []
     assert len(ops) == 1
     op = ops[0]
-    assert op.action == StructuralAction.TEXT_REPLACE
+    assert op.action == StructuralAction.TEXT_PATCH
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == "order"
     assert op.text_patch.selector.occurrence == 2
@@ -52063,7 +52066,7 @@ def test_compile_final_quoted_word_omission_lowers_to_final_occurrence_repeal() 
     assert lowering_rejections == []
     assert len(ops) == 1
     op = ops[0]
-    assert op.action == StructuralAction.TEXT_REPEAL
+    assert op.action == StructuralAction.TEXT_PATCH
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == "and"
     assert op.text_patch.selector.occurrence == -1
@@ -52171,7 +52174,7 @@ def test_compile_each_paragraph_before_insert_lowers_to_each_explicit_target() -
         "section:17c/subsection:5/paragraph:b",
     ]
     for op in ops:
-        assert op.action is StructuralAction.TEXT_REPLACE
+        assert op.action is StructuralAction.TEXT_PATCH
         assert op.text_patch is not None
         assert op.text_patch.selector.match_text == "Health Authority"
         assert op.text_patch.replacement == "Strategic Health Authority or by a Health Authority"
@@ -53871,7 +53874,7 @@ def test_order_schedule_materialization_ops_prioritizes_structural_schedule_ops(
         LegalOperation(
             op_id="text",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("schedule", "13"), ("paragraph", "116a"))),
             source=source,
             text_patch=_replace_patch("old", "new"),
@@ -53886,7 +53889,7 @@ def test_order_schedule_materialization_ops_prioritizes_structural_schedule_ops(
         LegalOperation(
             op_id="body",
             sequence=3,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "45"), ("subsection", "1"))),
             source=source,
             text_patch=_replace_patch("old", "new"),
@@ -53911,7 +53914,7 @@ def test_order_schedule_materialization_ops_keeps_heading_facet_patch_before_str
         LegalOperation(
             op_id="heading",
             sequence=2,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "1"),), special=FacetKind.HEADING),
             source=source,
             text_patch=_replace_patch("a temporary", "an initial temporary"),
@@ -53919,7 +53922,7 @@ def test_order_schedule_materialization_ops_keeps_heading_facet_patch_before_str
         LegalOperation(
             op_id="body",
             sequence=3,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "1"), ("subsection", "1"))),
             source=source,
             text_patch=_replace_patch("temporary", "initial temporary"),
@@ -53938,7 +53941,7 @@ def test_order_schedule_materialization_ops_places_same_target_insert_before_hea
         LegalOperation(
             op_id="heading",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=target.path, special=FacetKind.HEADING),
             source=source,
             text_patch=_replace_patch("Electronic monitoring", "Electronic compliance monitoring requirement"),
@@ -53946,7 +53949,7 @@ def test_order_schedule_materialization_ops_places_same_target_insert_before_hea
         LegalOperation(
             op_id="body",
             sequence=2,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(*target.path, ("subparagraph", "1"))),
             source=source,
             text_patch=_replace_patch(
@@ -54020,7 +54023,7 @@ def test_order_schedule_materialization_ops_places_shape_creation_before_depende
         LegalOperation(
             op_id="text",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "55"), ("subsection", "2b"), ("paragraph", "d"))),
             source=text_source,
             text_patch=_replace_patch("landlord", "tenant"),
@@ -54121,7 +54124,7 @@ def test_order_uk_text_patch_preimage_chains_orders_exact_same_target_chain() ->
     later = LegalOperation(
         op_id="key-322afc5623b43af35307b2fa18f1f8bf",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=target,
         text_patch=_replace_patch("£626,571,000", "£626,568,000"),
         source=OperationSource(statute_id="ssi/2001/68", title="Order", effective=""),
@@ -54129,7 +54132,7 @@ def test_order_uk_text_patch_preimage_chains_orders_exact_same_target_chain() ->
     earlier = LegalOperation(
         op_id="key-4971bad3478b772a2c289b6532ed41ac",
         sequence=2,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=target,
         text_patch=_replace_patch("£589,278,000", "£626,571,000"),
         source=OperationSource(statute_id="ssi/2001/7", title="Order", effective=""),
@@ -54152,7 +54155,7 @@ def test_order_uk_text_patch_preimage_chains_blocks_ambiguous_exact_chain() -> N
     first = LegalOperation(
         op_id="op-first",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=target,
         text_patch=_replace_patch("old amount", "shared amount"),
         source=OperationSource(statute_id="ssi/2001/1", title="Order", effective=""),
@@ -54160,7 +54163,7 @@ def test_order_uk_text_patch_preimage_chains_blocks_ambiguous_exact_chain() -> N
     second = LegalOperation(
         op_id="op-second",
         sequence=2,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=target,
         text_patch=_replace_patch("shared amount", "second amount"),
         source=OperationSource(statute_id="ssi/2001/2", title="Order", effective=""),
@@ -54168,7 +54171,7 @@ def test_order_uk_text_patch_preimage_chains_blocks_ambiguous_exact_chain() -> N
     third = LegalOperation(
         op_id="op-third",
         sequence=3,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=target,
         text_patch=_replace_patch("shared amount", "third amount"),
         source=OperationSource(statute_id="ssi/2001/3", title="Order", effective=""),
@@ -54726,7 +54729,7 @@ def test_replay_text_end_append_preserves_existing_target_text() -> None:
     op = LegalOperation(
         op_id="uk_test_text_end_append",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "1"),)),
         source=source,
         text_patch=_append_patch("and tail"),
@@ -54764,7 +54767,7 @@ def test_replay_text_end_append_preserves_subtree_children() -> None:
     op = LegalOperation(
         op_id="uk_test_subtree_text_end_append",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "1"),)),
         source=source,
         text_patch=_append_patch(", appended"),
@@ -55184,7 +55187,7 @@ def test_source_pathology_filter_observes_out_of_scope_compiled_ops() -> None:
     op = LegalOperation(
         op_id="uk_test_notional_words_filter_op",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "200"), ("subsection", "5"), ("paragraph", "b"))),
         text_patch=TextPatchSpec(
             kind=TextPatchKindEnum.REPLACE,
@@ -55302,7 +55305,7 @@ def test_compile_multiclause_schedule_item_substitution_selects_matching_item_fr
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("schedule", "13"), ("paragraph", "148"), ("item", "b"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "wrong"
@@ -55638,7 +55641,7 @@ def test_compile_heading_title_replacement_from_source_parent_instruction() -> N
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target == LegalAddress(
         path=(("section", "35a"),),
         special=FacetKind.HEADING,
@@ -55699,7 +55702,7 @@ def test_compile_heading_facet_word_substitution_targets_heading_special() -> No
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target == LegalAddress(path=(("section", "38"),), special=FacetKind.HEADING)
     assert ops[0].text_patch == _replace_patch(
         "Parliamentary sovereignty",
@@ -55759,7 +55762,7 @@ def test_compile_heading_facet_word_substitution_ignores_source_parent_full_repl
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target == LegalAddress(
         path=(("section", "252a"),),
         special=FacetKind.HEADING,
@@ -55860,7 +55863,7 @@ def test_compile_schedule_part_heading_word_omit_targets_heading_facet_not_list_
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target == LegalAddress(path=(("schedule", "6"), ("part", "17")), special=FacetKind.HEADING)
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "requirement"
@@ -55902,7 +55905,7 @@ def test_compile_heading_facet_becomes_lowers_to_full_heading_replacement() -> N
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target == LegalAddress(path=(("section", "9"),), special=FacetKind.HEADING)
     assert ops[0].text_patch == _replace_patch(
         "TEXT_ALL",
@@ -55947,7 +55950,7 @@ def test_compile_italic_heading_before_paragraph_becomes_lowers_to_heading_facet
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target == LegalAddress(
         path=(("schedule", "6"), ("paragraph", "101")),
         special=FacetKind.HEADING,
@@ -55998,7 +56001,7 @@ def test_compile_italic_heading_before_that_paragraph_becomes_lowers_to_heading_
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target == LegalAddress(
         path=(("schedule", "6"), ("paragraph", "45")),
         special=FacetKind.HEADING,
@@ -56048,7 +56051,7 @@ def test_compile_schedule_part_heading_substitute_lowers_to_full_heading_replace
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target == LegalAddress(
         path=(("schedule", "2"), ("part", "6")),
         special=FacetKind.HEADING,
@@ -56094,7 +56097,7 @@ def test_compile_title_to_section_becomes_lowers_to_full_heading_replacement() -
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target == LegalAddress(path=(("section", "11"),), special=FacetKind.HEADING)
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_ALL"
@@ -56138,7 +56141,7 @@ def test_compile_title_of_numbered_section_becomes_lowers_to_full_heading_replac
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target == LegalAddress(path=(("section", "42"),), special=FacetKind.HEADING)
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_ALL"
@@ -56182,7 +56185,7 @@ def test_compile_title_facet_word_substitution_does_not_create_subsection_title_
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target == LegalAddress(path=(("section", "6"),), special=FacetKind.HEADING)
     assert ops[0].text_patch == _replace_patch("development", "improvement")
     assert any(record["rule_id"] == "uk_effect_heading_facet_word_patch_lowered" for record in lowering_records)
@@ -56220,7 +56223,7 @@ def test_compile_heading_facet_at_end_insert_targets_heading_append() -> None:
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].payload is None
     assert ops[0].target == LegalAddress(path=(("section", "38"),), special=FacetKind.HEADING)
     assert ops[0].text_patch is not None
@@ -56261,7 +56264,7 @@ def test_compile_heading_facet_words_following_anchor_to_tail_replace() -> None:
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target == LegalAddress(
         path=(("schedule", "14"), ("part", "3")),
         special=FacetKind.HEADING,
@@ -56310,7 +56313,7 @@ def test_compile_words_following_anchor_passive_substitution_to_tail_replace() -
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "58"), ("subsection", "2"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.kind is TextPatchKindEnum.REPLACE
@@ -56429,7 +56432,7 @@ def test_compile_unquoted_words_after_anchor_to_tail_replace() -> None:
     assert observations[0]["strict_disposition"] == "record"
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target.path == (("section", "574"), ("subsection", "2"))
     assert op.text_patch is not None
     assert op.text_patch.kind is TextPatchKindEnum.REPLACE
@@ -56487,7 +56490,7 @@ def test_compile_omit_words_after_anchor_to_tail_delete() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "9"), ("subsection", "1"), ("paragraph", "b"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_AFTER_source_TO_END"
@@ -56556,7 +56559,7 @@ def test_compile_omit_section_reference_to_text_delete() -> None:
     assert observations[0]["strict_disposition"] == "record"
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPEAL
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target.path == (("section", "11"), ("subsection", "2"))
     assert op.text_patch is not None
     assert op.text_patch.kind is TextPatchKindEnum.DELETE
@@ -56609,7 +56612,7 @@ def test_compile_definition_child_tail_after_anchor_to_end_preserves_source_scop
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target == LegalAddress(path=(("section", "273"), ("subsection", "12")))
     assert ops[0].text_patch is not None
     assert (
@@ -56661,7 +56664,7 @@ def test_compile_quoted_words_anchor_to_end_substitution() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "65"), ("subsection", "5"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.kind is TextPatchKindEnum.REPLACE
@@ -56737,7 +56740,7 @@ def test_compile_from_beginning_end_anchor_occurrence_substitution() -> None:
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target.path == (("schedule", "3"), ("paragraph", "24"), ("subparagraph", "3"))
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == "TEXT_FROM__TO_order"
@@ -56791,7 +56794,7 @@ def test_compile_after_anchor_before_final_word_substitution() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (
         ("schedule", "1"),
         ("paragraph", "5"),
@@ -56856,7 +56859,7 @@ def test_compile_missing_space_before_there_is_substituted() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "61"), ("subsection", "4"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "neglecting or refusing to pay"
@@ -56909,7 +56912,7 @@ def test_compile_joined_there_shall_range_to_end_substitution() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "61"), ("subsection", "1"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_FROM_the collector shall_TO_END"
@@ -56962,7 +56965,7 @@ def test_compile_joined_be_omitted_quoted_range_repeal() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "61"), ("subsection", "5"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_FROM_The costs_TO_the collector, and"
@@ -57016,7 +57019,7 @@ def test_compile_cease_effect_range_to_end_repeal() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "95"), ("subsection", "3"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_FROM_and the references_TO_END"
@@ -57069,7 +57072,7 @@ def test_compile_cease_effect_quoted_word_repeal() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "9"), ("subsection", "3"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "the following provisions of"
@@ -57122,7 +57125,7 @@ def test_compile_beginning_insert_with_carried_parent_context() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("schedule", "1a"), ("paragraph", "4"), ("subparagraph", "1"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_BEGINNING"
@@ -57176,7 +57179,7 @@ def test_compile_at_end_insert_with_carried_parent_context() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "9"), ("subsection", "1"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.kind is TextPatchKindEnum.APPEND
@@ -57237,7 +57240,7 @@ def test_compile_at_end_insert_with_cited_section_context() -> None:
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target.path == (("section", "91"), ("subsection", "9"))
     assert op.text_patch is not None
     assert op.text_patch.kind is TextPatchKindEnum.APPEND
@@ -57306,7 +57309,7 @@ def test_compile_source_parent_at_end_text_payload_lowers_append() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "17"), ("subsection", "5"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.kind is TextPatchKindEnum.APPEND
@@ -57375,7 +57378,7 @@ def test_compile_source_parent_at_end_following_definition_payload_lowers_append
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "104aa"), ("subsection", "6"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.kind is TextPatchKindEnum.APPEND
@@ -57819,7 +57822,7 @@ def test_compile_source_parent_after_anchor_payload_lowers_text_patch() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "14"), ("subsection", "3"), ("paragraph", "b"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.kind is TextPatchKindEnum.REPLACE
@@ -57943,7 +57946,7 @@ def test_compile_each_time_it_appears_range_substitution_lowers_each_target() ->
         (("section", "101"), ("subsection", "3")),
         (("section", "101"), ("subsection", "4")),
     ]
-    assert all(op.action is StructuralAction.TEXT_REPLACE for op in ops)
+    assert all(op.action is StructuralAction.TEXT_PATCH for op in ops)
     assert all(op.text_patch is not None for op in ops)
     assert all(op.text_patch.selector.match_text == "listing rules" for op in ops if op.text_patch is not None)
     assert all(_required_text_patch_replacement(op) == "Part 6 rules" for op in ops)
@@ -58103,7 +58106,7 @@ def test_compile_dangling_passive_substitution_quote() -> None:
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target.path == (("schedule", "9"), ("paragraph", "1"), ("subparagraph", "4"))
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == "Medical Practices Committee"
@@ -58153,7 +58156,7 @@ def test_compile_dangling_active_substitution_quote() -> None:
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target.path == (("section", "31c"), ("subsection", "2"), ("paragraph", "b"))
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == "section 350 of the principal Act"
@@ -58207,7 +58210,7 @@ def test_compile_all_occurrences_passive_with_words_marker() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "55"),)
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "assessment"
@@ -58260,7 +58263,7 @@ def test_compile_reference_to_substitution_ignores_historical_parenthetical() ->
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("section", "121"), ("subsection", "1"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "London Regional Transport"
@@ -58314,7 +58317,7 @@ def test_compile_passive_range_repeal_preserves_end_occurrence() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target.path == (("schedule", "7"), ("paragraph", "6"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.kind is TextPatchKindEnum.DELETE
@@ -58373,7 +58376,7 @@ def test_compile_heading_facet_after_anchor_insert_targets_heading_carrier() -> 
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target == LegalAddress(path=(("section", "38"),), special=FacetKind.HEADING)
     assert ops[0].text_patch == _replace_patch("Parliamentary", "Parliamentary and democratic")
     assert (
@@ -58417,7 +58420,7 @@ def test_compile_source_explicit_sidenote_with_host_target_refines_to_heading_fa
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target == LegalAddress(path=(("section", "17"),), special=FacetKind.HEADING)
     assert ops[0].text_patch == _replace_patch("banks", "banks, building societies")
     assert [record["rule_id"] for record in lowering_records] == [
@@ -58458,7 +58461,7 @@ def test_compile_schedule_heading_after_anchor_insert_targets_heading_carrier() 
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].payload is None
     assert ops[0].target == LegalAddress(path=(("schedule", "1"),), special=FacetKind.HEADING)
     assert ops[0].text_patch == _replace_patch("Offences", "Offences committed before commencement")
@@ -58546,7 +58549,7 @@ def test_replay_heading_facet_word_substitution_mutates_unique_p1group_heading_o
     op = LegalOperation(
         op_id="uk_test_heading_facet_apply",
         sequence=0,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "38"),), special=FacetKind.HEADING),
         source=OperationSource(statute_id="uksi/2024/164", title="Test Regulations", effective="2024-02-20"),
         text_patch=_replace_patch("Parliamentary sovereignty", "Parliamentary sovereignty and devolution"),
@@ -58632,7 +58635,7 @@ def test_replay_heading_facet_full_replacement_mutates_heading_only() -> None:
     op = LegalOperation(
         op_id="uk_test_heading_facet_full_replacement_apply",
         sequence=0,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "9"),), special=FacetKind.HEADING),
         text_patch=_replace_patch(
             "TEXT_ALL",
@@ -58696,7 +58699,7 @@ def test_replay_heading_facet_append_mutates_unique_p1group_heading_only() -> No
     op = LegalOperation(
         op_id="uk_test_heading_facet_append_apply",
         sequence=0,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "38"),), special=FacetKind.HEADING),
         text_patch=TextPatchSpec(
             kind=TextPatchKindEnum.APPEND,
@@ -58735,7 +58738,7 @@ def test_replay_heading_facet_after_anchor_insert_preserves_heading_tail() -> No
     op = LegalOperation(
         op_id="uk_test_heading_facet_after_anchor_insert_apply",
         sequence=0,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("part", "6"),), special=FacetKind.HEADING),
         text_patch=_replace_patch("PRINCIPAL COUNCILS", "PRINCIPAL COUNCILS AND CORPORATE JOINT COMMITTEES"),
     )
@@ -58849,7 +58852,7 @@ def test_replay_heading_facet_after_anchor_tail_replace_mutates_heading_only() -
     op = LegalOperation(
         op_id="uk_test_heading_facet_after_anchor_apply",
         sequence=0,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("schedule", "14"), ("part", "3")), special=FacetKind.HEADING),
         text_patch=TextPatchSpec(
             kind=TextPatchKindEnum.REPLACE,
@@ -58904,7 +58907,7 @@ def test_replay_definition_child_tail_after_anchor_to_end_scopes_by_definition()
         LegalOperation(
             op_id="uk_test_definition_child_tail_after_anchor_extended",
             sequence=0,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=target,
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -58920,7 +58923,7 @@ def test_replay_definition_child_tail_after_anchor_to_end_scopes_by_definition()
         LegalOperation(
             op_id="uk_test_definition_child_tail_after_anchor_life",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=target,
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -58978,7 +58981,7 @@ def test_replay_definition_child_tail_after_anchor_records_flat_boundary_recover
     op = LegalOperation(
         op_id="uk_test_definition_child_tail_after_anchor_flat_boundary",
         sequence=0,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "273"), ("subsection", "12"))),
         text_patch=TextPatchSpec(
             kind=TextPatchKindEnum.REPLACE,
@@ -59035,7 +59038,7 @@ def test_replay_heading_facet_patch_uses_direct_section_heading_carrier() -> Non
     op = LegalOperation(
         op_id="uk_test_heading_facet_direct_child_apply",
         sequence=0,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress((("section", "16a"),), special=FacetKind.HEADING),
         text_patch=_replace_patch("young offenders", "terrorist offenders"),
         source=OperationSource(
@@ -59075,7 +59078,7 @@ def test_replay_text_patch_normalizes_compact_subsection_citation_spacing() -> N
     op = LegalOperation(
         op_id="uk_test_compact_subsection_citation_spacing",
         sequence=0,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress((("section", "44"),)),
         text_patch=_replace_patch("2(1)", "2(1), 7A(1)"),
         source=OperationSource(
@@ -59120,7 +59123,7 @@ def test_replay_heading_facet_punctuation_recovery_mutates_heading_carrier_not_s
     op = LegalOperation(
         op_id="uk_test_heading_facet_punctuation_recovery",
         sequence=0,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress((("section", "16a"),), special=FacetKind.HEADING),
         text_patch=_replace_patch("2(1)", "2(1), 7A(1)"),
         source=OperationSource(statute_id="ukpga/2022/31"),
@@ -59172,7 +59175,7 @@ def test_replay_heading_facet_subsection_patch_uses_unique_pgroup_heading_carrie
     op = LegalOperation(
         op_id="uk_test_heading_facet_pgroup_apply",
         sequence=0,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(
             path=(("section", "185"), ("subsection", "4")),
             special=FacetKind.HEADING,
@@ -59234,7 +59237,7 @@ def test_replay_heading_facet_subsection_patch_uses_first_child_pgroup_heading_c
     op = LegalOperation(
         op_id="uk_test_heading_facet_pgroup_first_child_apply",
         sequence=0,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(
             path=(("section", "231"), ("subsection", "3")),
             special=FacetKind.HEADING,
@@ -59282,7 +59285,7 @@ def test_replay_heading_facet_subsection_patch_blocks_non_first_pgroup_child() -
     op = LegalOperation(
         op_id="uk_test_heading_facet_pgroup_non_first_child",
         sequence=0,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(
             path=(("section", "231"), ("subsection", "4")),
             special=FacetKind.HEADING,
@@ -59323,7 +59326,7 @@ def test_replay_heading_facet_blocks_ambiguous_p1group_carrier() -> None:
     op = LegalOperation(
         op_id="uk_test_heading_facet_ambiguous",
         sequence=0,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "1"),), special=FacetKind.HEADING),
         source=OperationSource(statute_id="uksi/2024/164", title="Test Regulations", effective="2024-02-20"),
         text_patch=_replace_patch("Shared heading", "Changed heading"),
@@ -59413,7 +59416,7 @@ def test_compile_crossheading_before_paragraph_replace_lowers_to_heading_patch()
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=observations)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target == LegalAddress(path=(("schedule", "9"), ("paragraph", "132")), special=FacetKind.HEADING)
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_ALL"
@@ -59460,7 +59463,7 @@ def test_compile_crossheading_preceding_section_replace_lowers_to_heading_patch(
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=observations)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target == LegalAddress(path=(("section", "48"),), special=FacetKind.HEADING)
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_ALL"
@@ -59518,7 +59521,7 @@ def test_compile_crossheading_before_section_range_replace_lowers_to_heading_pat
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target == LegalAddress(
         path=(("section", "24a"),),
         special=FacetKind.HEADING,
@@ -59581,7 +59584,7 @@ def test_compile_crossheading_child_row_uses_source_parent_reference_substitutio
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target == LegalAddress(path=(("section", "21"),), special=FacetKind.HEADING)
     assert op.text_patch == _replace_patch("Office of Rail Regulation", "Office of Rail and Road")
     assert (
@@ -59662,7 +59665,7 @@ def test_compile_crossheading_child_row_uses_governing_words_substitution() -> N
 
     assert len(ops) == 1
     op = ops[0]
-    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.action is StructuralAction.TEXT_PATCH
     assert op.target == LegalAddress(
         path=(("schedule", "2"), ("paragraph", "3")),
         special=FacetKind.HEADING,
@@ -59717,7 +59720,7 @@ def test_compile_crossheading_target_replace_lowers_to_owned_heading_patch() -> 
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=observations)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target == LegalAddress(path=(("schedule", "6"), ("paragraph", "121")), special=FacetKind.HEADING)
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_ALL"
@@ -59782,7 +59785,7 @@ def test_compile_crossheading_and_paragraph_replace_splits_titled_payload() -> N
 
     assert len(ops) == 2
     heading_op, paragraph_op = ops
-    assert heading_op.action is StructuralAction.TEXT_REPLACE
+    assert heading_op.action is StructuralAction.TEXT_PATCH
     assert heading_op.target == LegalAddress(path=(("schedule", "6"), ("paragraph", "6")), special=FacetKind.HEADING)
     assert heading_op.text_patch == _replace_patch(
         "TEXT_ALL",
@@ -59933,7 +59936,7 @@ def test_compile_crossheading_before_section_word_substitution_lowers_to_heading
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=observations)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target == LegalAddress(path=(("section", "21"),), special=FacetKind.HEADING)
     assert ops[0].text_patch == _replace_patch("Chief Surveillance", "Investigatory Powers")
     assert (
@@ -59982,7 +59985,7 @@ def test_compile_crossheading_before_that_paragraph_uses_metadata_anchor() -> No
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=observations)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target == LegalAddress(
         path=(("schedule", "4"), ("paragraph", "9")),
         special=FacetKind.HEADING,
@@ -60096,7 +60099,7 @@ def test_compile_crossheading_child_row_uses_parent_tail_substitution() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target == LegalAddress(
         path=(("schedule", "6"), ("paragraph", "9")),
         special=FacetKind.HEADING,
@@ -60148,7 +60151,7 @@ def test_compile_bare_quoted_substitution_after_target_context() -> None:
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=observations)
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target == LegalAddress(
         path=(("schedule", "a1"), ("paragraph", "8"), ("subparagraph", "8"))
     )
@@ -60257,7 +60260,7 @@ def test_replay_crossheading_before_anchor_replace_mutates_crossheading_parent_o
     op = LegalOperation(
         op_id="uk_test_crossheading_before_anchor_apply",
         sequence=0,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("schedule", "9"), ("paragraph", "132")), special=FacetKind.HEADING),
         source=OperationSource(statute_id="uksi/2024/356", title="Test Regulations", effective="2024-04-06"),
         text_patch=_replace_patch("TEXT_ALL", "Modifications of scheme rules"),
@@ -60305,7 +60308,7 @@ def test_replay_crossheading_before_anchor_text_patch_mutates_crossheading_paren
     op = LegalOperation(
         op_id="uk_test_crossheading_before_anchor_text_patch_apply",
         sequence=0,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "21"),), special=FacetKind.HEADING),
         source=OperationSource(statute_id="ukpga/2016/25", title="Test Act", effective="2016-11-29"),
         text_patch=_replace_patch("Chief Surveillance", "Investigatory Powers"),
@@ -63667,7 +63670,7 @@ def test_executor_text_replace_uses_fragment_substitution_fallback_when_primary_
     op = LegalOperation(
         op_id="uk_test_text_replace_fragment_fallback",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("schedule", "1"), ("paragraph", "1"))),
         payload=None,
         source=OperationSource(statute_id="ukpga/2012/5", title="Amending Act"),
@@ -63996,7 +63999,7 @@ def test_pipeline_apply_ops_applies_source_owned_whole_act_all_occurrences_text_
     op = LegalOperation(
         op_id="uk_test_simple_whole_act_text_patch",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(), special=FacetKind.WHOLE_ACT),
         text_patch=_replace_patch("local education authority", "local authority"),
         witness_rule_id="uk_effect_simple_whole_act_all_occurrences_substitution_text_patch",
@@ -64056,7 +64059,7 @@ def test_pipeline_apply_ops_rejects_unowned_whole_act_text_patch() -> None:
     op = LegalOperation(
         op_id="uk_test_unowned_whole_act_text_patch",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(), special=FacetKind.WHOLE_ACT),
         text_patch=_replace_patch("local education authority", "local authority"),
         source=OperationSource(statute_id="uksi/2010/1158", title="Test Regulations"),
@@ -64568,7 +64571,7 @@ def test_compile_after_paragraph_insert_labelled_series_lowers_semicolon_and_sib
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=observations)
 
     assert [op.action for op in ops] == [
-        StructuralAction.TEXT_REPLACE,
+        StructuralAction.TEXT_PATCH,
         StructuralAction.INSERT,
         StructuralAction.INSERT,
         StructuralAction.INSERT,
@@ -64633,7 +64636,7 @@ def test_compile_after_paragraph_insert_full_stop_tail_lowers_patch_and_siblings
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=observations)
 
     rule_id = "uk_effect_after_paragraph_insert_labelled_series_lowered"
-    assert [op.action for op in ops] == [StructuralAction.TEXT_REPLACE, StructuralAction.INSERT, StructuralAction.INSERT]
+    assert [op.action for op in ops] == [StructuralAction.TEXT_PATCH, StructuralAction.INSERT, StructuralAction.INSERT]
     assert [op.witness_rule_id for op in ops] == [rule_id, rule_id, rule_id]
     assert [str(op.target) for op in ops] == [
         "section:2/subsection:4/paragraph:c",
@@ -64790,7 +64793,7 @@ def test_compile_after_paragraph_insert_connector_sibling_lowers_tail_and_insert
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=observations)
 
     rule_id = "uk_effect_after_paragraph_insert_connector_sibling_lowered"
-    assert [op.action for op in ops] == [StructuralAction.TEXT_REPLACE, StructuralAction.INSERT]
+    assert [op.action for op in ops] == [StructuralAction.TEXT_PATCH, StructuralAction.INSERT]
     assert [op.witness_rule_id for op in ops] == [rule_id, rule_id]
     assert ops[0].target.path == (
         ("section", "127"),
@@ -64852,7 +64855,7 @@ def test_compile_after_paragraph_insert_connector_sibling_lowers_schedule_parent
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=observations)
 
     rule_id = "uk_effect_after_paragraph_insert_connector_sibling_lowered"
-    assert [op.action for op in ops] == [StructuralAction.TEXT_REPLACE, StructuralAction.INSERT]
+    assert [op.action for op in ops] == [StructuralAction.TEXT_PATCH, StructuralAction.INSERT]
     assert [op.witness_rule_id for op in ops] == [rule_id, rule_id]
     assert ops[0].target.path == (
         ("schedule", "4"),
@@ -64920,7 +64923,7 @@ def test_compile_after_paragraph_insert_connector_sibling_lowers_roman_and_conne
     )
 
     rule_id = "uk_effect_after_paragraph_insert_connector_sibling_lowered"
-    assert [op.action for op in ops] == [StructuralAction.TEXT_REPLACE, StructuralAction.INSERT]
+    assert [op.action for op in ops] == [StructuralAction.TEXT_PATCH, StructuralAction.INSERT]
     assert [op.witness_rule_id for op in ops] == [rule_id, rule_id]
     assert ops[0].target.path == (
         ("section", "809eze"),
@@ -65052,9 +65055,9 @@ def test_compile_multi_quoted_word_repeal_lowers_separate_text_deletes() -> None
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=observations)
 
     assert [op.action for op in ops] == [
-        StructuralAction.TEXT_REPEAL,
-        StructuralAction.TEXT_REPEAL,
-        StructuralAction.TEXT_REPEAL,
+        StructuralAction.TEXT_PATCH,
+        StructuralAction.TEXT_PATCH,
+        StructuralAction.TEXT_PATCH,
     ]
     assert [str(op.target) for op in ops] == ["section:70/subsection:1"] * 3
     assert [op.text_patch.selector.match_text for op in ops if op.text_patch is not None] == [
@@ -65118,8 +65121,8 @@ def test_compile_listed_quoted_word_omission_lowers_separate_text_deletes() -> N
     )
 
     assert [op.action for op in ops] == [
-        StructuralAction.TEXT_REPEAL,
-        StructuralAction.TEXT_REPEAL,
+        StructuralAction.TEXT_PATCH,
+        StructuralAction.TEXT_PATCH,
     ]
     assert [op.target.path for op in ops] == [
         (("section", "158"), ("subsection", "4")),
@@ -67103,7 +67106,7 @@ def test_pipeline_compile_ops_selects_enacted_source_for_specified_provisions_ed
             LegalOperation(
                 op_id=effect_arg.effect_id,
                 sequence=sequence,
-                action=StructuralAction.TEXT_REPLACE,
+                action=StructuralAction.TEXT_PATCH,
                 target=LegalAddress(
                     path=(
                         ("schedule", "3"),
@@ -67344,7 +67347,7 @@ def test_pipeline_compile_ops_extracts_implicit_first_subparagraph_source_contex
             LegalOperation(
                 op_id=effect_arg.effect_id,
                 sequence=sequence,
-                action=StructuralAction.TEXT_REPLACE,
+                action=StructuralAction.TEXT_PATCH,
                 target=LegalAddress(path=(("section", "273"), ("subsection", "12"))),
                 text_patch=_replace_patch("Scotland", "Scotland or Northern Ireland", 1),
                 source=OperationSource(statute_id=effect_arg.affecting_act_id),
@@ -71688,7 +71691,7 @@ def test_executor_matches_numeric_paragraph_as_malformed_subsection_target() -> 
     op = LegalOperation(
         op_id="uk_test_text_replace_malformed_subsection",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "45"), ("subsection", "3"))),
         text_patch=_replace_patch("granted", "renewed"),
         source=OperationSource(statute_id="ukpga/2021/4", title="Amending Act"),
@@ -71739,7 +71742,7 @@ def test_executor_matches_compound_subsection_against_8_then_paragraph_a() -> No
     op = LegalOperation(
         op_id="uk_test_text_replace_compound_subsection_45_8a",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "45"), ("subsection", "8A"))),
         text_patch=_replace_patch("recover costs", "recover reasonable costs"),
         source=OperationSource(statute_id="ukpga/2011/20", title="Amending Act"),
@@ -71873,7 +71876,7 @@ def test_executor_prefers_exact_schedule_eid_over_ordinal_p1group_fallback() -> 
     op = LegalOperation(
         op_id="uk_test_schedule_exact_eid_before_ordinal_fallback",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("schedule", "3"), ("paragraph", "2"), ("subparagraph", "2"))),
         text_patch=_replace_patch("6", "6 12"),
         source=OperationSource(statute_id="asp/2014/14", title="Amending Act"),
@@ -71935,7 +71938,7 @@ def test_executor_matches_compound_subsection_item_carrier_against_2b_then_parag
     op = LegalOperation(
         op_id="uk_test_text_replace_compound_subsection_2b_item_d",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "55"), ("subsection", "2b"), ("paragraph", "d"))),
         text_patch=_replace_patch("recover costs", "recover reasonable costs"),
         source=OperationSource(statute_id="ukpga/2011/20", title="Amending Act"),
@@ -71981,7 +71984,7 @@ def test_executor_matches_schedule_table_paragraph_against_table_kind() -> None:
     op = LegalOperation(
         op_id="uk_test_text_replace_schedule_table_2",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("schedule", "2"), ("paragraph", "table"), ("subparagraph", "2"))),
         text_patch=_replace_patch("recover costs", "recover reasonable costs"),
         source=OperationSource(statute_id="ukpga/2011/20", title="Amending Act"),
@@ -72012,7 +72015,7 @@ def test_executor_reports_empty_schedule_shape_gap_instead_of_target_not_found()
     op = LegalOperation(
         op_id="uk_test_empty_schedule_shape_gap",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("schedule", "1"), ("paragraph", "table"))),
         text_patch=_replace_patch("landlord", "tenant"),
         source=OperationSource(statute_id="ukpga/2011/20", title="Amending Act"),
@@ -72073,7 +72076,7 @@ def test_executor_does_not_report_preexisting_invariant_as_replay_violation() ->
         LegalOperation(
             op_id="uk_test_preexisting_invariant_not_reblamed",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "14"), ("subsection", "4"), ("paragraph", "a"))),
             text_patch=_replace_patch("First paragraph", "Updated paragraph"),
             source=OperationSource(statute_id="uk_test", title="Test Source"),
@@ -72469,7 +72472,7 @@ def test_executor_skips_invariant_rescan_for_text_only_rewrite() -> None:
         LegalOperation(
             op_id="uk_test_text_only_no_invariant_rescan",
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "1"),)),
             text_patch=_replace_patch("old", "new"),
             source=OperationSource(statute_id="uk_test", title="Test Source"),

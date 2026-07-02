@@ -492,7 +492,7 @@ def test_build_capture_serializes_typed_text_patch(monkeypatch) -> None:
     fake_op = LegalOperation(
         op_id="cap_0",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=()),
         text_patch=TextPatchSpec(
             kind=TextPatchKindEnum.REPLACE,
@@ -564,7 +564,7 @@ def test_build_capture_projects_legacy_text_fields_from_typed_patch(monkeypatch)
     fake_op = LegalOperation(
         op_id="cap_1",
         sequence=2,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=()),
         text_patch=TextPatchSpec(
             kind=TextPatchKindEnum.REPLACE,

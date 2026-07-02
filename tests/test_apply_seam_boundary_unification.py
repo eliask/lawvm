@@ -65,7 +65,7 @@ def _text_replace(label: str, op_id: str = "op") -> LegalOperation:
     return LegalOperation(
         op_id=op_id,
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", label),)),
         source=OperationSource(statute_id="x/boundary/test"),
     )

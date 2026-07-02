@@ -15,10 +15,32 @@ Enum design:
 """
 
 from __future__ import annotations
+from typing import Optional, Protocol
 from typing_extensions import override
 
 from dataclasses import dataclass
 from enum import Enum
+
+
+class _TextPatchKindCarrier(Protocol):
+    """Structural view of a ``TextPatchSpec`` for the text-patch predicates."""
+
+    kind: "TextPatchKindEnum"
+
+
+class _TextActionOpCarrier(Protocol):
+    """Structural view of a ``LegalOperation`` for the text-action helpers.
+
+    A typed carrier (FW-09) that names exactly the two fields the §2.1 O6
+    text-patch predicates read — the op's ``action`` and its optional
+    ``text_patch`` — without importing ``core.ir`` (which would form a cycle).
+    """
+
+    @property
+    def action(self) -> "StructuralAction | str": ...
+
+    @property
+    def text_patch(self) -> Optional[_TextPatchKindCarrier]: ...
 
 
 # ---------------------------------------------------------------------------
@@ -30,7 +52,14 @@ class StructuralAction(Enum):
     """Structural and text operation action kinds.
 
     Core structural operations: replace, repeal, insert, renumber, meta.
-    Text-level operations: text_replace, text_repeal.
+    Text-level operations: a single ``text_patch`` action (§2.1 O6). The former
+    ``text_replace`` / ``text_repeal`` duality was redundant — the sole
+    discriminator is ``TextPatchSpec.kind`` (REPLACE/DELETE/APPEND), not the
+    action name — so both collapsed into one ``TEXT_PATCH`` action. The legacy
+    ``"text_replace"`` / ``"text_repeal"`` value strings remain accepted by
+    ``structural_action_from_str`` as aliases → ``TEXT_PATCH`` so persisted
+    action rows (NZ/UK) round-trip. ``HEADING_REPLACE`` is left untouched: it is
+    facet-addressed, a different mechanism with no redundant duality.
     """
 
     REPLACE = "replace"
@@ -47,12 +76,21 @@ class StructuralAction(Enum):
     MOVE = "move"
     HEADING_REPLACE = "heading_replace"
     META = "meta"
-    TEXT_REPLACE = "text_replace"
-    TEXT_REPEAL = "text_repeal"
+    # Single text-level patch action (§2.1 O6). Discriminated solely by
+    # ``TextPatchSpec.kind``: REPLACE/APPEND (the former TEXT_REPLACE) or DELETE
+    # (the former TEXT_REPEAL). Use ``is_text_patch_replace`` / ``is_text_patch_delete``
+    # to recover the former action-level distinction faithfully.
+    TEXT_PATCH = "text_patch"
 
     @override
     def __str__(self) -> str:
         return self.value
+
+
+#: Legacy boundary action strings that predate the TEXT_PATCH collapse. They
+#: are still emitted into persisted proof/effect rows (NZ/UK) minted before the
+#: collapse, so the codec must keep parsing them → ``TEXT_PATCH``.
+_LEGACY_TEXT_PATCH_ALIASES: frozenset[str] = frozenset({"text_replace", "text_repeal"})
 
 
 # ---------------------------------------------------------------------------
@@ -93,6 +131,13 @@ def structural_action_from_str(
     """
     if isinstance(s, StructuralAction):
         return s
+    # Backward-compat: the legacy ``text_replace`` / ``text_repeal`` value
+    # strings predate the TEXT_PATCH collapse (§2.1 O6) but are still present in
+    # persisted proof/effect rows (NZ/UK). They both name the single TEXT_PATCH
+    # action — the kind discriminator lives on ``TextPatchSpec.kind``, not here —
+    # so map them as aliases rather than failing to parse.
+    if s in _LEGACY_TEXT_PATCH_ALIASES:
+        return StructuralAction.TEXT_PATCH
     try:
         return StructuralAction(s)
     except ValueError:
@@ -105,6 +150,54 @@ def structural_action_from_str(
             f"{sorted(member.value for member in StructuralAction)}"
         )
     raise ValueError(f"unknown on_unknown policy {on_unknown!r}; expected 'raise' or 'meta'")
+
+
+def is_text_patch_delete(op: _TextActionOpCarrier) -> bool:
+    """Whether ``op`` is a TEXT_PATCH whose kind is the former TEXT_REPEAL.
+
+    Recovers the former ``action is TEXT_REPEAL`` distinction after the O6
+    collapse: a TEXT_PATCH action carrying a DELETE-kind ``text_patch`` (a bounded
+    word repeal). ``op`` is a typed ``_TextActionOpCarrier`` (``.action`` /
+    ``.text_patch``) to avoid an import cycle with ``core.ir``. A TEXT_PATCH with
+    no ``text_patch`` carrier (some frontends convey old/new via the payload) is
+    NOT a delete — it defaults to the replace family, exactly as a bare
+    pre-collapse TEXT_REPLACE did.
+    """
+    if op.action is not StructuralAction.TEXT_PATCH:
+        return False
+    patch = op.text_patch
+    return patch is not None and patch.kind is TextPatchKindEnum.DELETE
+
+
+def is_text_patch_replace(op: _TextActionOpCarrier) -> bool:
+    """Whether ``op`` is a TEXT_PATCH in the former TEXT_REPLACE (content-writing) family.
+
+    Recovers the former ``action is TEXT_REPLACE`` distinction after the O6
+    collapse: any TEXT_PATCH that is NOT a DELETE-kind repeal. This deliberately
+    includes a TEXT_PATCH with no ``text_patch`` carrier (payload-carried EE text
+    replaces) and REPLACE/APPEND-kind patches, matching the pre-collapse rule that
+    a bare TEXT_REPLACE was the replace family.
+    """
+    return op.action is StructuralAction.TEXT_PATCH and not is_text_patch_delete(op)
+
+
+def legacy_text_action_value(op: _TextActionOpCarrier) -> str:
+    """Project an op's action to its PRE-collapse boundary value string.
+
+    Frontends (EE/UK/NO) historically dispatched on the action value string
+    ``"text_replace"`` / ``"text_repeal"``. After the §2.1 O6 collapse a text op's
+    ``action.value`` is uniformly ``"text_patch"``, which those string comparisons
+    no longer recognise. This helper re-derives the legacy value string from the
+    op so the existing string-dispatch sites stay byte-identical: a DELETE-kind
+    TEXT_PATCH → ``"text_repeal"``, any other TEXT_PATCH → ``"text_replace"``
+    (matching the pre-collapse default where a bare TEXT_REPLACE was the replace
+    family). Non-TEXT_PATCH actions return their ordinary ``.value``. ``op`` is a
+    typed ``_TextActionOpCarrier`` to avoid an import cycle.
+    """
+    action = op.action
+    if action is StructuralAction.TEXT_PATCH:
+        return "text_repeal" if is_text_patch_delete(op) else "text_replace"
+    return action.value if isinstance(action, StructuralAction) else str(action)
 
 
 def structural_action_value(action: StructuralAction | str) -> str:

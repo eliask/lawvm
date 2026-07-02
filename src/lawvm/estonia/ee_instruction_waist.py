@@ -625,7 +625,7 @@ def make_text_rewrite_witness(
 def _instruction_family(action: StructuralAction, wrapper: bool) -> EEInstructionFamily:
     if wrapper:
         return EEInstructionFamily.wrapper_quoted_payload
-    if action.value in ("text_replace", "text_repeal"):
+    if action is StructuralAction.TEXT_PATCH:
         return EEInstructionFamily.text_replace
     if action in (StructuralAction.REPLACE, StructuralAction.INSERT, StructuralAction.REPEAL, StructuralAction.RENUMBER):
         return EEInstructionFamily.structural
@@ -644,7 +644,7 @@ def to_ee_parsed_instructions(
         source = op.source or OperationSource(statute_id="ee/unknown", title="", raw_text="")
         is_wrapper = wrapper_source_text is not None
         payload_meta = read_payload_rewrite_meta(op.payload)
-        text_rewrite = payload_meta.rewrite if op.action.value in ("text_replace", "text_repeal") else None
+        text_rewrite = payload_meta.rewrite if op.action is StructuralAction.TEXT_PATCH else None
         rewrite_witness = payload_meta.rewrite_witness
         sentence_target_meta = read_sentence_target_meta(op.payload)
         section_selection_meta = read_op_section_selection_meta(op)

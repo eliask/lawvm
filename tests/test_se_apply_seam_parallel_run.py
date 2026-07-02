@@ -123,7 +123,7 @@ def _text_replace(op_id: str, sequence: int, label: str, old: str, new: str) -> 
     return LegalOperation(
         op_id=op_id,
         sequence=sequence,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=_section_addr(label),
         text_patch=TextPatchSpec(
             kind=TextPatchKindEnum.REPLACE,

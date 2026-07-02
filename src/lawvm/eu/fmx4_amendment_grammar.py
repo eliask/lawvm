@@ -1053,7 +1053,7 @@ def _lower_one_instruction(
         return LegalOperation(
             op_id=f"{amending_celex}-{seq}",
             sequence=seq,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("article", art_m.group(1)),)),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,

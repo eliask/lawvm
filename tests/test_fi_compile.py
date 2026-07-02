@@ -5746,7 +5746,7 @@ def test_strict_fail_reasons_from_finding_ledger_respects_profile_gates() -> Non
         LegalOperation(
             op_id="uncovered_replace_14",
             sequence=0,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "14"),)),
             payload=IRNode(kind=IRNodeKind.SECTION, label="14"),
             text_patch=TextPatchSpec(

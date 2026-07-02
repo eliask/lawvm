@@ -82,6 +82,7 @@ from lawvm.new_zealand.dry_run import (
 )
 from lawvm.core.comparison_normalization import normalized_inline_occurrence_count
 from lawvm.new_zealand.effect_candidates import (
+    NZ_TEXT_REPLACE_ACTION_STRINGS,
     NZEffectCandidatePreflightReport,
     build_archived_work_effect_candidate_preflight,
 )
@@ -960,7 +961,7 @@ def _materialize_verified_after_document(
     for op in verified_ops:
         proof = op.proof
         action = proof.action
-        if action in (str(StructuralAction.REPEAL), str(StructuralAction.TEXT_REPLACE)):
+        if action == str(StructuralAction.REPEAL) or action in NZ_TEXT_REPLACE_ACTION_STRINGS:
             current, mutation = _apply_leaf_local_mutation(current, op)
         elif action == str(StructuralAction.REPLACE):
             after_nodes, after_root = apply_structural_replace_to_nodes(
@@ -1075,7 +1076,7 @@ def _reconfirm_slice_agreement(
             oracle_doc, source_path, target_kind=_leaf_source_kind(source_path)
         )
         return match
-    if proof.action == str(StructuralAction.TEXT_REPLACE):
+    if proof.action in NZ_TEXT_REPLACE_ACTION_STRINGS:
         after_matches = _resolve_target_nodes(materialized_after, source_path)
         after_old_occ = (
             normalized_inline_occurrence_count(after_matches[0].text, proof.text_old_text)
@@ -1167,7 +1168,7 @@ def _kind_of_source_segment(source_path: tuple[str, ...]) -> str:
 def _apply_verified_mutation(node: NZSourceNode, proof: NZMutationBoundaryProof) -> NZSourceNode:
     if proof.action == str(StructuralAction.REPEAL):
         return _tombstone_node(node)
-    if proof.action == str(StructuralAction.TEXT_REPLACE):
+    if proof.action in NZ_TEXT_REPLACE_ACTION_STRINGS:
         # Each-place substitutions replace every occurrence (-1); single-occurrence
         # substitutions replace only the leading occurrence (1). The dry-run proof
         # recorded which mode it verified.

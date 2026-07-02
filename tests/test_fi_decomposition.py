@@ -157,7 +157,7 @@ def test_legal_operation_accepts_explicit_text_patch_for_text_replace() -> None:
     op = LegalOperation(
         op_id="bad-text-replace",
         sequence=0,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "1"),)),
         text_patch=TextPatchSpec(
             kind=TextPatchKindEnum.REPLACE,
@@ -609,7 +609,7 @@ class TestNormalizeAndCompileOps:
         lo = LegalOperation(
             op_id="law-level-text",
             sequence=0,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=()),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,

@@ -8,9 +8,9 @@ from typing import TYPE_CHECKING, Any, Optional
 
 from lawvm.core.ir import IRNode, IRStatute, LegalAddress, LegalOperation, StructuralAction, TextPatchSpec
 from lawvm.core.mutation_events import MutationEvent
-from lawvm.core.semantic_types import FacetKind, TextPatchKindEnum
+from lawvm.core.semantic_types import FacetKind, TextPatchKindEnum, legacy_text_action_value
 from lawvm.replay_adjudication import CompileAdjudication
-from lawvm.uk_legislation.addressing import _action_name, _addr_container, _addr_leaf_kind
+from lawvm.uk_legislation.addressing import _addr_container, _addr_leaf_kind
 from lawvm.uk_legislation.heading_facets import (
     _CROSSHEADING_BEFORE_ANCHOR_REPLACEMENT_RULE,
     _CROSSHEADING_BEFORE_ANCHOR_TEXT_PATCH_RULE,
@@ -276,7 +276,7 @@ class UKReplayTextActionApplyMixin:
             MutationEvent(
                 op_id=op.op_id,
                 source_statute=source.statute_id if source is not None else "",
-                action=_action_name(op.action),
+                action=legacy_text_action_value(op),
                 helper="_apply_whole_act_text_patch_op",
                 outcome="whole_act_text_patch_applied",
                 resolved_target_path=(),

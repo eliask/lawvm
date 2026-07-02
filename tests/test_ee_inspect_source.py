@@ -147,7 +147,11 @@ def test_build_ee_inspect_source_payload_stringifies_structural_action(monkeypat
     ops = [
         SimpleNamespace(
             sequence=1,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
+            # EE conveys the old/new text on the payload, not a structured
+            # text_patch; the collapsed TEXT_PATCH still stringifies to
+            # "text_replace" via legacy_text_action_value (payload-carried default).
+            text_patch=None,
             target=_Target("section:23/subsection:2/item:3"),
             payload=SimpleNamespace(text="töötlev üksus", attrs={"old_text": "teabevaldaja"}),
         )

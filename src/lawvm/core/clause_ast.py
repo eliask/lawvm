@@ -115,17 +115,14 @@ class TextAmend:
       parser. This node type is the shared carrier for text-level operations.
     """
 
-    action: StructuralAction  # StructuralAction.TEXT_REPLACE or TEXT_REPEAL
+    action: StructuralAction  # StructuralAction.TEXT_PATCH (kind on text_patch)
     target: LegalAddress  # provision containing the text; empty path means statute-wide/root text scope
     text_patch: TextPatchSpec  # authoritative structured text patch
 
     def __post_init__(self) -> None:
-        if self.action not in {
-            StructuralAction.TEXT_REPLACE,
-            StructuralAction.TEXT_REPEAL,
-        }:
+        if self.action is not StructuralAction.TEXT_PATCH:
             raise ValueError(
-                f"TextAmend requires text_replace/text_repeal action, got {self.action!r}"
+                f"TextAmend requires text_patch action, got {self.action!r}"
             )
 
 
@@ -389,7 +386,7 @@ def legal_op_to_clause_node(op: LegalOperation) -> ClauseNode:
     ``op_id`` are intentionally unsupported in this conversion.
 
     Mapping:
-        action in {"text_replace", "text_repeal"} → TextAmend
+        action == "text_patch" → TextAmend
         action="renumber"     → LabelAmend(action="renumber")
         action="heading_replace" → LabelAmend(action="heading_replace")
         special="heading"     → LabelAmend(action="heading_replace")
@@ -398,7 +395,7 @@ def legal_op_to_clause_node(op: LegalOperation) -> ClauseNode:
     target = op.target
 
     # Text-level amendments (EE/other: textual replace/repeal).
-    if op.action in (StructuralAction.TEXT_REPLACE, StructuralAction.TEXT_REPEAL):
+    if op.action is StructuralAction.TEXT_PATCH:
         patch = op.text_patch
         if patch is None:
             raise ValueError(

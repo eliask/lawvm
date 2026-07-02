@@ -107,11 +107,11 @@ def test_registry_evidence_wins_for_single_target_preambul_when_title_heuristic_
     }
     assert section_actions == {
         "5": "repeal",
-        "6": "text_replace",
+        "6": "text_patch",
         "7": "repeal",
-        "8": "text_replace",
+        "8": "text_patch",
         "9": "repeal",
-        "10": "text_replace",
+        "10": "text_patch",
     }
 
 
@@ -621,11 +621,11 @@ def test_registry_evidence_wins_for_untitled_omnibus_attachment_when_heuristics_
     }
     assert section_actions == {
         "5": "repeal",
-        "6": "text_replace",
+        "6": "text_patch",
         "7": "repeal",
-        "8": "text_replace",
+        "8": "text_patch",
         "9": "repeal",
-        "10": "text_replace",
+        "10": "text_patch",
     }
 
 
@@ -729,11 +729,11 @@ def test_registry_evidence_wins_for_untitled_non_omnibus_attachment_when_heurist
     }
     assert section_actions == {
         "5": "repeal",
-        "6": "text_replace",
+        "6": "text_patch",
         "7": "repeal",
-        "8": "text_replace",
+        "8": "text_patch",
         "9": "repeal",
-        "10": "text_replace",
+        "10": "text_patch",
     }
 
 

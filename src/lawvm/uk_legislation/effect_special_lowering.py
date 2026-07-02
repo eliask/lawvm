@@ -234,7 +234,7 @@ def lower_uk_after_paragraph_insert_labelled_series(
     semicolon_witness = UKLoweredOperationWitness(
         op_id=f"{effect.effect_id}_semicolon",
         sequence=sequence,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=semicolon_target,
         payload=None,
         source=src,
@@ -399,7 +399,7 @@ def lower_uk_definition_child_structural_sibling_insert(
         connector_witness = UKLoweredOperationWitness(
             op_id=f"{effect.effect_id}_definition_child_tail_connector",
             sequence=sequence,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=connector_target,
             payload=None,
             source=src,
@@ -646,7 +646,7 @@ def lower_uk_after_paragraph_insert_connector_sibling(
     anchor_witness = UKLoweredOperationWitness(
         op_id=f"{effect.effect_id}_anchor_tail",
         sequence=sequence,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=anchor_target,
         payload=None,
         source=src,
@@ -772,7 +772,7 @@ def lower_uk_definition_child_range_substitution(
         witness = UKLoweredOperationWitness(
             op_id=f"{effect.effect_id}_definition_child_{fragment['source_child_label']}_{index}",
             sequence=sequence,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=target,
             payload=None,
             source=src,
@@ -1160,7 +1160,7 @@ def lower_uk_source_carried_parent_quoted_child_substitution(
     witness = UKLoweredOperationWitness(
         op_id=f"{effect.effect_id}_parent_child_substitution",
         sequence=sequence,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=target,
         payload=None,
         source=src,

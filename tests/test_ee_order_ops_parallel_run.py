@@ -91,7 +91,7 @@ def _text_replace(op_id, sequence, label, source_id, effective, old="Algne"):
     return LegalOperation(
         op_id=op_id,
         sequence=sequence,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", label),)),
         payload=IRNode(
             kind=IRNodeKind.CONTENT,

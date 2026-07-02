@@ -80,7 +80,7 @@ class TestLegalOpToClauseNode:
         op = LegalOperation(
             op_id="ee-4",
             sequence=4,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "12"),)),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -90,7 +90,7 @@ class TestLegalOpToClauseNode:
         )
         node = legal_op_to_clause_node(op)
         assert isinstance(node, TextAmend)
-        assert node.action == StructuralAction.TEXT_REPLACE
+        assert node.action == StructuralAction.TEXT_PATCH
         assert node.text_patch is not None
         assert node.text_patch.selector.match_text == "justiitsminister"
         assert node.text_patch.replacement == "õigusminister"
@@ -99,7 +99,7 @@ class TestLegalOpToClauseNode:
         op = LegalOperation(
             op_id="ee-4-global",
             sequence=4,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=()),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -118,7 +118,7 @@ class TestLegalOpToClauseNode:
         op = LegalOperation(
             op_id="ee-7",
             sequence=7,
-            action=StructuralAction.TEXT_REPEAL,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "30"), ("subsection", "1"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.DELETE,
@@ -127,7 +127,7 @@ class TestLegalOpToClauseNode:
         )
         node = legal_op_to_clause_node(op)
         assert isinstance(node, TextAmend)
-        assert node.action == StructuralAction.TEXT_REPEAL
+        assert node.action == StructuralAction.TEXT_PATCH
         assert node.text_patch is not None
         assert node.text_patch.selector.match_text == "vanane tekst"
 
@@ -200,7 +200,7 @@ class TestEERoundTrip:
         op = LegalOperation(
             op_id="",
             sequence=4,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "8"), ("subsection", "2"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,
@@ -219,7 +219,7 @@ class TestEERoundTrip:
         op = LegalOperation(
             op_id="",
             sequence=7,
-            action=StructuralAction.TEXT_REPEAL,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "30"), ("subsection", "1"))),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.DELETE,

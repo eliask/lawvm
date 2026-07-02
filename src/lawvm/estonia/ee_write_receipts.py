@@ -33,6 +33,7 @@ from __future__ import annotations
 
 from lawvm.core import tree_ops
 from lawvm.core.ir import IRNode, LegalAddress, LegalOperation, StructuralAction
+from lawvm.core.semantic_types import legacy_text_action_value
 from lawvm.core.ir_helpers import structural_subtree_hash
 from lawvm.core.mutation_boundary import (
     TreePath,
@@ -54,11 +55,14 @@ def _ee_action_name(op: LegalOperation) -> str:
 
     EE ops carry ``op.action`` as either a :class:`StructuralAction` enum or a
     bare string depending on the producer, mirroring the ``hasattr(..., "value")``
-    pattern used throughout ``estonia/grafter.py``.
+    pattern used throughout ``estonia/grafter.py``. Routes through
+    ``legacy_text_action_value`` so a collapsed ``TEXT_PATCH`` action (§2.1 O6)
+    still surfaces as ``"text_replace"`` / ``"text_repeal"`` — the footprint
+    classification and receipt ``action`` field stay byte-identical.
     """
     action = op.action
     if isinstance(action, StructuralAction):
-        return action.value
+        return legacy_text_action_value(op)
     return action.value if hasattr(action, "value") else str(action)
 
 

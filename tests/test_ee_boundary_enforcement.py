@@ -87,7 +87,7 @@ def _flat_text_replace(label_path: tuple[tuple[str, str], ...], old: str, new: s
     return LegalOperation(
         op_id="tr",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=label_path),
         payload=IRNode(kind=IRNodeKind.CONTENT, text=new, attrs={"old_text": old}),
         source=OperationSource(statute_id="ee/amend"),

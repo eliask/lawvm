@@ -350,7 +350,7 @@ def _corrigendum_text_replace_op(
     return LegalOperation(
         op_id=op_id,
         sequence=sequence,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=target,
         provenance_tags=(wrong_text,),
         text_patch=TextPatchSpec(

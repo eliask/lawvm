@@ -60,6 +60,7 @@ from lawvm.core.coverage import CoverageClaim
 from lawvm.core.execution_authorization import ExecutionAuthorization
 from lawvm.core.ir import IRNode, LegalOperation, OperationSource
 from lawvm.core.ir_helpers import structural_subtree_hash
+from lawvm.core.semantic_types import legacy_text_action_value
 from lawvm.core.occupancy import (
     InvalidOccupancyTransition,
     OccupancyAction,
@@ -993,7 +994,7 @@ def _execution_authorization_observe(
                 ),
                 "op_id": op.op_id or "",
                 "jurisdiction": profile.jurisdiction,
-                "action": op.action.value if op.action else "",
+                "action": legacy_text_action_value(op) if op.action else "",
                 "owner": "apply_seam_execution_authorization_observe",
             },
         ),
@@ -1160,7 +1161,7 @@ def _provenance_acceptance_observe(
         ),
         "op_id": op.op_id or "",
         "jurisdiction": profile.jurisdiction,
-        "action": op.action.value if op.action else "",
+        "action": legacy_text_action_value(op) if op.action else "",
         "acceptance_mode": acceptance.acceptance_mode,
         "provenance_kind": acceptance.provenance_kind,
         "owner": "apply_seam_provenance_acceptance_observe",
@@ -1256,7 +1257,7 @@ def _synthesize_receipt(
     if not changed:
         return None
 
-    action_value = op.action.value if op.action else "unknown"
+    action_value = legacy_text_action_value(op) if op.action else "unknown"
     leaf_kind = op.target.leaf_kind() or "unknown"
     helper_prefix = (
         profile.receipt_helper_prefix

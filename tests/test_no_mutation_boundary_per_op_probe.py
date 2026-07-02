@@ -67,7 +67,7 @@ def _text_replace_op_targeting_section_1(op_id: str = "no/op/test/1") -> LegalOp
     return LegalOperation(
         op_id=op_id,
         sequence=0,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "1"),)),
         source=OperationSource(statute_id="no/lovtid/2025-02-02-5"),
     )

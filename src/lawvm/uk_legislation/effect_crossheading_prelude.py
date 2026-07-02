@@ -715,7 +715,7 @@ def build_crossheading_compound_heading_op(
     lowered_witness = UKLoweredOperationWitness(
         op_id=f"{effect.effect_id}_crossheading",
         sequence=sequence,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=heading_target,
         payload=None,
         source=src,

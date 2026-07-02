@@ -107,7 +107,7 @@ def _text_replace_section_op(
     return LegalOperation(
         op_id=op_id,
         sequence=sequence,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", section_label),)),
         text_patch=TextPatchSpec(
             kind=TextPatchKindEnum.REPLACE,

@@ -79,7 +79,7 @@ def _text_replace_op(*, op_id, segments, match_text, replacement, occurrence=1):
     return LegalOperation(
         op_id=op_id,
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("title", "10"), ("section", "2432"), *segments)),
         text_patch=TextPatchSpec(
             kind=TextPatchKindEnum.REPLACE,

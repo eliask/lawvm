@@ -4,6 +4,7 @@ from typing import Any, NamedTuple, Optional, Sequence
 
 from lawvm.core.ir import LegalOperation
 from lawvm.core.mutation_boundary import TreePath
+from lawvm.core.semantic_types import legacy_text_action_value
 from lawvm.uk_legislation.addressing import _action_name
 
 
@@ -148,7 +149,7 @@ def _classify_same_source_text_patch_overlaps(
     disjoint_text_patch_before_edges: dict[str, set[str]] = {}
     grouped_text_ops: dict[_SameSourceTextPatchGroupKey, list[LegalOperation]] = {}
     for op in ops:
-        if _action_name(op.action) != "text_replace" or op.text_patch is None:
+        if legacy_text_action_value(op) != "text_replace" or op.text_patch is None:
             continue
         match_text = op.text_patch.selector.match_text
         if match_text.startswith(("TEXT_", "FROM_")):

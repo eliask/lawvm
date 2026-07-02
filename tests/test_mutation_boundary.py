@@ -143,7 +143,7 @@ def test_operation_storage_boundary_prefixes_text_target_target_path() -> None:
     op = LegalOperation(
         op_id="op",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "1"), ("subsection", "2"))),
     )
 

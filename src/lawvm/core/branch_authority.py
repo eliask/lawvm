@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, Sequence
 
 if TYPE_CHECKING:
-    from lawvm.core.ir import LegalOperation
+    from lawvm.core.ir import LegalOperation, TextPatchSpec
     from lawvm.core.provenance import OperationSource
     from lawvm.core.semantic_types import StructuralAction
 
@@ -393,7 +393,7 @@ def branch_graph_edge_from_operation(
     source = op.source
     return BranchGraphEdge(
         branch_id=context.branch_id,
-        edge_kind=branch_edge_kind_for_action(op.action),
+        edge_kind=branch_edge_kind_for_action(op.action, text_patch=op.text_patch),
         scenario_id=context.scenario_id,
         source_artifact_id=source.statute_id if source is not None else "",
         source_statute_id=source.statute_id if source is not None else "",
@@ -421,19 +421,32 @@ def branch_graph_edges_from_operations(
     )
 
 
-def branch_edge_kind_for_action(action: "StructuralAction") -> BranchEdgeKind:
-    """Map a core structural action to a conservative branch graph edge kind."""
+def branch_edge_kind_for_action(
+    action: "StructuralAction",
+    *,
+    text_patch: "TextPatchSpec | None" = None,
+) -> BranchEdgeKind:
+    """Map a core structural action to a conservative branch graph edge kind.
 
-    from lawvm.core.semantic_types import StructuralAction
+    A TEXT_PATCH (§2.1 O6) carries its replace-vs-repeal sense on
+    ``text_patch.kind``: a DELETE-kind patch is a bounded word repeal (repeal
+    edge), everything else (REPLACE/APPEND) writes content (replace edge). This
+    preserves the pre-collapse TEXT_REPEAL→repeal / TEXT_REPLACE→replace split.
+    """
+
+    from lawvm.core.semantic_types import StructuralAction, TextPatchKindEnum
 
     if action is StructuralAction.INSERT:
         return WOULD_INSERT_EDGE
-    if action in {StructuralAction.REPEAL, StructuralAction.TEXT_REPEAL}:
+    if action is StructuralAction.TEXT_PATCH:
+        if text_patch is not None and text_patch.kind is TextPatchKindEnum.DELETE:
+            return WOULD_REPEAL_EDGE
+        return WOULD_REPLACE_EDGE
+    if action is StructuralAction.REPEAL:
         return WOULD_REPEAL_EDGE
     if action in {
         StructuralAction.REPLACE,
         StructuralAction.HEADING_REPLACE,
-        StructuralAction.TEXT_REPLACE,
     }:
         return WOULD_REPLACE_EDGE
     return WOULD_AMEND_EDGE

@@ -22,6 +22,7 @@ from lawvm.core.effect_lifecycle import (
     merge_unique_effect_relations,
 )
 from lawvm.core.ir import LegalAddress, LegalOperation, StructuralAction
+from lawvm.core.semantic_types import is_text_patch_delete
 from lawvm.core.temporal import TemporalEvent
 from lawvm.finland.effect_lifecycle_signals import EffectLifecycleOverride, EffectRelationSignal
 from lawvm.finland.helpers import _norm_num_token
@@ -175,7 +176,7 @@ def _effect_ref_for_legal_operation(
 
 
 def _operation_effect_rule_id(op: LegalOperation) -> str:
-    if op.action in {StructuralAction.REPEAL, StructuralAction.TEXT_REPEAL}:
+    if op.action is StructuralAction.REPEAL or is_text_patch_delete(op):
         return "fi.legal_operation.repeal_effect_declaration"
     return "fi.legal_operation.effect_declaration"
 

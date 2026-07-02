@@ -58,6 +58,13 @@ NZ_EFFECT_PREFLIGHT_CANDIDATE_OPERATION_MISSING_RULE_ID = "nz_effect_preflight_c
 NZ_EFFECT_PREFLIGHT_SOURCE_CHANGE_ONLY_CANDIDATES_RULE_ID = "nz_effect_preflight_source_change_only_candidates_not_dry_run_replayable"
 NZ_EFFECT_PREFLIGHT_TARGET_RECOVERY_CANDIDATES_RULE_ID = "nz_effect_preflight_target_recovery_candidates_not_dry_run_replayable"
 NZ_EFFECT_PREFLIGHT_NON_REPLAYABLE_CANDIDATES_RULE_ID = "nz_effect_preflight_non_replayable_candidates_not_dry_run_replayable"
+# Persisted-row action strings that name a text-substitution op. NZ mints only
+# REPLACE-kind text patches, so a TEXT_PATCH action row is unambiguously the
+# text-substitution family. The legacy "text_replace" string is retained so proof
+# / effect rows written before the TEXT_PATCH collapse (§2.1 O6) still match.
+NZ_TEXT_REPLACE_ACTION_STRINGS: frozenset[str] = frozenset(
+    {str(StructuralAction.TEXT_PATCH), "text_replace"}
+)
 NZ_TEXT_REPLACE_CANDIDATE_RULE_ID = "nz_text_replace_candidate_from_direct_instruction_workqueue"
 NZ_TEXT_REPLACE_SOURCE_CHANGE_CANDIDATE_RULE_ID = "nz_text_replace_candidate_from_archived_source_change_witness"
 NZ_TEXT_REPLACE_LATEST_ORACLE_WITNESS_BLOCKED_RULE_ID = "nz_text_replace_candidate_latest_oracle_witness_unavailable"
@@ -896,7 +903,7 @@ def _target_recovery_candidate(row: NZCanonicalEffectCandidateRow) -> bool:
     return (
         row.candidate_status == "candidate_emitted"
         and row.operation is not None
-        and row.action == str(StructuralAction.TEXT_REPLACE)
+        and row.action in NZ_TEXT_REPLACE_ACTION_STRINGS
         and bool(row.latest_oracle_target_resolution_status)
         and row.latest_oracle_target_resolution_status != "exact_source_path"
     )
@@ -1560,7 +1567,11 @@ def _text_replace_candidate(
         operation_row_id=operation_row.row_id,
         effect_readiness_row_id=readiness_row.row_id,
         candidate_status="candidate_emitted",
-        action=str(StructuralAction.TEXT_REPLACE),
+        # §2.1 O6: fresh rows carry the collapsed value "text_patch". Read sites
+        # compare via ``NZ_TEXT_REPLACE_ACTION_STRINGS`` (which contains BOTH
+        # "text_patch" and the legacy "text_replace"), so replaying pre-collapse
+        # persisted rows stays byte-identical.
+        action=str(StructuralAction.TEXT_PATCH),
         target_address=str(operation.target),
         operation=operation,
         **_source_witness_fields(operation_row, source_version_date_windows),
@@ -1595,7 +1606,7 @@ def _text_replace_operation(
     return LegalOperation(
         op_id=f"nz:{work_id}:{operation_row.row_id}:text_replace",
         sequence=sequence,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=target,
         payload=None,
         text_patch=TextPatchSpec(

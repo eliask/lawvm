@@ -205,7 +205,7 @@ def _order_schedule_materialization_ops(ops: list[LegalOperation]) -> list[Legal
     }
 
     def _rank(op: LegalOperation) -> int:
-        if op.target.special is FacetKind.HEADING and _action_name(op.action) in {"text_replace", "text_repeal"}:
+        if op.target.special is FacetKind.HEADING and op.action is StructuralAction.TEXT_PATCH:
             structural_key = (
                 str(getattr(op.source, "effective", "") or ""),
                 str(getattr(op.source, "statute_id", "") or ""),
@@ -216,7 +216,7 @@ def _order_schedule_materialization_ops(ops: list[LegalOperation]) -> list[Legal
             return -1
         if _action_name(op.action) in {"insert", "replace", "repeal", "renumber"}:
             return 0
-        if _action_name(op.action) in {"text_replace", "text_repeal"}:
+        if op.action is StructuralAction.TEXT_PATCH:
             return 1
         return 2
 

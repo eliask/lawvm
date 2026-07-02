@@ -45,6 +45,7 @@ from lawvm.core.semantic_types import StructuralAction
 from lawvm.new_zealand.acquisition import open_farchive
 from lawvm.new_zealand.nz_oracle_normalization import classify_oracle_divergence
 from lawvm.new_zealand.effect_candidates import (
+    NZ_TEXT_REPLACE_ACTION_STRINGS,
     NZCanonicalEffectCandidateRow,
     NZEffectCandidatePreflightReport,
     build_archived_work_effect_candidate_preflight,
@@ -261,7 +262,7 @@ _SELECTED_FAMILY_SCOPES = (
 )
 _SCOPE_SELECTED_ACTION = {
     NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPEAL: StructuralAction.REPEAL,
-    NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_TEXT_REPLACE: StructuralAction.TEXT_REPLACE,
+    NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_TEXT_REPLACE: StructuralAction.TEXT_PATCH,
     NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPLACE: StructuralAction.REPLACE,
     NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_INSERT: StructuralAction.INSERT,
 }
@@ -1245,7 +1246,7 @@ def _replayable_text_replace_rows(
             continue
         if row.operation is None:
             continue
-        if row.action != str(StructuralAction.TEXT_REPLACE):
+        if row.action not in NZ_TEXT_REPLACE_ACTION_STRINGS:
             continue
         # Defence in depth: only exact-target text substitutions are eligible.
         if (
@@ -1268,7 +1269,7 @@ def _is_text_replace_witness(row: NZCanonicalEffectCandidateRow) -> bool:
     """
 
     if row.candidate_status == "candidate_emitted":
-        return row.action == str(StructuralAction.TEXT_REPLACE)
+        return row.action in NZ_TEXT_REPLACE_ACTION_STRINGS
     return row.blocking_rule_id == _NZ_TEXT_REPLACE_BLOCKED_RULE_ID
 
 
@@ -1325,7 +1326,7 @@ def _text_replace_not_in_scope_reason(row: NZCanonicalEffectCandidateRow) -> str
         return NZ_DRY_RUN_NOT_IN_SCOPE_BLOCKED_OPERATION_WITNESS
     if row.operation is None:
         return NZ_DRY_RUN_NOT_IN_SCOPE_CANDIDATE_OPERATION_MISSING
-    if row.action != str(StructuralAction.TEXT_REPLACE):
+    if row.action not in NZ_TEXT_REPLACE_ACTION_STRINGS:
         return NZ_DRY_RUN_NOT_IN_SCOPE_NON_TEXT_REPLACE_FAMILY
     if (
         row.latest_oracle_target_resolution_status

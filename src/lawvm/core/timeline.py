@@ -40,7 +40,7 @@ from lawvm.core.branch_authority import (
 )
 from lawvm.core.ir_helpers import irnode_content_hash, irnode_to_text
 from lawvm.core.provenance import MigrationEvent
-from lawvm.core.semantic_types import StructuralAction
+from lawvm.core.semantic_types import StructuralAction, is_text_patch_replace
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core.statute_facets import is_statute_title_address, statute_title_address
 from lawvm.core.temporal import TemporalEvent
@@ -857,10 +857,9 @@ def compile_timelines(
             )
             continue
 
-        if target is None and op.action in (
-            StructuralAction.REPLACE,
-            StructuralAction.HEADING_REPLACE,
-            StructuralAction.TEXT_REPLACE,
+        if target is None and (
+            op.action in (StructuralAction.REPLACE, StructuralAction.HEADING_REPLACE)
+            or is_text_patch_replace(op)
         ):
             if _active_ancestor_contains_target(op.target, effective):
                 target = op.target
@@ -975,7 +974,7 @@ def compile_timelines(
             StructuralAction.HEADING_REPLACE,
         ):
             content = op.payload
-        elif op.action is StructuralAction.TEXT_REPLACE:
+        elif is_text_patch_replace(op):
             content = op.payload
         elif op.action is StructuralAction.REPEAL:
             if _MATERIALIZE_AS_ABSENT_UNDER_DETACHED_HORIZON_TAG in op.provenance_tags:
@@ -1020,11 +1019,9 @@ def compile_timelines(
             )
             continue
         if (
-            op.action
-            in (
-                StructuralAction.REPLACE,
-                StructuralAction.HEADING_REPLACE,
-                StructuralAction.TEXT_REPLACE,
+            (
+                op.action in (StructuralAction.REPLACE, StructuralAction.HEADING_REPLACE)
+                or is_text_patch_replace(op)
             )
             and content is None
         ):
@@ -1054,11 +1051,9 @@ def compile_timelines(
         _is_repeal_placeholder = _content_is_repeal_placeholder(content)
         if (
             not expires
-            and op.action
-            in (
-                StructuralAction.REPLACE,
-                StructuralAction.INSERT,
-                StructuralAction.TEXT_REPLACE,
+            and (
+                op.action in (StructuralAction.REPLACE, StructuralAction.INSERT)
+                or is_text_patch_replace(op)
             )
             and not _is_repeal_placeholder
         ):

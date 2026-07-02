@@ -374,7 +374,7 @@ def test_uk_compiled_effect_facts_preserve_source_pathology_wire_shape() -> None
             LegalOperation(
                 op_id="op-2",
                 sequence=2,
-                action=StructuralAction.TEXT_REPLACE,
+                action=StructuralAction.TEXT_PATCH,
                 target=LegalAddress(
                     path=(("section", "1"),),
                     special=FacetKind.HEADING,
@@ -2720,7 +2720,7 @@ def test_summarize_uk_effect_uses_heading_facet_text_for_batch_compare(
     op = LegalOperation(
         op_id="op-heading",
         sequence=1,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", "17"),), special=FacetKind.HEADING),
         text_patch=TextPatchSpec(
             kind=TextPatchKindEnum.REPLACE,
@@ -4893,7 +4893,7 @@ def test_summarized_manual_compile_evidence_carries_text_patch_preimage(
         LegalOperation(
             op_id="eff-text-patch-op",
             sequence=0,
-            action=StructuralAction.TEXT_REPLACE,
+            action=StructuralAction.TEXT_PATCH,
             target=LegalAddress(path=(("section", "1"),)),
             text_patch=TextPatchSpec(
                 kind=TextPatchKindEnum.REPLACE,

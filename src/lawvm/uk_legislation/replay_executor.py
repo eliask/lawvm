@@ -21,7 +21,7 @@ from lawvm.core.mutation_events import MutationEvent
 from lawvm.core.phase_result import Finding
 from lawvm.core.write_receipt import WriteReceipt
 from lawvm.replay_adjudication import CompileAdjudication
-from lawvm.uk_legislation.addressing import _action_name
+from lawvm.core.semantic_types import legacy_text_action_value
 from lawvm.uk_legislation.execution_authorization import _uk_execution_authorization
 from lawvm.uk_legislation.uk_write_receipts import (
     UK_SECTION_RENUMBER_RELABEL_RULE_ID,
@@ -148,7 +148,7 @@ class UKReplayExecutor(
             MutationEvent(
                 op_id=op.op_id,
                 source_statute=source.statute_id if source is not None else "",
-                action=_action_name(op.action),
+                action=legacy_text_action_value(op),
                 helper="_apply_op_with_context",
                 outcome="whole_act_repealed",
                 resolved_target_path=(),
@@ -302,7 +302,7 @@ class UKReplayExecutor(
         # structured adjudications for downstream analyses.
 
         if str(target.special or "") == "whole_act":
-            if _action_name(op.action) == "repeal":
+            if legacy_text_action_value(op) == "repeal":
                 self._log("  EXECUTOR: repealing WHOLE ACT")
                 # Sub-PR C+D (audit XJUR-02 / AGENTS.md §2.3): copy-on-write
                 # whole-act repeal. ``IRStatute`` is frozen, so the body
@@ -319,7 +319,7 @@ class UKReplayExecutor(
                 self._note_structure_mutation()
                 self._record_whole_act_repeal_mutation_event(op)
                 self._record_invariant_violations(op)
-            elif _action_name(op.action) == "text_replace":
+            elif legacy_text_action_value(op) == "text_replace":
                 self._apply_whole_act_text_patch_op(op, target)
             else:
                 self._log(
@@ -348,11 +348,11 @@ class UKReplayExecutor(
                 node, parent, idx = None, None, None
 
         if not node:
-            allow_compound_subsection_alias = _action_name(op.action) in ("text_replace", "text_repeal")
+            allow_compound_subsection_alias = legacy_text_action_value(op) in ("text_replace", "text_repeal")
             node, parent, idx = self._find_node_by_target(
                 target,
                 allow_compound_subsection_alias=allow_compound_subsection_alias,
-                allow_recursive_match=_action_name(op.action) != "insert",
+                allow_recursive_match=legacy_text_action_value(op) != "insert",
                 target_resolution_op=op,
             )
         insert_existing_target_resolution = ""
@@ -360,7 +360,7 @@ class UKReplayExecutor(
             node, parent, idx, insert_existing_target_resolution = (
                 self._find_existing_insert_target_by_explicit_parent_leaf(target, op)
             )
-        if not node and _action_name(op.action) in {"replace", "repeal"}:
+        if not node and legacy_text_action_value(op) in {"replace", "repeal"}:
             node, parent, idx = self._find_unique_schedule_item_for_source_parent_substitution_range_target(
                 target,
                 op,
@@ -380,22 +380,22 @@ class UKReplayExecutor(
             )
             return
 
-        if _action_name(op.action) == "repeal":
+        if legacy_text_action_value(op) == "repeal":
             self._apply_repeal_op(op, target, node, parent, idx)
             return
-        elif _action_name(op.action) == "replace":
+        elif legacy_text_action_value(op) == "replace":
             self._apply_replace_op(op, target, node, parent, idx, target_found)
             return
-        elif _action_name(op.action) in ("text_replace", "text_repeal"):
+        elif legacy_text_action_value(op) in ("text_replace", "text_repeal"):
             self._apply_text_action_op(op, target, node, parent)
             return
-        elif _action_name(op.action) == "insert":
+        elif legacy_text_action_value(op) == "insert":
             self._apply_insert_op(op, target, node, insert_existing_target_resolution)
             return
-        elif _action_name(op.action) == "renumber":
+        elif legacy_text_action_value(op) == "renumber":
             self._apply_renumber_op(op, target)
             return
-        elif _action_name(op.action) == "unknown":
+        elif legacy_text_action_value(op) == "unknown":
             self._log(f"  EXECUTOR: unknown action — skipping {op.op_id}")
             _append_uk_replay_adjudication(
                 self.adjudications_out,
@@ -592,7 +592,7 @@ def replay_uk_ops(
                 source_statute=base.statute_id,
                 op_id=op.op_id,
             )
-            action_name = _action_name(op.action)
+            action_name = legacy_text_action_value(op)
             key = f"replay_apply_{action_name}"
             replay_phase_timings_out[key] = replay_phase_timings_out.get(key, 0.0) + (
                 time.perf_counter() - op_t0

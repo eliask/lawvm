@@ -48,7 +48,7 @@ def _text_replace_op(op_id: str, section_label: str, match: str, replacement: st
     return LegalOperation(
         op_id=op_id,
         sequence=0,
-        action=StructuralAction.TEXT_REPLACE,
+        action=StructuralAction.TEXT_PATCH,
         target=LegalAddress(path=(("section", section_label),)),
         text_patch=TextPatchSpec(
             selector=TextSelector(match_text=match),

@@ -24,6 +24,7 @@ from lawvm.core.semantic_types import (
     StructuralAction,
     StructuralStatus,
     TextPatchKindEnum,
+    structural_action_from_str,
 )
 from lawvm.finland.johtolause.surface_model import (
     BackRefArity,
@@ -47,11 +48,14 @@ class TestStructuralAction:
         assert StructuralAction.RENUMBER.value == "renumber"
         assert StructuralAction.MOVE.value == "move"
         assert StructuralAction.META.value == "meta"
-        assert StructuralAction.TEXT_REPLACE.value == "text_replace"
-        assert StructuralAction.TEXT_REPEAL.value == "text_repeal"
+        # §2.1 O6: the TEXT_REPLACE/TEXT_REPEAL duality collapsed into one
+        # TEXT_PATCH action; the legacy value strings remain codec aliases.
+        assert StructuralAction.TEXT_PATCH.value == "text_patch"
+        assert structural_action_from_str("text_replace") is StructuralAction.TEXT_PATCH
+        assert structural_action_from_str("text_repeal") is StructuralAction.TEXT_PATCH
 
     def test_all_members_present(self):
-        assert len(StructuralAction) == 9
+        assert len(StructuralAction) == 8
 
 
 # ---------------------------------------------------------------------------

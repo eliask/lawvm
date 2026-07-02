@@ -59,6 +59,10 @@ _ACCEPTED_STATUSES = frozenset(
 _ALLOWED_OPERATION_ACTIONS = frozenset(
     {action.name for action in StructuralAction}
     | {action.value for action in StructuralAction}
+    # §2.1 O6: the legacy TEXT_REPLACE/TEXT_REPEAL names and value strings predate
+    # the TEXT_PATCH collapse but still appear in persisted claims, so a claim that
+    # names them is a canonical operation (they alias to TEXT_PATCH via the codec).
+    | {"TEXT_REPLACE", "TEXT_REPEAL", "text_replace", "text_repeal"}
 )
 _FORBIDDEN_WEAK_VALIDATOR_CHECK_STATUSES = frozenset(
     {
@@ -1371,7 +1375,9 @@ def _validate_text_rewrite_family_proof_semantic(
         )
     allowed_actions = {
         "TEXT_REPLACE",
+        "TEXT_PATCH",
         "text_replace",
+        "text_patch",
         "TEXT_REPEAL",
         "text_repeal",
         "HEADING_REPLACE",
@@ -1749,7 +1755,9 @@ def _validate_savings_qualified_omission_family_proof_semantic(
         "TEXT_REPEAL",
         "text_repeal",
         "TEXT_REPLACE",
+        "TEXT_PATCH",
         "text_replace",
+        "text_patch",
     }
     operations = _operations_by_id(claim)
     for op_id in sorted(proof_operation_ids):
@@ -1837,7 +1845,7 @@ def _validate_sentence_scoped_text_insert_family_proof_semantic(
         if operation is None:
             continue
         action = _non_empty_string(operation, "action")
-        if action not in {"insert", "replace", "text_replace"}:
+        if action not in {"insert", "replace", "text_patch", "text_replace"}:
             issues.append(
                 f"{prefix}.{proof_semantic} operation {op_id!r} must be an "
                 "insert or text-rewrite action"
@@ -1935,7 +1943,9 @@ def _validate_whole_act_listed_enactments_family_proof_semantic(
         )
     allowed_actions = {
         "TEXT_REPLACE",
+        "TEXT_PATCH",
         "text_replace",
+        "text_patch",
         "TEXT_REPEAL",
         "text_repeal",
     }
@@ -2013,6 +2023,8 @@ def _validate_whole_act_repeal_exception_family_proof_semantic(
     allowed_actions = {
         "REPEAL",
         "repeal",
+        "TEXT_PATCH",
+        "text_patch",
         "TEXT_REPEAL",
         "text_repeal",
     }
@@ -2388,6 +2400,8 @@ def _validate_table_repeal_or_omission_family_proof_semantic(
     allowed_actions = {
         "REPEAL",
         "repeal",
+        "TEXT_PATCH",
+        "text_patch",
         "TEXT_REPEAL",
         "text_repeal",
     }
@@ -2662,7 +2676,9 @@ def _validate_source_feed_target_reconciliation_family_proof_semantic(
         )
     allowed_actions = {
         "TEXT_REPLACE",
+        "TEXT_PATCH",
         "text_replace",
+        "text_patch",
         "TEXT_REPEAL",
         "text_repeal",
         "HEADING_REPLACE",
@@ -2801,7 +2817,9 @@ def _validate_amendment_program_target_family_proof_semantic(
         "REPLACE",
         "replace",
         "TEXT_REPLACE",
+        "TEXT_PATCH",
         "text_replace",
+        "text_patch",
     }
     operations = _operations_by_id(claim)
     for op_id in sorted(proof_operation_ids):
@@ -2916,7 +2934,7 @@ def _validate_definition_child_text_tail_family_proof_semantic(
         if operation is None:
             continue
         action = _non_empty_string(operation, "action")
-        if action not in {"TEXT_REPLACE", "text_replace"}:
+        if action not in {"TEXT_PATCH", "text_patch", "TEXT_REPLACE", "text_replace"}:
             issues.append(
                 f"{prefix}.{proof_semantic} operation {op_id!r} must be a "
                 "bounded definition-child text replacement action"
@@ -3270,7 +3288,9 @@ def _validate_mixed_body_heading_split_family_proof_semantic(
         action = _non_empty_string(operation, "action")
         if action not in {
             "TEXT_REPLACE",
+            "TEXT_PATCH",
             "text_replace",
+            "text_patch",
             "TEXT_REPEAL",
             "text_repeal",
             "HEADING_REPLACE",
@@ -3379,7 +3399,9 @@ def _validate_structural_child_range_family_proof_semantic(
             "REPEAL",
             "repeal",
             "TEXT_REPLACE",
+            "TEXT_PATCH",
             "text_replace",
+            "text_patch",
         }:
             issues.append(
                 f"{prefix}.{proof_semantic} operation {op_id!r} must be a "
@@ -3404,7 +3426,9 @@ def _validate_structural_child_range_family_proof_semantic(
             "INSERT",
             "insert",
             "TEXT_REPLACE",
+            "TEXT_PATCH",
             "text_replace",
+            "text_patch",
         } and not _has_any_non_empty_string(
             operation,
             ("replacement_payload_shape", "replacement_payload_id"),
@@ -3540,7 +3564,7 @@ def _validate_referent_qualified_family_proof_semantic(
         if operation is None:
             continue
         action = _non_empty_string(operation, "action")
-        if action not in {"TEXT_REPLACE", "text_replace"}:
+        if action not in {"TEXT_PATCH", "text_patch", "TEXT_REPLACE", "text_replace"}:
             issues.append(
                 f"{prefix}.{proof_semantic} operation {op_id!r} must be a "
                 "referent-qualified text replacement action"
@@ -3640,7 +3664,9 @@ def _validate_source_carried_multi_subunit_family_proof_semantic(
         action = _non_empty_string(operation, "action")
         if action not in {
             "TEXT_REPLACE",
+            "TEXT_PATCH",
             "text_replace",
+            "text_patch",
             "TEXT_REPEAL",
             "text_repeal",
         }:
@@ -3734,7 +3760,9 @@ def _validate_source_carried_child_tail_family_proof_semantic(
         action = _non_empty_string(operation, "action")
         if action not in {
             "TEXT_REPLACE",
+            "TEXT_PATCH",
             "text_replace",
+            "text_patch",
             "TEXT_REPEAL",
             "text_repeal",
         }:
@@ -3839,7 +3867,9 @@ def _validate_source_carried_structured_family_proof_semantic(
             "INSERT",
             "insert",
             "TEXT_REPLACE",
+            "TEXT_PATCH",
             "text_replace",
+            "text_patch",
         }:
             issues.append(
                 f"{prefix}.{proof_semantic} operation {op_id!r} must be a "
@@ -3939,7 +3969,9 @@ def _validate_source_carried_structured_tail_family_proof_semantic(
             "INSERT",
             "insert",
             "TEXT_REPLACE",
+            "TEXT_PATCH",
             "text_replace",
+            "text_patch",
         }:
             issues.append(
                 f"{prefix}.{proof_semantic} operation {op_id!r} must be a "
