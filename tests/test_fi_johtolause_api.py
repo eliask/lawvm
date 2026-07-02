@@ -719,13 +719,15 @@ def test_extract_legal_ops_carries_move_rider_kind_through_clause_ast() -> None:
 
     by_target = {str(lo.target): lo for lo in ops}
     moved = by_target["chapter:5b/section:29e"]
-    assert getattr(moved, "move_clause_target_unit_kind", None) == "chapter"
+    assert moved.move_destination is not None
+    assert moved.move_destination.leaf_kind() == "chapter"
+    assert moved.move_destination.leaf_label() == "5b"
 
-    # The rider is scoped to the moved section only — siblings stay unstamped.
+    # The carrier is scoped to the moved section only — siblings stay unstamped.
     for target_str, lo in by_target.items():
         if target_str == "chapter:5b/section:29e":
             continue
-        assert getattr(lo, "move_clause_target_unit_kind", None) is None, target_str
+        assert lo.move_destination is None, target_str
 
 
 def test_extract_legal_ops_distributes_trailing_otsikko_to_part_and_chapter() -> None:

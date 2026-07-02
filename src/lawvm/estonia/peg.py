@@ -4027,7 +4027,7 @@ def _mint_ee_op(
     Centralizes the ``action`` string → :class:`StructuralAction` lowering so
     every Estonian op flows through one place. The forwarded fields are exactly
     the LegalOperation carriers the Estonian frontend populates (anchor /
-    applicability / group_id / scope_confidence / move_clause_target_unit_kind
+    applicability / group_id / scope_confidence / move_destination
     are never set here); this is a thin, behavior-preserving wrapper.
     """
     return LegalOperation(

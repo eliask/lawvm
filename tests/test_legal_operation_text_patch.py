@@ -139,3 +139,80 @@ def test_explicit_text_patch_is_authoritative() -> None:
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == "newer"
     assert op.text_patch.replacement == "better"
+
+
+# ---------------------------------------------------------------------------
+# First-class MOVE (§2.1 O5) + neutral move_destination carrier (#186 / §5.3).
+# These replace the deleted FI-specific ``move_clause_target_unit_kind`` string
+# rider: MOVE is a structural action carrying a ``destination`` address, and the
+# move-scope carrier is a typed ``LegalAddress`` (``move_destination``).
+# ---------------------------------------------------------------------------
+
+
+def test_move_action_constructible_with_destination() -> None:
+    op = LegalOperation(
+        op_id="mv-1",
+        sequence=1,
+        action=StructuralAction.MOVE,
+        target=_addr(),
+        destination=LegalAddress(path=(("chapter", "5"),)),
+    )
+    assert op.action is StructuralAction.MOVE
+    assert op.destination is not None
+    assert op.destination.leaf_kind() == "chapter"
+
+
+def test_move_action_requires_destination() -> None:
+    with pytest.raises(ValueError, match="action=move requires a destination"):
+        LegalOperation(
+            op_id="mv-2",
+            sequence=1,
+            action=StructuralAction.MOVE,
+            target=_addr(),
+        )
+
+
+def test_destination_rejected_for_non_move_non_renumber_action() -> None:
+    with pytest.raises(ValueError, match="only valid for renumber/move"):
+        LegalOperation(
+            op_id="mv-3",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=_addr(),
+            destination=LegalAddress(path=(("chapter", "5"),)),
+        )
+
+
+def test_renumber_still_accepts_destination() -> None:
+    op = LegalOperation(
+        op_id="mv-4",
+        sequence=1,
+        action=StructuralAction.RENUMBER,
+        target=_addr(),
+        destination=LegalAddress(path=(("section", "2"),)),
+    )
+    assert op.destination is not None
+    assert op.destination.leaf_label() == "2"
+
+
+def test_move_destination_carrier_is_typed_address() -> None:
+    op = LegalOperation(
+        op_id="mv-5",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("chapter", "5"), ("section", "29e"))),
+        move_destination=LegalAddress(path=(("chapter", "5"),)),
+    )
+    assert op.move_destination is not None
+    assert op.move_destination.leaf_kind() == "chapter"
+
+
+def test_move_destination_rejects_bare_string() -> None:
+    with pytest.raises(TypeError, match="move_destination must be a LegalAddress"):
+        LegalOperation(
+            op_id="mv-6",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=_addr(),
+            move_destination="chapter",  # ty: ignore[invalid-argument-type]
+        )

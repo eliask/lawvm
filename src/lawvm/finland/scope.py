@@ -34,6 +34,7 @@ from lawvm.finland.ops import (
     _lo_with_path_update,
     lo_with_added_scope_tag,
     lo_with_scope_confidence,
+    move_unit_kind_from_destination,
 )
 
 if TYPE_CHECKING:
@@ -45,9 +46,9 @@ if TYPE_CHECKING:
 # The SIIRTAA (siirretään ... N lukuun) move family is modelled by the grammar
 # move recognizers (johtolause/grammar/moves.py: recognize_inline_move_tail /
 # recognize_relabel_from_context). When the clause-level grammar parser owns the
-# johtolause it sets ``move_clause_target_unit_kind`` on the moved op, and the
-# carrier check in ``strip_unjustified_chapter_scope_from_unique_sections``
-# (``lo.move_clause_target_unit_kind in {"chapter", "part"}``) is the PRIMARY,
+# johtolause it sets the neutral ``move_destination`` address on the moved op,
+# and the carrier check in ``strip_unjustified_chapter_scope_from_unique_sections``
+# (``move_unit_kind_from_destination(lo.move_destination) in {"chapter", "part"}``) is the PRIMARY,
 # grammar-authoritative signal — these anchors are only consulted AFTER it.
 #
 # They cannot be routed onto the grammar today: the clause-level parser DECLINES
@@ -1310,7 +1311,7 @@ def strip_unjustified_chapter_scope_from_unique_sections(
             if (
                 not has_descendant_target
                 or explicit_scope_notes.intersection(scope_tags)
-                or lo.move_clause_target_unit_kind in {"chapter", "part"}
+                or move_unit_kind_from_destination(lo.move_destination) in {"chapter", "part"}
                 or _johtolause_explicitly_binds_chapter_section(johto, str(chapter), str(section))
                 or _johtolause_explicitly_mentions_chaptered_section_target(johto, str(chapter), str(section))
             ):
@@ -1370,7 +1371,7 @@ def strip_unjustified_chapter_scope_from_unique_sections(
         # grammar owned the johtolause it stamped the moved op with this carrier;
         # the same-label-move text anchor below is only the residue fallback for
         # ops the grammar move family did not own (see _SAME_LABEL_MOVE_CLAUSE_RE).
-        if lo.move_clause_target_unit_kind in {"chapter", "part"}:
+        if move_unit_kind_from_destination(lo.move_destination) in {"chapter", "part"}:
             result.append(lo)
             continue
         section_norm = _norm_num_token(str(section))

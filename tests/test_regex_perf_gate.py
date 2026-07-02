@@ -287,7 +287,7 @@ _KNOWN_UNFIXED: dict[str, str] = {
         "both are provably linear and the adjacent-variable-repeat risks are "
         "gone. The residual 'nested backtracking quantifiers' flag is the "
         "benign-linear false positive (bounded x bounded). The move carrier "
-        "(lo.move_clause_target_unit_kind, set by johtolause/grammar/moves.py) "
+        "(lo.move_destination, set by johtolause/grammar/moves.py) "
         "is the PRIMARY signal in strip_unjustified_chapter_scope_*; these "
         "anchors are the residue fallback for the plural 'joista … siirretään N "
         "lukuun' coordination the clause grammar still declines."

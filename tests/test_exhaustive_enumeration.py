@@ -398,9 +398,8 @@ class TestIRNodeValidationExhaustive:
         (AGENTS.md §1.9): a bare ``str`` now fails loud at
         ``LegalOperation.__post_init__`` with ``UnregisteredScopeConfidence``
         instead of being stored as ``Any`` alongside the typed Finland
-        dataclass. ``move_clause_target_unit_kind`` remains a plain string
-        typed carrier (it is the leaf kind label string of the target unit, not
-        a closed discriminator).
+        dataclass. ``move_destination`` is a typed ``LegalAddress`` carrier (the
+        neutral MOVE-scope destination address, §2.1 O5), not a bare string.
         """
         witness = NOScopeConfidence(rung_id="explicit_source")
 
@@ -410,12 +409,13 @@ class TestIRNodeValidationExhaustive:
             action=StructuralAction.REPLACE,
             target=LegalAddress(path=(("section", "1"),)),
             scope_confidence=witness,
-            move_clause_target_unit_kind="chapter",
+            move_destination=LegalAddress(path=(("chapter", "5"),)),
         )
 
         assert not hasattr(op, "__dict__")
         assert op.scope_confidence is witness
-        assert op.move_clause_target_unit_kind == "chapter"
+        assert op.move_destination is not None
+        assert op.move_destination.leaf_kind() == "chapter"
 
         # Production-lane fire-drill: a bare string must NOT cross the typed
         # waist. ``LegalOperation.__post_init__`` raises rather than silently

@@ -27,6 +27,7 @@ from lawvm.finland.ops import (
     ScopeResolutionSource,
     normalize_scope_confidence,
     projection_scope_confidence,
+    move_destination_from_unit_kind,
     _lo_with_path_update,
     _op_target_subsection_label,
 )
@@ -372,7 +373,9 @@ def _replace_to_declared_move_ops(
                 moved_lo,
                 action=StructuralAction.REPLACE,
                 target=dc_replace(moved_lo.target, special=None),
-                move_clause_target_unit_kind="chapter",
+                move_destination=move_destination_from_unit_kind(
+                    dc_replace(moved_lo.target, special=None), "chapter"
+                ),
                 provenance_tags=tuple(moved_lo.provenance_tags)
                 + ("body_chapter_declared_move_replace",),
             )

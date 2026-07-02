@@ -109,6 +109,7 @@ from lawvm.finland.normalize import (
     parse_ops_fallback_heuristic_with_coverage,
 )
 from lawvm.finland.ops import OpType, AmendmentOp, FailedOp, ResolvedOp, _build_canonical_intent
+from lawvm.finland.ops import move_unit_kind_from_destination
 from lawvm.finland.ops import _lo_with_path_update
 from lawvm.finland.ops import get_replay_profile
 from lawvm.finland.ops import ScopeConfidence, ScopeResolutionConfidence, ScopeResolutionSource
@@ -6155,7 +6156,7 @@ def test_extract_johtolause_legal_ops_natively_scopes_inline_same_label_move_cla
         for op in AmendmentOp.from_lo(lo, 0)
     ]
     assert moved_notes
-    assert all(getattr(lo, "move_clause_target_unit_kind", None) == "chapter" for lo in legal_ops if dict(lo.target.path).get("section") in {"33", "34"} and dict(lo.target.path).get("chapter") == "5")
+    assert all(move_unit_kind_from_destination(lo.move_destination) == "chapter" for lo in legal_ops if dict(lo.target.path).get("section") in {"33", "34"} and dict(lo.target.path).get("chapter") == "5")
     assert moved_ops
     assert all(op.move_clause_target_unit_kind == "chapter" for op in moved_ops)
 
@@ -6179,7 +6180,7 @@ def test_extract_johtolause_legal_ops_natively_retargets_direct_same_label_move_
     ]
 
     assert moved_replace
-    assert all(getattr(lo, "move_clause_target_unit_kind", None) == "chapter" for lo in moved_replace)
+    assert all(move_unit_kind_from_destination(lo.move_destination) == "chapter" for lo in moved_replace)
     assert orphan_renumber == []
 
 
@@ -6199,7 +6200,7 @@ def test_extract_johtolause_legal_ops_direct_same_label_move_accepts_optional_co
     ]
 
     assert moved_replace
-    assert all(getattr(lo, "move_clause_target_unit_kind", None) == "chapter" for lo in moved_replace)
+    assert all(move_unit_kind_from_destination(lo.move_destination) == "chapter" for lo in moved_replace)
     assert orphan_renumber == []
 
 
@@ -6216,7 +6217,7 @@ def test_extract_johtolause_legal_ops_natively_scopes_inline_move_clause_without
         if dict(lo.target.path).get("section") in {"33", "34"} and dict(lo.target.path).get("chapter") == "5"
     ]
     assert moved_notes
-    assert all("chapter" == getattr(lo, "move_clause_target_unit_kind", None) for lo in legal_ops if dict(lo.target.path).get("section") in {"33", "34"} and dict(lo.target.path).get("chapter") == "5")
+    assert all("chapter" == move_unit_kind_from_destination(lo.move_destination) for lo in legal_ops if dict(lo.target.path).get("section") in {"33", "34"} and dict(lo.target.path).get("chapter") == "5")
 
 
 @LEGACY_MOVE_CLAUSE_RESIDUE

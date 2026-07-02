@@ -37,6 +37,14 @@ class StructuralAction(Enum):
     REPEAL = "repeal"
     INSERT = "insert"
     RENUMBER = "renumber"
+    # First-class relocation (§2.1 O5): relocate a subtree to a new parent,
+    # possibly relabelling. Distinct from RENUMBER (same-parent sibling relabel):
+    # a MOVE carries a ``destination`` address naming the new parent container.
+    # No frontend lowers directly to this member today — FI realizes its MOVE
+    # semantics through ``CanonicalIntent.Move`` at the intent layer — so it adds
+    # no runtime dispatch path; it completes the neutral structural vocabulary and
+    # is the guarded home for a ``LegalOperation.destination`` outside RENUMBER.
+    MOVE = "move"
     HEADING_REPLACE = "heading_replace"
     META = "meta"
     TEXT_REPLACE = "text_replace"

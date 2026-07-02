@@ -45,12 +45,13 @@ class TestStructuralAction:
         assert StructuralAction.REPEAL.value == "repeal"
         assert StructuralAction.INSERT.value == "insert"
         assert StructuralAction.RENUMBER.value == "renumber"
+        assert StructuralAction.MOVE.value == "move"
         assert StructuralAction.META.value == "meta"
         assert StructuralAction.TEXT_REPLACE.value == "text_replace"
         assert StructuralAction.TEXT_REPEAL.value == "text_repeal"
 
     def test_all_members_present(self):
-        assert len(StructuralAction) == 8
+        assert len(StructuralAction) == 9
 
 
 # ---------------------------------------------------------------------------

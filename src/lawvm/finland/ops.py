@@ -585,22 +585,65 @@ def lo_with_scope_confidence(
     )
 
 
-def lo_with_move_clause_target_unit_kind(
+def lo_with_move_destination(
     lo: _LegalOperation,
     move_clause_target_unit_kind: "TargetUnitKind | None",
 ) -> _LegalOperation:
-    """Attach the Finland-local move-rider destination kind to one LegalOperation.
+    """Attach the neutral move-scope destination address to one LegalOperation.
 
     Finnish johtolause move riders ("29 e §, joka samalla siirretään 5 b
     lukuun") resolve the DESTINATION scope onto the target address at parse
-    time. The rider itself must survive to the apply layer as typed evidence:
-    ``AmendmentOp.from_lo`` reads this carrier, and the occupancy policy uses
-    it to evaluate a destination-scoped REPLACE against the move ORIGIN slot.
-    Same Finland-local transport pattern as ``lo_with_scope_confidence``.
+    time, so the destination container label is already present on
+    ``lo.target``. This builds the neutral ``move_destination`` address from
+    that label (naming the ``chapter``/``part`` container the section moves
+    into) — the former ``move_clause_target_unit_kind`` string rider is
+    recovered as ``move_destination.leaf_kind()``. The carrier must survive to
+    the apply layer as typed evidence: ``AmendmentOp.from_lo`` reads it, and the
+    occupancy policy uses it to evaluate a destination-scoped REPLACE against
+    the move ORIGIN slot. Same Finland-local transport pattern as
+    ``lo_with_scope_confidence``.
     """
-    if move_clause_target_unit_kind is None:
+    dest = move_destination_from_unit_kind(lo.target, move_clause_target_unit_kind)
+    if dest is None:
         return lo
-    return dc_replace(lo, move_clause_target_unit_kind=move_clause_target_unit_kind)
+    return dc_replace(lo, move_destination=dest)
+
+
+def move_destination_from_unit_kind(
+    target: LegalAddress,
+    unit_kind: "TargetUnitKind | None",
+) -> LegalAddress | None:
+    """Build the neutral move-destination address for a chapter/part unit kind.
+
+    The FI surface lowering folds the move DESTINATION container label onto the
+    target address (``surface_resolve._apply_move_destination``), then flags the
+    container kind. The destination address is therefore ``(unit_kind, label)``
+    where ``label`` is read back from the target path. Returns ``None`` when the
+    unit kind is not a container move (``None``/section) or the label is absent.
+    """
+    if unit_kind not in ("chapter", "part"):
+        return None
+    label = dict(target.path).get(unit_kind)
+    if not label:
+        return None
+    return LegalAddress(path=((unit_kind, label),))
+
+
+def move_unit_kind_from_destination(
+    move_destination: LegalAddress | None,
+) -> "TargetUnitKind | None":
+    """Recover the former ``move_clause_target_unit_kind`` from the address.
+
+    Inverse of :func:`move_destination_from_unit_kind` at the read boundary:
+    the leaf kind of the neutral destination address is exactly the unit kind
+    the old string rider exposed (``"chapter"`` / ``"part"``).
+    """
+    if move_destination is None:
+        return None
+    leaf = move_destination.leaf_kind()
+    if leaf in ("chapter", "part"):
+        return cast("TargetUnitKind", leaf)
+    return None
 
 
 def lo_with_added_scope_tag(lo: _LegalOperation, tag: str) -> _LegalOperation:
@@ -1215,7 +1258,7 @@ class AmendmentOp:
                 self._provenance = derived
 
         derived_move_clause_target_unit_kind: TargetUnitKind | None = (
-            cast(TargetUnitKind | None, self.lo.move_clause_target_unit_kind)
+            move_unit_kind_from_destination(self.lo.move_destination)
             if self.lo is not None
             else None
         )
@@ -1360,7 +1403,7 @@ class AmendmentOp:
         # way to an executable amendment op. See validate_fi_repeal_payload.
         validate_fi_repeal_payload(lo)
         base_id = lo.op_id or f"op_{idx}"
-        move_clause_target_unit_kind = cast(TargetUnitKind | None, lo.move_clause_target_unit_kind)
+        move_clause_target_unit_kind = move_unit_kind_from_destination(lo.move_destination)
         all_ops: List[AmendmentOp] = []
 
         target = lo.target

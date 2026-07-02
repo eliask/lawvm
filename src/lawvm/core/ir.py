@@ -180,7 +180,20 @@ class LegalOperation:
     # values). Frontends inherit the protocol explicitly so an AST scan can
     # keep producer-set == protocol-implementer-set.
     scope_confidence: Optional[ScopeConfidence] = None
-    move_clause_target_unit_kind: Optional[str] = None
+    # Neutral MOVE-scope destination address (§2.1 O5 / §5.3). Replaces the
+    # former FI-specific ``move_clause_target_unit_kind`` string rider: instead
+    # of smuggling a bare ``"chapter"``/``"part"`` unit-kind string on the
+    # neutral dataclass, a moved op now carries a properly-typed
+    # ``LegalAddress`` naming the destination container. The unit-kind that the
+    # old rider exposed is recovered as ``move_destination.leaf_kind()``; the
+    # destination label (previously folded onto ``target``) rides on the address
+    # too, so the carrier is self-describing and jurisdiction-agnostic. Distinct
+    # from ``destination`` (the O5/RENUMBER relocation target on MOVE/RENUMBER
+    # actions): ``move_destination`` is a move-SCOPE evidence carrier that a
+    # frontend may also stamp on a destination-scoped REPLACE (FI's
+    # "muutetaan X §, joka samalla siirretään Y lukuun"), so it is not guarded to
+    # a single action — it is a typed side-channel like ``scope_confidence``.
+    move_destination: Optional[LegalAddress] = None
     # Per-op verbatim source substring (Option C / lightest source-anchor
     # seam): the literal source-clause text that produced THIS op, set where
     # the parser mints the LegalOperation. Distinct from the
@@ -228,8 +241,23 @@ class LegalOperation:
             )
         if self.anchor is not None and self.action is not StructuralAction.INSERT:
             raise ValueError(f"LegalOperation anchor is only valid for insert; got action={self.action!r}")
-        if self.destination is not None and self.action is not StructuralAction.RENUMBER:
-            raise ValueError(f"LegalOperation destination is only valid for renumber; got action={self.action!r}")
+        if self.destination is not None and self.action not in {
+            StructuralAction.RENUMBER,
+            StructuralAction.MOVE,
+        }:
+            raise ValueError(
+                "LegalOperation destination is only valid for renumber/move; "
+                f"got action={self.action!r}"
+            )
+        # A first-class MOVE (§2.1 O5) relocates a subtree to a new parent, so it
+        # MUST name where it goes: a MOVE with no ``destination`` is ill-formed.
+        if self.action is StructuralAction.MOVE and self.destination is None:
+            raise ValueError("LegalOperation action=move requires a destination address")
+        if self.move_destination is not None and not isinstance(self.move_destination, LegalAddress):
+            raise TypeError(
+                "LegalOperation.move_destination must be a LegalAddress, got "
+                f"{type(self.move_destination).__name__}"
+            )
         if self.text_patch is not None and self.action not in {
             StructuralAction.TEXT_REPLACE,
             StructuralAction.TEXT_REPEAL,

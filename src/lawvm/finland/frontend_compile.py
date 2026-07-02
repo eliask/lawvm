@@ -61,6 +61,7 @@ from lawvm.finland.ops import classify_legal_operation_conversion_skip
 from lawvm.finland.ops import normalize_scope_confidence, projection_scope_confidence
 from lawvm.finland.ops import _lo_with_path_update
 from lawvm.finland.ops import _op_target_subsection_label
+from lawvm.finland.ops import move_destination_from_unit_kind
 from lawvm.finland.normalize import (
     _sec1_fallback_peg_skip_required,
     _extract_root_replace_ops_from_body_fallback,
@@ -1332,7 +1333,7 @@ def _lo_to_declared_move_replace(lo: "LegalOperation") -> "LegalOperation":
         lo,
         action=StructuralAction.REPLACE,
         destination=None,
-        move_clause_target_unit_kind="chapter",
+        move_destination=move_destination_from_unit_kind(lo.target, "chapter"),
         provenance_tags=tuple(lo.provenance_tags)
         + ("identity_renumber_declared_move_to_replace",),
     )

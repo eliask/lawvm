@@ -227,7 +227,7 @@ def test_core_carriers_do_not_store_move_tail_residue():
 
     lo = clause_node_to_legal_operation(node)
     assert isinstance(lo, LegalOperation)
-    assert lo.move_clause_target_unit_kind is None
+    assert lo.move_destination is None
 
 
 # ---------------------------------------------------------------------------

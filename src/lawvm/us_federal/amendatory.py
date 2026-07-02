@@ -4966,7 +4966,7 @@ def _lower_instruction(
                             witness_rule_id=op_obj.witness_rule_id,
                             provenance_tags=(*op_obj.provenance_tags, *extra_prov),
                             scope_confidence=op_obj.scope_confidence,
-                            move_clause_target_unit_kind=op_obj.move_clause_target_unit_kind,
+                            move_destination=op_obj.move_destination,
                         )
                     )
                 op = updated_ops[0]

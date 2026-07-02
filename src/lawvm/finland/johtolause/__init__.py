@@ -47,7 +47,7 @@ from lawvm.finland.ops import (
     ScopeConfidence,
     ScopeResolutionConfidence,
     ScopeResolutionSource,
-    lo_with_move_clause_target_unit_kind,
+    lo_with_move_destination,
     lo_with_scope_confidence,
 )
 from lawvm.finland.johtolause.parsed_op_clause_ast import (
@@ -274,7 +274,7 @@ def extract_legal_ops_from_parse_result(
                 f"{len(move_clause_kinds)} resolved structural nodes vs {len(ops)} legal ops"
             )
         ops = [
-            lo_with_move_clause_target_unit_kind(op, kind) if kind is not None else op
+            lo_with_move_destination(op, kind) if kind is not None else op
             for op, kind in zip(ops, move_clause_kinds, strict=True)
         ]
     return ops
