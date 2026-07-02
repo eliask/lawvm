@@ -1415,6 +1415,24 @@ def _cleaned_node_similarity_text(node: NZSourceNode) -> str:
     return clean_similarity_text(_node_similarity_text(node))
 
 
+_CleanedNodeSimilarityKey = tuple[str, str, str]
+
+
+def _cached_cleaned_node_similarity_text(
+    node: NZSourceNode,
+    cache: dict[_CleanedNodeSimilarityKey, str] | None,
+) -> str:
+    if cache is None:
+        return _cleaned_node_similarity_text(node)
+    key = (node.heading, node.text, node.deletion_status)
+    cached = cache.get(key)
+    if cached is not None:
+        return cached
+    text = _cleaned_node_similarity_text(node)
+    cache[key] = text
+    return text
+
+
 def _similarity_point(
     replayed: NZSourceDocument,
     oracle: NZSourceDocument,
@@ -1423,6 +1441,7 @@ def _similarity_point(
     transitions_applied: int,
     repeals_applied: int,
     repeals_skipped: int,
+    cleaned_text_cache: dict[_CleanedNodeSimilarityKey, str] | None = None,
 ) -> NZChainSimilarityPoint:
     replayed_index = _node_text_index(replayed)
     oracle_index = _node_text_index(oracle)
@@ -1430,9 +1449,9 @@ def _similarity_point(
     shared_paths = replayed_index.keys() & oracle_index.keys()
     cleaned_text_by_node: dict[NZSourceNode, str] = {}
     for node in replayed_index.values():
-        cleaned_text_by_node[node] = _cleaned_node_similarity_text(node)
+        cleaned_text_by_node[node] = _cached_cleaned_node_similarity_text(node, cleaned_text_cache)
     for node in oracle_index.values():
-        cleaned_text_by_node[node] = _cleaned_node_similarity_text(node)
+        cleaned_text_by_node[node] = _cached_cleaned_node_similarity_text(node, cleaned_text_cache)
 
     union_scores: list[float] = []
     shared_scores: list[float] = []
@@ -1851,6 +1870,7 @@ def build_chain_replay(
     curve: list[NZChainSimilarityPoint] = []
     all_skips: list[NZChainSkip] = []
     divergences: list[NZChainDivergence] = []
+    cleaned_similarity_text_cache: dict[_CleanedNodeSimilarityKey, str] = {}
     # Per-family applied target paths (for the per-family oracle agreement check).
     applied_paths_by_family: dict[str, set[tuple[str, ...]]] = {
         family: set() for family in CHAIN_FAMILY_ORDER
@@ -1913,6 +1933,7 @@ def build_chain_replay(
                 transitions_applied=transitions_applied,
                 repeals_applied=ops_applied,
                 repeals_skipped=len(all_skips),
+                cleaned_text_cache=cleaned_similarity_text_cache,
             )
         )
 

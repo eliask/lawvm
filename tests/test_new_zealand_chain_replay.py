@@ -7,6 +7,7 @@ from typing import cast
 import pytest
 
 from lawvm.new_zealand.effect_candidates import NZEffectCandidatePreflightReport
+from lawvm.new_zealand import chain_replay as chain_replay_module
 
 from lawvm.new_zealand.chain_replay import (
     CHAIN_FAMILY_ORDER,
@@ -251,6 +252,44 @@ def test_similarity_point_high_when_trees_match() -> None:
 
     assert point.combined_similarity == pytest.approx(1.0)
     assert point.path_jaccard == pytest.approx(1.0)
+
+
+def test_similarity_point_reuses_cleaned_text_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+    nodes = (_node(("prov:1",), text="same body"), _node(("prov:2",), text="same body"))
+    replayed = _doc(nodes, version_id="r")
+    oracle = _doc(nodes, version_id="o")
+    version = NZArchivedVersion(version_id="o", xml_locator="o", version_date="2010-01-01")
+    calls = 0
+
+    def clean_once(text: str) -> str:
+        nonlocal calls
+        calls += 1
+        return text
+
+    monkeypatch.setattr(chain_replay_module, "clean_similarity_text", clean_once)
+    cache: dict[tuple[str, str, str], str] = {}
+
+    first = _similarity_point(
+        replayed,
+        oracle,
+        version,
+        transitions_applied=0,
+        repeals_applied=0,
+        repeals_skipped=0,
+        cleaned_text_cache=cache,
+    )
+    second = _similarity_point(
+        replayed,
+        oracle,
+        version,
+        transitions_applied=0,
+        repeals_applied=0,
+        repeals_skipped=0,
+        cleaned_text_cache=cache,
+    )
+
+    assert first.combined_similarity == second.combined_similarity
+    assert calls == 1
 
 
 def test_similarity_point_penalizes_missing_and_changed_paths() -> None:
