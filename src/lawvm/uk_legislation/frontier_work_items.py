@@ -873,6 +873,23 @@ def uk_frontier_work_item_from_manual_frontier_row(
     row: Mapping[str, Any],
 ) -> FrontierWorkItem:
     """Project a UK manual-frontier row as a non-executable work item."""
+    return FrontierWorkItem(**_uk_frontier_work_item_payload_from_manual_frontier_row(row))
+
+
+def uk_frontier_work_item_dict_from_manual_frontier_row(
+    row: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Serialized UK manual-frontier work item for hot diagnostic projection."""
+    payload = _uk_frontier_work_item_payload_from_manual_frontier_row(row)
+    issues = validate_frontier_work_item(payload)
+    if issues:
+        raise ValueError("; ".join(issues))
+    return _frontier_work_item_payload_to_dict(payload)
+
+
+def _uk_frontier_work_item_payload_from_manual_frontier_row(
+    row: Mapping[str, Any],
+) -> dict[str, Any]:
     template = _mapping(row.get("suggested_claim_template"))
     manual_frontier = _mapping(row.get("manual_compile_frontier"))
     target_context = _mapping(row.get("target_context"))
@@ -1111,30 +1128,77 @@ def uk_frontier_work_item_from_manual_frontier_row(
         replay_authorized=replay_authorized,
         authorization_status=authorization_status,
     )
-    return FrontierWorkItem(
-        work_item_id=work_item_id,
-        jurisdiction="uk",
-        source_artifact_id=source_artifact_id,
-        source_unit_id=source_unit_id,
-        source_witness=normalized_source_witness,
-        target_witness=target_witness,
-        compare_witness=compare_witness,
-        owner_phase=owner_phase,
-        frontier_family=frontier_family,
-        frontier_status=frontier_status,
-        candidate_operation_family=candidate_operation_family,
-        candidate_targets=candidate_targets,
-        guidance_refs=guidance_refs,
-        required_claim_kind=required_claim_kind,
-        required_validator_checks=required_validator_checks,
-        required_proofs=required_proofs,
-        safe_default=safe_default,
-        forbidden_shortcuts=forbidden_shortcuts,
-        executable=executable,
-        replay_authorized=replay_authorized,
-        authorization_status=authorization_status,
-        detail=detail,
-    )
+    return {
+        "work_item_id": work_item_id,
+        "jurisdiction": "uk",
+        "source_artifact_id": source_artifact_id,
+        "source_unit_id": source_unit_id,
+        "source_witness": normalized_source_witness,
+        "target_witness": target_witness,
+        "compare_witness": compare_witness,
+        "owner_phase": owner_phase,
+        "frontier_family": frontier_family,
+        "frontier_status": frontier_status,
+        "candidate_operation_family": candidate_operation_family,
+        "candidate_targets": candidate_targets,
+        "guidance_refs": guidance_refs,
+        "required_claim_kind": required_claim_kind,
+        "required_validator_checks": required_validator_checks,
+        "required_proofs": required_proofs,
+        "safe_default": safe_default,
+        "forbidden_shortcuts": forbidden_shortcuts,
+        "executable": executable,
+        "replay_authorized": replay_authorized,
+        "authorization_status": authorization_status,
+        "detail": detail,
+    }
+
+
+def _frontier_work_item_payload_to_dict(payload: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "work_item_id": str(payload.get("work_item_id") or ""),
+        "jurisdiction": str(payload.get("jurisdiction") or ""),
+        "source_artifact_id": str(payload.get("source_artifact_id") or ""),
+        "source_unit_id": str(payload.get("source_unit_id") or ""),
+        "source_witness": _plain_jsonable(payload.get("source_witness") or {}),
+        "target_witness": _plain_jsonable(payload.get("target_witness") or {}),
+        "compare_witness": _plain_jsonable(payload.get("compare_witness") or {}),
+        "owner_phase": str(payload.get("owner_phase") or ""),
+        "frontier_family": str(payload.get("frontier_family") or ""),
+        "frontier_status": str(payload.get("frontier_status") or ""),
+        "candidate_operation_family": str(payload.get("candidate_operation_family") or ""),
+        "candidate_targets": list(_string_tuple(payload.get("candidate_targets"))),
+        "guidance_refs": list(_string_tuple(payload.get("guidance_refs"))),
+        "required_claim_kind": str(payload.get("required_claim_kind") or ""),
+        "required_validator_checks": list(
+            _string_tuple(payload.get("required_validator_checks"))
+        ),
+        "required_proofs": list(_string_tuple(payload.get("required_proofs"))),
+        "safe_default": str(payload.get("safe_default") or ""),
+        "forbidden_shortcuts": list(_string_tuple(payload.get("forbidden_shortcuts"))),
+        "executable": _bool_flag(payload.get("executable")),
+        "replay_authorized": _bool_flag(payload.get("replay_authorized")),
+        "authorization_status": str(payload.get("authorization_status") or ""),
+        "suggested_claim_template_status": str(
+            payload.get("suggested_claim_template_status") or ""
+        ),
+        "suggested_claim_template": _plain_jsonable(
+            payload.get("suggested_claim_template") or {}
+        ),
+        "detail": _plain_jsonable(payload.get("detail") or {}),
+    }
+
+
+def _plain_jsonable(value: Any) -> Any:
+    if type(value) in (str, int, float, bool, type(None)):
+        return value
+    if isinstance(value, Mapping):
+        return {str(key): _plain_jsonable(inner) for key, inner in value.items()}
+    if isinstance(value, list | tuple):
+        return [_plain_jsonable(inner) for inner in value]
+    if isinstance(value, set | frozenset):
+        return sorted((_plain_jsonable(inner) for inner in value), key=repr)
+    return value
 
 
 def _mapping(value: Any) -> Mapping[str, Any]:
