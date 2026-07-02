@@ -32,7 +32,7 @@ import time
 from lxml import etree as ET
 from pathlib import Path
 from collections.abc import Iterable, Sequence
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from lawvm.core.ir import (
     IRStatute,
@@ -392,7 +392,7 @@ def _anchor_pass_text_content(el: ET._Element) -> str:
     """Text-content normalization for throwaway source-anchor parses."""
     if len(el) == 0:
         return " ".join((el.text or "").split())
-    return " ".join(" ".join(str(part) for part in el.itertext()).split())
+    return " ".join(" ".join(cast(Iterable[str], el.itertext())).split())
 
 
 def set_uk_raw_source_context(
