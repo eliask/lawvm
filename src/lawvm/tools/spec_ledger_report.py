@@ -280,7 +280,37 @@ def render_report_markdown(
         ]
         lines.append("| " + " | ".join(cells) + " |")
 
+    lines += ["", render_p_rule_density(ledger)]
     lines += ["", render_blind_spot_frontier(ledger)]
+    return "\n".join(lines)
+
+
+def render_p_rule_density(ledger: SpecLedger) -> str:
+    """Render the P-rule firing-density heatmap — the undiscovered-spec surface.
+
+    P-rules (compiler-survival policies, §3.5) are not hypotheses about the law; where
+    they fire a lot, the real (S) spec is still unknown there. Ranked firings-desc so the
+    hottest coverage gaps surface first. Also prints the S vs P vs uncataloged counts.
+    """
+    rc = ledger.role_counts()
+    lines: List[str] = [
+        "## P-rule firing density — the undiscovered-spec heatmap",
+        "",
+        f"catalogued S-rules (law-hypotheses)={rc['S']} "
+        f"P-rules (compiler-survival policy)={rc['P']} "
+        f"uncataloged={rc['uncataloged']}",
+        "",
+    ]
+    density = ledger.p_rule_density()
+    if density:
+        lines.append("| rule_id | firings | contradicted | corrob~ |")
+        lines.append("|---------|---------|--------------|---------|")
+        for e in density:
+            lines.append(
+                f"| {e.rule_id} | {e.firings} | {e.contradicted} | {e.corroborated_est} |"
+            )
+    else:
+        lines.append("(none — no catalogued P-rule fired)")
     return "\n".join(lines)
 
 

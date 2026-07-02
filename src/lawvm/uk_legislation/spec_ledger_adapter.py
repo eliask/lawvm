@@ -22,6 +22,7 @@ from lawvm.tools.spec_ledger import (
     DivergenceRow,
     LedgerAdapter,
     Mode,
+    RuleRole,
     StatuteLedgerInput,
     WitnessDisposition,
     disposition_for,
@@ -120,6 +121,31 @@ def _load_uk_rule_specs() -> Dict[str, str]:
 
 
 _UK_RULE_SPECS: Dict[str, str] = _load_uk_rule_specs()
+
+
+def _load_uk_rule_roles() -> Dict[str, RuleRole]:
+    """S/P sort per catalogued UK rule id (§3.5), computed from the classifier; {} if
+    the meta sidecar is absent."""
+    try:
+        from lawvm.tools.spec_ledger_uk_catalog_meta import build_uk_rule_roles
+
+        return dict(build_uk_rule_roles(_UK_RULE_SPECS))
+    except ImportError:
+        return {}
+
+
+def _load_uk_rule_falsifiers() -> Dict[str, str]:
+    """Per-rule falsifier sentence (§3.2(4)); {} if the meta sidecar is absent."""
+    try:
+        from lawvm.tools.spec_ledger_uk_catalog_meta import build_uk_rule_falsifiers
+
+        return dict(build_uk_rule_falsifiers(_UK_RULE_SPECS))
+    except ImportError:
+        return {}
+
+
+_UK_RULE_ROLES: Dict[str, RuleRole] = _load_uk_rule_roles()
+_UK_RULE_FALSIFIERS: Dict[str, str] = _load_uk_rule_falsifiers()
 
 
 # A statute whose divergences are overwhelmingly UNATTRIBUTED structural
@@ -252,5 +278,7 @@ register_ledger_adapter(
         ledger_inputs=uk_ledger_inputs,
         catalog=_UK_RULE_SPECS,
         corpus_loaders={"bench": _load_uk_bench_ids},
+        roles=_UK_RULE_ROLES,
+        falsifiers=_UK_RULE_FALSIFIERS,
     )
 )

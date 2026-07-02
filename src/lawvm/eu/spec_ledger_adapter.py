@@ -47,6 +47,7 @@ from lawvm.tools.spec_ledger import (
     DivergenceRow,
     LedgerAdapter,
     Mode,
+    RuleRole,
     StatuteLedgerInput,
     WitnessDisposition,
     disposition_for,
@@ -92,6 +93,30 @@ def _load_eu_rule_specs() -> Dict[str, str]:
 
 
 _EU_RULE_SPECS: Dict[str, str] = _load_eu_rule_specs()
+
+
+def _load_eu_rule_roles() -> Dict[str, RuleRole]:
+    """S/P sort per catalogued EU rule id (§3.5); {} if the meta sidecar is absent."""
+    try:
+        from lawvm.tools.spec_ledger_eu_catalog_meta import build_eu_rule_roles
+
+        return dict(build_eu_rule_roles(_EU_RULE_SPECS))
+    except ImportError:
+        return {}
+
+
+def _load_eu_rule_falsifiers() -> Dict[str, str]:
+    """Per-rule falsifier sentence (§3.2(4)); {} if the meta sidecar is absent."""
+    try:
+        from lawvm.tools.spec_ledger_eu_catalog_meta import build_eu_rule_falsifiers
+
+        return dict(build_eu_rule_falsifiers(_EU_RULE_SPECS))
+    except ImportError:
+        return {}
+
+
+_EU_RULE_ROLES: Dict[str, RuleRole] = _load_eu_rule_roles()
+_EU_RULE_FALSIFIERS: Dict[str, str] = _load_eu_rule_falsifiers()
 
 
 def _kind_to_class() -> Mapping[str, str]:
@@ -203,5 +228,7 @@ register_ledger_adapter(
         jurisdiction="eu",
         ledger_inputs=eu_ledger_inputs,
         catalog=_EU_RULE_SPECS,
+        roles=_EU_RULE_ROLES,
+        falsifiers=_EU_RULE_FALSIFIERS,
     )
 )

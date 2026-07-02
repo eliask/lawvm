@@ -927,6 +927,9 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_spec_ledger_eu_catalog.py",
         "test_delegate_tool.py",
         "test_fi_spec_ledger_catalog.py",
+        # #181 spec-ledger enrichment: S/P rule_role + falsifier + ≺/≈ glue guards.
+        "test_fi_spec_ledger_meta.py",
+        "test_spec_ledger_meta.py",
         "test_diagnose_phase.py",
         "test_diff.py",
         "test_dump.py",
