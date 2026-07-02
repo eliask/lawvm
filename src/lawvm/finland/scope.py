@@ -316,7 +316,14 @@ def chapter_chunks_from_johtolause(johto: str) -> List[Tuple[str, str]]:
     text = re.sub(r"\s+", " ", johto or "")
     matches = list(
         re.finditer(
-            r"((?:\d+\s*,\s*)*\d+(?:\s+ja\s+\d+)?)\s+lu(?:ku|vun)\b",
+            # A chapter cluster is a comma/``ja``-joined list of chapter labels
+            # before ``luku``/``luvun``. Each label is a number with an optional
+            # spaced letter suffix (``16 a luku`` — the comitative new-chapter
+            # form ``uusi 16 a luku uusine 145 a―145 f §:ineen``). Only the last
+            # label carries the suffix in the observed corpus, but allowing it on
+            # every list member is harmless: the token filter below re-checks
+            # each token, and a digit-only list is matched byte-identically.
+            r"((?:\d+(?:\s*[a-z])?\s*,\s*)*\d+(?:\s*[a-z])?(?:\s+ja\s+\d+(?:\s*[a-z])?)?)\s+lu(?:ku|vun)\b",
             text,
             flags=re.I,
         )
@@ -325,9 +332,11 @@ def chapter_chunks_from_johtolause(johto: str) -> List[Tuple[str, str]]:
     for idx, match in enumerate(matches):
         cluster = match.group(1)
         labels = [
-            token.strip().lower()
+            # ``16 a`` → ``16a`` so the label compares equal to the eId chapter
+            # token via ``_norm_num_token``; a bare ``16`` is unchanged.
+            re.sub(r"\s+", "", token.strip().lower())
             for token in re.split(r"\s*,\s*|\s+ja\s+", cluster)
-            if re.fullmatch(r"\d+[a-z]?", token.strip(), flags=re.I)
+            if re.fullmatch(r"\d+\s*[a-z]?", token.strip(), flags=re.I)
         ]
         if not labels:
             continue
@@ -863,6 +872,44 @@ def _unique_base_section_chapter(
     return next(iter(chapters))
 
 
+# Dash-like separators seen in comitative ranges: hyphen-minus, en/em dash,
+# figure/horizontal bar (U+2013…U+2015), the finnish typographic minus.
+_COMITATIVE_RANGE_DASH = r"[-‐-―−]"
+
+
+def _lettered_range_covers(chunk: str, base: str, suffix: str) -> bool:
+    r"""True when *chunk* declares a same-base letter range covering ``base+suffix``.
+
+    Recognises the comitative new-section range ``145 a―145 f §:ineen`` (and the
+    abbreviated ``145 a―f`` form), which introduces every lettered section from
+    the start letter to the end letter inclusive while writing only the two
+    endpoints. A section-sign must terminate the range within a short window so a
+    bare numeric range (``145–147 §``) is not misread as a letter span.
+
+    ``base``/``suffix`` come from ``_norm_num_token`` (lowercase, single letter),
+    so a byte-level letter comparison is sound for the a…z suffixes in the corpus.
+    """
+    if not suffix or len(suffix) != 1 or not suffix.isalpha():
+        return False
+    base_pat = re.escape(base)
+    dash = _COMITATIVE_RANGE_DASH
+    # Full form ``145 a―145 f`` and abbreviated ``145 a―f``; the range must be
+    # closed by a section sign (optionally the ``§:ineen`` comitative tail)
+    # within a small gap so ranges of unrelated tokens are not swept in.
+    patterns = (
+        rf"\b{base_pat}\s*([a-z])\s*{dash}\s*{base_pat}\s*([a-z])(?=[^§]{{0,8}}§)",
+        rf"\b{base_pat}\s*([a-z])\s*{dash}\s*([a-z])(?=[^§]{{0,8}}§)",
+    )
+    for pattern in patterns:
+        for match in re.finditer(pattern, chunk, flags=re.I):
+            start_letter = match.group(1).lower()
+            end_letter = match.group(2).lower()
+            lo_letter, hi_letter = sorted((start_letter, end_letter))
+            if lo_letter <= suffix <= hi_letter:
+                return True
+    return False
+
+
 def _chapter_chunk_mentions_section_label(chunk: str, section_label: str) -> bool:
     norm = _norm_num_token(section_label)
     m = re.fullmatch(r"(\d+)([a-z]?)", norm, flags=re.I)
@@ -908,6 +955,13 @@ def _chapter_chunk_mentions_section_label(chunk: str, section_label: str) -> boo
             chunk,
             flags=re.I,
         ):
+            return True
+        # Comitative lettered range: ``145 a―145 f §:ineen`` (also ``145 a―f``)
+        # covers the whole letter span 145a..145f, of which only the endpoints
+        # are written. A middle label like 145d must still match. Match a same-
+        # base letter range terminated by a section sign within a short window,
+        # and accept when the target's suffix falls inside the (inclusive) span.
+        if _lettered_range_covers(chunk, base, suffix):
             return True
         return False
 
