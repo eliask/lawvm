@@ -51,6 +51,12 @@ class GlueComponent:
     falsifier: str
     code_anchor: str  # where the policy/lens lives in code today (provenance)
     changelog: Tuple[str, ...] = field(default_factory=tuple)
+    # #184 CTSF unification: when this lens is realized as a Canonical Text-State
+    # Form editorial rule, this points at the rule_id whose four-part control-pair
+    # admission gate (lawvm.core.ctsf_admission_gate) validates it.  Empty for a
+    # lens not (yet) migrated into CTSF — default-empty so existing entries are
+    # byte-identically unchanged.
+    ctsf_rule_id: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -146,7 +152,10 @@ _LENS: Tuple[GlueComponent, ...] = (
         changelog=(
             "v1: RetainText elided into a comparison-only oracle text variant; replay "
             "untouched.",
+            "v1: #184 realized as CTSF rule ctsf.occupancy.repeal_tombstone_elision "
+            "(control-pair admission-gated).",
         ),
+        ctsf_rule_id="ctsf.occupancy.repeal_tombstone_elision",
     ),
     GlueComponent(
         glue_id="fi.lens.aiempi_sanamuoto_elision",
@@ -165,7 +174,36 @@ _LENS: Tuple[GlueComponent, ...] = (
             "text divergence."
         ),
         code_anchor="tools/oracle_text.py + tools/divergence_core.py (editorial elision)",
-        changelog=("v1: initial extraction of the editorial-elision equivalence.",),
+        changelog=(
+            "v1: initial extraction of the editorial-elision equivalence.",
+            "v1: #184 realized as CTSF rule ctsf.text.aiempi_sanamuoto_elision "
+            "(control-pair admission-gated).",
+        ),
+        ctsf_rule_id="ctsf.text.aiempi_sanamuoto_elision",
+    ),
+    GlueComponent(
+        glue_id="fi.lens.grammar_text_normalization",
+        kind="lens",
+        jurisdiction="fi",
+        version="v1",
+        believed_spec=(
+            "Whitespace runs, dot-leader alignment fill, § spacing, dash/quote "
+            "variants and OCR word-fusion are non-normative because the FI amendment "
+            "grammar's quoted-span matcher normalizes them when locating text; two "
+            "wordings equal under that normalization are definitionally equal. The "
+            "comparison lens compares grammar-normalized wording, never the raw form."
+        ),
+        falsifier=(
+            "An amendment whose quoted-span match succeeds on one whitespace/dot-"
+            "leader form but fails on the other — the normalization merges two "
+            "wordings the grammar's own matcher distinguishes."
+        ),
+        code_anchor="core/ctsf.py::_normalize_wording_for_diff (grammar text normalization)",
+        changelog=(
+            "v1: #184 first-classed the grammar text-normalization equivalence as a "
+            "CTSF rule ctsf.text.grammar_normalization (control-pair admission-gated).",
+        ),
+        ctsf_rule_id="ctsf.text.grammar_normalization",
     ),
     GlueComponent(
         glue_id="uk.lens.oracle_eid_alignment",
@@ -213,6 +251,7 @@ def glue_to_dict(g: GlueComponent) -> Dict[str, object]:
         "falsifier": g.falsifier,
         "code_anchor": g.code_anchor,
         "changelog": list(g.changelog),
+        **({"ctsf_rule_id": g.ctsf_rule_id} if g.ctsf_rule_id else {}),
     }
 
 

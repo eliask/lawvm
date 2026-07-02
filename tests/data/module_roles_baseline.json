@@ -3,7 +3,7 @@
   "counts": {
     "dead": 86,
     "live": 1088,
-    "test_only_live": 39
+    "test_only_live": 42
   },
   "replay_counts": {
     "exercised": 170,
@@ -103,6 +103,9 @@
     "lawvm.core.char_span_metric",
     "lawvm.core.claim_surface_manifest",
     "lawvm.core.coverage_totality",
+    "lawvm.core.ctsf",
+    "lawvm.core.ctsf_admission_gate",
+    "lawvm.core.ctsf_rules",
     "lawvm.core.fire_drill_registry",
     "lawvm.core.invariant_spec",
     "lawvm.core.proof_surfaces",

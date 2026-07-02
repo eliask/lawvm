@@ -934,6 +934,10 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # #181 spec-ledger enrichment: S/P rule_role + falsifier + ≺/≈ glue guards.
         "test_fi_spec_ledger_meta.py",
         "test_spec_ledger_meta.py",
+        # #184 Canonical Text-State Form v0: projection + control-pair admission
+        # gate (incl. negative rejection test) + migrated editorial rules + the
+        # spec-ledger glue unification + bench byte-identity guard.
+        "test_ctsf.py",
         "test_diagnose_phase.py",
         "test_diff.py",
         "test_dump.py",
