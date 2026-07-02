@@ -742,12 +742,17 @@ def _legal_text(node: etree._Element, *, cache: dict[tuple[etree._Element, bool]
     if cache is not None:
         cached = cache.get((node, True))
         if cached is not None:
-            return _normalize_text(cached)
+            return cached
         if not (node.text or "").strip():
             cached = cache.get((node, False))
             if cached is not None:
-                return _normalize_text(cached)
-    return _normalize_text(_collect_legal_text(node, is_root=True, cache=cache))
+                text = _normalize_text(cached)
+                cache[(node, True)] = text
+                return text
+    text = _normalize_text(_collect_legal_text(node, is_root=True, cache=cache))
+    if cache is not None:
+        cache[(node, True)] = text
+    return text
 
 
 # Lettered-paragraph leaf kinds whose text may continue into a trailing
