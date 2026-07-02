@@ -1295,37 +1295,37 @@ def _candidate_target_set_certificate(
     if modeled_targets:
         detail.update(
             {
-                "modeled_targets": modeled_targets,
-                "target_model_statuses": target_model_statuses,
+                "modeled_targets": list(modeled_targets),
+                "target_model_statuses": list(target_model_statuses),
                 "modeled_targets_not_replay_authorization": True,
             }
         )
-    certificate = CandidateSetCoverage(
-        scope_id=f"uk-frontier-work-item:{work_item_id}",
-        candidate_set_kind="uk_frontier_work_item_candidate_targets",
-        phase=owner_phase or "unknown",
-        rule_id="uk_frontier_work_item_candidate_target_set_projection",
-        reason=(
+    return {
+        "scope_id": f"uk-frontier-work-item:{work_item_id}",
+        "candidate_set_kind": "uk_frontier_work_item_candidate_targets",
+        "phase": owner_phase or "unknown",
+        "rule_id": "uk_frontier_work_item_candidate_target_set_projection",
+        "reason": (
             "candidate target surfaces are bounded by the manual-frontier work "
             "item target witness and do not authorize replay"
         ),
-        completeness_status=(
+        "completeness_status": (
             CANDIDATE_SET_COMPLETE if has_candidates else CANDIDATE_SET_UNAVAILABLE
         ),
-        candidate_count=len(candidate_targets),
-        candidate_ids=candidate_targets,
-        missing_candidate_count=0 if has_candidates else 1,
-        blocker_counts=blockers,
-        blocker_families=tuple(blockers),
-        next_promotion_allowed=False,
-        next_promotion_requires=(
+        "candidate_count": len(candidate_targets),
+        "candidate_ids": list(candidate_targets),
+        "missing_candidate_count": 0 if has_candidates else 1,
+        "selected_candidate_ids": [],
+        "blocker_counts": blockers,
+        "blocker_families": list(blockers),
+        "next_promotion_allowed": False,
+        "next_promotion_requires": [
             "target_candidate_set_completeness",
             "execution_authorization",
             "mutation_boundary_proof",
-        ),
-        detail=detail,
-    )
-    return certificate.to_dict()
+        ],
+        **detail,
+    }
 
 
 def _source_membership_certificate(
