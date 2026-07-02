@@ -396,6 +396,100 @@ def test_chapter_chunks_accept_genitive_luvun_form() -> None:
     ) == [("3", " otsikko, 3 §:n 1 momentti, 4 § ja 5 a §")]
 
 
+def test_chapter_chunks_parse_comitative_letter_suffixed_chapter() -> None:
+    # ``uusi 16 a luku uusine 145 a―145 f §:ineen`` (Rakennusasetus 1959/266,
+    # amended by 628/1969) declares new chapter 16a via the comitative case. The
+    # letter-suffixed chapter label must survive; without the T1 fix the ``16 a
+    # luku`` form failed the digit-only chapter regex and no chunk was emitted.
+    from lawvm.finland.scope import chapter_chunks_from_johtolause
+
+    chunks = chapter_chunks_from_johtolause(
+        "lisätään asetukseen uusi III A osasto, johon sisältyy uusi 16 a luku "
+        "uusine 145 a―145 f §:ineen"
+    )
+    assert len(chunks) == 1
+    label, chunk = chunks[0]
+    assert label == "16a"
+    assert "145 a―145 f §:ineen" in chunk
+
+
+def test_chapter_chunks_digit_only_form_unchanged_by_comitative_relaxation() -> None:
+    # The letter-suffix relaxation must not perturb the incumbent digit-only
+    # chapter grammar (byte-identical chunk output).
+    from lawvm.finland.scope import chapter_chunks_from_johtolause
+
+    assert chapter_chunks_from_johtolause(
+        "muutetaan 3 luvun 5 §, sekä lisätään 4 luvun uusi 12 §"
+    ) == [("3", " 5 §, sekä lisätään "), ("4", " uusi 12 §")]
+
+
+def test_comitative_lettered_range_covers_interior_sections() -> None:
+    # ``145 a―145 f §:ineen`` covers the whole letter span while writing only the
+    # endpoints; every interior label (145b..145e) must be recognised, and
+    # out-of-span / different-base labels must not.
+    from lawvm.finland.scope import _chapter_chunk_mentions_section_label as mentions
+
+    chunk = " uusine 145 a―145 f §:ineen"
+    for letter in "abcdef":
+        assert mentions(chunk, f"145{letter}") is True, letter
+    assert mentions(chunk, "145g") is False
+    assert mentions(chunk, "146a") is False
+    # The abbreviated ``145 a―f`` form is equivalent.
+    assert mentions(" uusine 145 a―f §:ineen", "145d") is True
+    # A bare numeric range must not be misread as a letter span.
+    assert mentions("145–147 §", "145b") is False
+    # An un-terminated letter range (no section sign) must not fire.
+    assert mentions("145 a―145 f valmistelussa", "145d") is False
+
+
+def test_assign_chapter_scope_stamps_comitative_chapter_on_interior_section() -> None:
+    # End-to-end: a REPLACE of an interior lettered section (145d) whose home is
+    # the comitative-declared chapter 16a must be scoped to 16a, not to the
+    # numeric-stem chapter of base §145.
+    text = (
+        "lisätään asetukseen uusi 16 a luku uusine 145 a―145 f §:ineen, "
+        "seuraavasti"
+    )
+    legal_ops = [
+        LegalOperation(
+            op_id="op_145d",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "145d"),)),
+        ),
+    ]
+    master = SimpleNamespace(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="16",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="145"),),
+                ),
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="16a",
+                    children=(
+                        IRNode(kind=IRNodeKind.SECTION, label="145a"),
+                        IRNode(kind=IRNodeKind.SECTION, label="145d"),
+                        IRNode(kind=IRNodeKind.SECTION, label="145f"),
+                    ),
+                ),
+            ),
+        ),
+        find_section=lambda section, chapter=None: (
+            object() if chapter == "16a" and section in {"145a", "145d", "145f"} else None
+        ),
+        duplicate_section_labels=set(),
+    )
+
+    scoped = assign_chapter_scope_from_johtolause(legal_ops, text, cast(Any, master))
+
+    assert ("chapter", "16a") in scoped[0].target.path
+    assert ("chapter", "16") not in scoped[0].target.path
+
+
 def test_assign_chapter_scope_from_explicit_chunk_for_unique_sections() -> None:
     text = (
         "muutetaan 3 luvun otsikko, 3 §:n 1 momentti, 4 §, "
