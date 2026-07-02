@@ -455,6 +455,7 @@ def test_us_unique_byte_run_bodies_prefilters_to_candidate_clauses() -> None:
     raw = b"""\
 <section>
   <chapeau>Clause body selected by an emitted operation.</chapeau>
+  <paragraph>Clause body selected by a different operation.</paragraph>
   <quotedText>Unrelated body from another instruction.</quotedText>
 </section>
 """
@@ -473,6 +474,7 @@ def test_us_unique_byte_run_body_records_prefilters_before_unique_kernel(
     raw = b"""\
 <section>
   <chapeau>Clause body selected by an emitted operation.</chapeau>
+  <paragraph>Clause body selected by a different operation.</paragraph>
   <quotedText>Unrelated body from another instruction.</quotedText>
 </section>
 """

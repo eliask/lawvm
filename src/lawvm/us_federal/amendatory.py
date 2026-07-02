@@ -5692,12 +5692,36 @@ _US_SOURCE_ANCHOR_BODY_TAGS: frozenset[str] = frozenset(
         "subparagraph",
     }
 )
+_US_SOURCE_ANCHOR_CLAUSE_PREFIX_LEN = 24
 
 
 @dataclass(frozen=True, slots=True)
 class _UniqueByteRunBody:
     text: str
     source_anchor: SourceAnchor
+
+
+def _candidate_clause_prefix_hits(
+    clauses: Iterable[str],
+    wanted_prefixes: set[str],
+) -> set[str]:
+    """Wanted body prefixes that occur inside at least one emitted op clause."""
+
+    if not wanted_prefixes:
+        return set()
+    prefix_len = _US_SOURCE_ANCHOR_CLAUSE_PREFIX_LEN
+    hits: set[str] = set()
+    for clause in clauses:
+        stop = len(clause) - prefix_len + 1
+        if stop <= 0:
+            continue
+        for idx in range(stop):
+            prefix = clause[idx : idx + prefix_len]
+            if prefix in wanted_prefixes:
+                hits.add(prefix)
+                if len(hits) == len(wanted_prefixes):
+                    return hits
+    return hits
 
 
 def set_us_raw_source_context(
@@ -5748,17 +5772,19 @@ def _unique_byte_run_body_records(
     bodies: list[_UniqueByteRunBody] = []
     seen: set[str] = set()
     candidate_blob = ""
+    candidate_clause_tuple: tuple[str, ...] = ()
     if candidate_clauses is not None:
         # Negative prefilter only: _anchor_op can select a body only if it is a
         # substring of an emitted op clause. Separating clauses with NUL prevents
         # accidental cross-clause concatenation matches while keeping membership a
         # single C-level substring search before the expensive raw-bytes scan.
-        unique_clauses = {
+        unique_clauses = tuple({
             clause
             for clause in candidate_clauses
             if clause and "\x00" not in clause
-        }
+        })
         candidate_blob = "\x00".join(unique_clauses)
+        candidate_clause_tuple = unique_clauses
     if root is None:
         try:
             root = ET.fromstring(raw_bytes)
@@ -5770,7 +5796,7 @@ def _unique_byte_run_body_records(
     # a negative prefilter only: _anchor_op can select a body only if it is a
     # substring of an emitted op clause. Global uniqueness is still proven against
     # the full raw bytes for every retained candidate.
-    candidates: List[str] = []
+    candidate_pool: list[str] = []
     for node in root.iter():
         if not isinstance(node.tag, str) or _localname(node.tag) not in _US_SOURCE_ANCHOR_BODY_TAGS:
             continue
@@ -5779,9 +5805,28 @@ def _unique_byte_run_body_records(
             seen.add(text)
             continue
         seen.add(text)
-        if candidate_clauses is not None and text not in candidate_blob:
-            continue
-        candidates.append(text)
+        candidate_pool.append(text)
+    candidates: list[str] = []
+    if candidate_clauses is not None:
+        prefix_len = _US_SOURCE_ANCHOR_CLAUSE_PREFIX_LEN
+        wanted_prefixes = {
+            text[:prefix_len] for text in candidate_pool if len(text) >= prefix_len
+        }
+        clause_prefix_hits = _candidate_clause_prefix_hits(
+            candidate_clause_tuple,
+            wanted_prefixes,
+        )
+        for text in candidate_pool:
+            if (
+                len(text) >= prefix_len
+                and text[:prefix_len] not in clause_prefix_hits
+            ):
+                continue
+            if text not in candidate_blob:
+                continue
+            candidates.append(text)
+    else:
+        candidates = candidate_pool
     for text, first in unique_byte_run_text_positions(raw_bytes, candidates):
         needle = text.encode("utf-8")
         bodies.append(
