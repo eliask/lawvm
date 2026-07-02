@@ -3696,6 +3696,7 @@ def test_emit_section_snapshot_does_not_prune_complete_child_from_prior_sparse_c
             _para("1", "old one"),
             _para("2", "old two"),
             _para("29", "old twenty-nine"),
+            _para("30", "old retained"),
         ),
     )
     sparse_section = IRNode(
@@ -3801,6 +3802,22 @@ def test_emit_section_snapshot_does_not_prune_complete_child_from_prior_sparse_c
         "29",
     ]
     assert complete_child.payload.attrs["lawvm_tail_policy"] == "replace_if_target_scope_requires"
+    complete_paragraph_ops = {
+        op.target.path[-1][1]: op
+        for op in lo_ops
+        if op.target.path[:2] == (("section", "1"), ("subsection", "1"))
+        and len(op.target.path) == 3
+        and op.source is not None
+        and op.source.statute_id == "2023/1117"
+    }
+    assert complete_paragraph_ops["1"].action is StructuralAction.REPLACE
+    assert complete_paragraph_ops["2"].action is StructuralAction.REPLACE
+    assert complete_paragraph_ops["29"].action is StructuralAction.REPLACE
+    assert not any(
+        op.action is StructuralAction.REPEAL
+        and op.target.path == (("section", "1"), ("subsection", "1"), ("paragraph", "30"))
+        for op in lo_ops
+    )
 
 
 def test_emit_section_snapshot_rebases_sparse_item_replace_and_repeal_group() -> None:

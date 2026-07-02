@@ -4489,7 +4489,6 @@ def _emit_section_snapshot(
                 for child in payload.children
                 if child.kind is IRNodeKind.SUBSECTION
                 and child.label
-                and _snapshot_payload_is_complete_owner(child)
             },
             replay_history_ops=lo_ops_out,
             base_ir=base_ir,
@@ -4672,6 +4671,7 @@ def _emit_section_snapshot(
                 or child
             )
             child_payload = _bind_scoped_item_payloads(child_payload, child_norm_label)
+            child_payload_is_native_complete_owner = _snapshot_payload_is_complete_owner(child_payload)
             child_payload = _inherit_parent_snapshot_ownership_attrs(child_payload, payload)
             child_source = op_source
             prior_paragraph_labels: set[str] = set()
@@ -4760,8 +4760,11 @@ def _emit_section_snapshot(
                                 group_id=f"finland-johto:{amendment_id or 'unknown'}",
                             )
                         )
+                    repealable_prior_paragraph_labels = (
+                        prior_paragraph_labels if child_payload_is_native_complete_owner else set()
+                    )
                     for paragraph_label in sorted(
-                        prior_paragraph_labels - payload_paragraph_labels,
+                        repealable_prior_paragraph_labels - payload_paragraph_labels,
                         key=default_label_sort_key,
                     ):
                         lo_ops_out.append(
