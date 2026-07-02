@@ -567,7 +567,11 @@ class TransparentCorpusStore(CorpusStore):
         """
         return self._read_source_bytes(sid)
 
-    def iter_source_bytes_for_internal_scan(self) -> Iterator[tuple[str, bytes]]:
+    def iter_source_bytes_for_internal_scan(
+        self,
+        *,
+        min_year: int | None = None,
+    ) -> Iterator[tuple[str, bytes]]:
         """Yield current source XML bytes for corpus-wide read-only scan indexes.
 
         This is the bulk form of :meth:`read_source_for_internal_scan`.  It uses
@@ -575,11 +579,16 @@ class TransparentCorpusStore(CorpusStore):
         avoiding one locator-resolution query per statute while preserving the
         same archive-only source surface.
         """
+        where = "locator LIKE ? AND observed_until IS NULL"
+        params: tuple[object, ...] = ("finlex://sd/%/fin/main.xml",)
+        if min_year is not None:
+            where += " AND locator >= ?"
+            params = (*params, f"finlex://sd/{min_year:04d}/")
         rows = self._archive._conn.execute(
             "SELECT locator, digest FROM locator_span "
-            "WHERE locator LIKE ? AND observed_until IS NULL "
+            f"WHERE {where} "
             "ORDER BY locator",
-            ("finlex://sd/%/fin/main.xml",),
+            params,
         ).fetchall()
         for locator, digest in rows:
             m = re.match(r"finlex://sd/(\d{4}/[^/]+)/fin/main\.xml$", str(locator))

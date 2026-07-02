@@ -533,7 +533,8 @@ def test_separate_commencement_index_uses_bulk_internal_scan_when_available(monk
         def read_source_for_internal_scan(self, sid: str) -> bytes | None:
             raise AssertionError(f"per-id internal scan path should not be used for {sid}")
 
-        def iter_source_bytes_for_internal_scan(self):
+        def iter_source_bytes_for_internal_scan(self, *, min_year: int | None = None):
+            assert min_year == 2018
             yield (
                 "2020/1",
                 _xml(
@@ -588,7 +589,8 @@ def test_separate_commencement_target_scan_skips_unrelated_candidate_bytes(monke
         def read_source_for_internal_scan(self, sid: str) -> bytes | None:
             raise AssertionError(f"per-id internal scan path should not be used for {sid}")
 
-        def iter_source_bytes_for_internal_scan(self):
+        def iter_source_bytes_for_internal_scan(self, *, min_year: int | None = None):
+            assert min_year == 2018
             yield (
                 "2019/999",
                 b"<not-xml>Seuraavat lait tulevat voimaan 1 paivana tammikuuta 2021: "

@@ -13,7 +13,7 @@ from lawvm.core.regex_safety import compile_classifier_regex
 import datetime as dt
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import List, Literal, Optional, Protocol, Set, Tuple, cast, runtime_checkable
+from typing import Iterator, List, Literal, Optional, Protocol, Set, Tuple, cast, runtime_checkable
 
 import lxml.etree as etree
 
@@ -101,6 +101,15 @@ class SeparateCommencementLawWitness:
 @runtime_checkable
 class _InternalScanSourceReader(Protocol):
     def read_source_for_internal_scan(self, sid: str) -> bytes | None: ...
+
+
+@runtime_checkable
+class _BulkInternalScanSourceReader(Protocol):
+    def iter_source_bytes_for_internal_scan(
+        self,
+        *,
+        min_year: int | None = None,
+    ) -> Iterator[tuple[str, bytes]]: ...
 
 
 _SEPARATE_COMMENCEMENT_LIST_RE = compile_classifier_regex(r'\bSeuraavat\s+lait\s+tulevat\s+voimaan\s+'
@@ -1205,6 +1214,24 @@ def _target_statute_id_citation_bytes(target_statute_id: str) -> bytes | None:
     return f"({int(number)}/{year})".encode("ascii")
 
 
+def _statute_id_year_for_separate_commencement_scan(statute_id: str) -> int | None:
+    normalized = _normalize_statute_id_for_separate_commencement_target(statute_id)
+    if normalized is None:
+        return None
+    year_text, _number = normalized.split("/", 1)
+    return int(year_text)
+
+
+def _source_id_is_at_or_after_separate_commencement_target_year(
+    source_id: str,
+    min_source_year: int | None,
+) -> bool:
+    if min_source_year is None:
+        return True
+    source_year = _statute_id_year_for_separate_commencement_scan(source_id)
+    return source_year is not None and source_year >= min_source_year
+
+
 @lru_cache(maxsize=256)
 def _separate_commencement_witnesses_for_target(
     target_statute_id: str,
@@ -1213,16 +1240,20 @@ def _separate_commencement_witnesses_for_target(
 
     normalized_target = _normalize_statute_id_for_separate_commencement_target(target_statute_id)
     target_citation = _target_statute_id_citation_bytes(target_statute_id)
+    min_source_year = _statute_id_year_for_separate_commencement_scan(target_statute_id)
     if normalized_target is None or target_citation is None:
         return ()
     corpus = get_corpus()
-    iter_source_bytes = getattr(corpus, "iter_source_bytes_for_internal_scan", None)
-    if callable(iter_source_bytes):
-        source_rows = iter_source_bytes()
+    if isinstance(corpus, _BulkInternalScanSourceReader):
+        source_rows = corpus.iter_source_bytes_for_internal_scan(min_year=min_source_year)
     else:
         source_rows = (
             (source_id, _read_source_for_separate_commencement_scan(corpus, source_id))
             for source_id in tuple(sorted(corpus.list_statute_ids()))
+            if _source_id_is_at_or_after_separate_commencement_target_year(
+                source_id,
+                min_source_year,
+            )
         )
     witnesses: list[SeparateCommencementLawWitness] = []
     for source_id, xml_bytes in source_rows:
