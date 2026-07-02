@@ -55,6 +55,18 @@ DEAD_ALLOWLIST: dict[str, str] = {
         "(test_ctsf_phase2.py); production/bench wiring is INTENTIONALLY deferred "
         "to Phase 3 to keep this increment additive and byte-identical."
     ),
+    "lawvm.uk_legislation.pdf_layout_uk": (
+        "UK PDF (#177) C19 marginal-note x-coordinate segmentation — reached only "
+        "via pdf_grammar's dynamic pdfplumber path; synthetic coverage exists "
+        "(test_uk_pdf_marginal_notes.py). Production wiring is INTENTIONALLY "
+        "deferred to the bulk tier-1 PDF acquisition lane (the #177 follow-up)."
+    ),
+    "lawvm.uk_legislation.pdf_replay_base": (
+        "UK PDF (#177) PDF-derived replay-base admission — re-shapes a segmented "
+        "PDF body into an IRStatute for replay. Synthetic coverage exists "
+        "(test_uk_pdf_marginal_notes.py); production wiring is INTENTIONALLY "
+        "deferred to the bulk tier-1 PDF acquisition lane (the #177 follow-up)."
+    ),
 }
 
 
