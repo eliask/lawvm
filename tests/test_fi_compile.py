@@ -5942,6 +5942,31 @@ def test_cited_scope_cache_is_lru_bounded(monkeypatch: pytest.MonkeyPatch) -> No
         monkeypatch.setattr(frontend_compile, "_CITED_SCOPE_CACHE_MAX", old_cap)
 
 
+def test_cited_effective_date_cache_is_lru_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Cited effective-date cache stores misses too, but stays bounded."""
+    import lawvm.finland.frontend_compile as frontend_compile
+
+    old_cache = frontend_compile._cited_effective_date_cache.copy()
+    old_cap = frontend_compile._CITED_EFFECTIVE_DATE_CACHE_MAX
+    monkeypatch.setattr(frontend_compile, "_CITED_EFFECTIVE_DATE_CACHE_MAX", 2)
+    frontend_compile._cited_effective_date_cache.clear()
+    try:
+        frontend_compile._store_cited_effective_date_cache("2018/575", "2020-01-01")
+        frontend_compile._store_cited_effective_date_cache("2018/576", None)
+        frontend_compile._cited_effective_date_cache.move_to_end("2018/575")
+        frontend_compile._store_cited_effective_date_cache("2018/577", "2021-01-01")
+
+        assert list(frontend_compile._cited_effective_date_cache) == [
+            "2018/575",
+            "2018/577",
+        ]
+        assert frontend_compile._cited_effective_date_cache["2018/575"] == "2020-01-01"
+    finally:
+        frontend_compile._cited_effective_date_cache.clear()
+        frontend_compile._cited_effective_date_cache.update(old_cache)
+        monkeypatch.setattr(frontend_compile, "_CITED_EFFECTIVE_DATE_CACHE_MAX", old_cap)
+
+
 def test_explicit_payload_fixed_term_prefilter_skips_payload_conversion_without_literal() -> None:
     """A unique source section without 'voimassa' cannot carry fixed-term expiry."""
     import lawvm.finland.frontend_compile as frontend_compile

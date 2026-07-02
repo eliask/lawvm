@@ -700,10 +700,11 @@ def _restore_heading_facet_for_mixed_scope_section_replaces(
 
 
 _CITED_SCOPE_CACHE_MAX = 4096
+_CITED_EFFECTIVE_DATE_CACHE_MAX = 4096
 _CitedScopeCacheKey = tuple[str, str, int]
 _CitedScopeMap = dict[str, tuple[str | None, str | None]]
 _cited_scope_cache: OrderedDict[_CitedScopeCacheKey, _CitedScopeMap] = OrderedDict()
-_cited_effective_date_cache: dict[str, str | None] = {}
+_cited_effective_date_cache: OrderedDict[str, str | None] = OrderedDict()
 _REINSTATEMENT_SECTION_LIST_FRAGMENT = (
     r"\d{1,4}(?:\s*[a-zäöå])?"
     r"(?:\s*(?:,|ja|sekä)\s*\d{1,4}(?:\s*[a-zäöå])?){0,60}"
@@ -980,22 +981,23 @@ def _retime_ops_from_cited_version_effective_dates(
         if not cited_id:
             continue
         # Cache: avoid re-parsing cited amendment XML for effective dates
-        if cited_id in _cited_effective_date_cache:
-            cached_date = _cited_effective_date_cache[cited_id]
+        cached_date = _cited_effective_date_cache.get(cited_id, "")
+        if cached_date != "":
+            _cited_effective_date_cache.move_to_end(cited_id)
             if cached_date is not None:
                 cited_effective_dates[cited_id] = cached_date
             continue
         xml_bytes = cs.read_source(cited_id)
         if xml_bytes is None:
-            _cited_effective_date_cache[cited_id] = None
+            _store_cited_effective_date_cache(cited_id, None)
             continue
         cited_tree = etree.fromstring(xml_bytes)
         cited_effective = _amendment_effective_date(cited_tree)
         if cited_effective is not None:
             cited_effective_dates[cited_id] = cited_effective.isoformat()
-            _cited_effective_date_cache[cited_id] = cited_effective.isoformat()
+            _store_cited_effective_date_cache(cited_id, cited_effective.isoformat())
         else:
-            _cited_effective_date_cache[cited_id] = None
+            _store_cited_effective_date_cache(cited_id, None)
 
     if not cited_effective_dates:
         return ops
@@ -1026,6 +1028,15 @@ def _retime_ops_from_cited_version_effective_dates(
             )
         )
     return patched
+
+
+def _store_cited_effective_date_cache(cited_id: str, effective_date: str | None) -> None:
+    """Store one cited effective date without unbounded run-level growth."""
+
+    _cited_effective_date_cache[cited_id] = effective_date
+    _cited_effective_date_cache.move_to_end(cited_id)
+    while len(_cited_effective_date_cache) > _CITED_EFFECTIVE_DATE_CACHE_MAX:
+        _cited_effective_date_cache.popitem(last=False)
 
 
 def _body_chapter_scope_for_section_op(
