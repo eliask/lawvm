@@ -20,6 +20,7 @@ Pipeline stages executed here:
 
 from __future__ import annotations
 
+from functools import lru_cache
 import logging
 import re
 from lawvm.core.regex_safety import compile_classifier_regex
@@ -757,6 +758,21 @@ def _reinstatement_match_has_local_chapter_insert_scope(
     return _LOCAL_CHAPTER_INSERT_SCOPE_BEFORE_REINSTATEMENT_RE.search(prefix) is not None
 
 
+@lru_cache(maxsize=512)
+def _cached_cited_parse_result(
+    cited_id: str,
+    parse_statute_id: str,
+    normalized_johto: str,
+) -> "ClauseParseResult":
+    """Return a bounded parse result for cited-statute scope compilation.
+
+    The replay-dependent scope lift still recompiles ops against the current
+    master tree; this cache only avoids re-tokenizing/re-parsing the same cited
+    johtolause text with the same diagnostic statute id.
+    """
+    return parse_johtolause_clause(normalized_johto, statute_id=parse_statute_id)
+
+
 def _compiled_cited_section_scopes(
     *,
     cited_id: str,
@@ -778,7 +794,12 @@ def _compiled_cited_section_scopes(
 
     cited_tree = etree.fromstring(xml_bytes)
     cited_title = _tree_title(cited_tree)
-    cited_johto = get_johtolause(xml_bytes)
+    cited_johto = _normalize_fi_parse_text(get_johtolause(xml_bytes))
+    cited_parse_result = _cached_cited_parse_result(
+        cited_id,
+        parent_id or cited_id,
+        cited_johto,
+    )
     cited_phase = normalize_and_compile_ops(
         johto=cited_johto,
         muutos_tree=cited_tree,
@@ -789,6 +810,7 @@ def _compiled_cited_section_scopes(
         used_preamble_body_fallback=False,
         parent_id=parent_id,
         strict_profile=None,
+        parse_result=cited_parse_result,
     )
     section_scopes: dict[str, tuple[str | None, str | None]] = {}
     for cited_op in cited_phase.output:

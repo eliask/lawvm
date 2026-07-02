@@ -5879,6 +5879,45 @@ def test_compute_verdict_from_registry_uses_registry_descriptions() -> None:
     assert verdict.barrier_messages == (spec.description,)
 
 
+def test_cached_cited_parse_result_keys_by_diagnostic_statute(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Cited-scope parse cache reuses only the same diagnostic-statute parse."""
+    import lawvm.finland.frontend_compile as frontend_compile
+
+    calls: list[tuple[str, str]] = []
+
+    def fake_parse(text: str, *, statute_id: str = "") -> object:
+        calls.append((text, statute_id))
+        return SimpleNamespace(text=text, statute_id=statute_id)
+
+    frontend_compile._cached_cited_parse_result.cache_clear()
+    monkeypatch.setattr(frontend_compile, "parse_johtolause_clause", fake_parse)
+    try:
+        first = frontend_compile._cached_cited_parse_result(
+            "2018/575",
+            "1993/1501",
+            "muutetaan 30 b §",
+        )
+        second = frontend_compile._cached_cited_parse_result(
+            "2018/575",
+            "1993/1501",
+            "muutetaan 30 b §",
+        )
+        other_statute = frontend_compile._cached_cited_parse_result(
+            "2018/575",
+            "2018/575",
+            "muutetaan 30 b §",
+        )
+    finally:
+        frontend_compile._cached_cited_parse_result.cache_clear()
+
+    assert first is second
+    assert other_statute is not first
+    assert calls == [
+        ("muutetaan 30 b §", "1993/1501"),
+        ("muutetaan 30 b §", "2018/575"),
+    ]
+
+
 @pytest.mark.slow
 def test_replay_xml_2002_1290_does_not_crash_on_registered_item_like_normalization() -> None:
     """Replay should classify 2002/1290 without tripping unregistered payload-normalization findings."""
