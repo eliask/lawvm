@@ -6282,6 +6282,11 @@ def _extract_ee_ops_inner(
                 action=_to_structural_action(op_action),
                 target=addr,
                 payload=payload,
+                text_patch=(
+                    _typed_text_replace_patch(old_t, payload.text if payload is not None else new_t)
+                    if op_action == "text_replace"
+                    else None
+                ),
                 source=source,
                 provenance_tags=(
                     *op_provenance_tags,
@@ -7692,6 +7697,7 @@ def _extract_ee_ops_inner(
         action=_to_structural_action(action),
         target=target,
         payload=payload,
+        text_patch=standard_text_patch,
         witness_rule_id=target_label_space_rule
         or (str(payload.attrs["source_family"]) if payload is not None and payload.attrs.get("source_family") else None),
     ))
