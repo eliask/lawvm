@@ -981,6 +981,11 @@ class AmendmentOp:
     # home for it is ``Recovered.from_fallback_provenance``, NOT a RecognizerId).
     # REPLACE-DURABLE init field, stamped by :meth:`stamp_fallback_provenance`.
     _from_fallback: bool = field(default=False, repr=False, compare=False)
+    # Private compatibility-projection cache. This is deliberately per-op rather
+    # than global: it retains only the tiny legacy record for this operation and
+    # is invalidated when the stored typed selector object changes.
+    _target_cols_cache: AmendmentOpV1Record | None = field(default=None, init=False, repr=False, compare=False)
+    _target_cols_cache_selector: TargetSelector | None = field(default=None, init=False, repr=False, compare=False)
     if TYPE_CHECKING:
         target_kind: TargetKind
 
@@ -1148,6 +1153,8 @@ class AmendmentOp:
                 target_subitem=target_subitem,
                 target_special=target_special,
             )
+        self._target_cols_cache = None
+        self._target_cols_cache_selector = None
 
         # The final chapter, sourced from the stored selector, drives the
         # scope-confidence normalization below (the pre-W6 code read the
@@ -1300,7 +1307,13 @@ class AmendmentOp:
         ``target_paragraph``, ``target_item``, ``target_subitem``,
         ``target_special``.
         """
-        return TargetSelectorCodecV1.to_legacy(self.target_selector)
+        cached = self._target_cols_cache
+        if cached is not None and self._target_cols_cache_selector is self.target_selector:
+            return cached
+        projected = TargetSelectorCodecV1.to_legacy(self.target_selector)
+        self._target_cols_cache = projected
+        self._target_cols_cache_selector = self.target_selector
+        return projected
 
     @classmethod
     def from_lo(cls, lo: _LegalOperation, idx: int) -> List[AmendmentOp]:

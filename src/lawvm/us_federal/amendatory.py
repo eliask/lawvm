@@ -51,7 +51,7 @@ from lawvm.core.branch_authority import COMMENCED_STATUS, PENDING_CONDITION_STAT
 from lawvm.core.provenance import (
     OperationSource,
     SourceAnchor,
-    unique_byte_run_texts,
+    unique_byte_run_text_positions,
 )
 from lawvm.core.regex_safety import compile_classifier_regex
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction, TextPatchKindEnum
@@ -1500,7 +1500,16 @@ def _text_of(elem: ET.Element) -> str:
     never enacted text and are pruned at every extraction waist, not only
     inside the quoted operands.
     """
-    return _collapse_ws_strip(_itertext_excluding_sidenotes(elem))
+    cache = _US_TEXT_OF_CACHE_CTX.get()
+    if cache is None:
+        return _collapse_ws_strip(_itertext_excluding_sidenotes(elem))
+    key = id(elem)
+    cached = cache.get(key)
+    if cached is not None:
+        return cached
+    text = _collapse_ws_strip(_itertext_excluding_sidenotes(elem))
+    cache[key] = text
+    return text
 
 
 # Curly/straight quote marks the USLM wraps around an inline literal in the
@@ -1776,6 +1785,8 @@ def _is_editorial_sidenote(elem: ET.Element) -> bool:
     if _localname(elem.tag) in _EDITORIAL_PRUNE_TAGS:
         return True
     cls = elem.get("class", "")
+    if not cls or _EDITORIAL_SIDENOTE_CLASS not in cls:
+        return False
     return _EDITORIAL_SIDENOTE_CLASS in cls.split()
 
 
@@ -1787,6 +1798,8 @@ def _itertext_excluding_sidenotes(elem: ET.Element) -> str:
     element's *text* while keeping its *tail* (the tail belongs to the parent's
     text flow, not the sidenote). The statutory body text is preserved verbatim.
     """
+    if len(elem) == 0:
+        return elem.text or ""
     parts: list[str] = []
 
     def _walk(node: ET.Element, *, emit_own_text: bool) -> None:
@@ -5234,12 +5247,20 @@ _UNIT_TAGS = ("subsection", "paragraph", "subparagraph", "clause", "subclause")
 
 def _amendatory_unit_children(parent: ET.Element) -> set[ET.Element]:
     """Direct amendatory-unit children of ``parent`` (for sibling exclusion)."""
+    cache = _US_AMENDATORY_UNIT_CHILDREN_CACHE_CTX.get()
+    key = id(parent)
+    if cache is not None:
+        cached = cache.get(key)
+        if cached is not None:
+            return set(cached)
     out: set[ET.Element] = set()
     for child in parent:
         if _localname(child.tag) not in _UNIT_TAGS:
             continue
         if any(_localname(a.tag) == "amendingAction" for a in child.iter()):
             out.add(child)
+    if cache is not None:
+        cache[key] = frozenset(out)
     return out
 
 
@@ -5269,6 +5290,12 @@ def _shallow_text(
         exclude_set = {exclude}
     else:
         exclude_set = set(exclude)
+    cache = _US_SHALLOW_TEXT_CACHE_CTX.get()
+    cache_key = (id(elem), tuple(sorted(id(excluded) for excluded in exclude_set)))
+    if cache is not None:
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
 
     parts: list[str] = []
 
@@ -5294,7 +5321,10 @@ def _shallow_text(
         _walk(child)
         if child.tail:
             parts.append(child.tail)
-    return re.sub(r"\s+", " ", "".join(parts)).strip()
+    text = _collapse_ws_strip("".join(parts))
+    if cache is not None:
+        cache[cache_key] = text
+    return text
 
 
 # A unit head "Section X(...) is amended" / "Paragraph (N) of section X(...) is
@@ -5380,11 +5410,23 @@ def _iter_instruction_units(
     the sunset date for a group of sibling amendments.
     """
     unit_tags = ("subsection", "paragraph", "subparagraph", "clause", "subclause")
+    subtrees_with_amending_action: set[ET.Element] = set()
+
+    def _mark_amending_action_subtrees(node: ET.Element) -> bool:
+        # One post-order pass replaces repeated elem.iter() descendant scans in
+        # unit detection and leaf-unit selection.
+        has_action = _localname(node.tag) == "amendingAction"
+        for child in node:
+            if _mark_amending_action_subtrees(child):
+                has_action = True
+        if has_action:
+            subtrees_with_amending_action.add(node)
+        return has_action
+
+    _mark_amending_action_subtrees(section)
 
     def _is_unit(elem: ET.Element) -> bool:
-        return _localname(elem.tag) in unit_tags and any(_localname(a.tag) == "amendingAction" for a in elem.iter())
-
-    nested = [elem for elem in section.iter() if _is_unit(elem)]
+        return _localname(elem.tag) in unit_tags and elem in subtrees_with_amending_action
 
     # Map each unit to its nearest amendatory-unit ancestor (within the section),
     # so we can thread the parent instruction's resolved target into leaf units.
@@ -5393,11 +5435,13 @@ def _iter_instruction_units(
     # position independently of amendatory-unit nesting.
     xml_parent_of: dict[ET.Element, ET.Element | None] = {section: None}
     stack: list[ET.Element] = []
+    nested: list[ET.Element] = []
 
     def _descend(node: ET.Element) -> None:
         pushed = False
         if node is not section and _is_unit(node):
             parent_of[node] = stack[-1] if stack else None
+            nested.append(node)
             stack.append(node)
             pushed = True
         for child in node:
@@ -5408,16 +5452,8 @@ def _iter_instruction_units(
 
     _descend(section)
 
-    leaf_units = []
-    for elem in nested:
-        has_deeper = any(
-            child is not elem
-            and _localname(child.tag) in unit_tags
-            and any(_localname(a.tag) == "amendingAction" for a in child.iter())
-            for child in elem.iter()
-        )
-        if not has_deeper:
-            leaf_units.append(elem)
+    parent_units = {parent for parent in parent_of.values() if parent is not None}
+    leaf_units = [elem for elem in nested if elem not in parent_units]
 
     section_chapeau = _shallow_text(
         section, exclude=_amendatory_unit_children(section)
@@ -5637,6 +5673,15 @@ def _iter_instruction_units(
 _US_RAW_SOURCE_CTX: "contextvars.ContextVar[tuple[str, bytes] | None]" = (
     contextvars.ContextVar("us_raw_source_ctx", default=None)
 )
+_US_TEXT_OF_CACHE_CTX: "contextvars.ContextVar[dict[int, str] | None]" = (
+    contextvars.ContextVar("lawvm_text_of_cache_ctx", default=None)
+)
+_US_SHALLOW_TEXT_CACHE_CTX: "contextvars.ContextVar[dict[tuple[int, tuple[int, ...]], str] | None]" = (
+    contextvars.ContextVar("lawvm_shallow_text_cache_ctx", default=None)
+)
+_US_AMENDATORY_UNIT_CHILDREN_CACHE_CTX: "contextvars.ContextVar[dict[int, frozenset[ET.Element]] | None]" = (
+    contextvars.ContextVar("lawvm_amendatory_unit_children_cache_ctx", default=None)
+)
 _US_SOURCE_ANCHOR_BODY_TAGS: frozenset[str] = frozenset(
     {
         "chapeau",
@@ -5678,6 +5723,7 @@ def _unique_byte_run_body_records(
     *,
     source_artifact_id: str,
     candidate_clauses: Iterable[str] | None = None,
+    root: ET.Element | None = None,
 ) -> list[_UniqueByteRunBody]:
     """Return every element body with its verified unique byte-span anchor.
 
@@ -5713,16 +5759,19 @@ def _unique_byte_run_body_records(
             if clause and "\x00" not in clause
         }
         candidate_blob = "\x00".join(unique_clauses)
-    try:
-        tree = ET.fromstring(raw_bytes)
-    except ET.ParseError:
-        return bodies
+    if root is None:
+        try:
+            root = ET.fromstring(raw_bytes)
+        except ET.ParseError:
+            return bodies
     # Collect the deduplicated, document-order flattened element bodies, then let
     # the shared indexed kernel decide global byte-run uniqueness (replaces the
-    # per-candidate two-``find`` O(N^2) scan — AGENTS.md §2.7). Byte-identical to
-    # the old loop: same dedup, same predicate, same LONGEST-first stable sort.
+    # per-candidate two-``find`` O(N^2) scan — AGENTS.md §2.7). Clause membership is
+    # a negative prefilter only: _anchor_op can select a body only if it is a
+    # substring of an emitted op clause. Global uniqueness is still proven against
+    # the full raw bytes for every retained candidate.
     candidates: List[str] = []
-    for node in tree.iter():
+    for node in root.iter():
         if not isinstance(node.tag, str) or _localname(node.tag) not in _US_SOURCE_ANCHOR_BODY_TAGS:
             continue
         text = _text_of(node)
@@ -5733,11 +5782,8 @@ def _unique_byte_run_body_records(
         if candidate_clauses is not None and text not in candidate_blob:
             continue
         candidates.append(text)
-    for text in unique_byte_run_texts(raw_bytes, candidates):
+    for text, first in unique_byte_run_text_positions(raw_bytes, candidates):
         needle = text.encode("utf-8")
-        first = raw_bytes.find(needle)
-        if first < 0:
-            continue
         bodies.append(
             _UniqueByteRunBody(
                 text=text,
@@ -5807,6 +5853,30 @@ def _anchor_op(
     return _dc_replace(op, source=_dc_replace(src, source_anchor=body.source_anchor))
 
 
+def _anchor_for_clause(
+    clause: str,
+    bodies: list[_UniqueByteRunBody],
+) -> SourceAnchor | None:
+    body = next((b for b in bodies if b.text and b.text in clause), None)
+    return body.source_anchor if body is not None else None
+
+
+def _anchor_op_with_clause_cache(
+    op: LegalOperation,
+    anchors_by_clause: dict[str, SourceAnchor | None],
+) -> LegalOperation:
+    src = op.source
+    if src is None or src.source_anchor is not None:
+        return op
+    clause = src.raw_text or op.raw_text or ""
+    if not clause:
+        return op
+    anchor = anchors_by_clause.get(clause)
+    if anchor is None:
+        return op
+    return _dc_replace(op, source=_dc_replace(src, source_anchor=anchor))
+
+
 def _anchor_clause_texts(ops: Iterable[LegalOperation]) -> tuple[str, ...]:
     clauses: list[str] = []
     for op in ops:
@@ -5844,6 +5914,8 @@ def mint_us_source_anchors(ops: List[LegalOperation]) -> List[LegalOperation]:
 
 def _anchor_instructions(
     instructions: list[USAmendmentInstruction],
+    *,
+    root: ET.Element | None = None,
 ) -> list[USAmendmentInstruction]:
     """Rewrite each instruction's ops with per-element byte-span anchors (post-pass).
 
@@ -5864,20 +5936,28 @@ def _anchor_instructions(
         for op in ((instr.operation,) + instr.extra_operations)
         if op is not None
     ]
+    if not ops_for_prefilter:
+        return instructions
+    anchor_clauses = _anchor_clause_texts(ops_for_prefilter)
     bodies = _unique_byte_run_body_records(
         raw_bytes,
         source_artifact_id=artifact_id,
-        candidate_clauses=_anchor_clause_texts(ops_for_prefilter),
+        candidate_clauses=anchor_clauses,
+        root=root,
     )
+    anchors_by_clause = {
+        clause: _anchor_for_clause(clause, bodies)
+        for clause in set(anchor_clauses)
+    }
     rewritten: list[USAmendmentInstruction] = []
     for instr in instructions:
         primary = (
-            _anchor_op(instr.operation, bodies)
+            _anchor_op_with_clause_cache(instr.operation, anchors_by_clause)
             if instr.operation is not None
             else None
         )
         extra = tuple(
-            _anchor_op(op, bodies)
+            _anchor_op_with_clause_cache(op, anchors_by_clause)
             for op in instr.extra_operations
         )
         if primary is instr.operation and extra == instr.extra_operations:
@@ -5910,6 +5990,9 @@ def lower_plaw_amendatory(
     # the context never leaks across Public Laws or to other frontends. Additive
     # provenance metadata only — grounding-neutral (replay output byte-identical).
     _raw_source_token = set_us_raw_source_context(statute_id, data)
+    _text_cache_token = _US_TEXT_OF_CACHE_CTX.set({})
+    _shallow_text_cache_token = _US_SHALLOW_TEXT_CACHE_CTX.set({})
+    _unit_children_cache_token = _US_AMENDATORY_UNIT_CHILDREN_CACHE_CTX.set({})
     try:
         return _lower_plaw_amendatory_body(
             root,
@@ -5919,6 +6002,9 @@ def lower_plaw_amendatory(
             classification_index=classification_index,
         )
     finally:
+        _US_AMENDATORY_UNIT_CHILDREN_CACHE_CTX.reset(_unit_children_cache_token)
+        _US_SHALLOW_TEXT_CACHE_CTX.reset(_shallow_text_cache_token)
+        _US_TEXT_OF_CACHE_CTX.reset(_text_cache_token)
         reset_us_raw_source_context(_raw_source_token)
 
 
@@ -6090,7 +6176,7 @@ def _lower_plaw_amendatory_body(
     # the raw artifact is still published in context. Additive provenance metadata
     # only (``source.source_anchor``); the materialized text and AGREE/RESIDUAL rows
     # the US dry-run produces are byte-identical.
-    instructions = _anchor_instructions(instructions)
+    instructions = _anchor_instructions(instructions, root=root)
     return USAmendatoryReport(
         statute_id=statute_id,
         enacted=enacted,

@@ -92,8 +92,28 @@ class _TimelineLatestTargetOpIndex:
 
 
 @dataclass(frozen=True, slots=True)
+class _TimelineTargetOpsByPathIndex:
+    ops_by_path: dict[Path, list[tuple[int, _LegalOperation]]]
+    result_cache: dict[tuple[Path, int, str], bool]
+    indexed_len: int
+
+
+@dataclass(frozen=True, slots=True)
 class _TimelinePayloadTargetIndex:
     earliest_effective_by_path: dict[Path, str]
+    indexed_len: int
+
+
+@dataclass(frozen=True, slots=True)
+class _ParagraphLabelEvent:
+    effective: str
+    action: StructuralAction
+    label: str
+
+
+@dataclass(frozen=True, slots=True)
+class _PriorParagraphLabelIndex:
+    events_by_parent_path: dict[Path, list[_ParagraphLabelEvent]]
     indexed_len: int
 
 
@@ -334,6 +354,7 @@ def _section_node_from_base_ir(
     base_ir: IRNode | None,
     section_path: Path,
     section_node_cache: dict[Path, IRNode | None] | None = None,
+    base_provision_index: LabelIndex | None = None,
 ) -> IRNode | None:
     if base_ir is None:
         return None
@@ -358,6 +379,7 @@ def _section_node_from_base_ir(
         section_label,
         scope_kind="chapter" if chapter_label else None,
         scope_label=chapter_label,
+        label_index=base_provision_index,
     )
     if resolved is None:
         if section_node_cache is not None:
@@ -378,6 +400,7 @@ def _subsection_node_from_base_ir(
     subsection_path: Path,
     subsection_node_cache: dict[Path, IRNode | None] | None = None,
     section_node_cache: dict[Path, IRNode | None] | None = None,
+    base_provision_index: LabelIndex | None = None,
 ) -> IRNode | None:
     if base_ir is None or not subsection_path or subsection_path[-1][0] != "subsection":
         return None
@@ -386,7 +409,12 @@ def _subsection_node_from_base_ir(
         return subsection_node_cache[normalized_path]
     subsection_label = subsection_path[-1][1]
     section_path = tuple(part for part in subsection_path[:-1] if part[0] != "subsection")
-    section_node = _section_node_from_base_ir(base_ir, section_path, section_node_cache)
+    section_node = _section_node_from_base_ir(
+        base_ir,
+        section_path,
+        section_node_cache,
+        base_provision_index,
+    )
     if section_node is None:
         if subsection_node_cache is not None:
             subsection_node_cache[normalized_path] = None
@@ -411,6 +439,7 @@ def _prior_paragraph_labels_for_subsection_paths(
     before_effective: str,
     subsection_node_cache: dict[Path, IRNode | None] | None = None,
     section_node_cache: dict[Path, IRNode | None] | None = None,
+    base_provision_index: LabelIndex | None = None,
 ) -> dict[Path, set[str]]:
     labels_by_path: dict[Path, set[str]] = {tuple(path): set() for path in child_paths}
     if not labels_by_path:
@@ -422,6 +451,7 @@ def _prior_paragraph_labels_for_subsection_paths(
             child_path,
             subsection_node_cache,
             section_node_cache,
+            base_provision_index,
         )
         if base_child is None:
             continue
@@ -430,6 +460,36 @@ def _prior_paragraph_labels_for_subsection_paths(
             for grandchild in base_child.children
             if grandchild.kind is IRNodeKind.PARAGRAPH and grandchild.label
         )
+
+    if isinstance(replay_history_ops, ReplayLegalOperationCaptureList):
+        cur_len = len(replay_history_ops)
+        index = cast(_PriorParagraphLabelIndex | None, replay_history_ops.prior_paragraph_label_index)
+        if index is None or index.indexed_len > cur_len:
+            events_by_parent_path: dict[Path, list[_ParagraphLabelEvent]] = {}
+            start = 0
+        else:
+            events_by_parent_path = index.events_by_parent_path
+            start = index.indexed_len
+        if start < cur_len:
+            _add_prior_paragraph_label_events_to_index(
+                events_by_parent_path,
+                replay_history_ops,
+                start=start,
+                stop=cur_len,
+            )
+            replay_history_ops.prior_paragraph_label_index = _PriorParagraphLabelIndex(
+                events_by_parent_path=events_by_parent_path,
+                indexed_len=cur_len,
+            )
+        for child_path, labels in labels_by_path.items():
+            for event in events_by_parent_path.get(child_path, ()):
+                if before_effective and event.effective and event.effective > before_effective:
+                    continue
+                if event.action is StructuralAction.REPEAL:
+                    labels.discard(event.label)
+                else:
+                    labels.add(event.label)
+        return labels_by_path
 
     for prior in replay_history_ops:
         if prior.target.special is not None or not prior.target.path:
@@ -462,6 +522,47 @@ def _prior_paragraph_labels_for_subsection_paths(
         else:
             labels.add(paragraph_label)
     return labels_by_path
+
+
+def _add_prior_paragraph_label_events_to_index(
+    events_by_parent_path: dict[Path, list[_ParagraphLabelEvent]],
+    replay_history_ops: List[_LegalOperation],
+    *,
+    start: int,
+    stop: int,
+) -> None:
+    for i in range(start, stop):
+        prior = replay_history_ops[i]
+        if prior.target.special is not None or not prior.target.path:
+            continue
+        prior_effective = ""
+        if prior.source is not None:
+            prior_effective = prior.source.effective or prior.source.enacted or ""
+        prior_path = tuple(prior.target.path)
+        if prior_path[-1][0] == "paragraph":
+            paragraph_label = _normalize_snapshot_item_label(prior_path[-1][1])
+            if not paragraph_label:
+                continue
+            events_by_parent_path.setdefault(prior_path[:-1], []).append(
+                _ParagraphLabelEvent(
+                    effective=prior_effective,
+                    action=prior.action,
+                    label=paragraph_label,
+                )
+            )
+            continue
+        if prior.payload is not None and prior.payload.kind is IRNodeKind.SUBSECTION:
+            parent_events = events_by_parent_path.setdefault(prior_path, [])
+            parent_events.extend(
+                _ParagraphLabelEvent(
+                    effective=prior_effective,
+                    action=StructuralAction.REPLACE,
+                    label=_normalize_snapshot_item_label(grandchild.label),
+                )
+                for grandchild in prior.payload.children
+                if grandchild.kind is IRNodeKind.PARAGRAPH and grandchild.label
+            )
+            continue
 
 
 @lru_cache(maxsize=8192)
@@ -1370,7 +1471,12 @@ def _emit_section_snapshot(
         if scoped_path is not None:
             return False
         if base_ir is not None:
-            base_chapter_path = _tops.find(base_ir, "chapter", target_chapter)
+            base_chapter_path = _tops.find(
+                base_ir,
+                "chapter",
+                target_chapter,
+                label_index=base_provision_index,
+            )
             if base_chapter_path is not None:
                 return False
         chapter_path = state.find("chapter", target_chapter)
@@ -1908,6 +2014,7 @@ def _emit_section_snapshot(
                             child_path,
                             base_subsection_node_cache,
                             base_section_node_cache,
+                            base_provision_index,
                         )
                         if base_child_payload is not None:
                             new_children.append(base_child_payload)
@@ -2133,6 +2240,7 @@ def _emit_section_snapshot(
                     child_path,
                     base_subsection_node_cache,
                     base_section_node_cache,
+                    base_provision_index,
                 )
                 if base_child_payload is not None:
                     new_children.append(base_child_payload)
@@ -2974,6 +3082,7 @@ def _emit_section_snapshot(
                 base_ir,
                 section_path,
                 base_section_node_cache,
+                base_provision_index,
             )
         if base_section is None or base_section.kind is not IRNodeKind.SECTION:
             return None
@@ -3221,7 +3330,13 @@ def _emit_section_snapshot(
         return _search(tree, ())
 
     def _lookup_container_path_in_tree(tree: IRNode, kind_name: str) -> Optional[Path]:
-        label_index = base_provision_index if tree is base_ir else None
+        label_index = (
+            base_provision_index
+            if tree is base_ir
+            else state.provision_index
+            if tree is state.ir
+            else None
+        )
         for label in _candidate_lookup_labels():
             raw_path = _tops.find(tree, kind_name, label, label_index=label_index)
             if raw_path:
@@ -4083,23 +4198,6 @@ def _emit_section_snapshot(
     ) -> IRNode | None:
         if resolved_path is None or section_payload.kind is not IRNodeKind.SECTION:
             return None
-        section_path = tuple(resolved_path)
-        latest = _latest_section_snapshot_payload(
-            section_path=section_path,
-            replay_history_ops=lo_ops_out,
-        )
-        source_section = (
-            latest.payload
-            if latest is not None and latest.payload is not None and latest.payload.kind is IRNodeKind.SECTION
-            else _section_node_from_base_ir(base_ir, section_path, base_section_node_cache)
-        )
-        if source_section is None or source_section.kind is not IRNodeKind.SECTION:
-            return None
-        source_by_label = {
-            _norm_num_token(child.label): child
-            for child in source_section.children
-            if child.kind is IRNodeKind.SUBSECTION and child.label
-        }
         renumber_pairs: dict[str, str] = {}
         for rop in group_rops:
             if not rop.is_renumber_action or not rop.targets_subsection_only():
@@ -4113,6 +4211,28 @@ def _emit_section_snapshot(
                 renumber_pairs[destination_label] = source_label
         if not renumber_pairs:
             return None
+        section_path = tuple(resolved_path)
+        latest = _latest_section_snapshot_payload(
+            section_path=section_path,
+            replay_history_ops=lo_ops_out,
+        )
+        source_section = (
+            latest.payload
+            if latest is not None and latest.payload is not None and latest.payload.kind is IRNodeKind.SECTION
+            else _section_node_from_base_ir(
+                base_ir,
+                section_path,
+                base_section_node_cache,
+                base_provision_index,
+            )
+        )
+        if source_section is None or source_section.kind is not IRNodeKind.SECTION:
+            return None
+        source_by_label = {
+            _norm_num_token(child.label): child
+            for child in source_section.children
+            if child.kind is IRNodeKind.SUBSECTION and child.label
+        }
         children: list[IRNode] = []
         changed = False
         for child in section_payload.children:
@@ -4471,21 +4591,61 @@ def _emit_section_snapshot(
                 for child in payload.children
                 if child.kind is IRNodeKind.SUBSECTION
                 and child.label
-                and _snapshot_payload_is_complete_owner(child)
             },
             replay_history_ops=lo_ops_out,
             base_ir=base_ir,
             before_effective=op_source.effective,
             subsection_node_cache=base_subsection_node_cache,
             section_node_cache=base_section_node_cache,
+            base_provision_index=base_provision_index,
         )
 
         def _latest_prior_exact_target_is_repeal_placeholder(child_path: Path) -> bool:
+            normalized_child_path = tuple(child_path)
+            candidates: list[tuple[int, _LegalOperation]] | None = None
+            cache: dict[tuple[Path, int, str], bool] | None = None
+            if isinstance(lo_ops_out, ReplayLegalOperationCaptureList):
+                cur_len = len(lo_ops_out)
+                index = cast(
+                    _TimelineTargetOpsByPathIndex | None,
+                    lo_ops_out.timeline_latest_repeal_placeholder_index,
+                )
+                if index is None or index.indexed_len > cur_len:
+                    ops_by_path: dict[Path, list[tuple[int, _LegalOperation]]] = {}
+                    result_cache: dict[tuple[Path, int, str], bool] = {}
+                    start = 0
+                else:
+                    ops_by_path = index.ops_by_path
+                    result_cache = index.result_cache
+                    start = index.indexed_len
+                if start < cur_len:
+                    for prior_index in range(start, cur_len):
+                        prior = lo_ops_out[prior_index]
+                        if prior.target.special is not None:
+                            continue
+                        ops_by_path.setdefault(prior.target.path, []).append((prior_index, prior))
+                    lo_ops_out.timeline_latest_repeal_placeholder_index = _TimelineTargetOpsByPathIndex(
+                        ops_by_path=ops_by_path,
+                        result_cache=result_cache,
+                        indexed_len=cur_len,
+                    )
+                candidates = ops_by_path.get(normalized_child_path, [])
+                cache = result_cache
+                cache_key = (normalized_child_path, len(lo_ops_out), op_source.effective)
+                cached = cache.get(cache_key)
+                if cached is not None:
+                    return cached
+            else:
+                cache_key = ((), 0, "")
             latest_key: tuple[str, str, int] | None = None
             latest_is_placeholder = False
-            for index, prior in enumerate(lo_ops_out):
-                if prior.target.special is not None or prior.target.path != child_path:
-                    continue
+            if candidates is None:
+                candidates = [
+                    (index, prior)
+                    for index, prior in enumerate(lo_ops_out)
+                    if prior.target.special is None and prior.target.path == normalized_child_path
+                ]
+            for index, prior in candidates:
                 prior_source = prior.source
                 prior_effective = ""
                 prior_enacted = ""
@@ -4503,6 +4663,8 @@ def _emit_section_snapshot(
                     prior.action is StructuralAction.REPEAL
                     or payload_attrs.get("lawvm_repeal_placeholder") == "1"
                 )
+            if cache is not None:
+                cache[cache_key] = latest_is_placeholder
             return latest_is_placeholder
 
         def _scoped_item_payloads_for_subsection(child_norm_label: str) -> dict[str, IRNode]:
@@ -4612,6 +4774,7 @@ def _emit_section_snapshot(
                 or child
             )
             child_payload = _bind_scoped_item_payloads(child_payload, child_norm_label)
+            child_payload_is_native_complete_owner = _snapshot_payload_is_complete_owner(child_payload)
             child_payload = _inherit_parent_snapshot_ownership_attrs(child_payload, payload)
             child_source = op_source
             prior_paragraph_labels: set[str] = set()
@@ -4700,8 +4863,11 @@ def _emit_section_snapshot(
                                 group_id=f"finland-johto:{amendment_id or 'unknown'}",
                             )
                         )
+                    repealable_prior_paragraph_labels = (
+                        prior_paragraph_labels if child_payload_is_native_complete_owner else set()
+                    )
                     for paragraph_label in sorted(
-                        prior_paragraph_labels - payload_paragraph_labels,
+                        repealable_prior_paragraph_labels - payload_paragraph_labels,
                         key=default_label_sort_key,
                     ):
                         lo_ops_out.append(

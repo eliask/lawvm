@@ -20,6 +20,8 @@ Pipeline stages executed here:
 
 from __future__ import annotations
 
+from collections import OrderedDict
+from functools import lru_cache
 import logging
 import re
 from lawvm.core.regex_safety import compile_classifier_regex
@@ -697,8 +699,12 @@ def _restore_heading_facet_for_mixed_scope_section_replaces(
     return ops, []
 
 
-_cited_scope_cache: dict[tuple[str, str, int], dict[str, tuple[str | None, str | None]]] = {}
-_cited_effective_date_cache: dict[str, str | None] = {}
+_CITED_SCOPE_CACHE_MAX = 4096
+_CITED_EFFECTIVE_DATE_CACHE_MAX = 4096
+_CitedScopeCacheKey = tuple[str, str, int]
+_CitedScopeMap = dict[str, tuple[str | None, str | None]]
+_cited_scope_cache: OrderedDict[_CitedScopeCacheKey, _CitedScopeMap] = OrderedDict()
+_cited_effective_date_cache: OrderedDict[str, str | None] = OrderedDict()
 _REINSTATEMENT_SECTION_LIST_FRAGMENT = (
     r"\d{1,4}(?:\s*[a-zäöå])?"
     r"(?:\s*(?:,|ja|sekä)\s*\d{1,4}(?:\s*[a-zäöå])?){0,60}"
@@ -757,6 +763,21 @@ def _reinstatement_match_has_local_chapter_insert_scope(
     return _LOCAL_CHAPTER_INSERT_SCOPE_BEFORE_REINSTATEMENT_RE.search(prefix) is not None
 
 
+@lru_cache(maxsize=512)
+def _cached_cited_parse_result(
+    cited_id: str,
+    parse_statute_id: str,
+    normalized_johto: str,
+) -> "ClauseParseResult":
+    """Return a bounded parse result for cited-statute scope compilation.
+
+    The replay-dependent scope lift still recompiles ops against the current
+    master tree; this cache only avoids re-tokenizing/re-parsing the same cited
+    johtolause text with the same diagnostic statute id.
+    """
+    return parse_johtolause_clause(normalized_johto, statute_id=parse_statute_id)
+
+
 def _compiled_cited_section_scopes(
     *,
     cited_id: str,
@@ -767,18 +788,25 @@ def _compiled_cited_section_scopes(
     if not cited_id or cited_id == amendment_id:
         return {}
     cache_key = (parent_id, cited_id, id(master.ir))
-    if cache_key in _cited_scope_cache:
-        return _cited_scope_cache[cache_key]
+    cached = _cited_scope_cache.get(cache_key)
+    if cached is not None:
+        _cited_scope_cache.move_to_end(cache_key)
+        return cached
 
     cs = get_corpus()
     xml_bytes = cs.read_source(cited_id)
     if xml_bytes is None:
-        _cited_scope_cache[cache_key] = {}
+        _store_cited_scope_cache(cache_key, {})
         return {}
 
     cited_tree = etree.fromstring(xml_bytes)
     cited_title = _tree_title(cited_tree)
-    cited_johto = get_johtolause(xml_bytes)
+    cited_johto = _normalize_fi_parse_text(get_johtolause(xml_bytes))
+    cited_parse_result = _cached_cited_parse_result(
+        cited_id,
+        parent_id or cited_id,
+        cited_johto,
+    )
     cited_phase = normalize_and_compile_ops(
         johto=cited_johto,
         muutos_tree=cited_tree,
@@ -789,6 +817,7 @@ def _compiled_cited_section_scopes(
         used_preamble_body_fallback=False,
         parent_id=parent_id,
         strict_profile=None,
+        parse_result=cited_parse_result,
     )
     section_scopes: dict[str, tuple[str | None, str | None]] = {}
     for cited_op in cited_phase.output:
@@ -800,8 +829,20 @@ def _compiled_cited_section_scopes(
             _norm_num_token(cited_op.target_cols.target_section),
             (cited_op.target_cols.target_part, cited_op.target_cols.target_chapter),
         )
-    _cited_scope_cache[cache_key] = section_scopes
+    _store_cited_scope_cache(cache_key, section_scopes)
     return section_scopes
+
+
+def _store_cited_scope_cache(
+    cache_key: _CitedScopeCacheKey,
+    section_scopes: _CitedScopeMap,
+) -> None:
+    """Store one cited-scope map without unbounded process-lifetime growth."""
+
+    _cited_scope_cache[cache_key] = section_scopes
+    _cited_scope_cache.move_to_end(cache_key)
+    while len(_cited_scope_cache) > _CITED_SCOPE_CACHE_MAX:
+        _cited_scope_cache.popitem(last=False)
 
 
 def _cited_repealed_section_scope_for_replacement(
@@ -940,22 +981,23 @@ def _retime_ops_from_cited_version_effective_dates(
         if not cited_id:
             continue
         # Cache: avoid re-parsing cited amendment XML for effective dates
-        if cited_id in _cited_effective_date_cache:
-            cached_date = _cited_effective_date_cache[cited_id]
+        cached_date = _cited_effective_date_cache.get(cited_id, "")
+        if cached_date != "":
+            _cited_effective_date_cache.move_to_end(cited_id)
             if cached_date is not None:
                 cited_effective_dates[cited_id] = cached_date
             continue
         xml_bytes = cs.read_source(cited_id)
         if xml_bytes is None:
-            _cited_effective_date_cache[cited_id] = None
+            _store_cited_effective_date_cache(cited_id, None)
             continue
         cited_tree = etree.fromstring(xml_bytes)
         cited_effective = _amendment_effective_date(cited_tree)
         if cited_effective is not None:
             cited_effective_dates[cited_id] = cited_effective.isoformat()
-            _cited_effective_date_cache[cited_id] = cited_effective.isoformat()
+            _store_cited_effective_date_cache(cited_id, cited_effective.isoformat())
         else:
-            _cited_effective_date_cache[cited_id] = None
+            _store_cited_effective_date_cache(cited_id, None)
 
     if not cited_effective_dates:
         return ops
@@ -986,6 +1028,15 @@ def _retime_ops_from_cited_version_effective_dates(
             )
         )
     return patched
+
+
+def _store_cited_effective_date_cache(cited_id: str, effective_date: str | None) -> None:
+    """Store one cited effective date without unbounded run-level growth."""
+
+    _cited_effective_date_cache[cited_id] = effective_date
+    _cited_effective_date_cache.move_to_end(cited_id)
+    while len(_cited_effective_date_cache) > _CITED_EFFECTIVE_DATE_CACHE_MAX:
+        _cited_effective_date_cache.popitem(last=False)
 
 
 def _body_chapter_scope_for_section_op(
@@ -3449,6 +3500,13 @@ def _explicit_payload_fixed_term_expiry_date(
     """
     if op.target_cols.target_unit_kind != "section" or not op.target_cols.target_section:
         return None
+    if source_model is not None:
+        has_validity_literal = source_model.unique_section_source_text_contains(
+            op.target_cols.target_section,
+            "voimassa",
+        )
+        if has_validity_literal is False:
+            return None
     text = _body_text_for_temporary_op(
         op,
         muutos_tree=muutos_tree,

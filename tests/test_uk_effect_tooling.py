@@ -10,6 +10,10 @@ from lxml import etree as ET
 
 import pytest
 
+from lawvm.core.candidate_set_coverage import (
+    CANDIDATE_SET_COMPLETE,
+    CandidateSetCoverage,
+)
 from lawvm.core.ir import IRStatute, LegalAddress, LegalOperation, TextPatchSpec, TextSelector
 from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import (
@@ -18,10 +22,17 @@ from lawvm.core.semantic_types import (
     StructuralAction,
     TextPatchKindEnum,
 )
+from lawvm.core.target_resolution import (
+    SCOPE_CONFIDENCE_EXPLICIT_SOURCE,
+    TARGET_RESOLVED,
+    TargetResolutionCandidate,
+    TargetResolutionCoverage,
+)
 from lawvm.tools import uk_effects
 from lawvm.tools import uk_effect
 from lawvm.tools import uk_replay
 from lawvm.tools import uk_semantic_claims
+from lawvm.uk_legislation import frontier_work_items
 from lawvm.tools.uk_effect import (
     _collect_target_shape,
     _fmt_target,
@@ -790,7 +801,118 @@ def test_uk_frontier_work_item_defaults_cover_grounding_corpus_families(
     ] is True
 
 
-def test_uk_frontier_work_item_preserves_execution_authorization_packet() -> None:
+def test_uk_frontier_candidate_set_coverage_matches_shared_projection() -> None:
+    work_item = uk_frontier_work_item_from_manual_frontier_row(
+        {
+            "statute_id": "ukpga/2000/1",
+            "effect_id": "eff-candidate-set",
+            "manual_compile_rule_id": "uk_manual_frontier_heading_facet_candidate",
+            "manual_compile_status": "manual_compile_candidate",
+            "authorization_status": "manual_claim_required",
+            "owner_phase": "typed_elaboration",
+            "safe_default": "classify_without_replay",
+            "required_proofs": ["mutation_boundary_proof"],
+            "forbidden_shortcuts": ["agreement_as_execution_authorization"],
+            "replay_authorized": False,
+            "executable": False,
+            "source": {"text_preview": "source preview"},
+            "affected_provisions": "s. 1",
+        }
+    )
+    expected = CandidateSetCoverage(
+        scope_id="uk-frontier-work-item:uk-frontier-ukpga/2000/1-eff-candidate-set",
+        candidate_set_kind="uk_frontier_work_item_candidate_targets",
+        phase="typed_elaboration",
+        rule_id="uk_frontier_work_item_candidate_target_set_projection",
+        reason=(
+            "candidate target surfaces are bounded by the manual-frontier work "
+            "item target witness and do not authorize replay"
+        ),
+        completeness_status=CANDIDATE_SET_COMPLETE,
+        candidate_count=1,
+        candidate_ids=("s. 1",),
+        next_promotion_allowed=False,
+        next_promotion_requires=(
+            "target_candidate_set_completeness",
+            "execution_authorization",
+            "mutation_boundary_proof",
+        ),
+        detail={
+            "frontier_family_for_projection": "uk_manual_frontier_heading_facet_candidate",
+            "target_witness_surface": "effect_feed_affected_provisions",
+            "target_witness_has_resolver_eids": False,
+        },
+    ).to_dict()
+
+    assert work_item.to_dict()["detail"]["candidate_set_coverage"] == expected
+
+
+def test_uk_frontier_target_resolution_coverage_matches_shared_projection() -> None:
+    work_item = uk_frontier_work_item_from_manual_frontier_row(
+        {
+            "statute_id": "ukpga/2000/1",
+            "effect_id": "eff-target-resolution",
+            "manual_compile_rule_id": "uk_manual_frontier_heading_facet_candidate",
+            "manual_compile_status": "manual_compile_candidate",
+            "authorization_status": "manual_claim_required",
+            "owner_phase": "typed_elaboration",
+            "safe_default": "classify_without_replay",
+            "required_proofs": ["mutation_boundary_proof"],
+            "forbidden_shortcuts": ["agreement_as_execution_authorization"],
+            "replay_authorized": False,
+            "executable": False,
+            "source": {"text_preview": "source preview"},
+            "affected_provisions": "s. 1",
+        }
+    )
+    expected = TargetResolutionCoverage(
+        rule_id="uk_frontier_work_item_target_resolution_projection",
+        phase="typed_elaboration",
+        reason=(
+            "manual-frontier target witness is projected for validation and "
+            "does not authorize replay"
+        ),
+        resolution_status=TARGET_RESOLVED,
+        source_target="s. 1",
+        candidate_count=1,
+        candidates=(
+            TargetResolutionCandidate(
+                target="s. 1",
+                reason="manual_frontier_candidate_target",
+                detail={
+                    "target_witness_surface": "effect_feed_affected_provisions",
+                    "target_resolution_not_replay_authorization": True,
+                },
+            ),
+        ),
+        selected_target="s. 1",
+        scope_confidence=SCOPE_CONFIDENCE_EXPLICIT_SOURCE,
+        blocking=False,
+        strict_disposition="record",
+        detail={
+            "target_witness_surface": "effect_feed_affected_provisions",
+            "affected_provisions": "s. 1",
+            "resolver_eids": (),
+            "target_resolution_not_replay_authorization": True,
+        },
+    ).to_diagnostic_detail()
+    expected = json.loads(json.dumps(expected))
+
+    assert work_item.to_dict()["detail"]["target_resolution_coverage"] == expected
+
+
+def test_uk_frontier_work_item_preserves_execution_authorization_packet(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_default_packet(_row: object) -> object:
+        raise AssertionError("complete execution_authorization packet should be reused")
+
+    monkeypatch.setattr(
+        frontier_work_items,
+        "_default_execution_authorization_packet",
+        fail_default_packet,
+    )
+
     work_item = uk_frontier_work_item_from_manual_frontier_row(
         {
             "statute_id": "ukpga/2000/1",

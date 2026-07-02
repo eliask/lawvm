@@ -24,6 +24,7 @@ from __future__ import annotations
 import re
 from collections import Counter
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Any, Iterable
 
 from lawvm.us_federal.source_tree import UscSection, UscSourceDocument
@@ -195,22 +196,42 @@ def parse_source_credit_witnesses(
     yield a clean ``congress–number`` is recorded in ``unparsed`` (typed finding)
     rather than guessed.
     """
+    witnesses, unparsed_rows = _parse_source_credit_witnesses_cached(credit, section)
+    return witnesses, [
+        {
+            "rule_id": rule_id,
+            "section": row_section,
+            "reason": reason,
+            "segment": segment,
+        }
+        for rule_id, row_section, reason, segment in unparsed_rows
+    ]
+
+
+@lru_cache(maxsize=65536)
+def _parse_source_credit_witnesses_cached(
+    credit: str,
+    section: str,
+) -> tuple[
+    tuple[UscPublicLawWitness, ...],
+    tuple[tuple[str, str, str, str], ...],
+]:
     witnesses: list[UscPublicLawWitness] = []
-    unparsed: list[dict[str, str]] = []
+    unparsed: list[tuple[str, str, str, str]] = []
 
     if not credit.strip():
-        return (), unparsed
+        return (), ()
 
     for segment in _split_credit_segments(credit):
         head = _PUBLIC_LAW_HEAD_RE.search(segment)
         if head is None:
             unparsed.append(
-                {
-                    "rule_id": "us_usc_source_credit_unparsed_public_law",
-                    "section": section,
-                    "reason": "Pub. L. segment lacks a clean congress-number head",
-                    "segment": segment[:120],
-                }
+                (
+                    "us_usc_source_credit_unparsed_public_law",
+                    section,
+                    "Pub. L. segment lacks a clean congress-number head",
+                    segment[:120],
+                )
             )
             continue
 
@@ -240,7 +261,7 @@ def parse_source_credit_witnesses(
             )
         )
 
-    return tuple(witnesses), unparsed
+    return tuple(witnesses), tuple(unparsed)
 
 
 def _extract_pinpoints(tail: str) -> tuple[str, ...]:

@@ -14,7 +14,12 @@ from __future__ import annotations
 
 import random
 
-from lawvm.core.evidence_support import best_section_similarity, section_similarity
+from lawvm.core.evidence_support import (
+    best_section_similarity,
+    best_section_similarity_cleaned,
+    clean_similarity_text,
+    section_similarity,
+)
 
 
 def _naive_best(replay_texts: list[str], oracle_texts: list[str]) -> float:
@@ -48,6 +53,16 @@ def test_best_section_similarity_edge_cases_identical():
         expected = _naive_best(replay_texts, oracle_texts)
         got = best_section_similarity(replay_texts, oracle_texts)
         assert got == expected, (replay_texts, oracle_texts, got, expected)
+
+
+def test_best_section_similarity_cleaned_matches_raw_helper():
+    for replay_texts, oracle_texts in EDGE_CASES:
+        expected = best_section_similarity(replay_texts, oracle_texts)
+        got = best_section_similarity_cleaned(
+            (clean_similarity_text(text or "") for text in replay_texts),
+            (clean_similarity_text(text or "") for text in oracle_texts),
+        )
+        assert got == expected
 
 
 def test_best_section_similarity_fuzz_identical():

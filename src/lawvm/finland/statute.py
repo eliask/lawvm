@@ -250,6 +250,8 @@ def _collect_provision_index_entries(node: IRNode, path: Path) -> LabelIndex:
         if current.label and kind in _PROVISION_INDEXED_KINDS:
             key = (kind, normalized_label_key(current.label))
             index.setdefault(key, []).append(current_path)
+            if kind == "section":
+                return
         for child in current.children:
             child_path = current_path + ((child.kind.value, child.label or ""),)
             _walk(child, child_path)

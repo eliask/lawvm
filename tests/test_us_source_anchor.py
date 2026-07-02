@@ -46,14 +46,18 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import xml.etree.ElementTree as ET
 
 import pytest
 
 from lawvm.core.ir import LegalAddress, LegalOperation
 from lawvm.core.provenance import OperationSource, SourceAnchor, compute_source_anchor
 from lawvm.core.semantic_types import StructuralAction
+import lawvm.us_federal.amendatory as amendatory
 from lawvm.us_federal.amendatory import (
     _collapse_ws_strip,
+    _itertext_excluding_sidenotes,
+    _unique_byte_run_body_records,
     _unique_byte_run_bodies,
     lower_plaw_amendatory,
     mint_us_source_anchors,
@@ -439,6 +443,14 @@ def test_us_collapse_ws_strip_preserves_regex_collapse_semantics() -> None:
     assert _collapse_ws_strip("A\u00a0B") == "A B"
 
 
+def test_us_itertext_leaf_fast_path_preserves_text_not_tail() -> None:
+    root = ET.fromstring("<root><leaf>Body</leaf>Tail</root>")
+    leaf = root.find("leaf")
+    assert leaf is not None
+
+    assert _itertext_excluding_sidenotes(leaf) == "Body"
+
+
 def test_us_unique_byte_run_bodies_prefilters_to_candidate_clauses() -> None:
     raw = b"""\
 <section>
@@ -453,6 +465,93 @@ def test_us_unique_byte_run_bodies_prefilters_to_candidate_clauses() -> None:
     )
 
     assert bodies == ["Clause body selected by an emitted operation."]
+
+
+def test_us_unique_byte_run_body_records_prefilters_before_unique_kernel(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw = b"""\
+<section>
+  <chapeau>Clause body selected by an emitted operation.</chapeau>
+  <quotedText>Unrelated body from another instruction.</quotedText>
+</section>
+"""
+    seen_candidates: list[list[str]] = []
+
+    def fake_unique_byte_run_text_positions(
+        haystack: bytes, candidates: list[str]
+    ) -> list[tuple[str, int]]:
+        seen_candidates.append(list(candidates))
+        return [
+            (candidate, haystack.find(candidate.encode("utf-8")))
+            for candidate in candidates
+        ]
+
+    monkeypatch.setattr(
+        amendatory,
+        "unique_byte_run_text_positions",
+        fake_unique_byte_run_text_positions,
+    )
+
+    records = _unique_byte_run_body_records(
+        raw,
+        source_artifact_id="PL TEST",
+        candidate_clauses=("Prefix Clause body selected by an emitted operation.",),
+    )
+
+    assert seen_candidates == [["Clause body selected by an emitted operation."]]
+    assert [record.text for record in records] == [
+        "Clause body selected by an emitted operation."
+    ]
+
+
+def test_us_unique_byte_run_body_records_reuse_verified_offsets() -> None:
+    raw = b"""\
+<section>
+  <chapeau>Clause body selected by an emitted operation.</chapeau>
+</section>
+"""
+
+    records = _unique_byte_run_body_records(
+        raw,
+        source_artifact_id="PL TEST",
+        candidate_clauses=("Prefix Clause body selected by an emitted operation.",),
+    )
+
+    assert len(records) == 1
+    record = records[0]
+    encoded = record.text.encode("utf-8")
+    anchor = record.source_anchor
+    assert anchor.byte_offset == raw.find(encoded)
+    assert raw[anchor.byte_offset : anchor.byte_offset + anchor.byte_len] == encoded
+    assert anchor.source_artifact_id == "PL TEST"
+
+
+def test_us_unique_byte_run_body_records_reuses_supplied_root(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw = b"""\
+<section>
+  <chapeau>Clause body selected by an emitted operation.</chapeau>
+</section>
+"""
+    root = ET.fromstring(raw)
+
+    def fail_parse(_raw: bytes) -> ET.Element:
+        raise AssertionError("supplied root should avoid reparsing raw bytes")
+
+    monkeypatch.setattr(amendatory.ET, "fromstring", fail_parse)
+
+    records = _unique_byte_run_body_records(
+        raw,
+        source_artifact_id="PL TEST",
+        candidate_clauses=("Prefix Clause body selected by an emitted operation.",),
+        root=root,
+    )
+
+    assert [record.text for record in records] == [
+        "Clause body selected by an emitted operation."
+    ]
 
 
 def test_us_unique_byte_run_bodies_indexed_kernel_preserves_uniqueness() -> None:

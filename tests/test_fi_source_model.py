@@ -14,7 +14,7 @@ from lawvm.finland.body_coverage import BodyCoveragePayloadRef, extract_body_cov
 from lawvm.finland.body_pairing import build_observed_body_inventory
 from lawvm.finland.corpus import get_corpus_store
 from lawvm.finland.ops import OpType, AmendmentOp
-from lawvm.finland.source_model import AmendmentSourceModel
+from lawvm.finland.source_model import AmendmentSourceModel, SourceMetadataSeed
 from lawvm.finland.statute import ReplayState
 
 
@@ -367,7 +367,12 @@ def test_source_model_metadata_surface_caches_xml_adapter_calls(
         calls["issue"] += 1
         return dt.date(2020, 1, 2)
 
-    def fake_effective(_tree: etree._Element) -> tuple[dt.date, str]:
+    def fake_effective(
+        _tree: etree._Element,
+        *,
+        precomputed_issue_date: dt.date | None = None,
+    ) -> tuple[dt.date, str]:
+        assert precomputed_issue_date == dt.date(2020, 1, 2)
         calls["effective"] += 1
         return dt.date(2020, 3, 4), "test-step"
 
@@ -423,6 +428,58 @@ def test_source_model_metadata_surface_caches_xml_adapter_calls(
         "provision_overrides": 1,
         "section_overrides": 1,
     }
+
+
+def test_source_model_metadata_seed_skips_precomputed_xml_adapter_calls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tree = etree.fromstring(b"<akomaNtoso><act><body>Teksti</body></act></akomaNtoso>")
+    model = AmendmentSourceModel.from_tree(
+        tree,
+        source_ref="2020/3",
+        metadata_seed=SourceMetadataSeed(
+            source_issue_date=dt.date(2020, 1, 2),
+            source_title="Seeded title",
+            effective_date=dt.date(2020, 3, 4),
+            effective_date_step="selection-metadata",
+        ),
+    )
+    calls = {"title": 0, "issue": 0, "effective": 0, "expiry": 0}
+
+    import lawvm.finland.frontend_compile as frontend_compile
+    import lawvm.finland.metadata as metadata
+
+    def fake_title(_tree: etree._Element) -> str:
+        calls["title"] += 1
+        raise AssertionError("title adapter should not run for seeded metadata")
+
+    def fake_issue(_tree: etree._Element) -> dt.date:
+        calls["issue"] += 1
+        raise AssertionError("issue-date adapter should not run for seeded metadata")
+
+    def fake_effective(_tree: etree._Element) -> tuple[dt.date, str]:
+        calls["effective"] += 1
+        raise AssertionError("effective-date adapter should not run for seeded metadata")
+
+    def fake_expiry(_tree: etree._Element, *, raw_text: str | None = None) -> None:
+        assert raw_text == "Teksti"
+        calls["expiry"] += 1
+        return None
+
+    monkeypatch.setattr(frontend_compile, "_tree_title", fake_title)
+    monkeypatch.setattr(metadata, "_statute_issue_date", fake_issue)
+    monkeypatch.setattr(metadata, "_amendment_effective_date_with_step", fake_effective)
+    monkeypatch.setattr(metadata, "_amendment_expiry_date", fake_expiry)
+
+    assert model.title() == "Seeded title"
+    assert model.issue_date() == dt.date(2020, 1, 2)
+    assert model.effective_date() == dt.date(2020, 3, 4)
+    assert model.effective_date_with_step() == (
+        dt.date(2020, 3, 4),
+        "selection-metadata",
+    )
+    assert model.expiry_date() is None
+    assert calls == {"title": 0, "issue": 0, "effective": 0, "expiry": 1}
 
 
 def test_source_model_exposes_commencement_expiry_override() -> None:
@@ -815,11 +872,35 @@ def test_source_model_section_payload_text_uses_typed_payload_ir() -> None:
     model = AmendmentSourceModel.from_tree(tree, source_ref="1982/1035")
 
     result = model.lookup_section_payload_text("5")
+    repeated = model.lookup_section_payload_text(" 5 ")
 
     assert result.lookup_status == "unique"
     assert result.payload_lookup_status == "unique"
     assert result.payload_basis == "body_inventory"
     assert "Vuodelta 1984 toimitettavassa verotuksessa" in result.text
+    assert repeated is result
+
+
+def test_source_model_unique_section_source_text_contains_uses_observed_text() -> None:
+    tree = etree.fromstring(
+        b"""
+        <akomaNtoso>
+          <act>
+            <body>
+              <section>
+                <num>5 \xc2\xa7</num>
+                <content><p>T\xc3\xa4m\xc3\xa4 laki on voimassa 31.12.2025 asti.</p></content>
+              </section>
+            </body>
+          </act>
+        </akomaNtoso>
+        """
+    )
+    model = AmendmentSourceModel.from_tree(tree, source_ref="2025/1")
+
+    assert model.unique_section_source_text_contains("5", "VOIMASSA") is True
+    assert model.unique_section_source_text_contains("5", "puuttuu") is False
+    assert model.unique_section_source_text_contains("6", "voimassa") is None
 
 
 def test_source_model_payload_lookup_does_not_xml_fallback_for_non_unique_body_verdicts(

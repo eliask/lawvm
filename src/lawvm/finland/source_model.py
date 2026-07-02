@@ -219,6 +219,16 @@ class SourceMetadataSurface:
 
 
 @dataclass(frozen=True, slots=True)
+class SourceMetadataSeed:
+    """Precomputed non-mutating source metadata facts from amendment selection."""
+
+    source_issue_date: dt.date | None
+    source_title: str
+    effective_date: dt.date | None
+    effective_date_step: str
+
+
+@dataclass(frozen=True, slots=True)
 class SourceBodyInventoryIndex:
     """Normalized indexes over observed source-body units."""
 
@@ -573,6 +583,7 @@ class AmendmentSourceModel:
     source_bytes: bytes | None = None
     source_digest: DigestWitness | None = None
     pre_correction_digest: DigestWitness | None = None
+    metadata_seed: SourceMetadataSeed | None = None
 
     def __post_init__(self) -> None:
         # Intrinsic content identity: present whenever bytes are present.
@@ -615,6 +626,11 @@ class AmendmentSourceModel:
         repr=False,
     )
     _payload_ir_cache: dict[SourceUnitLookup, SourcePayloadLookupResult] = field(
+        default_factory=dict,
+        init=False,
+        repr=False,
+    )
+    _section_payload_text_cache: dict[SourceUnitLookup, SourcePayloadTextLookupResult] = field(
         default_factory=dict,
         init=False,
         repr=False,
@@ -683,6 +699,7 @@ class AmendmentSourceModel:
         source_ref: str = "",
         source_bytes: bytes | None = None,
         pre_correction_bytes: bytes | None = None,
+        metadata_seed: SourceMetadataSeed | None = None,
     ) -> "AmendmentSourceModel":
         """Build a source model and bind intrinsic content digests.
 
@@ -704,6 +721,7 @@ class AmendmentSourceModel:
             source_ref=source_ref,
             source_bytes=source_bytes,
             pre_correction_digest=pre_correction_digest,
+            metadata_seed=metadata_seed,
         )
 
     @property
@@ -1162,24 +1180,62 @@ class AmendmentSourceModel:
         target_part: Optional[str] = None,
     ) -> SourcePayloadTextLookupResult:
         """Return typed source-body payload text for a section target."""
+        key = SourceUnitLookup(
+            unit_kind="section",
+            label=_norm_num_token(section_label),
+            chapter=_norm_num_token(target_chapter or "") if target_chapter else None,
+            part=_norm_num_token(target_part or "") if target_part else None,
+        )
+        cached = self._section_payload_text_cache.get(key)
+        if cached is not None:
+            return cached
         payload_lookup = self.lookup_payload_ir(
-            "section",
-            section_label,
-            target_chapter=target_chapter,
-            target_part=target_part,
+            key.unit_kind,
+            key.label,
+            target_chapter=key.chapter,
+            target_part=key.part,
         )
         payload_text = (
             " ".join(irnode_to_text(payload_lookup.payload_ir).split())
             if payload_lookup.payload_ir is not None
             else ""
         )
-        return SourcePayloadTextLookupResult(
+        result = SourcePayloadTextLookupResult(
             lookup_status=payload_lookup.lookup_status if payload_text else "missing",
             query=payload_lookup.query,
             payload_lookup_status=payload_lookup.lookup_status,
             payload_basis=payload_lookup.payload_basis,
             text=payload_text,
         )
+        self._section_payload_text_cache[key] = result
+        return result
+
+    def unique_section_source_text_contains(
+        self,
+        section_label: str,
+        fragment: str,
+        *,
+        target_chapter: Optional[str] = None,
+        target_part: Optional[str] = None,
+    ) -> bool | None:
+        """Return whether a unique observed section's source text contains a fragment.
+
+        ``None`` means the body lookup was not unique, so callers must keep their
+        existing fallback path. ``False`` is safe only as a necessary-literal
+        prefilter before a typed parser that still owns the semantic decision.
+        """
+        if not fragment:
+            return None
+        lookup = self.lookup_body_unit(
+            "section",
+            section_label,
+            target_chapter=target_chapter,
+            target_part=target_part,
+        )
+        unit = lookup.unique_unit
+        if unit is None:
+            return None
+        return fragment.casefold() in unit.source_text.casefold()
 
     def pre_create_amendment_chapters(
         self,
@@ -1313,19 +1369,32 @@ class AmendmentSourceModel:
     def metadata_surface(self) -> SourceMetadataSurface:
         """Return cached source metadata facts used by compile and temporal phases."""
         if self._metadata_surface_cache is None:
-            from lawvm.finland.frontend_compile import _tree_title
             from lawvm.finland.metadata import (
-                _amendment_effective_date_with_step,
                 _amendment_expiry_date,
-                _statute_issue_date,
             )
 
-            effective_date, effective_step = _amendment_effective_date_with_step(
-                self.muutos_tree
-            )
+            seed = self.metadata_seed
+            if seed is None:
+                from lawvm.finland.frontend_compile import _tree_title
+                from lawvm.finland.metadata import (
+                    _amendment_effective_date_with_step,
+                    _statute_issue_date,
+                )
+
+                source_issue_date = _statute_issue_date(self.muutos_tree)
+                effective_date, effective_step = _amendment_effective_date_with_step(
+                    self.muutos_tree,
+                    precomputed_issue_date=source_issue_date,
+                )
+                source_title = _tree_title(self.muutos_tree)
+            else:
+                effective_date = seed.effective_date
+                effective_step = seed.effective_date_step
+                source_issue_date = seed.source_issue_date
+                source_title = seed.source_title
             self._metadata_surface_cache = SourceMetadataSurface(
-                source_issue_date=_statute_issue_date(self.muutos_tree),
-                source_title=_tree_title(self.muutos_tree),
+                source_issue_date=source_issue_date,
+                source_title=source_title,
                 effective_date=effective_date,
                 effective_date_step=effective_step,
                 expiry_date=_amendment_expiry_date(

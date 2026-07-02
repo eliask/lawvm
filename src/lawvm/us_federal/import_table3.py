@@ -37,10 +37,11 @@ from __future__ import annotations
 import argparse
 import re
 import sys
-import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterator
+
+from lxml import etree as ET
 
 from lawvm.core.ir import LegalAddress
 from lawvm.us_federal.sources import (
@@ -131,29 +132,33 @@ def iter_table3_records(data: bytes) -> Iterator[Table3Record]:
     materializing the 125 MB into a string.
     """
     act_num = ""
-    act_congress = ""
     public_law = ""
-    in_act = False
-
-    for event, el in ET.iterparse(_byte_source(data), events=("start", "end")):
+    act_congress = ""
+    for _event, el in ET.iterparse(
+        _byte_source(data),
+        events=("end",),
+        tag=("act", "num", "public-law", "record"),
+    ):
         tag = el.tag
-        if event == "start" and tag == "act":
-            act_num = ""
-            act_congress = el.get("congress", "")
-            public_law = ""
-            in_act = True
-        elif event == "end":
-            if tag == "num" and in_act and _parent_is_act(el):
-                # <num> directly under <act> is the act key.
+        if tag == "num":
+            parent = el.getparent()
+            if parent is not None and parent.tag == "act":
                 act_num = (el.text or "").strip()
-            elif tag == "public-law" and in_act:
+                act_congress = parent.get("congress", "")
+            el.clear()
+        elif tag == "public-law":
+            parent = el.getparent()
+            if parent is not None and parent.tag == "act":
                 public_law = (el.text or "").strip()
-            elif tag == "record":
-                yield _record_from_element(el, act_num, act_congress, public_law)
-                el.clear()
-            elif tag == "act":
-                in_act = False
-                el.clear()
+            el.clear()
+        elif tag == "record":
+            yield _record_from_element(el, act_num, act_congress, public_law)
+            el.clear()
+        else:
+            act_num = ""
+            public_law = ""
+            act_congress = ""
+            el.clear()
 
 
 _TABLE3_ROOT_OPEN = b"<table3>"
@@ -188,6 +193,17 @@ class _ConcatBytesReader:
             self._idx = len(self._chunks)
             self._pos = 0
             return out
+        if self._idx >= len(self._chunks) or size == 0:
+            return b""
+        chunk = self._chunks[self._idx]
+        available = len(chunk) - self._pos
+        if size <= available:
+            start = self._pos
+            self._pos += size
+            if self._pos >= len(chunk):
+                self._idx += 1
+                self._pos = 0
+            return chunk[start : start + size]
         out_parts: list[bytes] = []
         remaining = size
         while remaining > 0 and self._idx < len(self._chunks):
@@ -202,45 +218,36 @@ class _ConcatBytesReader:
         return b"".join(out_parts)
 
 
-def _parent_is_act(_el: ET.Element) -> bool:
-    # ElementTree gives no parent pointer; the streaming state machine only
-    # records <num> while ``in_act`` and before the first <record>. A <num>
-    # nested deeper would be inside a <record> (Table III records have no <num>),
-    # so this guard is structurally satisfied by the document shape.
-    return True
-
-
-_TABLE3_RECORD_TEXT_TAGS = frozenset(
-    (
-        "act-section",
-        "united-states-code-title",
-        "united-states-code-section",
-        "united-states-code-status",
-    )
-)
-
-
 def _record_from_element(
-    el: ET.Element, act_num: str, act_congress: str, public_law: str
+    el: ET._Element, act_num: str, act_congress: str, public_law: str
 ) -> Table3Record:
-    child_texts: dict[str, str] = {}
+    act_section = ""
+    usc_title = ""
+    usc_section = ""
+    status = ""
     for child in el:
         tag = child.tag
-        if tag in _TABLE3_RECORD_TEXT_TAGS:
-            child_texts[tag] = (child.text or "").strip()
+        if tag == "act-section":
+            act_section = (child.text or "").strip()
+        elif tag == "united-states-code-title":
+            usc_title = (child.text or "").strip()
+        elif tag == "united-states-code-section":
+            usc_section = (child.text or "").strip()
+        elif tag == "united-states-code-status":
+            status = (child.text or "").strip()
     return Table3Record(
         act_num=act_num,
         act_congress=act_congress,
-        act_section=child_texts.get("act-section", ""),
-        usc_title=child_texts.get("united-states-code-title", ""),
-        usc_section=child_texts.get("united-states-code-section", ""),
-        status=child_texts.get("united-states-code-status", ""),
+        act_section=act_section,
+        usc_title=usc_title,
+        usc_section=usc_section,
+        status=status,
         public_law=public_law,
         usckey=el.get("usckey", ""),
     )
 
 
-def _child_text(el: ET.Element, name: str) -> str:
+def _child_text(el: ET._Element, name: str) -> str:
     child = el.find(name)
     return (child.text or "").strip() if child is not None and child.text else ""
 

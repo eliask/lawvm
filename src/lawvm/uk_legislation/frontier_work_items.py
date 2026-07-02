@@ -23,8 +23,6 @@ from lawvm.core.target_resolution import (
     TARGET_AMBIGUOUS,
     TARGET_RESOLVED,
     TARGET_UNRESOLVED,
-    TargetResolutionCandidate,
-    TargetResolutionCoverage,
 )
 from lawvm.uk_legislation.execution_authorization import (
     uk_execution_authorization_from_manual_frontier,
@@ -1187,7 +1185,6 @@ def _nonnegative_int(value: Any) -> int:
 
 
 def _execution_authorization_packet(row: Mapping[str, Any]) -> Mapping[str, Any]:
-    default_packet = _default_execution_authorization_packet(row)
     packet = _mapping(row.get("execution_authorization"))
     if packet:
         compact_packet = _compact_witness(
@@ -1206,7 +1203,21 @@ def _execution_authorization_packet(row: Mapping[str, Any]) -> Mapping[str, Any]
                 "detail": _mapping(packet.get("detail")),
             }
         )
+        required_contract_keys = (
+            "executable",
+            "replay_authorized",
+            "authorization_status",
+            "authorization_rule_id",
+            "owner_phase",
+            "strict_disposition",
+            "quirks_disposition",
+            "validator_status",
+        )
+        if all(key in packet for key in required_contract_keys):
+            return compact_packet
+        default_packet = _default_execution_authorization_packet(row)
         return _compact_witness({**default_packet, **compact_packet})
+    default_packet = _default_execution_authorization_packet(row)
     compact_row = _compact_witness(
         {
             "executable": _bool_flag(row.get("executable")),
@@ -1282,37 +1293,37 @@ def _candidate_target_set_certificate(
     if modeled_targets:
         detail.update(
             {
-                "modeled_targets": modeled_targets,
-                "target_model_statuses": target_model_statuses,
+                "modeled_targets": list(modeled_targets),
+                "target_model_statuses": list(target_model_statuses),
                 "modeled_targets_not_replay_authorization": True,
             }
         )
-    certificate = CandidateSetCoverage(
-        scope_id=f"uk-frontier-work-item:{work_item_id}",
-        candidate_set_kind="uk_frontier_work_item_candidate_targets",
-        phase=owner_phase or "unknown",
-        rule_id="uk_frontier_work_item_candidate_target_set_projection",
-        reason=(
+    return {
+        "scope_id": f"uk-frontier-work-item:{work_item_id}",
+        "candidate_set_kind": "uk_frontier_work_item_candidate_targets",
+        "phase": owner_phase or "unknown",
+        "rule_id": "uk_frontier_work_item_candidate_target_set_projection",
+        "reason": (
             "candidate target surfaces are bounded by the manual-frontier work "
             "item target witness and do not authorize replay"
         ),
-        completeness_status=(
+        "completeness_status": (
             CANDIDATE_SET_COMPLETE if has_candidates else CANDIDATE_SET_UNAVAILABLE
         ),
-        candidate_count=len(candidate_targets),
-        candidate_ids=candidate_targets,
-        missing_candidate_count=0 if has_candidates else 1,
-        blocker_counts=blockers,
-        blocker_families=tuple(blockers),
-        next_promotion_allowed=False,
-        next_promotion_requires=(
+        "candidate_count": len(candidate_targets),
+        "candidate_ids": list(candidate_targets),
+        "missing_candidate_count": 0 if has_candidates else 1,
+        "selected_candidate_ids": [],
+        "blocker_counts": blockers,
+        "blocker_families": list(blockers),
+        "next_promotion_allowed": False,
+        "next_promotion_requires": [
             "target_candidate_set_completeness",
             "execution_authorization",
             "mutation_boundary_proof",
-        ),
-        detail=detail,
-    )
-    return certificate.to_dict()
+        ],
+        **detail,
+    }
 
 
 def _source_membership_certificate(
@@ -1644,17 +1655,6 @@ def _target_resolution_coverage(
         or (candidate_targets[0] if candidate_targets else "")
         or "unknown"
     )
-    candidates = tuple(
-        TargetResolutionCandidate(
-            target=target,
-            reason="manual_frontier_candidate_target",
-            detail={
-                "target_witness_surface": str(target_witness.get("surface") or ""),
-                "target_resolution_not_replay_authorization": True,
-            },
-        )
-        for target in candidate_targets
-    )
     resolver_eids = _string_tuple(target_witness.get("resolver_eids"))
     modeled_targets = _string_tuple(target_witness.get("modeled_targets"))
     target_model_statuses = _string_tuple(target_witness.get("target_model_statuses"))
@@ -1680,28 +1680,42 @@ def _target_resolution_coverage(
                 "modeled_targets_not_replay_authorization": True,
             }
         )
-    return TargetResolutionCoverage(
-        rule_id="uk_frontier_work_item_target_resolution_projection",
-        phase=owner_phase or "unknown",
-        reason=(
+    row: dict[str, Any] = {
+        "rule_id": "uk_frontier_work_item_target_resolution_projection",
+        "phase": owner_phase or "unknown",
+        "blocking": False,
+        "strict_disposition": "record",
+        "quirks_disposition": str(QuirksDisposition.RECORD),
+        "family": "target_resolution",
+        "reason": (
             "manual-frontier target witness is projected for validation and "
             "does not authorize replay"
         ),
-        resolution_status=status,
-        source_target=source_target,
-        candidate_count=candidate_count,
-        candidates=candidates,
-        selected_target=selected_target,
-        scope_confidence=(
-            SCOPE_CONFIDENCE_EXPLICIT_SOURCE_WITH_CONTEXT
-            if resolver_eids
-            else SCOPE_CONFIDENCE_EXPLICIT_SOURCE
-        ),
-        blocking=False,
-        strict_disposition="record",
-        quirks_disposition=QuirksDisposition.RECORD,
-        detail=detail,
-    ).to_diagnostic_detail()
+        **detail,
+        "target_resolution_status": status,
+        "source_target": source_target,
+        "candidate_count": candidate_count,
+    }
+    if candidate_targets:
+        target_witness_surface = str(target_witness.get("surface") or "")
+        row["target_candidates"] = tuple(
+            {
+                "target": target,
+                "reason": "manual_frontier_candidate_target",
+                "target_witness_surface": target_witness_surface,
+                "target_resolution_not_replay_authorization": True,
+            }
+            for target in candidate_targets
+        )
+    if selected_target:
+        row["selected_target"] = selected_target
+        row["selected_target_differs_from_source"] = selected_target != source_target
+    row["scope_confidence"] = (
+        SCOPE_CONFIDENCE_EXPLICIT_SOURCE_WITH_CONTEXT
+        if resolver_eids
+        else SCOPE_CONFIDENCE_EXPLICIT_SOURCE
+    )
+    return row
 
 
 def _packet_completeness(

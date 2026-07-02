@@ -5879,6 +5879,132 @@ def test_compute_verdict_from_registry_uses_registry_descriptions() -> None:
     assert verdict.barrier_messages == (spec.description,)
 
 
+def test_cached_cited_parse_result_keys_by_diagnostic_statute(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Cited-scope parse cache reuses only the same diagnostic-statute parse."""
+    import lawvm.finland.frontend_compile as frontend_compile
+
+    calls: list[tuple[str, str]] = []
+
+    def fake_parse(text: str, *, statute_id: str = "") -> object:
+        calls.append((text, statute_id))
+        return SimpleNamespace(text=text, statute_id=statute_id)
+
+    frontend_compile._cached_cited_parse_result.cache_clear()
+    monkeypatch.setattr(frontend_compile, "parse_johtolause_clause", fake_parse)
+    try:
+        first = frontend_compile._cached_cited_parse_result(
+            "2018/575",
+            "1993/1501",
+            "muutetaan 30 b §",
+        )
+        second = frontend_compile._cached_cited_parse_result(
+            "2018/575",
+            "1993/1501",
+            "muutetaan 30 b §",
+        )
+        other_statute = frontend_compile._cached_cited_parse_result(
+            "2018/575",
+            "2018/575",
+            "muutetaan 30 b §",
+        )
+    finally:
+        frontend_compile._cached_cited_parse_result.cache_clear()
+
+    assert first is second
+    assert other_statute is not first
+    assert calls == [
+        ("muutetaan 30 b §", "1993/1501"),
+        ("muutetaan 30 b §", "2018/575"),
+    ]
+
+
+def test_cited_scope_cache_is_lru_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Cited-scope cache evicts old scope maps instead of growing for a whole run."""
+    import lawvm.finland.frontend_compile as frontend_compile
+
+    old_cache = frontend_compile._cited_scope_cache.copy()
+    old_cap = frontend_compile._CITED_SCOPE_CACHE_MAX
+    monkeypatch.setattr(frontend_compile, "_CITED_SCOPE_CACHE_MAX", 2)
+    frontend_compile._cited_scope_cache.clear()
+    try:
+        frontend_compile._store_cited_scope_cache(("parent", "2018/575", 1), {"1": (None, "1")})
+        frontend_compile._store_cited_scope_cache(("parent", "2018/576", 1), {"2": (None, "2")})
+        frontend_compile._cited_scope_cache.move_to_end(("parent", "2018/575", 1))
+        frontend_compile._store_cited_scope_cache(("parent", "2018/577", 1), {"3": (None, "3")})
+
+        assert list(frontend_compile._cited_scope_cache) == [
+            ("parent", "2018/575", 1),
+            ("parent", "2018/577", 1),
+        ]
+    finally:
+        frontend_compile._cited_scope_cache.clear()
+        frontend_compile._cited_scope_cache.update(old_cache)
+        monkeypatch.setattr(frontend_compile, "_CITED_SCOPE_CACHE_MAX", old_cap)
+
+
+def test_cited_effective_date_cache_is_lru_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Cited effective-date cache stores misses too, but stays bounded."""
+    import lawvm.finland.frontend_compile as frontend_compile
+
+    old_cache = frontend_compile._cited_effective_date_cache.copy()
+    old_cap = frontend_compile._CITED_EFFECTIVE_DATE_CACHE_MAX
+    monkeypatch.setattr(frontend_compile, "_CITED_EFFECTIVE_DATE_CACHE_MAX", 2)
+    frontend_compile._cited_effective_date_cache.clear()
+    try:
+        frontend_compile._store_cited_effective_date_cache("2018/575", "2020-01-01")
+        frontend_compile._store_cited_effective_date_cache("2018/576", None)
+        frontend_compile._cited_effective_date_cache.move_to_end("2018/575")
+        frontend_compile._store_cited_effective_date_cache("2018/577", "2021-01-01")
+
+        assert list(frontend_compile._cited_effective_date_cache) == [
+            "2018/575",
+            "2018/577",
+        ]
+        assert frontend_compile._cited_effective_date_cache["2018/575"] == "2020-01-01"
+    finally:
+        frontend_compile._cited_effective_date_cache.clear()
+        frontend_compile._cited_effective_date_cache.update(old_cache)
+        monkeypatch.setattr(frontend_compile, "_CITED_EFFECTIVE_DATE_CACHE_MAX", old_cap)
+
+
+def test_explicit_payload_fixed_term_prefilter_skips_payload_conversion_without_literal() -> None:
+    """A unique source section without 'voimassa' cannot carry fixed-term expiry."""
+    import lawvm.finland.frontend_compile as frontend_compile
+
+    class SourceModelWithoutValidityLiteral:
+        def unique_section_source_text_contains(
+            self,
+            section_label: str,
+            fragment: str,
+            *,
+            target_chapter: str | None = None,
+            target_part: str | None = None,
+        ) -> bool | None:
+            assert section_label == "5"
+            assert fragment == "voimassa"
+            assert target_chapter is None
+            assert target_part is None
+            return False
+
+        def lookup_section_payload_text(self, *_args: object, **_kwargs: object) -> object:
+            raise AssertionError("payload IR conversion should be skipped")
+
+    op = AmendmentOp(
+        op_id="section-without-fixed-term-expiry",
+        op_type=OpType.REPLACE,
+        target_unit_kind="section",
+        target_section="5",
+    )
+
+    assert (
+        frontend_compile._explicit_payload_fixed_term_expiry_date(
+            op,
+            source_model=cast(Any, SourceModelWithoutValidityLiteral()),
+        )
+        is None
+    )
+
+
 @pytest.mark.slow
 def test_replay_xml_2002_1290_does_not_crash_on_registered_item_like_normalization() -> None:
     """Replay should classify 2002/1290 without tripping unregistered payload-normalization findings."""

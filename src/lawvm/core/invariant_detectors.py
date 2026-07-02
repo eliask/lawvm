@@ -435,12 +435,16 @@ def run_same_source_descendant_snapshot_shadow_detector(
         for op in operations
         if op.action is StructuralAction.REPLACE and op.payload is not None
     ]
-    descendant_ops = [
-        op
-        for op in operations
-        if op.action in {StructuralAction.INSERT, StructuralAction.REPLACE}
-        and op.payload is not None
-    ]
+    descendant_ops_by_source: dict[str, list[LegalOperation]] = {}
+    for op in operations:
+        if op.action not in {StructuralAction.INSERT, StructuralAction.REPLACE}:
+            continue
+        if op.payload is None:
+            continue
+        source = _operation_source_statute_id(op)
+        if not source:
+            continue
+        descendant_ops_by_source.setdefault(source, []).append(op)
     for ancestor in ancestor_ops:
         ancestor_source = _operation_source_statute_id(ancestor)
         if not ancestor_source:
@@ -448,10 +452,8 @@ def run_same_source_descendant_snapshot_shadow_detector(
         ancestor_payload = ancestor.payload
         if ancestor_payload is None:
             continue
-        for descendant in descendant_ops:
+        for descendant in descendant_ops_by_source.get(ancestor_source, ()):
             if descendant is ancestor:
-                continue
-            if _operation_source_statute_id(descendant) != ancestor_source:
                 continue
             if len(descendant.target.path) <= len(ancestor.target.path):
                 continue

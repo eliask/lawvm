@@ -27,6 +27,7 @@ from lawvm.core.mutation_boundary_proof import (
     audit_op_mutation_boundary,
     mutation_boundary_audit_enabled,
 )
+from lawvm.core.mutation_boundary import diff_ir_paths_identity_pruned
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 
 
@@ -154,6 +155,27 @@ def test_out_of_boundary_strict_emits_blocking_violation() -> None:
     assert finding.stage == "apply"
     assert finding.detail["boundary_status"] == "out_of_boundary"
     assert finding.detail["out_of_boundary_paths"]
+
+
+def test_supplied_observed_paths_match_internal_diff_verdict() -> None:
+    """A caller may reuse an already-computed identity-pruned tree diff without
+    changing the LS-01 verdict or finding payload."""
+    before, after = _escaping_pair()
+    op = _text_replace_op_targeting_section_1()
+    observed_paths = diff_ir_paths_identity_pruned(before, after)
+
+    computed = audit_op_mutation_boundary(
+        before, after, op, op_id=op.op_id,
+        source_statute="core/escape", is_strict=True,
+    )
+    supplied = audit_op_mutation_boundary(
+        before, after, op, op_id=op.op_id,
+        source_statute="core/escape", is_strict=True,
+        observed_paths=observed_paths,
+    )
+
+    assert supplied.verdict == computed.verdict
+    assert supplied.findings == computed.findings
 
 
 def test_audit_enabled_gate_is_observation_by_default(monkeypatch) -> None:

@@ -19,7 +19,11 @@ from __future__ import annotations
 
 import random
 
-from lawvm.core.provenance import unique_byte_run_texts
+from lawvm.core.provenance import (
+    _UNIQUE_RUN_PREFIX,
+    unique_byte_run_text_positions,
+    unique_byte_run_texts,
+)
 
 
 def _reference(raw_bytes: bytes, candidate_texts: list[str]) -> list[str]:
@@ -36,6 +40,19 @@ def _reference(raw_bytes: bytes, candidate_texts: list[str]) -> list[str]:
     return bodies
 
 
+def _reference_positions(raw_bytes: bytes, candidate_texts: list[str]) -> list[tuple[str, int]]:
+    bodies: list[tuple[str, int]] = []
+    for text in candidate_texts:
+        needle = text.encode("utf-8")
+        if not needle:
+            continue
+        first = raw_bytes.find(needle)
+        if first >= 0 and raw_bytes.find(needle, first + 1) < 0:
+            bodies.append((text, first))
+    bodies.sort(key=lambda item: -len(item[0]))
+    return bodies
+
+
 def test_empty_inputs_return_empty() -> None:
     assert unique_byte_run_texts(b"", ["x"]) == []
     assert unique_byte_run_texts(b"abc", []) == []
@@ -48,6 +65,7 @@ def test_unique_and_repeated_and_absent() -> None:
     got = unique_byte_run_texts(raw, cands)
     assert got == _reference(raw, cands)
     assert set(got) == {"gamma", "alpha"}
+    assert unique_byte_run_text_positions(raw, cands) == _reference_positions(raw, cands)
 
 
 def test_self_overlapping_needle_matches_find_twice() -> None:
@@ -72,8 +90,10 @@ def test_equal_length_order_is_document_order_stable() -> None:
 def test_short_needles_take_reference_path() -> None:
     # Needles shorter than the prefix-bucket width fall back to two-``find``; verify
     # a mix of short unique / short repeated / short absent matches the reference.
-    raw = b"a bb ccc a dddd"
-    cands = ["bb", "ccc", "a", "dddd", "zz"]
+    short = "s" * (_UNIQUE_RUN_PREFIX - 1)
+    boundary = "b" * _UNIQUE_RUN_PREFIX
+    raw = f"a {short} {boundary} a {boundary}2".encode()
+    cands = [short, boundary, "a", "zz"]
     assert unique_byte_run_texts(raw, cands) == _reference(raw, cands)
 
 
@@ -98,3 +118,4 @@ def test_fuzz_matches_reference() -> None:
             seen.add(piece)
             cands.append(piece)
         assert unique_byte_run_texts(raw, cands) == _reference(raw, cands)
+        assert unique_byte_run_text_positions(raw, cands) == _reference_positions(raw, cands)

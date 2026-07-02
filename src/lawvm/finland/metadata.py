@@ -13,7 +13,7 @@ from lawvm.core.regex_safety import compile_classifier_regex
 import datetime as dt
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import List, Literal, Optional, Protocol, Set, Tuple, cast, runtime_checkable
+from typing import Iterator, List, Literal, Optional, Protocol, Set, Tuple, cast, runtime_checkable
 
 import lxml.etree as etree
 
@@ -103,6 +103,15 @@ class _InternalScanSourceReader(Protocol):
     def read_source_for_internal_scan(self, sid: str) -> bytes | None: ...
 
 
+@runtime_checkable
+class _BulkInternalScanSourceReader(Protocol):
+    def iter_source_bytes_for_internal_scan(
+        self,
+        *,
+        min_year: int | None = None,
+    ) -> Iterator[tuple[str, bytes]]: ...
+
+
 _SEPARATE_COMMENCEMENT_LIST_RE = compile_classifier_regex(r'\bSeuraavat\s+lait\s+tulevat\s+voimaan\s+'
     r'(?P<day>\d{1,2})\s+päivänä\s+(?P<month>[a-zäöå]+)\s+(?P<year>\d{4})\s*:', flags=re.IGNORECASE, classifier_id="fi.metadata.separate_commencement_list_re")
 _SEPARATE_COMMENCEMENT_INLINE_LIST_RE = re.compile(
@@ -112,6 +121,10 @@ _SEPARATE_COMMENCEMENT_INLINE_LIST_RE = re.compile(
     flags=re.IGNORECASE,
 )
 _PAREN_STATUTE_ID_RE = re.compile(r'\((?P<sid>\d{1,4}/\d{4})\)')
+# Parse-avoidance prefilter for the corpus-wide separate-commencement witness
+# scan. The typed extractor below can only emit witnesses from parenthesized
+# statute IDs, so sources without this byte shape cannot contribute rows.
+_PAREN_STATUTE_ID_BYTES_RE = re.compile(rb'\(\d{1,4}/\d{4}\)')
 
 
 def _normalize_fi_parse_text(text: str) -> str:
@@ -1182,16 +1195,104 @@ def _read_source_for_separate_commencement_scan(corpus: object, source_id: str) 
     return cast(CorpusStore, corpus).read_source(source_id)
 
 
+def _normalize_statute_id_for_separate_commencement_target(raw: str) -> str | None:
+    raw = raw.strip()
+    text_id = _normalize_textual_statute_id(raw)
+    if text_id is not None:
+        return text_id
+    m = re.fullmatch(r"(\d{4})/(\d{1,4})", raw)
+    if m is None:
+        return None
+    return f"{int(m.group(1))}/{int(m.group(2))}"
+
+
+def _target_statute_id_citation_bytes(target_statute_id: str) -> bytes | None:
+    normalized = _normalize_statute_id_for_separate_commencement_target(target_statute_id)
+    if normalized is None:
+        return None
+    year, number = normalized.split("/", 1)
+    return f"({int(number)}/{year})".encode("ascii")
+
+
+def _statute_id_year_for_separate_commencement_scan(statute_id: str) -> int | None:
+    normalized = _normalize_statute_id_for_separate_commencement_target(statute_id)
+    if normalized is None:
+        return None
+    year_text, _number = normalized.split("/", 1)
+    return int(year_text)
+
+
+def _source_id_is_at_or_after_separate_commencement_target_year(
+    source_id: str,
+    min_source_year: int | None,
+) -> bool:
+    if min_source_year is None:
+        return True
+    source_year = _statute_id_year_for_separate_commencement_scan(source_id)
+    return source_year is not None and source_year >= min_source_year
+
+
+@lru_cache(maxsize=256)
+def _separate_commencement_witnesses_for_target(
+    target_statute_id: str,
+) -> tuple[SeparateCommencementLawWitness, ...]:
+    from lawvm.finland.corpus import get_corpus
+
+    normalized_target = _normalize_statute_id_for_separate_commencement_target(target_statute_id)
+    target_citation = _target_statute_id_citation_bytes(target_statute_id)
+    min_source_year = _statute_id_year_for_separate_commencement_scan(target_statute_id)
+    if normalized_target is None or target_citation is None:
+        return ()
+    corpus = get_corpus()
+    if isinstance(corpus, _BulkInternalScanSourceReader):
+        source_rows = corpus.iter_source_bytes_for_internal_scan(min_year=min_source_year)
+    else:
+        source_rows = (
+            (source_id, _read_source_for_separate_commencement_scan(corpus, source_id))
+            for source_id in tuple(sorted(corpus.list_statute_ids()))
+            if _source_id_is_at_or_after_separate_commencement_target_year(
+                source_id,
+                min_source_year,
+            )
+        )
+    witnesses: list[SeparateCommencementLawWitness] = []
+    for source_id, xml_bytes in source_rows:
+        if (
+            xml_bytes is None
+            or target_citation not in xml_bytes
+            or b"tulevat voimaan" not in xml_bytes
+        ):
+            continue
+        tree = parse_corpus_xml(xml_bytes)
+        for witness in _separate_commencement_witnesses_from_tree(
+            commencement_statute_id=source_id,
+            tree=tree,
+        ):
+            if witness.target_statute_id == normalized_target:
+                witnesses.append(witness)
+    return tuple(sorted(witnesses, key=lambda row: (row.effective_date, row.commencement_statute_id)))
+
+
 @lru_cache(maxsize=1)
 def _separate_commencement_witness_index() -> dict[str, tuple[SeparateCommencementLawWitness, ...]]:
     from lawvm.finland.corpus import get_corpus
 
     corpus = get_corpus()
-    statute_ids = tuple(sorted(corpus.list_statute_ids()))
     index: dict[str, list[SeparateCommencementLawWitness]] = {}
-    for source_id in statute_ids:
-        xml_bytes = _read_source_for_separate_commencement_scan(corpus, source_id)
-        if xml_bytes is None or b"tulevat voimaan" not in xml_bytes:
+    iter_source_bytes = getattr(corpus, "iter_source_bytes_for_internal_scan", None)
+    if callable(iter_source_bytes):
+        source_rows = iter_source_bytes()
+    else:
+        source_rows = (
+            (source_id, _read_source_for_separate_commencement_scan(corpus, source_id))
+            for source_id in tuple(sorted(corpus.list_statute_ids()))
+        )
+    for source_id, xml_bytes in source_rows:
+        if (
+            xml_bytes is None
+            or b"tulevat voimaan" not in xml_bytes
+            or _PAREN_STATUTE_ID_BYTES_RE.search(xml_bytes) is None
+        ):
             continue
         tree = parse_corpus_xml(xml_bytes)
         for witness in _separate_commencement_witnesses_from_tree(
@@ -1215,7 +1316,7 @@ def separate_commencement_law_witness(
     those amendment acts under a shared fixed date. This helper resolves only
     that explicit list shape; absent or ambiguous witnesses stay unresolved.
     """
-    rows = _separate_commencement_witness_index().get(target_statute_id, ())
+    rows = _separate_commencement_witnesses_for_target(target_statute_id)
     if len(rows) != 1:
         return None
     return rows[0]
@@ -2496,9 +2597,13 @@ def _chapter_expiry_from_base(
     return m.group(1), expiry
 
 
+_ISSUE_DATE_UNSET = object()
+
+
 def _amendment_effective_date_with_step(
     tree: "etree._Element",
     *,
+    precomputed_issue_date: Optional[dt.date] | object = _ISSUE_DATE_UNSET,
     resolve_separate_commencement: bool = True,
 ) -> "tuple[Optional[dt.date], str]":
     """Return (effective_date, step_used) where step_used is one of:
@@ -2514,7 +2619,10 @@ def _amendment_effective_date_with_step(
         parsed = _parse_iso_date(entry.get('date'))
         if parsed is not None:
             return parsed, 'metadata'
-    issued = _statute_issue_date(tree)
+    if precomputed_issue_date is _ISSUE_DATE_UNSET:
+        issued = _statute_issue_date(tree)
+    else:
+        issued = cast(Optional[dt.date], precomputed_issue_date)
     # 2. Text regex "Tämä laki tulee voimaan..." gives actual effective date
     #    (differs from issuance date — Finnish laws often enter force later).
     #

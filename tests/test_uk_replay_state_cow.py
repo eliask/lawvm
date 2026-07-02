@@ -363,6 +363,34 @@ class TestWaveN3dCoWChainPreservesWarmEIDIndex:
         assert node_5_after is executor.statute.body.children[4]
         assert node_5_after.text == "Replaced section five text."
 
+    def test_post_insert_lookups_stay_warm_without_full_rebuild(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Pin the insert-only ancestor-chain path: INSERT preserves existing
+        descendants, so the warm eID index is re-keyed instead of cleared and
+        rebuilt on the next lookup."""
+        executor = UKReplayExecutor(_multi_section_base_with_eids())
+        node_6_before, _parent_6_before, _idx_6_before = executor._find_node_and_parent_statute(
+            "section-6"
+        )
+        assert node_6_before is not None
+
+        def _fail_clear() -> None:
+            raise AssertionError("INSERT should re-key the warm eID index, not clear it")
+
+        monkeypatch.setattr(executor, "_clear_eid_lookup_index", _fail_clear)
+        executor.apply_op(_insert_op("8", "Inserted section eight.", op_id="uk-cow-insert-warm"))
+
+        labels = [c.label for c in executor.statute.body.children]
+        assert labels == ["1", "2", "3", "4", "5", "6", "7", "8"], labels
+        node_6_after, parent_6_after, idx_6_after = executor._find_node_and_parent_statute(
+            "section-6"
+        )
+        assert node_6_after is executor.statute.body.children[5]
+        assert parent_6_after is executor.statute.body
+        assert idx_6_after == 5
+
 
 # ---------------------------------------------------------------------------
 # iter2 W1 perf invariant: patch-in-place CoW re-key vs. prior O(W) rebuild

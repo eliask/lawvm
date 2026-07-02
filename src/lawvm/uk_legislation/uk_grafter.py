@@ -46,6 +46,7 @@ IRNode tree at the parse boundary.
 """
 
 from lxml import etree as ET
+import contextvars
 import dataclasses
 import json
 import re
@@ -64,8 +65,16 @@ from lawvm.uk_legislation.apply_rebuild import uk_ir_node_kind
 from lawvm.core.quirks_disposition import QuirksDisposition
 
 _LEG_NS = "http://www.legislation.gov.uk/namespaces/legislation"
+_LEG_PNUMBER_PATH = f"./{{{_LEG_NS}}}Pnumber"
+_LEG_NUMBER_PATH = f"./{{{_LEG_NS}}}Number"
+_LEG_DESC_NUMBER_PATH = f".//{{{_LEG_NS}}}Number"
+_LEG_TITLE_PATH = f"./{{{_LEG_NS}}}Title"
+_LEG_P1GROUP_TITLE_PATH = f"./{{{_LEG_NS}}}P1group/{{{_LEG_NS}}}Title"
 _USER_AGENT = "LawVM-Replayer/1.0"
 _LEG_BASE = "http://www.legislation.gov.uk"
+_TAG_CACHE_CTX: contextvars.ContextVar[dict[ET._Element, str] | None] = contextvars.ContextVar(
+    "lawvm_uk_grafter_tag_cache_ctx", default=None
+)
 _ROMAN_IVX_RE = re.compile(r"^[ivx]+$", re.IGNORECASE)
 _ROMAN_FULL_RE = re.compile(r"^[IVXLCDM]+$", re.IGNORECASE)
 _CLEAN_NUM_PREFIX_RE = re.compile(
@@ -105,6 +114,42 @@ _SEMANTIC_HASH_NOISE_RE = re.compile(
 _EDITORIAL_TAGS: frozenset[str] = frozenset({"Commentary", "Citation", "CitationSubRef", "Footnote", "Term"})
 _VISIBLE_INLINE_TEXT_TAGS: frozenset[str] = frozenset({"Citation", "CitationSubRef", "Term"})
 _NON_LEGAL_UNIT_EID_TAGS: frozenset[str] = frozenset({"Text"})
+_EID_TRANSPARENT_TAGS: frozenset[str] = frozenset(
+    {
+        "p1para",
+        "p2para",
+        "p3para",
+        "p4para",
+        "schedules",
+        "schedulebody",
+        "pnumber",
+        "number",
+        "title",
+        "body",
+        "eubody",
+        "euretained",
+    }
+)
+_ZOMBIE_LOCAL_TEXT_STRUCTURAL_TAGS: frozenset[str] = frozenset(
+    {
+        "part",
+        "chapter",
+        "euchapter",
+        "p1group",
+        "section",
+        "p1",
+        "article",
+        "eusection",
+        "pblock",
+        "p2",
+        "p3",
+        "p4",
+        "subsection",
+        "paragraph",
+        "schedule",
+    }
+)
+_ZOMBIE_LOCAL_TEXT_SKIP_TAGS: frozenset[str] = frozenset({"pnumber", "number", "title", "commentaryref"})
 
 # ---------------------------------------------------------------------------
 # Parsing helpers
@@ -114,9 +159,22 @@ _NON_LEGAL_UNIT_EID_TAGS: frozenset[str] = frozenset({"Text"})
 def _tag(el: ET._Element) -> str:
     if el is None:
         return ""
+    cache = _TAG_CACHE_CTX.get()
+    if cache is not None:
+        cached = cache.get(el)
+        if cached is not None:
+            return cached
     tag = el.tag
     if not isinstance(tag, str):
         return ""  # PI/Comment nodes have callable .tag
+    local = _tag_local_name(tag)
+    if cache is not None:
+        cache[el] = local
+    return local
+
+
+@lru_cache(maxsize=256)
+def _tag_local_name(tag: str) -> str:
     return tag.split("}", 1)[1] if "}" in tag else tag
 
 
@@ -197,6 +255,18 @@ def _is_retained_repeal(el: ET._Element) -> bool:
     treated as applied, so the retained subtree is elided.
     """
     return _tag(el) == "Repeal" and (el.get(_RETAIN_TEXT_ATTR) or "").lower() == "true"
+
+
+def _contains_retained_repeal(el: ET._Element) -> bool:
+    for descendant in el.iter():
+        retain_text = descendant.get(_RETAIN_TEXT_ATTR)
+        if (
+            retain_text is not None
+            and retain_text.lower() == "true"
+            and _tag(descendant) == "Repeal"
+        ):
+            return True
+    return False
 
 
 def _oracle_text_eliding_retained_repeals(el: Optional[ET._Element]) -> tuple[str, bool]:
@@ -1124,6 +1194,7 @@ def _parse_block_amendment_tables(
     return tables
 
 
+@lru_cache(maxsize=512)
 def _get_kind(tag: str, context: str = "body", is_eur: bool = False) -> str:
     t = tag.lower()
     if is_eur and t in ("p1", "section", "article", "eusection"):
@@ -1359,47 +1430,47 @@ def _is_zombie(el: ET._Element, force_active: bool = False, pit_date: Optional[s
         if restrict_end <= "2026-03-20":
             return True
 
-    structural = (
-        "part",
-        "chapter",
-        "euchapter",
-        "p1group",
-        "section",
-        "p1",
-        "article",
-        "eusection",
-        "pblock",
-        "p2",
-        "p3",
-        "p4",
-        "subsection",
-        "paragraph",
-        "schedule",
-    )
-
-    def _collect_local(node):
-        txt = []
-        if node.text:
-            txt.append(node.text)
-        for c in node:
-            ct = _tag(c).lower()
-            if ct not in structural and ct not in ("pnumber", "number", "title", "commentaryref"):
-                txt.extend(_collect_local(c))
-            if c.tail:
-                txt.append(c.tail)
-        return txt
-
-    content_str = "".join(_collect_local(el)).strip()
-    if content_str and _DOT_OR_SPACE_ONLY_RE.match(content_str):
+    if _local_content_is_dot_or_space_only(el):
         has_active = False
         for child in el:
-            if _tag(child).lower() in structural:
+            if _tag(child).lower() in _ZOMBIE_LOCAL_TEXT_STRUCTURAL_TAGS:
                 if not _is_zombie(child, False, pit_date):
                     has_active = True
                     break
         if not has_active:
             return True
     return False
+
+
+def _local_content_is_dot_or_space_only(el: ET._Element) -> bool:
+    """Return whether local non-structural text is non-empty dot/space filler."""
+    saw_dot = False
+
+    def _scan(text: str) -> bool:
+        nonlocal saw_dot
+        for char in text:
+            if char == ".":
+                saw_dot = True
+            elif not char.isspace():
+                return False
+        return True
+
+    def _walk(node: ET._Element) -> bool:
+        if node.text and not _scan(node.text):
+            return False
+        for child in node:
+            ct = _tag(child).lower()
+            if (
+                ct not in _ZOMBIE_LOCAL_TEXT_STRUCTURAL_TAGS
+                and ct not in _ZOMBIE_LOCAL_TEXT_SKIP_TAGS
+                and not _walk(child)
+            ):
+                return False
+            if child.tail and not _scan(child.tail):
+                return False
+        return True
+
+    return _walk(el) and saw_dot
 
 
 def _parse_children(parent_el, context, force_active=False, pit_date=None, is_eur=False) -> list[IRNode]:
@@ -2214,6 +2285,11 @@ def _normalize_text_for_grounding(text: str) -> str:
 
 def _semantic_hash(text: str) -> str:
     s = _normalize_text_for_grounding(text)
+    return _semantic_hash_from_normalized_text(s)
+
+
+def _semantic_hash_from_normalized_text(text: str) -> str:
+    s = text
     s = _SEMANTIC_HASH_NOISE_RE.sub("", s)
     return "".join(s.split())
 
@@ -2244,12 +2320,12 @@ def _visit_eid(
         return
     skip_own_eid = tag in _NON_LEGAL_UNIT_EID_TAGS
     eid = el.get("eId") or el.get("id")
-    _pnum = el.find(f"./{{{_LEG_NS}}}Pnumber")
-    _nnum = el.find(f"./{{{_LEG_NS}}}Number")
+    _pnum = el.find(_LEG_PNUMBER_PATH)
+    _nnum = el.find(_LEG_NUMBER_PATH)
     num_el = _pnum if _pnum is not None else _nnum
     kind = _get_kind(tag, context, is_eur)
     if num_el is None and kind in ("chapter", "part"):
-        num_el = el.find(f".//{{{_LEG_NS}}}Number")
+        num_el = el.find(_LEG_DESC_NUMBER_PATH)
     num = _extract_num(num_el)
     clean_num = _clean_num(num)
 
@@ -2288,26 +2364,12 @@ def _visit_eid(
     elif kind == "body":
         new_context = "body"
 
-    title_el = el.find(f"./{{{_LEG_NS}}}Title")
+    title_el = el.find(_LEG_TITLE_PATH)
     title = _text_content(title_el) if title_el is not None else ""
     slug = _slugify(title)
-    transparent_tags = (
-        "p1para",
-        "p2para",
-        "p3para",
-        "p4para",
-        "schedules",
-        "schedulebody",
-        "pnumber",
-        "number",
-        "title",
-        "body",
-        "eubody",
-        "euretained",
-    )
     node_key_part = f"{kind}-{clean_num}" if clean_num else (f"{kind}-{slug}" if slug else kind)
 
-    if kind in transparent_tags:
+    if kind in _EID_TRANSPARENT_TAGS:
         this_node_path = parent_path_key
     else:
         this_node_path = f"{parent_path_key}:{node_key_part}" if parent_path_key else node_key_part
@@ -2337,7 +2399,7 @@ def _visit_eid(
         if text and not _DOT_OR_SPACE_ONLY_RE.match(text):
             norm = _normalize_text_for_grounding(text)
             text_map[eid] = norm
-            h = _semantic_hash(text)
+            h = _semantic_hash_from_normalized_text(norm)
             if f"hash:{h}" not in eid_map:
                 eid_map[f"hash:{h}"] = eid
             # presentation_cleanup: when the oracle keeps a repealed phrase
@@ -2353,7 +2415,10 @@ def _visit_eid(
             # left untouched; this is oracle-side, comparison-only, and never
             # changes LawVM's compiled ops or materialized text.  Auditable,
             # never silent (AGENTS.md §0/§7).
-            elided_text, retained_repeal_elided = _oracle_text_eliding_retained_repeals(el)
+            if _contains_retained_repeal(el):
+                elided_text, retained_repeal_elided = _oracle_text_eliding_retained_repeals(el)
+            else:
+                elided_text, retained_repeal_elided = "", False
             if retained_repeal_elided:
                 elided_norm = _normalize_text_for_grounding(elided_text)
                 if elided_norm != norm:
@@ -2412,7 +2477,7 @@ def _visit_eid(
             and not slug
         ):
             _inferred_slug = ""
-            _p1g_title_el = el.find(f"./{{{_LEG_NS}}}P1group/{{{_LEG_NS}}}Title")
+            _p1g_title_el = el.find(_LEG_P1GROUP_TITLE_PATH)
             if _p1g_title_el is not None:
                 _inferred_slug = _slugify(_text_content(_p1g_title_el))
             if not _inferred_slug and "-crossheading-" in str(eid or ""):
@@ -2454,7 +2519,7 @@ def _visit_eid(
         if _is_zombie(child, False, pit_date):
             continue
         ck = _get_kind(ct, new_context, is_eur)
-        if ck not in transparent_tags:
+        if ck not in _EID_TRANSPARENT_TAGS:
             kind_counts[ck] = kind_counts.get(ck, 0) + 1
             ord_path = f"{next_parent_path}:{ck}[{kind_counts[ck]}]".lower()
             ceid = child.get("eId") or child.get("id")
@@ -2478,6 +2543,7 @@ def _visit_eid(
 
 
 def _extract_eid_map_from_root(root: Any, pit_date: Optional[str] = None) -> Dict[str, Any]:
+    tag_cache_token = _TAG_CACHE_CTX.set({})
     eid_map = {}
     text_map = {}
     physical_eid_aliases: dict[str, str] = {}
@@ -2489,47 +2555,50 @@ def _extract_eid_map_from_root(root: Any, pit_date: Optional[str] = None) -> Dic
     # comparison accept EITHER form (repeal applied / not applied) so the 1-D
     # consolidation artifact is neutral.  See _oracle_text_eliding_retained_repeals.
     retain_text_elided_text_map: dict[str, str] = {}
-    is_eur = any(_tag(el) == "EURetained" for el in root.iter() if isinstance(el.tag, str))
-    body = root.find(f".//{{{_LEG_NS}}}Body")
-    if body is None:
-        body = root.find(f".//{{{_LEG_NS}}}EURetained")
-    if body is not None:
-        _visit_eid(
-            body,
-            "body",
-            "body",
-            is_eur,
-            pit_date,
-            eid_map,
-            text_map,
-            physical_eid_aliases,
-            visible_number_eid_aliases,
-            oracle_identity_observations,
-            retain_text_elided_text_map,
-        )
-    schedules = root.find(f".//{{{_LEG_NS}}}Schedules")
-    if schedules is not None:
-        _visit_eid(
-            schedules,
-            "",
-            "schedule",
-            is_eur,
-            pit_date,
-            eid_map,
-            text_map,
-            physical_eid_aliases,
-            visible_number_eid_aliases,
-            oracle_identity_observations,
-            retain_text_elided_text_map,
-        )
-    return {
-        "eid_map": eid_map,
-        "text_map": text_map,
-        "retain_text_elided_text_map": retain_text_elided_text_map,
-        "physical_eid_aliases": physical_eid_aliases,
-        "visible_number_eid_aliases": visible_number_eid_aliases,
-        "oracle_identity_observations": oracle_identity_observations,
-    }
+    try:
+        is_eur = any(_tag(el) == "EURetained" for el in root.iter() if isinstance(el.tag, str))
+        body = root.find(f".//{{{_LEG_NS}}}Body")
+        if body is None:
+            body = root.find(f".//{{{_LEG_NS}}}EURetained")
+        if body is not None:
+            _visit_eid(
+                body,
+                "body",
+                "body",
+                is_eur,
+                pit_date,
+                eid_map,
+                text_map,
+                physical_eid_aliases,
+                visible_number_eid_aliases,
+                oracle_identity_observations,
+                retain_text_elided_text_map,
+            )
+        schedules = root.find(f".//{{{_LEG_NS}}}Schedules")
+        if schedules is not None:
+            _visit_eid(
+                schedules,
+                "",
+                "schedule",
+                is_eur,
+                pit_date,
+                eid_map,
+                text_map,
+                physical_eid_aliases,
+                visible_number_eid_aliases,
+                oracle_identity_observations,
+                retain_text_elided_text_map,
+            )
+        return {
+            "eid_map": eid_map,
+            "text_map": text_map,
+            "retain_text_elided_text_map": retain_text_elided_text_map,
+            "physical_eid_aliases": physical_eid_aliases,
+            "visible_number_eid_aliases": visible_number_eid_aliases,
+            "oracle_identity_observations": oracle_identity_observations,
+        }
+    finally:
+        _TAG_CACHE_CTX.reset(tag_cache_token)
 
 
 def extract_eid_map(xml_path: Path, pit_date: Optional[str] = None) -> Dict[str, Any]:

@@ -45,7 +45,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Iterator, cast
 
 from lawvm.corpus_store import CorpusStore, oracle_url
 from lawvm.core.source_acquisition import (
@@ -566,6 +566,40 @@ class TransparentCorpusStore(CorpusStore):
         and never treats the source wrapper as replay authority.
         """
         return self._read_source_bytes(sid)
+
+    def iter_source_bytes_for_internal_scan(
+        self,
+        *,
+        min_year: int | None = None,
+    ) -> Iterator[tuple[str, bytes]]:
+        """Yield current source XML bytes for corpus-wide read-only scan indexes.
+
+        This is the bulk form of :meth:`read_source_for_internal_scan`.  It uses
+        the source-locator index once, then reads each content digest directly,
+        avoiding one locator-resolution query per statute while preserving the
+        same archive-only source surface.
+        """
+        where = "locator LIKE ? AND observed_until IS NULL"
+        params: tuple[object, ...] = ("finlex://sd/%/fin/main.xml",)
+        if min_year is not None:
+            where += " AND locator >= ?"
+            params = (*params, f"finlex://sd/{min_year:04d}/")
+        rows = self._archive._conn.execute(
+            "SELECT locator, digest FROM locator_span "
+            f"WHERE {where} "
+            "ORDER BY locator",
+            params,
+        ).fetchall()
+        for locator, digest in rows:
+            m = re.match(r"finlex://sd/(\d{4}/[^/]+)/fin/main\.xml$", str(locator))
+            if m is None:
+                continue
+            sid = m.group(1)
+            if sid in _KNOWN_MISSING_SOURCES:
+                continue
+            data = self._archive.read(str(digest))
+            if data is not None:
+                yield sid, data
 
     def _read_source_bytes(self, sid: str) -> bytes | None:
         """Read original enacted statute XML bytes (Farchive cache only).

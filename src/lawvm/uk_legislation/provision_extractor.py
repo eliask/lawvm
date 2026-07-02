@@ -165,20 +165,26 @@ _PROVISION_KIND_SYNONYMS = {
 }
 
 
-def _append_sequence_token(seq_parts: list[str], part: str) -> None:
+@lru_cache(maxsize=65536)
+def _sequence_token_parts(part: str) -> tuple[str, ...]:
     if not part:
-        return
+        return ()
     p_low = part.lower()
     if p_low in _SEQUENCE_KIND_TOKENS:
-        seq_parts.append(p_low)
-    elif p_low in _ROMAN_NUMERAL_LABELS:
-        seq_parts.append(_ROMAN_NUMERAL_LABELS[p_low])
-    elif p_low.isascii() and p_low.isdigit():
-        seq_parts.append(p_low)
-    elif p_low.isascii() and p_low.isalpha():
-        seq_parts.append(p_low)
-    elif match := _NUM_ALPHA_RE.fullmatch(p_low):
-        seq_parts.extend([match.group(1), match.group(2)])
+        return (p_low,)
+    if p_low in _ROMAN_NUMERAL_LABELS:
+        return (_ROMAN_NUMERAL_LABELS[p_low],)
+    if p_low.isascii() and p_low.isdigit():
+        return (p_low,)
+    if p_low.isascii() and p_low.isalpha():
+        return (p_low,)
+    if match := _NUM_ALPHA_RE.fullmatch(p_low):
+        return (match.group(1), match.group(2))
+    return ()
+
+
+def _append_sequence_token(seq_parts: list[str], part: str) -> None:
+    seq_parts.extend(_sequence_token_parts(part))
 
 
 @lru_cache(maxsize=131072)

@@ -21,7 +21,7 @@ from lawvm.finland.citation_routing import (
 from lawvm.finland.corrigendum import extract_inline_corrections, get_patch_table
 from lawvm.finland.effect_lifecycle_signals import EffectRelationSignal
 from lawvm.finland.process_findings import ProcessFindingRecorder
-from lawvm.finland.source_model import AmendmentSourceModel
+from lawvm.finland.source_model import AmendmentSourceModel, SourceMetadataSeed
 
 RecordProcessFinding = Callable[..., Finding]
 ReplayPrint = Callable[[str], None]
@@ -57,16 +57,19 @@ class ProcessAcquisitionContext:
     replay_print: ReplayPrint
     tree_title: TreeTitle
     amendment_lacks_operative_structure: OperativeStructureCheck
+    selection_metadata: SourceMetadataSeed | None = None
 
     def acquire(self) -> ProcessAcquisitionResult:
         pre_correction_bytes = self.xml_bytes
         xml_bytes, source_patch_op_ids = self._apply_source_corrections(pre_correction_bytes)
         muutos_tree = etree.fromstring(xml_bytes)
+        metadata_seed = self.selection_metadata if not source_patch_op_ids else None
         source_model = AmendmentSourceModel.from_tree(
             muutos_tree,
             source_ref=self.amendment_id,
             source_bytes=xml_bytes,
             pre_correction_bytes=pre_correction_bytes,
+            metadata_seed=metadata_seed,
         )
         self._record_source_correction_findings(source_model, source_patch_op_ids)
         lacks_operative_structure, operative_tags = self.amendment_lacks_operative_structure(muutos_tree)

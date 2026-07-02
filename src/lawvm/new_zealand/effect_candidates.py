@@ -1032,8 +1032,17 @@ def build_archived_work_effect_candidate_surface(db_path: Path, work_id: str) ->
 
     target_document = parse_archived_work_latest(db_path, work_id)
     operation_surface = build_archived_work_operation_surface(db_path, work_id)
-    payload_surface = build_archived_work_payload_surface(db_path, work_id)
-    effect_readiness = build_archived_work_effect_readiness_surface(db_path, work_id)
+    payload_surface = build_archived_work_payload_surface(
+        db_path,
+        work_id,
+        operation_surface=operation_surface,
+    )
+    effect_readiness = build_archived_work_effect_readiness_surface(
+        db_path,
+        work_id,
+        operation_surface=operation_surface,
+        payload_surface=payload_surface,
+    )
     instruction_workqueue = build_instruction_workqueue(
         operation_surface,
         payload_surface,

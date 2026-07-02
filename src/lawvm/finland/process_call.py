@@ -24,6 +24,7 @@ from lawvm.finland.ops import FailedOp
 from lawvm.finland.process_request import ProcessAmendmentRequest
 from lawvm.finland.process_result_builder import ProcessAmendmentSinks
 from lawvm.finland.restructure_plan import StructuralTransformPlan
+from lawvm.finland.source_model import SourceMetadataSeed
 from lawvm.finland.statute import ReplayState, StatuteContext
 
 
@@ -57,6 +58,7 @@ class ResolvedProcessAmendmentCall:
     prior_migration_events: Optional[Iterable[MigrationEvent]]
     restructure_plans_out: Optional[list[StructuralTransformPlan]]
     processed_amendment_titles: Optional[Dict[str, str]]
+    selection_metadata: Optional[SourceMetadataSeed]
     amendment_edge_kind: str
     # WAIST #6 carrier: the per-amendment canonical-op StageResult sink (see
     # ``ProcessAmendmentSinks.canonical_op_stages_out``).
@@ -97,6 +99,7 @@ def resolve_process_amendment_call(
         prior_migration_events=request.prior_migration_events,
         restructure_plans_out=sinks.restructure_plans_out,
         processed_amendment_titles=request.processed_amendment_titles,
+        selection_metadata=request.selection_metadata,
         amendment_edge_kind=request.amendment_edge_kind,
         canonical_op_stages_out=sinks.canonical_op_stages_out,
     )

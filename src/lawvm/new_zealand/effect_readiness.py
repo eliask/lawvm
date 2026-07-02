@@ -320,9 +320,21 @@ def build_effect_readiness_surface(
     return NZEffectReadinessReport(work_id=operation_surface.work_id, rows=tuple(rows))
 
 
-def build_archived_work_effect_readiness_surface(db_path: Path, work_id: str) -> NZEffectReadinessReport:
-    operation_surface = build_archived_work_operation_surface(db_path, work_id)
-    payload_surface = build_archived_work_payload_surface(db_path, work_id)
+def build_archived_work_effect_readiness_surface(
+    db_path: Path,
+    work_id: str,
+    *,
+    operation_surface: NZOperationSurfaceReport | None = None,
+    payload_surface: NZPayloadSurfaceReport | None = None,
+) -> NZEffectReadinessReport:
+    if operation_surface is None:
+        operation_surface = build_archived_work_operation_surface(db_path, work_id)
+    if payload_surface is None:
+        payload_surface = build_archived_work_payload_surface(
+            db_path,
+            work_id,
+            operation_surface=operation_surface,
+        )
     return build_effect_readiness_surface(operation_surface, payload_surface)
 
 

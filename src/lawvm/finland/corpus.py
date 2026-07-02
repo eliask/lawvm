@@ -272,6 +272,14 @@ def _selected_consolidated_locator_for_statute(
     """Return one selected consolidated locator without forcing a global rescan."""
     if corpus is None:
         corpus = _get_corpus_store()
+    archive = getattr(corpus, "_archive", None)
+    if archive is not None and hasattr(archive, "locators"):
+        locator, _provenance = _selected_consolidated_locator_and_provenance_for_statute(
+            statute_id,
+            corpus,
+            selector,
+        )
+        return locator
     if _is_default_latest_selector(selector):
         return _selected_consolidated_path_by_statute(corpus, selector).get(statute_id, "")
     locator, _provenance = _selected_consolidated_locator_and_provenance_for_statute(

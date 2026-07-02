@@ -48,6 +48,7 @@ from lawvm.finland.helpers import _parse_iso_date
 from lawvm.finland.process_request import ProcessAmendmentRequest
 from lawvm.finland.process_result_builder import ProcessAmendmentSinks
 from lawvm.finland.restructure_plan import StructuralTransformPlan
+from lawvm.finland.source_model import SourceMetadataSeed
 from lawvm.finland.temporal_rewrites import reconcile_temporal_event_expiry_with_op_sources
 from lawvm.finland.vts import VtsSkippedTarget, VtsSourceDiagnostic
 
@@ -615,6 +616,24 @@ def _effective_dates_by_amendment_record(
     return effective_dates
 
 
+def _selection_metadata_by_amendment_record(
+    amendment_records: list[dict[str, Any]],
+) -> dict[str, SourceMetadataSeed]:
+    metadata_by_amendment: dict[str, SourceMetadataSeed] = {}
+    for record in amendment_records:
+        amendment_id = str(record.get("statute_id") or "")
+        effective_date_step = str(record.get("effective_date_step") or "")
+        if not amendment_id or not effective_date_step:
+            continue
+        metadata_by_amendment[amendment_id] = SourceMetadataSeed(
+            source_issue_date=_parse_iso_date(str(record.get("issue_date") or "")),
+            source_title=str(record.get("title") or ""),
+            effective_date=_parse_iso_date(str(record.get("effective_date") or "")),
+            effective_date_step=effective_date_step,
+        )
+    return metadata_by_amendment
+
+
 def execute_replay_plan(
     plan: ReplayPlan,
     *,
@@ -756,6 +775,7 @@ def execute_replay_plan(
         str(record.get("statute_id") or ""): str(record.get("edge_kind") or "oracle_amendedBy")
         for record in plan.amendment_records
     }
+    record_metadata = _selection_metadata_by_amendment_record(plan.amendment_records)
     for idx, mid in enumerate(plan.amendment_ids):
         future_repeals = repeal_suffix[idx] if idx < len(repeal_suffix) else set()
         _pm_result = process_muutoslaki(
@@ -771,6 +791,7 @@ def execute_replay_plan(
                 future_repeals=future_repeals if future_repeals else None,
                 prior_migration_events=tuple(effective_migration_events_out),
                 processed_amendment_titles=processed_amendment_titles,
+                selection_metadata=record_metadata.get(str(mid)),
                 amendment_edge_kind=record_edge_kinds.get(str(mid), "oracle_amendedBy"),
             ),
             signals.process_sinks(

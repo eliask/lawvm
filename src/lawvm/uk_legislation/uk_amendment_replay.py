@@ -24,7 +24,8 @@ Current status:
 from __future__ import annotations
 
 import contextvars
-from dataclasses import replace as _dc_replace
+import hashlib
+from dataclasses import dataclass, replace as _dc_replace
 from enum import Enum
 import json as json
 import time
@@ -38,7 +39,7 @@ from lawvm.core.ir import (
     LegalOperation,
     OperationSource,
 )
-from lawvm.core.provenance import compute_source_anchor, unique_byte_run_texts
+from lawvm.core.provenance import SourceAnchor, unique_byte_run_text_positions
 from lawvm.core.mutation_events import MutationEvent
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.uk_grafter import _LEG_NS as _LEG_NS
@@ -230,7 +231,6 @@ from lawvm.uk_legislation.text_rewrite_fragments import (
 from lawvm.uk_legislation.xml_helpers import (
     _tag as _tag,
     _text_content as _text_content,
-    evict_xml_helper_caches as evict_xml_helper_caches,
 )
 
 _UK_AMENDMENT_REPLAY_COMPAT_EXPORTS = (
@@ -382,6 +382,19 @@ _UK_SOURCE_ANCHOR_BODY_TAGS: frozenset[str] = frozenset(
 )
 
 
+@dataclass(frozen=True, slots=True)
+class _UniqueByteRunBody:
+    text: str
+    source_anchor: SourceAnchor
+
+
+def _anchor_pass_text_content(el: ET._Element) -> str:
+    """Text-content normalization for throwaway source-anchor parses."""
+    if len(el) == 0:
+        return " ".join((el.text or "").split())
+    return " ".join(" ".join(str(part) for part in el.itertext()).split())
+
+
 def set_uk_raw_source_context(
     raw_by_artifact: Dict[str, bytes],
 ) -> "contextvars.Token[Dict[str, bytes] | None]":
@@ -402,11 +415,13 @@ def reset_uk_raw_source_context(
     _UK_RAW_SOURCE_CTX.reset(token)
 
 
-def _unique_byte_run_bodies(
+def _unique_byte_run_body_records(
     raw_bytes: bytes,
+    *,
+    source_artifact_id: str,
     candidate_clauses: Optional[Iterable[str]] = None,
-) -> List[str]:
-    """Return every element ``_text_content`` that is a UNIQUE byte run of ``raw_bytes``.
+) -> List[_UniqueByteRunBody]:
+    """Return every element body with its verified unique byte-span anchor.
 
     Parses the affecting-act XML once and walks every element, collecting the
     whitespace-collapsed text content (:func:`xml_helpers._text_content`, the same
@@ -418,37 +433,66 @@ def _unique_byte_run_bodies(
     to the raw bytes between their open/close tags. Returned LONGEST-first so the
     per-op selector prefers the most specific (largest) body of a clause.
 
-    Pure read of the bytes; no fabrication — :func:`compute_source_anchor` still
-    independently re-verifies byte-exactness and uniqueness before any anchor mints.
+    Pure read of the bytes; no fabrication — a body record is emitted only after
+    the same byte-exact existence and uniqueness checks that
+    :func:`lawvm.core.provenance.compute_source_anchor` performs. The checked span
+    is carried forward as a :class:`SourceAnchor`, so the op-stamping pass does not
+    re-scan the raw artifact for a fact already proven here.
     """
-    clause_filter = tuple(clause for clause in (candidate_clauses or ()) if clause)
+    clause_haystack = "\x00".join(
+        clause for clause in (candidate_clauses or ()) if clause and "\x00" not in clause
+    )
     try:
         tree = ET.fromstring(raw_bytes)
     except ET.XMLSyntaxError:
         return []
     seen: set[str] = set()
     candidates: List[str] = []
-    try:
-        for node in tree.iter():
-            if not isinstance(node.tag, str) or _tag(node) not in _UK_SOURCE_ANCHOR_BODY_TAGS:
-                continue
-            text = _text_content(node)
-            if not text or text in seen:
-                seen.add(text)
-                continue
-            if clause_filter and not any(text in clause for clause in clause_filter):
-                continue
+    for node in tree.iter():
+        if not isinstance(node.tag, str) or _tag(node) not in _UK_SOURCE_ANCHOR_BODY_TAGS:
+            continue
+        text = _anchor_pass_text_content(node)
+        if not text or text in seen:
             seen.add(text)
-            candidates.append(text)
-    finally:
-        # §source_root_lifecycle: this is a throwaway parse local to the anchor
-        # pass; evict its elements from the shared _text_content cache so they do
-        # not leak past this call (the cache cannot weak-ref lxml elements).
-        evict_xml_helper_caches(tree)
+            continue
+        if clause_haystack and text not in clause_haystack:
+            continue
+        seen.add(text)
+        candidates.append(text)
     # Shared indexed kernel decides global byte-run uniqueness (replaces the
     # per-candidate two-``find`` O(N^2) scan — AGENTS.md §2.7). Byte-identical to
     # the old loop: same dedup, same predicate, same LONGEST-first stable sort.
-    return unique_byte_run_texts(raw_bytes, candidates)
+    bodies: List[_UniqueByteRunBody] = []
+    for text, first in unique_byte_run_text_positions(raw_bytes, candidates):
+        needle = text.encode("utf-8")
+        bodies.append(
+            _UniqueByteRunBody(
+                text=text,
+                source_anchor=SourceAnchor(
+                    source_artifact_id=source_artifact_id,
+                    byte_offset=first,
+                    byte_len=len(needle),
+                    quote_hash="sha256:" + hashlib.sha256(needle).hexdigest(),
+                ),
+            )
+        )
+    return bodies
+
+
+def _unique_byte_run_bodies(
+    raw_bytes: bytes,
+    candidate_clauses: Optional[Iterable[str]] = None,
+) -> List[str]:
+    """Return every element ``_text_content`` that is a UNIQUE byte run of ``raw_bytes``."""
+
+    return [
+        record.text
+        for record in _unique_byte_run_body_records(
+            raw_bytes,
+            source_artifact_id="lawvm.uk.unique_byte_run_probe",
+            candidate_clauses=candidate_clauses,
+        )
+    ]
 
 
 def mint_uk_source_anchors(
@@ -491,8 +535,10 @@ def mint_uk_source_anchors(
         return ops
     # Per-artifact unique-byte-run body index, parsed at most once per affecting act
     # touched by the op stream (the affecting acts are 9–56 per statute).
-    bodies_by_artifact: Dict[str, List[str]] = {}
+    bodies_by_artifact: Dict[str, List[_UniqueByteRunBody]] = {}
+    anchors_by_artifact_clause: Dict[str, Dict[str, Optional[SourceAnchor]]] = {}
     clauses_by_artifact: Dict[str, List[str]] = {}
+    seen_clauses_by_artifact: Dict[str, set[str]] = {}
     for op in ops:
         src = op.source
         if src is None or src.source_anchor is not None:
@@ -500,17 +546,56 @@ def mint_uk_source_anchors(
         clause = src.raw_text or op.raw_text or ""
         if not clause:
             continue
+        seen_clauses = seen_clauses_by_artifact.setdefault(src.statute_id, set())
+        if clause in seen_clauses:
+            continue
+        seen_clauses.add(clause)
         clauses_by_artifact.setdefault(src.statute_id, []).append(clause)
 
-    def _bodies_for(artifact_id: str, raw_bytes: bytes) -> List[str]:
+    def _bodies_for(artifact_id: str, raw_bytes: bytes) -> List[_UniqueByteRunBody]:
         cached = bodies_by_artifact.get(artifact_id)
         if cached is None:
-            cached = _unique_byte_run_bodies(
+            cached = _unique_byte_run_body_records(
                 raw_bytes,
+                source_artifact_id=artifact_id,
                 candidate_clauses=clauses_by_artifact.get(artifact_id, ()),
             )
             bodies_by_artifact[artifact_id] = cached
         return cached
+
+    def _anchors_for_artifact(
+        artifact_id: str,
+        raw_bytes: bytes,
+    ) -> Dict[str, Optional[SourceAnchor]]:
+        cached = anchors_by_artifact_clause.get(artifact_id)
+        if cached is not None:
+            return cached
+        anchors: Dict[str, Optional[SourceAnchor]] = {
+            clause: None for clause in clauses_by_artifact.get(artifact_id, ())
+        }
+        unresolved = set(anchors)
+        for candidate in _bodies_for(artifact_id, raw_bytes):
+            if not candidate.text:
+                continue
+            matched = [clause for clause in unresolved if candidate.text in clause]
+            for clause in matched:
+                anchors[clause] = candidate.source_anchor
+            unresolved.difference_update(matched)
+            if not unresolved:
+                break
+        anchors_by_artifact_clause[artifact_id] = anchors
+        return anchors
+
+    def _anchor_for_clause(
+        artifact_id: str,
+        raw_bytes: bytes,
+        clause: str,
+    ) -> Optional[SourceAnchor]:
+        # Re-scope to the operative body: the first longest-first unique-byte-run
+        # element body of the affecting act that is a substring of this op's
+        # clause.  The artifact-local pass preserves that same body order while
+        # resolving every distinct clause once.
+        return _anchors_for_artifact(artifact_id, raw_bytes).get(clause)
 
     anchored: List[LegalOperation] = []
     for op in ops:
@@ -522,22 +607,7 @@ def mint_uk_source_anchors(
         clause = src.raw_text or op.raw_text or ""
         anchor = None
         if raw_bytes and clause:
-            # Re-scope to the operative body: the longest unique-byte-run element
-            # body of the affecting act that is a substring of this op's clause.
-            body = next(
-                (
-                    candidate
-                    for candidate in _bodies_for(src.statute_id, raw_bytes)
-                    if candidate and candidate in clause
-                ),
-                None,
-            )
-            if body:
-                anchor = compute_source_anchor(
-                    source_artifact_id=src.statute_id,
-                    raw_bytes=raw_bytes,
-                    clause_text=body,
-                )
+            anchor = _anchor_for_clause(src.statute_id, raw_bytes, clause)
         if anchor is None:
             anchored.append(op)
             continue

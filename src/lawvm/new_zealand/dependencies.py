@@ -162,6 +162,22 @@ def latest_xml_locator_for_work(archive: ArchiveReader, work_id: str) -> tuple[s
 
 def latest_xml_locator_selection_for_work(archive: ArchiveReader, work_id: str) -> NZLatestXMLLocatorSelection:
     """Return the latest archived XML locator plus rejected source-lane diagnostics."""
+    from lawvm.new_zealand.corpus_cache import active_corpus_run_cache
+
+    cache = active_corpus_run_cache()
+    if cache is not None:
+        return cache.latest_locator_selection(
+            archive,
+            work_id,
+            _latest_xml_locator_selection_for_work_uncached,
+        )
+    return _latest_xml_locator_selection_for_work_uncached(archive, work_id)
+
+
+def _latest_xml_locator_selection_for_work_uncached(
+    archive: ArchiveReader, work_id: str
+) -> NZLatestXMLLocatorSelection:
+    """Return the latest archived XML locator plus rejected source-lane diagnostics."""
     prefix = f"https://api.legislation.govt.nz/v0/versions/{work_id}_en_"
     version_locs = sorted(archive.locators(prefix + "%"), reverse=True)
     diagnostics: list[dict[str, Any]] = []

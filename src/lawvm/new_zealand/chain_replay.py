@@ -50,7 +50,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from lawvm.core.evidence_support import best_section_similarity, section_similarity
+from lawvm.core.evidence_support import (
+    best_section_similarity_cleaned,
+    clean_similarity_text,
+    section_similarity,
+    section_similarity_cleaned,
+)
 from lawvm.new_zealand.acquisition import open_farchive
 from lawvm.new_zealand.dry_run import (
     _amending_act_root,
@@ -1406,6 +1411,28 @@ def _node_similarity_text(node: NZSourceNode) -> str:
     return f"{node.heading}\n{node.text}\n{marker}".strip()
 
 
+def _cleaned_node_similarity_text(node: NZSourceNode) -> str:
+    return clean_similarity_text(_node_similarity_text(node))
+
+
+_CleanedNodeSimilarityKey = tuple[str, str, str]
+
+
+def _cached_cleaned_node_similarity_text(
+    node: NZSourceNode,
+    cache: dict[_CleanedNodeSimilarityKey, str] | None,
+) -> str:
+    if cache is None:
+        return _cleaned_node_similarity_text(node)
+    key = (node.heading, node.text, node.deletion_status)
+    cached = cache.get(key)
+    if cached is not None:
+        return cached
+    text = _cleaned_node_similarity_text(node)
+    cache[key] = text
+    return text
+
+
 def _similarity_point(
     replayed: NZSourceDocument,
     oracle: NZSourceDocument,
@@ -1414,11 +1441,17 @@ def _similarity_point(
     transitions_applied: int,
     repeals_applied: int,
     repeals_skipped: int,
+    cleaned_text_cache: dict[_CleanedNodeSimilarityKey, str] | None = None,
 ) -> NZChainSimilarityPoint:
     replayed_index = _node_text_index(replayed)
     oracle_index = _node_text_index(oracle)
     all_paths = sorted(replayed_index.keys() | oracle_index.keys())
     shared_paths = replayed_index.keys() & oracle_index.keys()
+    cleaned_text_by_node: dict[NZSourceNode, str] = {}
+    for node in replayed_index.values():
+        cleaned_text_by_node[node] = _cached_cleaned_node_similarity_text(node, cleaned_text_cache)
+    for node in oracle_index.values():
+        cleaned_text_by_node[node] = _cached_cleaned_node_similarity_text(node, cleaned_text_cache)
 
     union_scores: list[float] = []
     shared_scores: list[float] = []
@@ -1429,8 +1462,8 @@ def _similarity_point(
             # Missing/extra path: scores 0 in the FI-style combined metric.
             union_scores.append(0.0)
             continue
-        score = section_similarity(
-            _node_similarity_text(replayed_node), _node_similarity_text(oracle_node)
+        score = section_similarity_cleaned(
+            cleaned_text_by_node[replayed_node], cleaned_text_by_node[oracle_node]
         )
         union_scores.append(score)
         shared_scores.append(score)
@@ -1457,9 +1490,9 @@ def _similarity_point(
         # product is the chain-replay O(N^2) hotspot; ``best_section_similarity``
         # returns a value byte-identical to the plain ``max(section_similarity ...)``
         # above but prunes pairs that provably cannot beat the running best.
-        best = best_section_similarity(
-            (_node_similarity_text(r) for r in replayed_nodes),
-            (_node_similarity_text(o) for o in oracle_nodes),
+        best = best_section_similarity_cleaned(
+            (cleaned_text_by_node[r] for r in replayed_nodes),
+            (cleaned_text_by_node[o] for o in oracle_nodes),
         )
         stable_union_scores.append(best)
     combined_stable = (
@@ -1837,6 +1870,7 @@ def build_chain_replay(
     curve: list[NZChainSimilarityPoint] = []
     all_skips: list[NZChainSkip] = []
     divergences: list[NZChainDivergence] = []
+    cleaned_similarity_text_cache: dict[_CleanedNodeSimilarityKey, str] = {}
     # Per-family applied target paths (for the per-family oracle agreement check).
     applied_paths_by_family: dict[str, set[tuple[str, ...]]] = {
         family: set() for family in CHAIN_FAMILY_ORDER
@@ -1899,6 +1933,7 @@ def build_chain_replay(
                 transitions_applied=transitions_applied,
                 repeals_applied=ops_applied,
                 repeals_skipped=len(all_skips),
+                cleaned_text_cache=cleaned_similarity_text_cache,
             )
         )
 

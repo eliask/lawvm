@@ -26,8 +26,10 @@ class ReplayLegalOperationCaptureList(list[Any]):
         "base_section_node_cache",
         "base_subsection_node_cache",
         "base_target_exists_cache",
+        "prior_paragraph_label_index",
         "snapshot_index",
         "timeline_exact_target_index",
+        "timeline_latest_repeal_placeholder_index",
         "timeline_latest_target_op_index",
         "timeline_payload_target_index",
         "timeline_target_exists_cache",
@@ -39,19 +41,30 @@ class ReplayLegalOperationCaptureList(list[Any]):
         self.base_section_node_cache: object | None = None
         self.base_subsection_node_cache: object | None = None
         self.base_target_exists_cache: object | None = None
+        self.prior_paragraph_label_index: object | None = None
         self.snapshot_index: object | None = None
         self.timeline_exact_target_index: object | None = None
+        self.timeline_latest_repeal_placeholder_index: object | None = None
         self.timeline_latest_target_op_index: object | None = None
         self.timeline_payload_target_index: object | None = None
         self.timeline_target_exists_cache: object | None = None
 
-    def _invalidate_indexes(self, *, preserve_snapshot_index: bool = False) -> None:
-        self.base_provision_index_cache = None
-        self.base_section_node_cache = None
-        self.base_subsection_node_cache = None
+    def _invalidate_indexes(
+        self,
+        *,
+        preserve_base_ir_indexes: bool = False,
+        preserve_snapshot_index: bool = False,
+    ) -> None:
+        if not preserve_base_ir_indexes:
+            self.base_provision_index_cache = None
+            self.base_section_node_cache = None
+            self.base_subsection_node_cache = None
+            self.base_target_exists_cache = None
+        self.prior_paragraph_label_index = None
         if not preserve_snapshot_index:
             self.snapshot_index = None
         self.timeline_exact_target_index = None
+        self.timeline_latest_repeal_placeholder_index = None
         self.timeline_latest_target_op_index = None
         self.timeline_payload_target_index = None
         self.timeline_target_exists_cache = None
@@ -75,7 +88,10 @@ class ReplayLegalOperationCaptureList(list[Any]):
             except IndexError:
                 old_item = None
             preserve_snapshot_index = _section_snapshot_index_key(old_item) == _section_snapshot_index_key(value)
-        self._invalidate_indexes(preserve_snapshot_index=preserve_snapshot_index)
+        self._invalidate_indexes(
+            preserve_base_ir_indexes=True,
+            preserve_snapshot_index=preserve_snapshot_index,
+        )
         super().__setitem__(key, value)
 
     def __delitem__(self, key: Any) -> None:

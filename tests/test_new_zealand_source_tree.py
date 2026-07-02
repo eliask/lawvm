@@ -113,7 +113,9 @@ def test_parse_nz_source_document_indexes_label_para_nodes_as_source_structure()
     ]
 
 
-def test_legal_text_reuses_child_mode_cache_for_whitespace_structural_root() -> None:
+def test_legal_text_reuses_child_mode_cache_for_whitespace_structural_root(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     root = etree.fromstring(
         b"""\
 <prov>
@@ -126,16 +128,24 @@ def test_legal_text_reuses_child_mode_cache_for_whitespace_structural_root() -> 
 """
     )
     subprov = root.find(".//subprov")
+    label = root.find(".//label")
     assert subprov is not None
+    assert label is not None
     cache: dict[tuple[etree._Element, bool], str] = {}
 
     parent_text = source_tree._legal_text(root, cache=cache)
     child_mode_text = cache[(subprov, False)]
+
+    def fail_collect(*args: object, **kwargs: object) -> str:
+        raise AssertionError("child-mode cache should avoid a fresh collect")
+
+    monkeypatch.setattr(source_tree, "_collect_legal_text", fail_collect)
     child_text = source_tree._legal_text(subprov, cache=cache)
 
     assert parent_text == "1 1 Body text ."
     assert child_text == "1 Body text ."
     assert child_text == source_tree._normalize_text(child_mode_text)
+    assert (label, False) not in cache
 
 
 def test_node_text_leaf_fast_path_matches_mixed_content_normalization() -> None:
@@ -144,6 +154,13 @@ def test_node_text_leaf_fast_path_matches_mixed_content_normalization() -> None:
 
     assert source_tree._node_text(leaf) == "10 A"
     assert source_tree._node_text(mixed) == "A B C"
+
+
+def test_direct_child_text_leaf_fast_path_matches_node_text() -> None:
+    root = etree.fromstring(b"<prov><label>  10\nA </label><heading>A <emphasis>B</emphasis></heading></prov>")
+
+    assert source_tree._direct_child_text(root, "label") == source_tree._node_text(root[0])
+    assert source_tree._direct_child_text(root, "heading") == source_tree._node_text(root[1])
 
 
 def test_normalize_text_fast_path_preserves_whitespace_semantics() -> None:
@@ -467,16 +484,21 @@ def test_amend_instructions_empty_when_no_amend_in() -> None:
 def test_amend_instruction_prefilter_skips_unrelated_subtrees(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    calls: list[str] = []
-    original = source_tree._amend_instructions
+    call_texts: list[str] = []
+    original = source_tree._amend_instructions_from_text_nodes
 
-    def counting_amend_instructions(
-        node: etree._Element,
+    def counting_amend_instructions_from_text_nodes(
+        text_nodes,
     ) -> tuple[source_tree.NZAmendInstruction, ...]:
-        calls.append(node.get("id", ""))
-        return original(node)
+        text_node_tuple = tuple(text_nodes)
+        call_texts.extend("".join(text_node.itertext()) for text_node in text_node_tuple)
+        return original(text_node_tuple)
 
-    monkeypatch.setattr(source_tree, "_amend_instructions", counting_amend_instructions)
+    monkeypatch.setattr(
+        source_tree,
+        "_amend_instructions_from_text_nodes",
+        counting_amend_instructions_from_text_nodes,
+    )
     xml = b"""\
 <act>
   <body>
@@ -499,9 +521,9 @@ def test_amend_instruction_prefilter_skips_unrelated_subtrees(
     assert {row.new_text for node in document.nodes for row in node.amend_instructions} == {
         "new rate"
     }
-    assert "A6" in calls
-    assert "B7" not in calls
-    assert "B7-1" not in calls
+    assert call_texts
+    assert all("new rate" in text for text in call_texts)
+    assert all("No inline amendment payload" not in text for text in call_texts)
 
 
 def test_legal_text_keeps_inline_cross_reference_in_document_order() -> None:

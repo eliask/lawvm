@@ -2,9 +2,13 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+import pytest
+
+from lawvm.core import tree_ops as _tops
 from lawvm.core.ir import IRNode, LegalAddress, LegalOperation
 from lawvm.core.ir import OperationSource
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
+from lawvm.finland import apply_runtime_support as ars
 from lawvm.finland.apply_runtime_support import (
     SectionSnapshotIdentity,
     _prior_paragraph_labels_for_subsection_paths,
@@ -84,11 +88,22 @@ def test_replay_legal_operation_capture_list_invalidates_snapshot_index_on_rewri
     section_1 = SectionSnapshotIdentity(part="", chapter="", section="1")
     section_2 = SectionSnapshotIdentity(part="", chapter="", section="2")
     assert _snapshot_section_los_for_identity(history, section_1) == [op]
-    history.base_provision_index_cache = {("base",): object()}
+    base_provision_sentinel = object()
+    history.base_provision_index_cache = {("base",): base_provision_sentinel}
+    base_section_sentinel = object()
+    history.base_section_node_cache = {("base-section",): base_section_sentinel}
+    base_subsection_sentinel = object()
+    history.base_subsection_node_cache = {("base-subsection",): base_subsection_sentinel}
+    prior_paragraph_sentinel = object()
+    history.prior_paragraph_label_index = {("prior-paragraph",): prior_paragraph_sentinel}
     base_target_sentinel = object()
     history.base_target_exists_cache = {("base-target",): base_target_sentinel}
     exact_target_sentinel = object()
     history.timeline_exact_target_index = {("exact",): exact_target_sentinel}
+    repeal_placeholder_sentinel = object()
+    history.timeline_latest_repeal_placeholder_index = {
+        ("repeal-placeholder",): repeal_placeholder_sentinel
+    }
     payload_target_sentinel = object()
     history.timeline_payload_target_index = {("payload",): payload_target_sentinel}
     history.timeline_target_exists_cache = {("cached",): True}
@@ -96,9 +111,13 @@ def test_replay_legal_operation_capture_list_invalidates_snapshot_index_on_rewri
     rewritten = replace(op, target=LegalAddress(path=(("section", "2"),)))
     history[0] = rewritten
 
-    assert history.base_provision_index_cache is None
+    assert history.base_provision_index_cache == {("base",): base_provision_sentinel}
+    assert history.base_section_node_cache == {("base-section",): base_section_sentinel}
+    assert history.base_subsection_node_cache == {("base-subsection",): base_subsection_sentinel}
+    assert history.prior_paragraph_label_index is None
     assert history.base_target_exists_cache == {("base-target",): base_target_sentinel}
     assert history.timeline_exact_target_index is None
+    assert history.timeline_latest_repeal_placeholder_index is None
     assert history.timeline_payload_target_index is None
     assert history.timeline_target_exists_cache is None
     assert _snapshot_section_los_for_identity(history, section_1) == []
@@ -130,11 +149,22 @@ def test_replay_legal_operation_capture_list_preserves_snapshot_index_on_metadat
 
 def test_replay_legal_operation_capture_list_keeps_indexes_across_append() -> None:
     history = ReplayLegalOperationCaptureList()
-    history.base_provision_index_cache = {("base",): object()}
+    base_provision_sentinel = object()
+    history.base_provision_index_cache = {("base",): base_provision_sentinel}
+    base_section_sentinel = object()
+    history.base_section_node_cache = {("base-section",): base_section_sentinel}
+    base_subsection_sentinel = object()
+    history.base_subsection_node_cache = {("base-subsection",): base_subsection_sentinel}
+    prior_paragraph_sentinel = object()
+    history.prior_paragraph_label_index = {("prior-paragraph",): prior_paragraph_sentinel}
     base_target_sentinel = object()
     history.base_target_exists_cache = {("base-target",): base_target_sentinel}
     exact_target_sentinel = object()
     history.timeline_exact_target_index = {("exact",): exact_target_sentinel}
+    repeal_placeholder_sentinel = object()
+    history.timeline_latest_repeal_placeholder_index = {
+        ("repeal-placeholder",): repeal_placeholder_sentinel
+    }
     payload_target_sentinel = object()
     history.timeline_payload_target_index = {("payload",): payload_target_sentinel}
     history.timeline_target_exists_cache = {("cached",): True}
@@ -148,11 +178,40 @@ def test_replay_legal_operation_capture_list_keeps_indexes_across_append() -> No
         )
     )
 
-    assert history.base_provision_index_cache is not None
+    assert history.base_provision_index_cache == {("base",): base_provision_sentinel}
+    assert history.base_section_node_cache == {("base-section",): base_section_sentinel}
+    assert history.base_subsection_node_cache == {("base-subsection",): base_subsection_sentinel}
+    assert history.prior_paragraph_label_index == {("prior-paragraph",): prior_paragraph_sentinel}
     assert history.base_target_exists_cache == {("base-target",): base_target_sentinel}
     assert history.timeline_exact_target_index == {("exact",): exact_target_sentinel}
+    assert history.timeline_latest_repeal_placeholder_index == {
+        ("repeal-placeholder",): repeal_placeholder_sentinel
+    }
     assert history.timeline_payload_target_index == {("payload",): payload_target_sentinel}
     assert history.timeline_target_exists_cache == {("cached",): True}
+
+
+def test_replay_legal_operation_capture_list_clear_releases_base_ir_indexes() -> None:
+    history = ReplayLegalOperationCaptureList()
+    history.base_provision_index_cache = {("base",): object()}
+    history.base_section_node_cache = {("base-section",): object()}
+    history.base_subsection_node_cache = {("base-subsection",): object()}
+    history.base_target_exists_cache = {("base-target",): object()}
+    history.append(
+        LegalOperation(
+            op_id="snapshot_section_1",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "1"),)),
+        )
+    )
+
+    history.clear()
+
+    assert history.base_provision_index_cache is None
+    assert history.base_section_node_cache is None
+    assert history.base_subsection_node_cache is None
+    assert history.base_target_exists_cache is None
 
 
 def test_timeline_exact_target_index_preserves_effective_cutoff_semantics() -> None:
@@ -342,3 +401,98 @@ def test_prior_paragraph_labels_for_subsection_paths_batches_history_scan() -> N
 
     assert labels_by_path[subsection_path] == {"1", "3", "4"}
     assert labels_by_path[second_subsection_path] == {"a"}
+    assert history.prior_paragraph_label_index is not None
+
+    history.append(
+        LegalOperation(
+            op_id="append_past_paragraph",
+            sequence=5,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=subsection_path + (("paragraph", "6"),)),
+            source=OperationSource(statute_id="1999/5", effective="2019-12-01"),
+        )
+    )
+    labels_after_append = _prior_paragraph_labels_for_subsection_paths(
+        child_paths={subsection_path},
+        replay_history_ops=history,
+        base_ir=base_ir,
+        before_effective="2020-01-01",
+    )
+
+    assert labels_after_append[subsection_path] == {"1", "3", "4", "6"}
+
+    history[1] = replace(
+        history[1],
+        target=LegalAddress(path=subsection_path + (("paragraph", "7"),)),
+    )
+    assert history.prior_paragraph_label_index is None
+    labels_after_rewrite = _prior_paragraph_labels_for_subsection_paths(
+        child_paths={subsection_path},
+        replay_history_ops=history,
+        base_ir=base_ir,
+        before_effective="2020-01-01",
+    )
+
+    assert labels_after_rewrite[subsection_path] == {"1", "3", "6", "7"}
+
+
+def test_prior_paragraph_labels_base_lookup_uses_provision_index(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    subsection_path = (("section", "1"), ("subsection", "1"))
+    base_ir = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.HCONTAINER,
+                label="statuteProvisionsWrapper",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="1",
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.SUBSECTION,
+                                label="1",
+                                children=(IRNode(kind=IRNodeKind.PARAGRAPH, label="a"),),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    base_index = _tops.build_provision_label_index(base_ir)
+    original_find = ars._tops.find
+    received_indexes: list[object | None] = []
+
+    def checked_find(
+        tree: IRNode,
+        kind: str,
+        label: str,
+        scope_kind: str | None = None,
+        scope_label: str | None = None,
+        label_index: _tops.LabelIndex | None = None,
+    ) -> _tops.Path | None:
+        received_indexes.append(label_index)
+        return original_find(
+            tree,
+            kind,
+            label,
+            scope_kind=scope_kind,
+            scope_label=scope_label,
+            label_index=label_index,
+        )
+
+    monkeypatch.setattr(ars._tops, "find", checked_find)
+
+    labels_by_path = _prior_paragraph_labels_for_subsection_paths(
+        child_paths={subsection_path},
+        replay_history_ops=ReplayLegalOperationCaptureList(),
+        base_ir=base_ir,
+        before_effective="",
+        base_provision_index=base_index,
+    )
+
+    assert labels_by_path[subsection_path] == {"a"}
+    assert received_indexes == [base_index]
