@@ -1210,6 +1210,33 @@ class AmendmentSourceModel:
         self._section_payload_text_cache[key] = result
         return result
 
+    def unique_section_source_text_contains(
+        self,
+        section_label: str,
+        fragment: str,
+        *,
+        target_chapter: Optional[str] = None,
+        target_part: Optional[str] = None,
+    ) -> bool | None:
+        """Return whether a unique observed section's source text contains a fragment.
+
+        ``None`` means the body lookup was not unique, so callers must keep their
+        existing fallback path. ``False`` is safe only as a necessary-literal
+        prefilter before a typed parser that still owns the semantic decision.
+        """
+        if not fragment:
+            return None
+        lookup = self.lookup_body_unit(
+            "section",
+            section_label,
+            target_chapter=target_chapter,
+            target_part=target_part,
+        )
+        unit = lookup.unique_unit
+        if unit is None:
+            return None
+        return fragment.casefold() in unit.source_text.casefold()
+
     def pre_create_amendment_chapters(
         self,
         state: "ReplayState",

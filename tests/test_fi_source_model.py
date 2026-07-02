@@ -881,6 +881,28 @@ def test_source_model_section_payload_text_uses_typed_payload_ir() -> None:
     assert repeated is result
 
 
+def test_source_model_unique_section_source_text_contains_uses_observed_text() -> None:
+    tree = etree.fromstring(
+        b"""
+        <akomaNtoso>
+          <act>
+            <body>
+              <section>
+                <num>5 \xc2\xa7</num>
+                <content><p>T\xc3\xa4m\xc3\xa4 laki on voimassa 31.12.2025 asti.</p></content>
+              </section>
+            </body>
+          </act>
+        </akomaNtoso>
+        """
+    )
+    model = AmendmentSourceModel.from_tree(tree, source_ref="2025/1")
+
+    assert model.unique_section_source_text_contains("5", "VOIMASSA") is True
+    assert model.unique_section_source_text_contains("5", "puuttuu") is False
+    assert model.unique_section_source_text_contains("6", "voimassa") is None
+
+
 def test_source_model_payload_lookup_does_not_xml_fallback_for_non_unique_body_verdicts(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

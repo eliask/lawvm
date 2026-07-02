@@ -5918,6 +5918,44 @@ def test_cached_cited_parse_result_keys_by_diagnostic_statute(monkeypatch: pytes
     ]
 
 
+def test_explicit_payload_fixed_term_prefilter_skips_payload_conversion_without_literal() -> None:
+    """A unique source section without 'voimassa' cannot carry fixed-term expiry."""
+    import lawvm.finland.frontend_compile as frontend_compile
+
+    class SourceModelWithoutValidityLiteral:
+        def unique_section_source_text_contains(
+            self,
+            section_label: str,
+            fragment: str,
+            *,
+            target_chapter: str | None = None,
+            target_part: str | None = None,
+        ) -> bool | None:
+            assert section_label == "5"
+            assert fragment == "voimassa"
+            assert target_chapter is None
+            assert target_part is None
+            return False
+
+        def lookup_section_payload_text(self, *_args: object, **_kwargs: object) -> object:
+            raise AssertionError("payload IR conversion should be skipped")
+
+    op = AmendmentOp(
+        op_id="section-without-fixed-term-expiry",
+        op_type=OpType.REPLACE,
+        target_unit_kind="section",
+        target_section="5",
+    )
+
+    assert (
+        frontend_compile._explicit_payload_fixed_term_expiry_date(
+            op,
+            source_model=cast(Any, SourceModelWithoutValidityLiteral()),
+        )
+        is None
+    )
+
+
 @pytest.mark.slow
 def test_replay_xml_2002_1290_does_not_crash_on_registered_item_like_normalization() -> None:
     """Replay should classify 2002/1290 without tripping unregistered payload-normalization findings."""

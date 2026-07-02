@@ -3471,6 +3471,13 @@ def _explicit_payload_fixed_term_expiry_date(
     """
     if op.target_cols.target_unit_kind != "section" or not op.target_cols.target_section:
         return None
+    if source_model is not None:
+        has_validity_literal = source_model.unique_section_source_text_contains(
+            op.target_cols.target_section,
+            "voimassa",
+        )
+        if has_validity_literal is False:
+            return None
     text = _body_text_for_temporary_op(
         op,
         muutos_tree=muutos_tree,
