@@ -158,6 +158,11 @@ def _tag(el: ET._Element) -> str:
     tag = el.tag
     if not isinstance(tag, str):
         return ""  # PI/Comment nodes have callable .tag
+    return _tag_local_name(tag)
+
+
+@lru_cache(maxsize=256)
+def _tag_local_name(tag: str) -> str:
     return tag.split("}", 1)[1] if "}" in tag else tag
 
 
