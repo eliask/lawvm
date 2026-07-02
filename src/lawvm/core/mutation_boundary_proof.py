@@ -264,6 +264,7 @@ def verify_per_op(
     declared_recovery_prefixes: Sequence[TreePath] = (),
     declared_editorial_projection_prefixes: Sequence[TreePath] = (),
     strip_root_prefix: TreePath = (),
+    observed_paths: TreePaths | None = None,
 ) -> PerOpMutationBoundaryVerdict:
     """Per-op mutation-boundary REJECT gate (LS-01 / §1.0).
 
@@ -296,9 +297,14 @@ def verify_per_op(
     # shared and legitimately short-circuit. The non-pruned diff_ir_paths walks the
     # whole tree per op (~+30% FI bench wall; regression re-homed here 2026-06-30 in
     # e6f217e1a, fixed 2026-07-01). Every other consumer already uses the pruned twin.
+    raw_changed_paths = (
+        observed_paths
+        if observed_paths is not None
+        else diff_ir_paths_identity_pruned(before, after)
+    )
     changed_paths = tuple(
         _strip_leading_prefix(path, strip_root_prefix)
-        for path in diff_ir_paths_identity_pruned(before, after)
+        for path in raw_changed_paths
     )
     partition = partition_changed_paths(changed_paths, allowed_prefixes)
     out_of_boundary = tuple(
@@ -394,6 +400,7 @@ def audit_op_mutation_boundary(
     declared_recovery_prefixes: Sequence[TreePath] = (),
     declared_editorial_projection_prefixes: Sequence[TreePath] = (),
     strip_root_prefix: TreePath = (),
+    observed_paths: TreePaths | None = None,
     detail_extra: Mapping[str, Any] | None = None,
 ) -> PerOpMutationBoundaryAudit:
     """Core-owned per-op mutation-boundary audit (LS-01 / §1.0): verify + emit.
@@ -422,6 +429,7 @@ def audit_op_mutation_boundary(
         declared_recovery_prefixes=declared_recovery_prefixes,
         declared_editorial_projection_prefixes=declared_editorial_projection_prefixes,
         strip_root_prefix=strip_root_prefix,
+        observed_paths=observed_paths,
     )
     if verdict.within_boundary:
         return PerOpMutationBoundaryAudit(verdict=verdict, findings=())

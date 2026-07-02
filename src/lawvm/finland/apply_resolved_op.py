@@ -310,6 +310,7 @@ def _apply_required_resolved_op(
             source_statute=request.amendment_id,
             findings_out=sinks.findings_out,
             migration_ledger=request.migration_ledger,
+            observed_paths=observed_paths,
         )
     except (NameError, TypeError, AttributeError):
         raise
@@ -417,6 +418,7 @@ def _enforce_per_op_apply_authority(
     source_statute: str,
     findings_out: Optional[list[Finding]],
     migration_ledger: Optional[MigrationLedger] = None,
+    observed_paths: TreePaths | None = None,
 ) -> None:
     """Run the per-op apply-authority gates for one landed write.
 
@@ -450,6 +452,7 @@ def _enforce_per_op_apply_authority(
     _gate_mutation_boundary_at_op(
         prev_state, new_state, rop=rop, is_strict=is_strict,
         source_statute=source_statute, findings_out=findings_out,
+        observed_paths=observed_paths,
     )
     _gate_occupancy_transition_at_op(
         prev_state, rop=rop, is_strict=is_strict,
@@ -484,6 +487,7 @@ def _gate_mutation_boundary_at_op(
     is_strict: bool,
     source_statute: str,
     findings_out: list[Finding],
+    observed_paths: TreePaths | None = None,
 ) -> None:
     """LS-01: per-op mutation-boundary REJECT gate over the typed LegalOperation."""
     # ``rop.op`` is the AmendmentOp wrapper; its ``.lo`` is the typed core
@@ -506,6 +510,7 @@ def _gate_mutation_boundary_at_op(
         # so observed and declared surfaces align (same normalization as
         # mutation_accounting). Without it every wrapped diff path is a false escape.
         strip_root_prefix=_FI_REPLAY_WRAPPER_ROOT_STEP,
+        observed_paths=observed_paths,
     )
     if verdict.within_boundary:
         return
