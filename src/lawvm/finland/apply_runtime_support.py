@@ -354,6 +354,7 @@ def _section_node_from_base_ir(
     base_ir: IRNode | None,
     section_path: Path,
     section_node_cache: dict[Path, IRNode | None] | None = None,
+    base_provision_index: LabelIndex | None = None,
 ) -> IRNode | None:
     if base_ir is None:
         return None
@@ -378,6 +379,7 @@ def _section_node_from_base_ir(
         section_label,
         scope_kind="chapter" if chapter_label else None,
         scope_label=chapter_label,
+        label_index=base_provision_index,
     )
     if resolved is None:
         if section_node_cache is not None:
@@ -398,6 +400,7 @@ def _subsection_node_from_base_ir(
     subsection_path: Path,
     subsection_node_cache: dict[Path, IRNode | None] | None = None,
     section_node_cache: dict[Path, IRNode | None] | None = None,
+    base_provision_index: LabelIndex | None = None,
 ) -> IRNode | None:
     if base_ir is None or not subsection_path or subsection_path[-1][0] != "subsection":
         return None
@@ -406,7 +409,12 @@ def _subsection_node_from_base_ir(
         return subsection_node_cache[normalized_path]
     subsection_label = subsection_path[-1][1]
     section_path = tuple(part for part in subsection_path[:-1] if part[0] != "subsection")
-    section_node = _section_node_from_base_ir(base_ir, section_path, section_node_cache)
+    section_node = _section_node_from_base_ir(
+        base_ir,
+        section_path,
+        section_node_cache,
+        base_provision_index,
+    )
     if section_node is None:
         if subsection_node_cache is not None:
             subsection_node_cache[normalized_path] = None
@@ -431,6 +439,7 @@ def _prior_paragraph_labels_for_subsection_paths(
     before_effective: str,
     subsection_node_cache: dict[Path, IRNode | None] | None = None,
     section_node_cache: dict[Path, IRNode | None] | None = None,
+    base_provision_index: LabelIndex | None = None,
 ) -> dict[Path, set[str]]:
     labels_by_path: dict[Path, set[str]] = {tuple(path): set() for path in child_paths}
     if not labels_by_path:
@@ -442,6 +451,7 @@ def _prior_paragraph_labels_for_subsection_paths(
             child_path,
             subsection_node_cache,
             section_node_cache,
+            base_provision_index,
         )
         if base_child is None:
             continue
@@ -2004,6 +2014,7 @@ def _emit_section_snapshot(
                             child_path,
                             base_subsection_node_cache,
                             base_section_node_cache,
+                            base_provision_index,
                         )
                         if base_child_payload is not None:
                             new_children.append(base_child_payload)
@@ -2229,6 +2240,7 @@ def _emit_section_snapshot(
                     child_path,
                     base_subsection_node_cache,
                     base_section_node_cache,
+                    base_provision_index,
                 )
                 if base_child_payload is not None:
                     new_children.append(base_child_payload)
@@ -3070,6 +3082,7 @@ def _emit_section_snapshot(
                 base_ir,
                 section_path,
                 base_section_node_cache,
+                base_provision_index,
             )
         if base_section is None or base_section.kind is not IRNodeKind.SECTION:
             return None
@@ -4206,7 +4219,12 @@ def _emit_section_snapshot(
         source_section = (
             latest.payload
             if latest is not None and latest.payload is not None and latest.payload.kind is IRNodeKind.SECTION
-            else _section_node_from_base_ir(base_ir, section_path, base_section_node_cache)
+            else _section_node_from_base_ir(
+                base_ir,
+                section_path,
+                base_section_node_cache,
+                base_provision_index,
+            )
         )
         if source_section is None or source_section.kind is not IRNodeKind.SECTION:
             return None
@@ -4579,6 +4597,7 @@ def _emit_section_snapshot(
             before_effective=op_source.effective,
             subsection_node_cache=base_subsection_node_cache,
             section_node_cache=base_section_node_cache,
+            base_provision_index=base_provision_index,
         )
 
         def _latest_prior_exact_target_is_repeal_placeholder(child_path: Path) -> bool:

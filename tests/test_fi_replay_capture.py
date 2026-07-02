@@ -2,9 +2,13 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+import pytest
+
+from lawvm.core import tree_ops as _tops
 from lawvm.core.ir import IRNode, LegalAddress, LegalOperation
 from lawvm.core.ir import OperationSource
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
+from lawvm.finland import apply_runtime_support as ars
 from lawvm.finland.apply_runtime_support import (
     SectionSnapshotIdentity,
     _prior_paragraph_labels_for_subsection_paths,
@@ -430,3 +434,65 @@ def test_prior_paragraph_labels_for_subsection_paths_batches_history_scan() -> N
     )
 
     assert labels_after_rewrite[subsection_path] == {"1", "3", "6", "7"}
+
+
+def test_prior_paragraph_labels_base_lookup_uses_provision_index(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    subsection_path = (("section", "1"), ("subsection", "1"))
+    base_ir = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.HCONTAINER,
+                label="statuteProvisionsWrapper",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="1",
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.SUBSECTION,
+                                label="1",
+                                children=(IRNode(kind=IRNodeKind.PARAGRAPH, label="a"),),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    base_index = _tops.build_provision_label_index(base_ir)
+    original_find = ars._tops.find
+    received_indexes: list[object | None] = []
+
+    def checked_find(
+        tree: IRNode,
+        kind: str,
+        label: str,
+        scope_kind: str | None = None,
+        scope_label: str | None = None,
+        label_index: _tops.LabelIndex | None = None,
+    ) -> _tops.Path | None:
+        received_indexes.append(label_index)
+        return original_find(
+            tree,
+            kind,
+            label,
+            scope_kind=scope_kind,
+            scope_label=scope_label,
+            label_index=label_index,
+        )
+
+    monkeypatch.setattr(ars._tops, "find", checked_find)
+
+    labels_by_path = _prior_paragraph_labels_for_subsection_paths(
+        child_paths={subsection_path},
+        replay_history_ops=ReplayLegalOperationCaptureList(),
+        base_ir=base_ir,
+        before_effective="",
+        base_provision_index=base_index,
+    )
+
+    assert labels_by_path[subsection_path] == {"a"}
+    assert received_indexes == [base_index]
