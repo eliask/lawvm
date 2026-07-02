@@ -5282,6 +5282,12 @@ def _shallow_text(
         exclude_set = {exclude}
     else:
         exclude_set = set(exclude)
+    cache = _US_SHALLOW_TEXT_CACHE_CTX.get()
+    cache_key = (id(elem), tuple(sorted(id(excluded) for excluded in exclude_set)))
+    if cache is not None:
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
 
     parts: list[str] = []
 
@@ -5307,7 +5313,10 @@ def _shallow_text(
         _walk(child)
         if child.tail:
             parts.append(child.tail)
-    return _collapse_ws_strip("".join(parts))
+    text = _collapse_ws_strip("".join(parts))
+    if cache is not None:
+        cache[cache_key] = text
+    return text
 
 
 # A unit head "Section X(...) is amended" / "Paragraph (N) of section X(...) is
@@ -5653,6 +5662,9 @@ _US_RAW_SOURCE_CTX: "contextvars.ContextVar[tuple[str, bytes] | None]" = (
 _US_TEXT_OF_CACHE_CTX: "contextvars.ContextVar[dict[int, str] | None]" = (
     contextvars.ContextVar("lawvm_text_of_cache_ctx", default=None)
 )
+_US_SHALLOW_TEXT_CACHE_CTX: "contextvars.ContextVar[dict[tuple[int, tuple[int, ...]], str] | None]" = (
+    contextvars.ContextVar("lawvm_shallow_text_cache_ctx", default=None)
+)
 _US_SOURCE_ANCHOR_BODY_TAGS: frozenset[str] = frozenset(
     {
         "chapeau",
@@ -5963,6 +5975,7 @@ def lower_plaw_amendatory(
     # provenance metadata only — grounding-neutral (replay output byte-identical).
     _raw_source_token = set_us_raw_source_context(statute_id, data)
     _text_cache_token = _US_TEXT_OF_CACHE_CTX.set({})
+    _shallow_text_cache_token = _US_SHALLOW_TEXT_CACHE_CTX.set({})
     try:
         return _lower_plaw_amendatory_body(
             root,
@@ -5972,6 +5985,7 @@ def lower_plaw_amendatory(
             classification_index=classification_index,
         )
     finally:
+        _US_SHALLOW_TEXT_CACHE_CTX.reset(_shallow_text_cache_token)
         _US_TEXT_OF_CACHE_CTX.reset(_text_cache_token)
         reset_us_raw_source_context(_raw_source_token)
 
