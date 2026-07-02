@@ -1152,3 +1152,89 @@ def test_replay_statute_threads_temporal_events_into_compile_timelines(
 
     assert seen["temporal_events"] == (event,)
     assert result.temporal_events == (event,)
+
+
+# ---------------------------------------------------------------------------
+# Grafter annex labeling + end-to-end annex-op resolution
+# (EU_ANNEX_RESOLUTION — assessment blocker #2). The grafter must lift the annex
+# coordinate onto ``IRNode.label`` so an ``annex:N`` op can resolve against the
+# supplements-hosted annex, and the full grammar→apply path must APPLY it.
+# ---------------------------------------------------------------------------
+
+
+def _parse_fmx(fmx: bytes, celex: str) -> IRStatute:
+    import tempfile
+    from pathlib import Path
+
+    from lawvm.eu.grafter import parse_eu_regulation_ir
+
+    with tempfile.NamedTemporaryFile(suffix=".xml", delete=True) as tf:
+        tf.write(fmx)
+        tf.flush()
+        return parse_eu_regulation_ir(Path(tf.name), celex=celex)
+
+
+def test_grafter_lifts_annex_coordinate_onto_label() -> None:
+    """The base annex coordinate is extracted onto ``IRNode.label`` from the
+    ``IDENTIFIER`` attribute AND from the ``<TITLE><TI>ANNEX N</TI></TITLE>``
+    title text — so ``annex:N`` ops can resolve. Pre-fix annex nodes carried
+    ``label=None`` and were unaddressable even once found in supplements."""
+    fmx = (
+        b'<?xml version="1.0"?>'
+        b"<ACT><TITLE><TI>Base</TI></TITLE>"
+        b"<ENACTING.TERMS><ARTICLE><TI.ART>Article 1</TI.ART>"
+        b"<PARAG><ALINEA>x</ALINEA></PARAG></ARTICLE></ENACTING.TERMS>"
+        b'<ANNEX IDENTIFIER="II"><TITLE><TI>ANNEX II</TI></TITLE><P>a</P></ANNEX>'
+        b"<ANNEX><TITLE><TI>ANNEX III</TI></TITLE><P>b</P></ANNEX>"
+        b"</ACT>"
+    )
+    st = _parse_fmx(fmx, "32016R0044")
+    labels = [s.label for s in st.supplements]
+    # IDENTIFIER-derived label ("II") and title-derived label ("III").
+    assert labels == ["II", "III"]
+
+
+def test_end_to_end_indirect_annex_amendment_resolves_and_applies() -> None:
+    """Full path: real indirect-annex amender bytes → ``lower_amending_act`` →
+    ``apply_eu_ops_conserved`` against an inline-annex base. The named-annex ops
+    (``annex:II``/``annex:III``) RESOLVE and APPLY against supplements; only the
+    sole-annex ``annex:`` (empty label) is the preserved typed skip.
+
+    Before this fix all three annex ops resolved as
+    ``eu_replay_target_not_found`` (0/3 applied); after, 2/3 apply — the delta
+    the assessment's blocker #2 targeted."""
+    from pathlib import Path
+
+    from lawvm.eu.fmx4_amendment_grammar import lower_amending_act
+    from lawvm.eu.pipeline import apply_eu_ops_conserved
+
+    base_fmx = (
+        b'<?xml version="1.0"?>'
+        b"<ACT><TITLE><TI>Base</TI></TITLE>"
+        b"<ENACTING.TERMS><ARTICLE><TI.ART>Article 1</TI.ART>"
+        b"<PARAG><ALINEA>x</ALINEA></PARAG></ARTICLE></ENACTING.TERMS>"
+        b'<ANNEX IDENTIFIER="II"><TITLE><TI>ANNEX II</TI></TITLE><P>Original II</P></ANNEX>'
+        b"<ANNEX><TITLE><TI>ANNEX III</TI></TITLE><P>Original III</P></ANNEX>"
+        b"</ACT>"
+    )
+    base = _parse_fmx(base_fmx, "32016R0044")
+
+    fixture = Path(__file__).parent / "eu" / "fixtures" / "amending_indirect_annex_excerpt.fmx4.xml"
+    r = lower_amending_act(fixture.read_bytes(), "32017R0489", base_celex="32016R0044")
+    ops = list(r.ops)
+    assert {str(op.target) for op in ops} == {"annex:II", "annex:III", "annex:"}
+
+    result = apply_eu_ops_conserved(base, ops)
+
+    applied_targets = {str(o.target) for o in result.filter_result.accepted_items}
+    rejected = {
+        str(i.item.target): i.reason_code for i in result.filter_result.rejected_items
+    }
+    # The two named-annex ops applied; the sole-annex empty-label op is the
+    # preserved typed skip (resolving it to the base's single annex is deferred).
+    assert applied_targets == {"annex:II", "annex:III"}
+    assert rejected == {"annex:": "eu_replay_target_not_found"}
+    # Both named annexes now carry the replacement body in supplements.
+    supp = {s.label: (s.text or "") for s in result.statute.supplements}
+    assert "List replacing" in supp["II"]
+    assert "List replacing" in supp["III"]

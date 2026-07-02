@@ -253,6 +253,128 @@ def test_apply_eu_ops_conserved_empty_label_repeal_skips_not_raises() -> None:
     assert {op.op_id for op in result.filter_result.accepted_items} == {"eu-replace-ok"}
 
 
+# ---------------------------------------------------------------------------
+# Annex-in-supplements resolution (EU_ANNEX_RESOLUTION — assessment blocker #2).
+#
+# The EU grafter places annexes in ``IRStatute.supplements`` (a flat list of
+# top-level ``annex`` IRNodes), NOT in ``body``. Before the fix, ``apply_eu_ops``
+# searched only ``body`` for op targets, so EVERY ``annex:N`` op resolved as
+# ``eu_replay_target_not_found`` even when the annex WAS parsed. The fix resolves
+# annex-rooted targets against a synthetic container wrapping ``supplements`` and
+# threads the mutated supplements onto the returned statute.
+# ---------------------------------------------------------------------------
+
+
+def _statute_with_annexes() -> IRStatute:
+    """Baseline whose annexes live in ``supplements`` (grafter placement)."""
+    return IRStatute(
+        statute_id="32016R0044",
+        title="baseline with annexes",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(IRNode(kind=IRNodeKind.SECTION, label="1", text="Article 1"),),
+        ),
+        supplements=(
+            IRNode(kind="annex", label="II", text="Original Annex II"),
+            IRNode(kind="annex", label="III", text="Original Annex III"),
+        ),
+    )
+
+
+def _annex_replace_op(*, op_id: str, sequence: int, annex_label: str, text: str) -> LegalOperation:
+    return LegalOperation(
+        op_id=op_id,
+        sequence=sequence,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("annex", annex_label),)),
+        payload=IRNode(kind="annex", label=annex_label, text=text),
+        source=OperationSource(statute_id="2026/1"),
+    )
+
+
+def test_annex_replace_resolves_against_supplements_and_applies() -> None:
+    """An ``annex:II`` REPLACE resolves against the supplements-hosted annex and
+    APPLIES (pre-fix it resolved as ``eu_replay_target_not_found`` because the
+    apply searched only ``body``, where EU annexes never live)."""
+    baseline = _statute_with_annexes()
+    op = _annex_replace_op(op_id="eu-annex-II", sequence=1, annex_label="II", text="Replacement Annex II")
+
+    result = apply_eu_ops_conserved(baseline, [op])
+
+    # The annex op is ACCEPTED (resolved + applied), not rejected.
+    assert {o.op_id for o in result.filter_result.accepted_items} == {"eu-annex-II"}
+    assert list(result.filter_result.rejected_items) == []
+    # Annex II's text was replaced in supplements; Annex III is untouched.
+    supp = {s.label: s.text for s in result.statute.supplements}
+    assert supp["II"] == "Replacement Annex II"
+    assert supp["III"] == "Original Annex III"
+    # CoW: the baseline's supplements are NOT mutated.
+    assert {s.label: s.text for s in baseline.supplements} == {
+        "II": "Original Annex II",
+        "III": "Original Annex III",
+    }
+
+
+def test_annex_repeal_resolves_against_supplements_and_removes() -> None:
+    """An ``annex:III`` REPEAL resolves against supplements and removes it."""
+    baseline = _statute_with_annexes()
+    op = LegalOperation(
+        op_id="eu-annex-III-repeal",
+        sequence=1,
+        action=StructuralAction.REPEAL,
+        target=LegalAddress(path=(("annex", "III"),)),
+        payload=None,
+        source=OperationSource(statute_id="2026/1"),
+    )
+
+    result = apply_eu_ops_conserved(baseline, [op])
+
+    assert {o.op_id for o in result.filter_result.accepted_items} == {"eu-annex-III-repeal"}
+    assert [s.label for s in result.statute.supplements] == ["II"]
+    # Baseline unchanged (CoW).
+    assert [s.label for s in baseline.supplements] == ["II", "III"]
+
+
+def test_annex_op_not_found_still_rejects_when_annex_absent() -> None:
+    """Conservation is preserved: an ``annex:ZZ`` op against a base without that
+    annex still REJECTS as ``eu_replay_target_not_found`` (the fix widens the
+    search scope, it does not invent targets)."""
+    baseline = _statute_with_annexes()
+    op = _annex_replace_op(op_id="eu-annex-ZZ", sequence=1, annex_label="ZZ", text="x")
+
+    result = apply_eu_ops_conserved(baseline, [op])
+
+    assert list(result.filter_result.accepted_items) == []
+    rejected = {i.item.op_id: i for i in result.filter_result.rejected_items}
+    assert rejected["eu-annex-ZZ"].reason_code == "eu_replay_target_not_found"
+
+
+def test_mixed_annex_and_body_ops_partition_correctly() -> None:
+    """A mixed op set (annex REPLACE + body REPLACE + missing-annex REJECT)
+    partitions correctly and applies to BOTH supplements and body — the fix does
+    not disturb the non-annex ``body`` path (byte-safe)."""
+    baseline = _statute_with_annexes()
+    ops = [
+        _annex_replace_op(op_id="eu-annex-II", sequence=1, annex_label="II", text="New II"),
+        _replace_op(op_id="eu-sec-1", sequence=2, section_label="1", text="New Article 1"),
+        _annex_replace_op(op_id="eu-annex-missing", sequence=3, annex_label="ZZ", text="x"),
+    ]
+
+    result = apply_eu_ops_conserved(baseline, ops)
+
+    accepted = {o.op_id for o in result.filter_result.accepted_items}
+    rejected = {i.item.op_id for i in result.filter_result.rejected_items}
+    assert accepted == {"eu-annex-II", "eu-sec-1"}
+    assert rejected == {"eu-annex-missing"}
+    # Both lanes landed: annex II in supplements, section 1 in body.
+    assert {s.label: s.text for s in result.statute.supplements}["II"] == "New II"
+    assert result.statute.body.children[0].text == "New Article 1"
+    # Conservation partition is total and disjoint.
+    input_ids = {op.op_id for op in ops}
+    assert accepted | rejected == input_ids
+    assert accepted & rejected == set()
+
+
 def test_replay_statute_routes_apply_through_conserved_wrapper(monkeypatch, tmp_path) -> None:
     """§2.9 guard-liveness fire-drill: the production lane
     ``EUReplayPipeline.replay_statute`` MUST route the apply fold through

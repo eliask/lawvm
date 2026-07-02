@@ -317,6 +317,15 @@ def apply_eu_ops(
     """
     # The shared IR is frozen; build a new tree only when applying ops.
     body = base.body
+    # EU annexes are grafted into ``IRStatute.supplements`` (a flat list of
+    # top-level ``annex`` IRNodes), NOT into ``body`` — see ``eu/grafter.py``
+    # (``root.findall("ANNEX") → supplements``). ``annex:*`` ops therefore cannot
+    # resolve against ``body``; they resolve against a synthetic BODY-kind
+    # container wrapping ``supplements`` (built on demand from this running
+    # list). Mutated back through ``_write_supplements`` and threaded to the
+    # returned ``IRStatute``. Kept as a running ``list`` so REPLACE/REPEAL on an
+    # annex compose across ops in input order, exactly as ``body`` mutations do.
+    supplements: list[IRNode] = list(base.supplements)
     applied = 0
     skipped = 0
     # Per-op landed flag set by the materializer's dispatch (the seam reads the
@@ -417,7 +426,7 @@ def apply_eu_ops(
     def _eu_materialize_one(
         before_body: IRNode, op: LegalOperation
     ) -> MaterializeResult[IRNode]:
-        nonlocal body, applied, skipped, target, action, _eu_op_applied
+        nonlocal body, supplements, applied, skipped, target, action, _eu_op_applied
         body = before_body
         _eu_op_applied = False
         target = _map_address(op.target)
@@ -428,6 +437,52 @@ def apply_eu_ops(
             nonlocal applied, _eu_op_applied
             applied += 1
             _eu_op_applied = True
+
+        # ── Annex-in-supplements resolution scope. ───────────────────────────
+        # An annex-rooted target (``path_steps[0][0] == "annex"``) may resolve in
+        # EITHER lane: some frontends carry the annex INLINE in ``body`` (a
+        # top-level ``annex`` body child), but the EU grafter places annexes in
+        # ``IRStatute.supplements`` (a flat list of top-level annex IRNodes). Try
+        # ``body`` FIRST — byte-identical to the pre-fix behaviour, so any
+        # body-hosted annex keeps resolving exactly as before — then fall back to
+        # ``supplements`` (the blocker-#2 fix). Supplements are wrapped in a
+        # synthetic BODY-kind container so the same
+        # ``tree_ops.find``/``replace_at``/``remove_at`` primitives that drive
+        # body ops apply byte-identically, then ``.children`` is unwrapped back
+        # to the running supplements list. Non-annex targets take the unchanged
+        # ``body``-only path, so the conserved partition and every non-annex byte
+        # stay exactly as before.
+        annex_rooted = bool(path_steps) and path_steps[0][0] == "annex"
+
+        def _supplements_container() -> IRNode:
+            return tree_ops.with_children(base.body, list(supplements))
+
+        def _write_supplements(container: IRNode) -> None:
+            nonlocal supplements
+            supplements = list(container.children)
+
+        def _resolve_annex_target() -> tuple[str, Optional[TreePath]]:
+            """Resolve an annex-rooted target, preferring ``body`` then
+            ``supplements``. Returns ``(lane, found_path)`` where ``lane`` is
+            ``"body"``/``"supplements"`` and ``found_path`` is the tree_ops path
+            (or ``None`` if unresolved in either lane)."""
+            in_body = tree_ops.find(
+                body,
+                kind=path_steps[-1][0],
+                label=path_steps[-1][1],
+                scope_kind=path_steps[0][0] if len(path_steps) > 1 else None,
+                scope_label=path_steps[0][1] if len(path_steps) > 1 else None,
+            )
+            if in_body is not None:
+                return ("body", in_body)
+            in_supp = tree_ops.find(
+                _supplements_container(),
+                kind=path_steps[-1][0],
+                label=path_steps[-1][1],
+                scope_kind=path_steps[0][0] if len(path_steps) > 1 else None,
+                scope_label=path_steps[0][1] if len(path_steps) > 1 else None,
+            )
+            return ("supplements", in_supp)
 
         if action == StructuralAction.REPLACE.value:
             if op.payload is None:
@@ -465,14 +520,20 @@ def apply_eu_ops(
                 )
                 skipped += 1
                 return MaterializeResult(new_state=body, applied=False)
-            # Find the target node
-            found = tree_ops.find(
-                body,
-                kind=path_steps[-1][0],
-                label=path_steps[-1][1],
-                scope_kind=path_steps[0][0] if len(path_steps) > 1 else None,
-                scope_label=path_steps[0][1] if len(path_steps) > 1 else None,
-            )
+            # Find the target node. For an annex-rooted target, resolve across
+            # both lanes (body first, then supplements); else the unchanged
+            # body-only path.
+            if annex_rooted:
+                lane, found = _resolve_annex_target()
+            else:
+                lane = "body"
+                found = tree_ops.find(
+                    body,
+                    kind=path_steps[-1][0],
+                    label=path_steps[-1][1],
+                    scope_kind=path_steps[0][0] if len(path_steps) > 1 else None,
+                    scope_label=path_steps[0][1] if len(path_steps) > 1 else None,
+                )
             if found is None:
                 _append_eu_replay_adjudication(
                     adjudications_out,
@@ -483,7 +544,12 @@ def apply_eu_ops(
                 )
                 skipped += 1
                 return MaterializeResult(new_state=body, applied=False)
-            body = tree_ops.replace_at(body, found, op.payload)
+            if lane == "supplements":
+                _write_supplements(
+                    tree_ops.replace_at(_supplements_container(), found, op.payload)
+                )
+            else:
+                body = tree_ops.replace_at(body, found, op.payload)
             _mark_applied()
 
         elif action == StructuralAction.REPEAL.value:
@@ -505,13 +571,17 @@ def apply_eu_ops(
                 )
                 skipped += 1
                 return MaterializeResult(new_state=body, applied=False)
-            found = tree_ops.find(
-                body,
-                kind=path_steps[-1][0],
-                label=path_steps[-1][1],
-                scope_kind=path_steps[0][0] if len(path_steps) > 1 else None,
-                scope_label=path_steps[0][1] if len(path_steps) > 1 else None,
-            )
+            if annex_rooted:
+                lane, found = _resolve_annex_target()
+            else:
+                lane = "body"
+                found = tree_ops.find(
+                    body,
+                    kind=path_steps[-1][0],
+                    label=path_steps[-1][1],
+                    scope_kind=path_steps[0][0] if len(path_steps) > 1 else None,
+                    scope_label=path_steps[0][1] if len(path_steps) > 1 else None,
+                )
             if found is None:
                 _append_eu_replay_adjudication(
                     adjudications_out,
@@ -522,7 +592,10 @@ def apply_eu_ops(
                 )
                 skipped += 1
                 return MaterializeResult(new_state=body, applied=False)
-            body = tree_ops.remove_at(body, found)
+            if lane == "supplements":
+                _write_supplements(tree_ops.remove_at(_supplements_container(), found))
+            else:
+                body = tree_ops.remove_at(body, found)
             _mark_applied()
 
         elif action == StructuralAction.INSERT.value:
@@ -711,7 +784,9 @@ def apply_eu_ops(
         statute_id=base.statute_id,
         title=base.title,
         body=body,
-        supplements=list(base.supplements),
+        # ``supplements`` is the running annex list, mutated in place by any
+        # applied ``annex:*`` REPLACE/REPEAL (else identical to ``base``'s).
+        supplements=list(supplements),
         metadata=metadata,
     )
 

@@ -193,6 +193,42 @@ class EUIRGrafter:
             return None
         return IRNode(kind=IRNodeKind.PREAMBLE, children=tuple(children))
 
+    @staticmethod
+    def _annex_label(el: ET.Element[str]) -> Optional[str]:
+        """Extract the annex coordinate (e.g. ``II``, ``III``, ``1``) from an
+        FMX4 ``<ANNEX>`` element so ``annex:N`` ops resolve against it.
+
+        Preference order (real CELLAR annex shapes):
+          1. the ``IDENTIFIER`` attribute (often the bare coordinate ``II``);
+          2. the ``NNC`` / ``NUMERO`` attribute;
+          3. the title text after "ANNEX" (``<TI>ANNEX II</TI>`` /
+             ``<TI.DOC>ANNEX II</TI.DOC>``).
+
+        Returns ``None`` for a sole-annex with no coordinate (the ``annex:``
+        empty-label form, which the apply seam skips as a typed target-not-found
+        — resolving it to the base's single annex is deferred grammar work).
+        """
+        for attr in ("IDENTIFIER", "NNC", "NUMERO"):
+            raw = el.attrib.get(attr)
+            if raw:
+                coord = _normalize_text(raw).strip()
+                # Strip a leading "ANNEX" if the identifier carries the word.
+                m = re.match(r"^(?:ANNEX\s+)?([A-Za-z0-9]+)$", coord, re.IGNORECASE)
+                if m and m.group(1).upper() != "ANNEX":
+                    return m.group(1)
+        # Fall back to the title text: "ANNEX II" → "II". Real FMX4 wraps the
+        # title as ``<TITLE><TI>ANNEX II</TI></TITLE>`` (or a bare ``<TI.DOC>``),
+        # so read the annex's TITLE / direct TI / TI.DOC — NOT a deep descendant
+        # walk (which could pick up an "ANNEX" mention in the annex BODY text).
+        for ti_el in (el.find("TITLE"), el.find("TI"), el.find("TI.DOC")):
+            if ti_el is None:
+                continue
+            title = _normalize_text(_element_text(ti_el))
+            m = re.search(r"\bANNEX(?:E|ES)?\s+([IVXLCDM]+|\d+|[A-Z])\b", title, re.IGNORECASE)
+            if m:
+                return m.group(1)
+        return None
+
     def _parse_structural_node(self, el: ET.Element[str], parent_eid: str = "") -> Optional[IRNode]:
         """Recursively parse articles, chapters, divisions, annexes."""
         tag = el.tag
@@ -214,6 +250,15 @@ class EUIRGrafter:
                 m = re.match(r"^(\d+)\.", _normalize_text(first_p.text))
                 if m:
                     label = m.group(1)
+        elif kind == "annex":
+            # An ``annex:N`` op (``fmx4_amendment_grammar``) targets the base
+            # annex by its coordinate — the Roman/arabic numeral after "ANNEX"
+            # in the title (``<TI>ANNEX II</TI>``) or the ``IDENTIFIER`` attr.
+            # Without a label the annex node cannot be resolved by
+            # ``tree_ops.find(kind='annex', label='II')`` even once it is found
+            # in ``supplements`` (the annex-in-supplements resolution seam), so
+            # the coordinate must be lifted onto ``label`` here.
+            label = self._annex_label(el)
 
         # Children
         children = []
