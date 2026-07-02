@@ -1370,7 +1370,12 @@ def _emit_section_snapshot(
         if scoped_path is not None:
             return False
         if base_ir is not None:
-            base_chapter_path = _tops.find(base_ir, "chapter", target_chapter)
+            base_chapter_path = _tops.find(
+                base_ir,
+                "chapter",
+                target_chapter,
+                label_index=base_provision_index,
+            )
             if base_chapter_path is not None:
                 return False
         chapter_path = state.find("chapter", target_chapter)
@@ -3221,7 +3226,13 @@ def _emit_section_snapshot(
         return _search(tree, ())
 
     def _lookup_container_path_in_tree(tree: IRNode, kind_name: str) -> Optional[Path]:
-        label_index = base_provision_index if tree is base_ir else None
+        label_index = (
+            base_provision_index
+            if tree is base_ir
+            else state.provision_index
+            if tree is state.ir
+            else None
+        )
         for label in _candidate_lookup_labels():
             raw_path = _tops.find(tree, kind_name, label, label_index=label_index)
             if raw_path:
