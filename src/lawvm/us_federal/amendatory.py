@@ -5247,12 +5247,20 @@ _UNIT_TAGS = ("subsection", "paragraph", "subparagraph", "clause", "subclause")
 
 def _amendatory_unit_children(parent: ET.Element) -> set[ET.Element]:
     """Direct amendatory-unit children of ``parent`` (for sibling exclusion)."""
+    cache = _US_AMENDATORY_UNIT_CHILDREN_CACHE_CTX.get()
+    key = id(parent)
+    if cache is not None:
+        cached = cache.get(key)
+        if cached is not None:
+            return set(cached)
     out: set[ET.Element] = set()
     for child in parent:
         if _localname(child.tag) not in _UNIT_TAGS:
             continue
         if any(_localname(a.tag) == "amendingAction" for a in child.iter()):
             out.add(child)
+    if cache is not None:
+        cache[key] = frozenset(out)
     return out
 
 
@@ -5665,6 +5673,9 @@ _US_TEXT_OF_CACHE_CTX: "contextvars.ContextVar[dict[int, str] | None]" = (
 _US_SHALLOW_TEXT_CACHE_CTX: "contextvars.ContextVar[dict[tuple[int, tuple[int, ...]], str] | None]" = (
     contextvars.ContextVar("lawvm_shallow_text_cache_ctx", default=None)
 )
+_US_AMENDATORY_UNIT_CHILDREN_CACHE_CTX: "contextvars.ContextVar[dict[int, frozenset[ET.Element]] | None]" = (
+    contextvars.ContextVar("lawvm_amendatory_unit_children_cache_ctx", default=None)
+)
 _US_SOURCE_ANCHOR_BODY_TAGS: frozenset[str] = frozenset(
     {
         "chapeau",
@@ -5976,6 +5987,7 @@ def lower_plaw_amendatory(
     _raw_source_token = set_us_raw_source_context(statute_id, data)
     _text_cache_token = _US_TEXT_OF_CACHE_CTX.set({})
     _shallow_text_cache_token = _US_SHALLOW_TEXT_CACHE_CTX.set({})
+    _unit_children_cache_token = _US_AMENDATORY_UNIT_CHILDREN_CACHE_CTX.set({})
     try:
         return _lower_plaw_amendatory_body(
             root,
@@ -5985,6 +5997,7 @@ def lower_plaw_amendatory(
             classification_index=classification_index,
         )
     finally:
+        _US_AMENDATORY_UNIT_CHILDREN_CACHE_CTX.reset(_unit_children_cache_token)
         _US_SHALLOW_TEXT_CACHE_CTX.reset(_shallow_text_cache_token)
         _US_TEXT_OF_CACHE_CTX.reset(_text_cache_token)
         reset_us_raw_source_context(_raw_source_token)
