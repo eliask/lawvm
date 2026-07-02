@@ -21,7 +21,10 @@ from lxml import etree
 from lawvm.core.xml_parse import parse_corpus_xml
 from lawvm.new_zealand.acquisition import open_farchive
 from lawvm.new_zealand.dates import nz_date_text_to_iso
-from lawvm.new_zealand.dependencies import latest_xml_locator_for_work, parse_public_act_citation
+from lawvm.new_zealand.dependencies import (
+    latest_source_locator_for_work,
+    parse_public_act_citation,
+)
 
 
 _STRUCTURAL_TAGS = {"def-para", "label-para", "part", "prov", "schedule", "subprov"}
@@ -299,18 +302,48 @@ def _parse_nz_source_document_uncached(
     )
 
 
+def parse_nz_source_document_by_format(
+    data: bytes,
+    *,
+    source_format: str,
+    locator: str = "",
+    version_id: str = "",
+) -> NZSourceDocument:
+    """Parse an archived source blob into the IR by its manifestation format.
+
+    ``source_format`` is ``"html"`` for a stored HTML rendition (routed through
+    :func:`lawvm.new_zealand.html_source.parse_nz_html_source_document`) and
+    anything else (``"xml"`` / ``""``) for the XML path. The HTML path yields the
+    same ``NZSourceDocument`` IR as the XML path, so downstream replay is
+    format-agnostic. The XML branch is byte-identical to a direct
+    :func:`parse_nz_source_document` call, so XML-present works never regress.
+    """
+    from lawvm.new_zealand.dependencies import NZ_SOURCE_FORMAT_HTML
+
+    if source_format == NZ_SOURCE_FORMAT_HTML:
+        from lawvm.new_zealand.html_source import parse_nz_html_source_document
+
+        return parse_nz_html_source_document(data, html_locator=locator, version_id=version_id)
+    return parse_nz_source_document(data, xml_locator=locator, version_id=version_id)
+
+
 def parse_archived_work_latest(db_path: Path, work_id: str) -> NZSourceDocument:
     archive = open_farchive(db_path)
     try:
-        version_id, xml_locator = latest_xml_locator_for_work(archive, work_id)
-        if not xml_locator:
-            raise RuntimeError(f"no archived latest XML for {work_id}")
-        data = archive.get(xml_locator)
+        version_id, locator, source_format = latest_source_locator_for_work(archive, work_id)
+        if not locator:
+            raise RuntimeError(f"no archived latest source (XML or HTML) for {work_id}")
+        data = archive.get(locator)
     finally:
         archive.close()
     if data is None:
-        raise RuntimeError(f"archived XML locator unreadable: {xml_locator}")
-    return parse_nz_source_document(data, xml_locator=xml_locator, version_id=version_id)
+        raise RuntimeError(f"archived source locator unreadable: {locator}")
+    return parse_nz_source_document_by_format(
+        data,
+        source_format=source_format,
+        locator=locator,
+        version_id=version_id,
+    )
 
 
 def _walk_source_nodes(

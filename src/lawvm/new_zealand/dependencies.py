@@ -226,6 +226,135 @@ def latest_xml_locator_selection_for_work(archive: ArchiveReader, work_id: str) 
     return NZLatestXMLLocatorSelection(work_id=work_id, version_id="", xml_locator="", diagnostics=tuple(diagnostics))
 
 
+# Source-format tags. ``xml`` is the richer PCO manifestation; ``html`` is the
+# scan-only rendition fallback the acquisition layer stores when no XML lands
+# (``_fetch_html_fallback``). The consume side prefers XML and falls back to HTML
+# exactly as acquisition does, so an HTML-only version becomes replayable while
+# an XML-present version stays byte-identical to the XML-only path.
+NZ_SOURCE_FORMAT_XML = "xml"
+NZ_SOURCE_FORMAT_HTML = "html"
+
+
+@dataclass(frozen=True)
+class NZLatestSourceLocatorSelection:
+    """Latest archived source locator for a work with its manifestation format.
+
+    ``source_format`` is :data:`NZ_SOURCE_FORMAT_XML` when an archived XML
+    manifestation was selected and :data:`NZ_SOURCE_FORMAT_HTML` when the XML was
+    absent and an archived HTML rendition was selected instead. An empty
+    ``locator`` (and empty ``source_format``) means neither manifestation is
+    archived for any version of the work.
+    """
+
+    work_id: str
+    version_id: str
+    locator: str
+    source_format: str
+    diagnostics: tuple[dict[str, Any], ...]
+
+    def to_jsonable(self) -> dict[str, Any]:
+        return {
+            "work_id": self.work_id,
+            "version_id": self.version_id,
+            "locator": self.locator,
+            "source_format": self.source_format,
+            "diagnostics": list(self.diagnostics),
+        }
+
+
+def latest_source_locator_for_work(
+    archive: ArchiveReader, work_id: str
+) -> tuple[str, str, str]:
+    """Return ``(version_id, locator, source_format)`` for the newest source.
+
+    XML-preferred, HTML-fallback: mirrors the acquisition-side fallback so an
+    HTML-only version (scan-only Act) resolves to its archived HTML rendition
+    while an XML-present version resolves to XML unchanged. ``source_format`` is
+    ``"xml"`` or ``"html"`` (empty when neither is archived).
+    """
+    selection = latest_source_locator_selection_for_work(archive, work_id)
+    return selection.version_id, selection.locator, selection.source_format
+
+
+def latest_source_locator_selection_for_work(
+    archive: ArchiveReader, work_id: str
+) -> NZLatestSourceLocatorSelection:
+    """XML-preferred, HTML-fallback source-locator selection for a work.
+
+    First delegates to :func:`latest_xml_locator_selection_for_work`; when it
+    finds an archived XML manifestation, that selection is returned verbatim
+    (tagged ``xml``) so the XML path is untouched. When no XML is archived for
+    any version, the same version-detail candidates are re-scanned for an
+    archived HTML rendition (the ``html`` format URL the acquisition layer stored
+    verbatim as its locator). The XML rejection diagnostics are carried through so
+    the HTML fallback is attributable, never a silent switch.
+    """
+    xml_selection = latest_xml_locator_selection_for_work(archive, work_id)
+    if xml_selection.xml_locator:
+        return NZLatestSourceLocatorSelection(
+            work_id=xml_selection.work_id,
+            version_id=xml_selection.version_id,
+            locator=xml_selection.xml_locator,
+            source_format=NZ_SOURCE_FORMAT_XML,
+            diagnostics=xml_selection.diagnostics,
+        )
+
+    prefix = f"https://api.legislation.govt.nz/v0/versions/{work_id}_en_"
+    version_locs = sorted(archive.locators(prefix + "%"), reverse=True)
+    for loc in version_locs:
+        version_id = loc.rstrip("/").rsplit("/", 1)[-1]
+        detail_bytes = archive.get(loc)
+        if detail_bytes is None:
+            continue
+        try:
+            detail = json.loads(detail_bytes.decode("utf-8"))
+        except json.JSONDecodeError:
+            continue
+        html_locator = _html_locator_from_version_detail(detail)
+        if not html_locator:
+            continue
+        if archive.get(html_locator) is None:
+            continue
+        return NZLatestSourceLocatorSelection(
+            work_id=work_id,
+            version_id=version_id,
+            locator=html_locator,
+            source_format=NZ_SOURCE_FORMAT_HTML,
+            diagnostics=xml_selection.diagnostics,
+        )
+
+    return NZLatestSourceLocatorSelection(
+        work_id=work_id,
+        version_id="",
+        locator="",
+        source_format="",
+        diagnostics=xml_selection.diagnostics,
+    )
+
+
+def _html_locator_from_version_detail(detail: Mapping[str, Any]) -> str:
+    """The archived HTML-rendition locator from a version detail's formats.
+
+    The acquisition layer stored the HTML rendition under the ``html`` format's
+    own ``url`` as locator (``_fetch_html_fallback``), unmodified — so the locator
+    is exactly the ``html`` format URL listed here. Matched on the declared format
+    kind (never a URL substring: every format lives under the same site path).
+    """
+    formats = detail.get("formats")
+    if not isinstance(formats, list):
+        return ""
+    for row in formats:
+        if not isinstance(row, Mapping):
+            continue
+        row_map = cast(Mapping[str, Any], row)
+        kind = str(row_map.get("type") or row_map.get("format") or row_map.get("name") or "").lower()
+        if kind == "html":
+            url = str(row_map.get("url") or "")
+            if url:
+                return url
+    return ""
+
+
 def _latest_xml_locator_candidate_diagnostic(
     *,
     work_id: str,
