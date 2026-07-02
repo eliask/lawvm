@@ -3363,8 +3363,16 @@ def _show_all_pit_summary(results: List[_AllPitStatuteResult]) -> None:
             print(f"    {r.sid:12s}  {r.status}")
 
 
-def _run_all_pit_mode(corpus: List[Tuple[int, str]], *, workers: int) -> None:
-    """Entry for ``lawvm bench --mode all_pit``: run + print + summarize."""
+def _run_all_pit_mode(
+    corpus: List[Tuple[int, str]], *, workers: int, anchor_touch: bool = False
+) -> None:
+    """Entry for ``lawvm bench --mode all_pit``: run + print + summarize.
+
+    ``anchor_touch`` is ADDITIVE and opt-in: when False (the default) the output
+    is byte-identical to the pre-existing all_pit report. When True, an extra
+    per-anchor-gated touch-relation section (#183) is appended AFTER the standard
+    summary — it never alters the standard lines.
+    """
     sids = [sid for _, sid in corpus]
     print(
         f"Running all-historical-PIT aux target: {len(sids)} statutes  "
@@ -3372,6 +3380,58 @@ def _run_all_pit_mode(corpus: List[Tuple[int, str]], *, workers: int) -> None:
     )
     results = _run_all_pit(sids, workers=workers, verbose=True)
     _show_all_pit_summary(results)
+    if anchor_touch:
+        _show_all_pit_anchor_touch(sids, workers=workers)
+
+
+def _show_all_pit_anchor_touch(sids: List[str], *, workers: int) -> None:
+    """Append the frozen-anchor / touch-relation attribution report (#183).
+
+    Runs the §3.3 attribution engine (per-anchor suspect gating + touch
+    relation) over *sids* and prints a per-statute-gated summary. Additive: only
+    reached when ``--anchor-touch`` is passed, and only prints AFTER the standard
+    all_pit summary.
+    """
+    from lawvm.tools.fi_anchor_manifest import attribute_statute
+
+    print("\n" + "=" * 60)
+    print("ANCHOR TOUCH-RELATION ATTRIBUTION (#183, per-anchor gated)")
+    print("=" * 60)
+    attributions = []
+    for sid in sids:
+        try:
+            attributions.append(attribute_statute(sid))
+        except Exception as exc:  # noqa: BLE001 — surface, don't crash the batch
+            print(f"  {sid:12s}  ERROR: {exc}")
+    ok = [a for a in attributions if a.status == "OK"]
+    hidden = [a for a in ok if a.has_hidden_mid_life_divergence]
+    n_candidate = sum(len(a.candidate_bug_observations) for a in ok)
+    n_untyped = sum(len(a.untyped_observations) for a in ok)
+    n_oracle = sum(
+        1
+        for a in ok
+        for o in a.observations
+        if o.verdict.startswith("oracle_suspect")
+    )
+    n_temporal = sum(
+        1
+        for a in ok
+        for o in a.observations
+        if o.verdict == "temporal_mismatch_commensurability"
+    )
+    print(f"  statutes attributed        : {len(ok)}")
+    print(f"  hidden mid-life divergences: {len(hidden)}")
+    print(f"  oracle-convicted (touch)   : {n_oracle}")
+    print(f"  temporal/commensurability  : {n_temporal}")
+    print(f"  BUG SIGNAL candidate+untyped: {n_candidate + n_untyped}"
+          f"  (candidate={n_candidate} untyped={n_untyped})")
+    for a in hidden:
+        gate = "GATED-CLEAN" if a.is_gated_clean else "CANDIDATE-BUG"
+        print(f"\n  {a.sid}  min={100 * (a.min_over_life or 0):.1f}%"
+              f"  latest={100 * (a.latest_scored or 0):.1f}%  [{gate}]")
+        for o in a.observations:
+            print(f"    {o.section_key:<12} {o.verdict}")
+            print(f"      window={o.window}  {o.evidence}")
 
 
 # ---------------------------------------------------------------------------
@@ -3518,7 +3578,11 @@ def main(args) -> None:
     # standard per-statute scoring/history/save flow entirely. It is a NEW mode;
     # official_consolidation / legal_pit are untouched.
     if bench_mode == "all_pit":
-        _run_all_pit_mode(corpus, workers=workers)
+        _run_all_pit_mode(
+            corpus,
+            workers=workers,
+            anchor_touch=bool(getattr(args, "anchor_touch", False)),
+        )
         return
 
     print(
