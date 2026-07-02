@@ -449,6 +449,11 @@ def _as_path(path: Sequence[PathStep]) -> Path:
     return tuple(path)
 
 
+@lru_cache(maxsize=65536)
+def _normalize_path(path: Path) -> _NormalizedPath:
+    return tuple((_kind_str(kind), _norm(label)) for kind, label in path)
+
+
 class AmbiguousLookupError(ValueError):
     """Raised when a lookup expected to be unique but multiple paths match."""
 
@@ -641,7 +646,7 @@ def resolve(tree: IRNode, path: Sequence[PathStep]) -> Optional[IRNode]:
     if not path:
         return tree
 
-    normalized_path = tuple((_kind_str(kind), _norm(label)) for kind, label in path)
+    normalized_path = _normalize_path(path)
     return _resolve_from_path(tree, normalized_path, 0, len(normalized_path))
 
 
