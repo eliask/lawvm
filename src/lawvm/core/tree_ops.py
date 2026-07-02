@@ -30,7 +30,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from itertools import pairwise
 import re
-from typing import Callable, Collection, Dict, FrozenSet, Iterator, List, Literal, Optional, Protocol, Sequence, Tuple, TYPE_CHECKING, TypeAlias
+from typing import Callable, Collection, Dict, FrozenSet, Iterator, List, Literal, Mapping, Optional, Protocol, Sequence, Tuple, TYPE_CHECKING, TypeAlias
 
 from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import _kind_str, structural_subtree_hash
@@ -657,6 +657,74 @@ def resolve_required(tree: IRNode, path: Sequence[PathStep]) -> IRNode:
     if resolved is None:
         raise MissingPathError(f"Missing tree path: {normalized_path!r}")
     return resolved
+
+
+def _resolve_from_path_ordinal(
+    tree: IRNode,
+    path: _NormalizedPath,
+    ordinals: Mapping[int, int],
+    depth: int,
+    path_len: int,
+) -> Optional[IRNode]:
+    """Ordinal-aware analogue of :func:`_resolve_from_path`.
+
+    ``ordinals`` maps a path-element index to a 1-indexed occurrence selector.
+    At a depth carrying an ordinal ``n``, the ``n``-th sibling matching ``(kind,
+    label)`` is selected (the disambiguator for DUPLICATE labels — a defective-
+    but-enacted statute condition); if fewer than ``n`` siblings match, the path
+    is absent. At a depth WITHOUT an ordinal the behavior is identical to
+    :func:`_resolve_from_path`: first match, with backtracking so a deeper miss
+    can be recovered from a later duplicate. See ``LegalAddress.ordinals``.
+    """
+
+    kind, label_key = path[depth]
+    leaf_depth = path_len - 1
+    ordinal = ordinals.get(depth)
+    if ordinal is not None:
+        seen = 0
+        for child in tree.children:
+            if _kind_str(child.kind) != kind or _norm(child.label or "") != label_key:
+                continue
+            seen += 1
+            if seen != ordinal:
+                continue
+            if depth == leaf_depth:
+                return child
+            return _resolve_from_path_ordinal(child, path, ordinals, depth + 1, path_len)
+        return None
+    for child in tree.children:
+        if _kind_str(child.kind) != kind or _norm(child.label or "") != label_key:
+            continue
+        if depth == leaf_depth:
+            return child
+        resolved = _resolve_from_path_ordinal(child, path, ordinals, depth + 1, path_len)
+        if resolved is not None:
+            return resolved
+    return None
+
+
+def resolve_with_ordinals(
+    tree: IRNode,
+    path: Sequence[PathStep],
+    ordinals: Mapping[int, int],
+) -> Optional[IRNode]:
+    """Resolve ``path`` selecting the Nth match at any depth named in ``ordinals``.
+
+    ``ordinals`` maps a path-element index to a 1-indexed occurrence selector.
+    With an empty ``ordinals`` this is identical to :func:`resolve` (every
+    element resolves to its first match, so ordinal-free addresses are
+    unchanged). The ordinal disambiguator selects among DUPLICATE labels — the
+    defective-but-enacted statute condition the US "the second paragraph (1)"
+    redesignations name. See FABLE_UNIVERSAL_ALGEBRA §5.4.
+    """
+
+    if not ordinals:
+        return resolve(tree, path)
+    path = _as_path(path)
+    if not path:
+        return tree
+    normalized_path = _normalize_path(path)
+    return _resolve_from_path_ordinal(tree, normalized_path, dict(ordinals), 0, len(normalized_path))
 
 
 def find_provisions_parent(tree: IRNode) -> Path:

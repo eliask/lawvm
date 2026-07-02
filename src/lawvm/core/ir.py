@@ -25,16 +25,65 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True, slots=True)
 class LegalAddress:
-    """Jurisdiction-agnostic address for a legal structure element."""
+    """Jurisdiction-agnostic address for a legal structure element.
+
+    ``ordinals`` is an OPTIONAL disambiguator for the (defective-but-enacted)
+    case where a statute carries DUPLICATE labels at one level, so a ``(kind,
+    label)`` path element does not uniquely name a slot. It is a *sparse* tuple
+    of ``(path_index, ordinal)`` pairs: for path element ``path_index`` the
+    resolver selects the ``ordinal``-th occurrence of that ``(kind, label)``
+    among its siblings (1-indexed, per the US phrasing "the second paragraph
+    (1)"). Path elements not named in ``ordinals`` resolve exactly as today
+    (first match). The default empty tuple means "no ordinal on any element",
+    which is byte-identical to the pre-ordinal ``LegalAddress``: ``path`` stays a
+    plain ``Tuple[Tuple[str, str], ...]`` (every existing ``for kind, label in
+    addr.path`` unpacking, comparison, and JSON projection is unchanged), and an
+    ordinal-free address equals and serializes exactly as before. The field
+    participates in equality/hash, so two addresses that differ only in an
+    ordinal are distinct. See FABLE_UNIVERSAL_ALGEBRA §5.4.
+    """
 
     path: Tuple[Tuple[str, str], ...]
     special: Optional[FacetKind] = None
+    ordinals: Tuple[Tuple[int, int], ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "path", tuple(self.path))
         for i, (kind, _label) in enumerate(self.path):
             if not kind:
                 raise ValueError(f"LegalAddress path element {i} has empty kind: {self.path!r}")
+        object.__setattr__(self, "ordinals", tuple(self.ordinals))
+        depth = len(self.path)
+        seen_indices: set[int] = set()
+        for pair in self.ordinals:
+            index, ordinal = pair
+            if not (0 <= index < depth):
+                raise ValueError(
+                    f"LegalAddress ordinal index {index} out of range for path of depth "
+                    f"{depth}: {self.ordinals!r}"
+                )
+            if ordinal < 1:
+                raise ValueError(
+                    f"LegalAddress ordinal at index {index} must be 1-indexed (>= 1), got {ordinal}"
+                )
+            if index in seen_indices:
+                raise ValueError(
+                    f"LegalAddress ordinal index {index} appears more than once: {self.ordinals!r}"
+                )
+            seen_indices.add(index)
+
+    def ordinal_at(self, index: int) -> Optional[int]:
+        """Return the 1-indexed ordinal disambiguator for path element ``index``.
+
+        ``None`` when the element carries no ordinal (resolve to the first match
+        — the pre-ordinal behavior). Ordinal-free addresses always return
+        ``None`` for every index.
+        """
+
+        for pair_index, ordinal in self.ordinals:
+            if pair_index == index:
+                return ordinal
+        return None
 
     def depth(self) -> int:
         return len(self.path)
@@ -42,7 +91,14 @@ class LegalAddress:
     def parent(self) -> Optional[LegalAddress]:
         if len(self.path) <= 1:
             return None
-        return LegalAddress(path=self.path[:-1])
+        # Preserve any ancestor ordinals (the dropped leaf's ordinal, at index
+        # ``len(path) - 1``, cannot survive and is elided). Ordinal-free
+        # addresses keep the empty tuple, so the parent is byte-identical.
+        parent_depth = len(self.path) - 1
+        parent_ordinals = tuple(
+            (index, ordinal) for index, ordinal in self.ordinals if index < parent_depth
+        )
+        return LegalAddress(path=self.path[:-1], ordinals=parent_ordinals)
 
     def has_prefix(self, prefix: "LegalAddress") -> bool:
         """Return True when ``prefix`` matches this address path and facet."""
