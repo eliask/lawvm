@@ -815,14 +815,16 @@ def test_replay_xml_2001_1488_materialized_state_keeps_chapter_scoped_first_sect
     assert "Voimaantulo Tämän lain voimaantulosta" in irnode_to_text(sections["section:1"])
 
 
-def test_replay_xml_1990_1295_materialized_state_drops_lone_unanchored_scoped_duplicate() -> None:
-    """A lone unanchored scoped duplicate is still reconciled to the body section."""
+def test_replay_xml_1990_1295_materialized_state_keeps_chapter_scoped_transition_section() -> None:
+    """Chapter 11 transition sections stay scoped once replay owns the chapter path."""
     replay = replay_xml_for_test("1990/1295", mode="official_consolidation", quiet=True)
 
     sections = extract_ir_sections(replay.materialized_state.ir)
 
     assert "chapter:4a/section:59a" not in sections
-    assert "section:59a" in sections
+    assert "section:59a" not in sections
+    assert "chapter:11/section:59a" in sections
+    assert "edellä tässä luvussa" in irnode_to_text(sections["chapter:11/section:59a"])
 
 
 def test_replay_xml_1993_1507_splits_treaty_protocol_second_moment() -> None:
