@@ -619,6 +619,11 @@ class AmendmentSourceModel:
         init=False,
         repr=False,
     )
+    _section_payload_text_cache: dict[SourceUnitLookup, SourcePayloadTextLookupResult] = field(
+        default_factory=dict,
+        init=False,
+        repr=False,
+    )
     _source_chapters_cache: tuple["SourceChapter", ...] | None = field(
         default=None,
         init=False,
@@ -1162,24 +1167,35 @@ class AmendmentSourceModel:
         target_part: Optional[str] = None,
     ) -> SourcePayloadTextLookupResult:
         """Return typed source-body payload text for a section target."""
+        key = SourceUnitLookup(
+            unit_kind="section",
+            label=_norm_num_token(section_label),
+            chapter=_norm_num_token(target_chapter or "") if target_chapter else None,
+            part=_norm_num_token(target_part or "") if target_part else None,
+        )
+        cached = self._section_payload_text_cache.get(key)
+        if cached is not None:
+            return cached
         payload_lookup = self.lookup_payload_ir(
-            "section",
-            section_label,
-            target_chapter=target_chapter,
-            target_part=target_part,
+            key.unit_kind,
+            key.label,
+            target_chapter=key.chapter,
+            target_part=key.part,
         )
         payload_text = (
             " ".join(irnode_to_text(payload_lookup.payload_ir).split())
             if payload_lookup.payload_ir is not None
             else ""
         )
-        return SourcePayloadTextLookupResult(
+        result = SourcePayloadTextLookupResult(
             lookup_status=payload_lookup.lookup_status if payload_text else "missing",
             query=payload_lookup.query,
             payload_lookup_status=payload_lookup.lookup_status,
             payload_basis=payload_lookup.payload_basis,
             text=payload_text,
         )
+        self._section_payload_text_cache[key] = result
+        return result
 
     def pre_create_amendment_chapters(
         self,

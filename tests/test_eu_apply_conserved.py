@@ -9,6 +9,7 @@ receipt; it does not change replay semantics).
 from __future__ import annotations
 
 import pytest
+from typing import cast
 
 from lawvm.core.filter_result import FilterResult, RejectedItem
 from lawvm.core.ir import IRNode, IRStatute, LegalAddress, LegalOperation, OperationSource, StructuralAction
@@ -16,6 +17,9 @@ from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core.write_receipt import WriteReceipt
 from lawvm.eu.pipeline import apply_eu_ops, apply_eu_ops_conserved, EUApplyResult
 from lawvm.replay_adjudication import CompileAdjudication
+
+
+_ANNEX_KIND = cast(IRNodeKind, "annex")
 
 
 def _baseline_statute() -> IRStatute:
@@ -275,8 +279,8 @@ def _statute_with_annexes() -> IRStatute:
             children=(IRNode(kind=IRNodeKind.SECTION, label="1", text="Article 1"),),
         ),
         supplements=(
-            IRNode(kind="annex", label="II", text="Original Annex II"),
-            IRNode(kind="annex", label="III", text="Original Annex III"),
+            IRNode(kind=_ANNEX_KIND, label="II", text="Original Annex II"),
+            IRNode(kind=_ANNEX_KIND, label="III", text="Original Annex III"),
         ),
     )
 
@@ -287,7 +291,7 @@ def _annex_replace_op(*, op_id: str, sequence: int, annex_label: str, text: str)
         sequence=sequence,
         action=StructuralAction.REPLACE,
         target=LegalAddress(path=(("annex", annex_label),)),
-        payload=IRNode(kind="annex", label=annex_label, text=text),
+        payload=IRNode(kind=_ANNEX_KIND, label=annex_label, text=text),
         source=OperationSource(statute_id="2026/1"),
     )
 

@@ -815,11 +815,13 @@ def test_source_model_section_payload_text_uses_typed_payload_ir() -> None:
     model = AmendmentSourceModel.from_tree(tree, source_ref="1982/1035")
 
     result = model.lookup_section_payload_text("5")
+    repeated = model.lookup_section_payload_text(" 5 ")
 
     assert result.lookup_status == "unique"
     assert result.payload_lookup_status == "unique"
     assert result.payload_basis == "body_inventory"
     assert "Vuodelta 1984 toimitettavassa verotuksessa" in result.text
+    assert repeated is result
 
 
 def test_source_model_payload_lookup_does_not_xml_fallback_for_non_unique_body_verdicts(
