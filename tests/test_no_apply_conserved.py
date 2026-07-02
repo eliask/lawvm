@@ -101,6 +101,101 @@ def test_apply_no_ops_conserved_partitions_accepted_and_skipped() -> None:
     assert accepted_ids & rejected_ids == set()  # disjoint
 
 
+def test_apply_no_ops_conserved_content_identical_noop_is_rejected_not_accepted() -> None:
+    """§1.8 / I1-strong: an op that produces NO content write must be REJECTED.
+
+    Regression for the #186 conservation leak (the NO analogue of the EE #185
+    fix). NO's per-op ``applied`` signal is the seam's OBJECT-IDENTITY signal
+    (the materializer derives it from ``body is not before_body``). NO's tree_ops
+    rebuild the targeted subtree on every landed REPLACE, so a REPLACE whose
+    payload node is byte-identical to the live section returns a
+    fresh-but-content-equal ``body`` — object identity reported ``applied=True``
+    and the op was counted ACCEPTED even though it landed NOTHING (NO's
+    ``replay_noop`` was only emitted for a missing target path, never for a
+    content-equal no-op). That violated I1's strong form ("accepted ⟺ op landed
+    a write"): a silent no-op was overstated as an applied op.
+
+    The write receipt (the identity-pruned content diff) is the ground truth:
+    a content-identical no-op mints ZERO receipts. The conserved partition must
+    agree — the op lands in the REJECTED lane with ``replay_noop``.
+    """
+    from lawvm.norway.grafter import no_replay_write_receipts
+
+    # A section node with a nested paragraph so REPLACE re-materializes a fresh
+    # (but content-equal) subtree.
+    live_section = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="5",
+        children=(
+            IRNode(kind=IRNodeKind.HEADING, text="Uendret tittel"),
+            IRNode(kind=IRNodeKind.PARAGRAPH, text="Uendret tekst."),
+        ),
+    )
+    statute = IRStatute(
+        statute_id="no/lov/2025-01-01-1",
+        title="Test",
+        body=IRNode(kind=IRNodeKind.BODY, children=(live_section,)),
+    )
+    # REPLACE §5 with a payload whose content is byte-identical to the live node.
+    noop = LegalOperation(
+        op_id="no-noop",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "5"),)),
+        payload=IRNode(
+            kind=IRNodeKind.SECTION,
+            label="5",
+            children=(
+                IRNode(kind=IRNodeKind.HEADING, text="Uendret tittel"),
+                IRNode(kind=IRNodeKind.PARAGRAPH, text="Uendret tekst."),
+            ),
+        ),
+        source=OperationSource(statute_id="no/lovtid/2025-02-02-5"),
+    )
+
+    # Ground truth: the write-receipt lane emits ZERO receipts for this op (the
+    # identity-pruned diff is empty — no write landed).
+    _final, receipts = no_replay_write_receipts(statute, [noop])
+    assert receipts == (), "a content-identical no-op must mint no write receipt"
+
+    result = apply_no_ops_conserved(statute, [noop])
+
+    # The no-op lands in the REJECTED lane (not the accepted lane).
+    assert [op.op_id for op in result.applied_ops] == [], (
+        "a content-identical no-op REPLACE landed no write and must NOT be "
+        "counted accepted (I1-strong conservation leak, #186)."
+    )
+    assert len(result.skipped_items) == 1
+    rejected = result.skipped_items[0]
+    assert isinstance(rejected, RejectedItem)
+    assert rejected.item.op_id == "no-noop"
+    assert rejected.reason_code == "replay_noop"
+    assert rejected.blocking is False
+
+    # Partition stays total + disjoint.
+    accepted_ids = {op.op_id for op in result.filter_result.accepted_items}
+    rejected_ids = {item.item.op_id for item in result.filter_result.rejected_items}
+    assert accepted_ids | rejected_ids == {"no-noop"}
+    assert accepted_ids & rejected_ids == set()
+
+
+def test_apply_no_ops_conserved_genuine_write_still_accepted() -> None:
+    """The #186 content-diff fix must NOT reclassify a GENUINE write.
+
+    A REPLACE whose payload differs from the live node lands a real content
+    mutation (non-empty identity-pruned diff) and stays ACCEPTED — the fix only
+    reclassifies false-positive content-identical no-ops, so every op that truly
+    mutated is byte-identically accepted.
+    """
+    statute = _statute_with_section("2", "Old text.")
+    real = _replace_op(op_id="no-real", sequence=1, label="2")
+
+    result = apply_no_ops_conserved(statute, [real])
+
+    assert [op.op_id for op in result.applied_ops] == ["no-real"]
+    assert result.skipped_items == ()
+
+
 def test_apply_no_ops_conserved_does_not_treat_recovery_as_skip() -> None:
     """§1.8: recovery adjudications (``no_replay_*``) record transformations
     that WERE applied — REPLACE recovered to INSERT, etc. — and must NOT mark

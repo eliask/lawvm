@@ -4511,6 +4511,7 @@ def apply_no_ops(
     # op-only). ──────────────────────────────────────────────────────────────
     for op, renumber_sources in ordered_ops:
         _no_active_renumber_sources = renumber_sources
+        pre_op_body = body
         applied_result: AppliedOp[IRNode] = apply_op(
             body,
             op,
@@ -4519,6 +4520,42 @@ def apply_no_ops(
             source_statute=statute.statute_id,
         )
         body = applied_result.new_state
+
+        # ── I1-strong conservation: derive the applied signal from the CONTENT
+        # footprint, not object identity (#186, mirroring EE #185). ────────────
+        # ``applied_result.applied`` is the seam's OBJECT-IDENTITY signal — the NO
+        # materializer derives it from ``body is not before_body``. NO's tree_ops
+        # (``replace_at`` / ``insert_sorted``) rebuild the targeted subtree on
+        # every landed REPLACE / text_replace, so a REPLACE (or text_replace)
+        # whose payload equals the live text returns a FRESH-but-content-equal
+        # node: object identity reports ``applied=True`` for a write that landed
+        # NOTHING. The op was then counted ACCEPTED-without-write (the conserved
+        # partition keys on the enumerated skip kinds, and NO's ``replay_noop`` was
+        # only emitted for the missing-target-path case, never for a content-equal
+        # no-op) — the exact conservation leak AGENTS.md §1.8 / the
+        # universal-algebra I1 strong form ("accepted ⟺ op landed a write")
+        # forbids.
+        #
+        # The ground-truth footprint is the identity-pruned content diff — the
+        # SAME signal NO's ``no_replay_write_receipts`` already uses to decide
+        # whether a write receipt exists (empty diff ⇒ no receipt ⇒ no write).
+        # Object identity is a NECESSARY precondition (no fresh object ⇒ definitely
+        # no write); a fresh object counts as a write ONLY when the content
+        # actually differs. A genuine landed write always has a non-empty diff, so
+        # this is byte-identical for every op that truly mutated; it only
+        # reclassifies the false-positive content-identical no-ops, which now emit
+        # ``replay_noop`` and land REJECTED in the conserved partition.
+        changed = applied_result.applied and bool(
+            diff_ir_paths_identity_pruned(pre_op_body, body)
+        )
+        if applied_result.applied and not changed:
+            _append_no_replay_adjudication(
+                adjudications_out,
+                kind="replay_noop",
+                message="Norway replay emitted a content-identical no-op for operation.",
+                op=op,
+                detail={"action": _no_action_value(op.action), "target": str(op.target)},
+            )
 
         # ── B-enforcement (LS-01): drain the seam's OBSERVE lane. ─────────────
         # The universal apply seam runs the always-on per-op mutation-boundary

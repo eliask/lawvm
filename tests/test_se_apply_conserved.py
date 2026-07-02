@@ -142,3 +142,70 @@ def test_se_skip_kind_filter_excludes_future_recovery_kinds() -> None:
     assert len(result.applied_ops) == 1
     assert result.applied_ops[0].op_id == "se-replace-ok"
     assert len(result.skipped_items) == 0
+
+
+def test_apply_se_ops_conserved_content_identical_noop_is_rejected_not_accepted() -> None:
+    """§1.8 / I1-strong: an op that produces NO content write must be REJECTED.
+
+    Regression for the #186 conservation leak (the SE analogue of the EE #185
+    fix). SE's per-op ``applied`` signal is the seam's OBJECT-IDENTITY signal
+    (the materializer sets ``_se_op_applied`` at every ``_mark_applied()`` site).
+    SE's tree_ops rebuild the targeted subtree on every landed REPLACE, so a
+    REPLACE whose payload is byte-identical to the live section returns a
+    fresh-but-content-equal ``body`` — object identity reported ``applied=True``
+    and the op was counted ACCEPTED even though it landed NOTHING (SE emitted NO
+    no-op adjudication at all). That violated I1's strong form ("accepted ⟺ op
+    landed a write"): a silent no-op was overstated as an applied op.
+
+    The write receipt (the identity-pruned content diff) is the ground truth:
+    a content-identical no-op mints ZERO receipts. The conserved partition must
+    agree — the op lands in the REJECTED lane with ``se_replay_noop``.
+    """
+    from lawvm.sweden.grafter import se_replay_write_receipts
+
+    statute = _statute_with_section("5", "Identical text.")
+    # REPLACE §5 with a payload whose content is byte-identical to the live node.
+    noop = _replace_op(op_id="se-noop", sequence=1, label="5", text="Identical text.")
+
+    # Ground truth: the write-receipt lane emits ZERO receipts for this op (the
+    # identity-pruned diff is empty — no write landed).
+    _final, receipts = se_replay_write_receipts(statute, [noop])
+    assert receipts == (), "a content-identical no-op must mint no write receipt"
+
+    result = apply_se_ops_conserved(statute, [noop])
+
+    # The no-op lands in the REJECTED lane (not the accepted lane).
+    assert [op.op_id for op in result.applied_ops] == [], (
+        "a content-identical no-op REPLACE landed no write and must NOT be "
+        "counted accepted (I1-strong conservation leak, #186)."
+    )
+    assert len(result.skipped_items) == 1
+    rejected = result.skipped_items[0]
+    assert isinstance(rejected, RejectedItem)
+    assert rejected.item.op_id == "se-noop"
+    assert rejected.reason_code == "se_replay_noop"
+    assert rejected.blocking is False
+
+    # Partition stays total + disjoint.
+    accepted_ids = {op.op_id for op in result.filter_result.accepted_items}
+    rejected_ids = {item.item.op_id for item in result.filter_result.rejected_items}
+    assert accepted_ids | rejected_ids == {"se-noop"}
+    assert accepted_ids & rejected_ids == set()
+
+
+def test_apply_se_ops_conserved_genuine_write_still_accepted() -> None:
+    """The #186 content-diff fix must NOT reclassify a GENUINE write.
+
+    A REPLACE whose payload differs from the live node lands a real content
+    mutation (non-empty identity-pruned diff) and stays ACCEPTED — the fix only
+    reclassifies false-positive content-identical no-ops, so every op that truly
+    mutated is byte-identically accepted.
+    """
+    statute = _statute_with_section("5", "Old text.")
+    real = _replace_op(op_id="se-real", sequence=1, label="5", text="New text.")
+
+    result = apply_se_ops_conserved(statute, [real])
+
+    assert [op.op_id for op in result.applied_ops] == ["se-real"]
+    assert result.skipped_items == ()
+    assert result.statute.body.children[0].text == "New text."

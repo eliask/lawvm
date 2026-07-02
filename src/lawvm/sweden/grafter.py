@@ -4186,6 +4186,7 @@ def apply_se_ops(
     # owns the (here-disabled) receipt/coverage outputs and the boundary gate.
     # ────────────────────────────────────────────────────────────────────────
     for op in ops:
+        pre_op_body = body
         applied_result: AppliedOp[IRNode] = apply_op(
             body,
             op,
@@ -4194,6 +4195,46 @@ def apply_se_ops(
             source_statute=statute.statute_id,
         )
         body = applied_result.new_state
+
+        # ── I1-strong conservation: derive the applied signal from the CONTENT
+        # footprint, not object identity (#186, mirroring EE #185). ────────────
+        # ``applied_result.applied`` is the seam's OBJECT-IDENTITY signal — SE's
+        # materializer sets ``_se_op_applied`` at every ``_mark_applied()`` site,
+        # and SE's tree_ops (``replace_at`` / ``insert_sorted``) rebuild the
+        # targeted subtree on every landed REPLACE / TEXT_REPLACE / section apply.
+        # A REPLACE (or appendix REPLACE) whose payload equals the live node
+        # returns a FRESH-but-content-equal ``body``: object identity reports
+        # ``applied=True`` for a write that landed NOTHING. The op was then counted
+        # ACCEPTED-without-write (the conserved partition keys on the enumerated
+        # skip kinds, and SE emitted NO no-op adjudication at all) — the exact
+        # conservation leak AGENTS.md §1.8 / the universal-algebra I1 strong form
+        # ("accepted ⟺ op landed a write") forbids.
+        #
+        # The ground-truth footprint is the identity-pruned content diff — the
+        # SAME signal SE's ``_se_emit_one_op_receipt`` already uses to decide
+        # whether a write receipt exists (empty diff ⇒ no receipt ⇒ no write).
+        # A genuine landed BODY write always has a non-empty diff, so this is
+        # byte-identical for every body op that truly mutated; it only reclassifies
+        # the false-positive content-identical body no-ops, which now emit
+        # ``se_replay_noop`` and land REJECTED in the conserved partition.
+        #
+        # APPENDIX ops are the one lane the body-diff cannot see: they mutate the
+        # ``supplements`` list, not ``body`` (SE's per-op receipt path has the same
+        # blind spot — it returns ``None`` for appendix writes). For those the
+        # seam's explicit ``applied`` flag is authoritative, so an appendix op is
+        # NEVER reclassified by the body diff.
+        if (
+            applied_result.applied
+            and op.target.leaf_kind() != "appendix"
+            and not diff_ir_paths_identity_pruned(pre_op_body, body)
+        ):
+            _append_se_replay_adjudication(
+                adjudications_out,
+                kind="se_replay_noop",
+                message="Sweden replay emitted a content-identical no-op for operation.",
+                op=op,
+                detail={"action": op.action, "target": op.target.leaf_label()},
+            )
 
         # ── B-enforcement (LS-01): drain the seam's OBSERVE lane. ─────────────
         # The universal apply seam runs the always-on per-op mutation-boundary
@@ -4322,6 +4363,11 @@ _SE_SKIP_ADJUDICATION_KINDS = frozenset(
         "se_replay_renumber_collision",
         "se_replay_text_replace_no_match",
         "se_replay_unsupported_target_kind",
+        # I1-strong conservation (#186): a REPLACE / section apply whose payload
+        # is content-equal to the live node lands no write. The seam loop emits
+        # ``se_replay_noop`` for that (object identity ``applied=True`` + empty
+        # identity-pruned body diff), and the conserved partition must reject it.
+        "se_replay_noop",
     }
 )
 
