@@ -26,6 +26,7 @@ class ReplayLegalOperationCaptureList(list[Any]):
         "base_section_node_cache",
         "base_subsection_node_cache",
         "base_target_exists_cache",
+        "prior_paragraph_label_index",
         "snapshot_index",
         "timeline_exact_target_index",
         "timeline_latest_repeal_placeholder_index",
@@ -40,6 +41,7 @@ class ReplayLegalOperationCaptureList(list[Any]):
         self.base_section_node_cache: object | None = None
         self.base_subsection_node_cache: object | None = None
         self.base_target_exists_cache: object | None = None
+        self.prior_paragraph_label_index: object | None = None
         self.snapshot_index: object | None = None
         self.timeline_exact_target_index: object | None = None
         self.timeline_latest_repeal_placeholder_index: object | None = None
@@ -51,6 +53,7 @@ class ReplayLegalOperationCaptureList(list[Any]):
         self.base_provision_index_cache = None
         self.base_section_node_cache = None
         self.base_subsection_node_cache = None
+        self.prior_paragraph_label_index = None
         if not preserve_snapshot_index:
             self.snapshot_index = None
         self.timeline_exact_target_index = None

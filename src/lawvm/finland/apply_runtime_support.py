@@ -104,6 +104,19 @@ class _TimelinePayloadTargetIndex:
     indexed_len: int
 
 
+@dataclass(frozen=True, slots=True)
+class _ParagraphLabelEvent:
+    effective: str
+    action: StructuralAction
+    label: str
+
+
+@dataclass(frozen=True, slots=True)
+class _PriorParagraphLabelIndex:
+    events_by_parent_path: dict[Path, list[_ParagraphLabelEvent]]
+    indexed_len: int
+
+
 _PROVISION_INDEXED_KINDS = frozenset({"part", "chapter", "section"})
 
 
@@ -438,6 +451,36 @@ def _prior_paragraph_labels_for_subsection_paths(
             if grandchild.kind is IRNodeKind.PARAGRAPH and grandchild.label
         )
 
+    if isinstance(replay_history_ops, ReplayLegalOperationCaptureList):
+        cur_len = len(replay_history_ops)
+        index = cast(_PriorParagraphLabelIndex | None, replay_history_ops.prior_paragraph_label_index)
+        if index is None or index.indexed_len > cur_len:
+            events_by_parent_path: dict[Path, list[_ParagraphLabelEvent]] = {}
+            start = 0
+        else:
+            events_by_parent_path = index.events_by_parent_path
+            start = index.indexed_len
+        if start < cur_len:
+            _add_prior_paragraph_label_events_to_index(
+                events_by_parent_path,
+                replay_history_ops,
+                start=start,
+                stop=cur_len,
+            )
+            replay_history_ops.prior_paragraph_label_index = _PriorParagraphLabelIndex(
+                events_by_parent_path=events_by_parent_path,
+                indexed_len=cur_len,
+            )
+        for child_path, labels in labels_by_path.items():
+            for event in events_by_parent_path.get(child_path, ()):
+                if before_effective and event.effective and event.effective > before_effective:
+                    continue
+                if event.action is StructuralAction.REPEAL:
+                    labels.discard(event.label)
+                else:
+                    labels.add(event.label)
+        return labels_by_path
+
     for prior in replay_history_ops:
         if prior.target.special is not None or not prior.target.path:
             continue
@@ -469,6 +512,47 @@ def _prior_paragraph_labels_for_subsection_paths(
         else:
             labels.add(paragraph_label)
     return labels_by_path
+
+
+def _add_prior_paragraph_label_events_to_index(
+    events_by_parent_path: dict[Path, list[_ParagraphLabelEvent]],
+    replay_history_ops: List[_LegalOperation],
+    *,
+    start: int,
+    stop: int,
+) -> None:
+    for i in range(start, stop):
+        prior = replay_history_ops[i]
+        if prior.target.special is not None or not prior.target.path:
+            continue
+        prior_effective = ""
+        if prior.source is not None:
+            prior_effective = prior.source.effective or prior.source.enacted or ""
+        prior_path = tuple(prior.target.path)
+        if prior_path[-1][0] == "paragraph":
+            paragraph_label = _normalize_snapshot_item_label(prior_path[-1][1])
+            if not paragraph_label:
+                continue
+            events_by_parent_path.setdefault(prior_path[:-1], []).append(
+                _ParagraphLabelEvent(
+                    effective=prior_effective,
+                    action=prior.action,
+                    label=paragraph_label,
+                )
+            )
+            continue
+        if prior.payload is not None and prior.payload.kind is IRNodeKind.SUBSECTION:
+            parent_events = events_by_parent_path.setdefault(prior_path, [])
+            parent_events.extend(
+                _ParagraphLabelEvent(
+                    effective=prior_effective,
+                    action=StructuralAction.REPLACE,
+                    label=_normalize_snapshot_item_label(grandchild.label),
+                )
+                for grandchild in prior.payload.children
+                if grandchild.kind is IRNodeKind.PARAGRAPH and grandchild.label
+            )
+            continue
 
 
 @lru_cache(maxsize=8192)

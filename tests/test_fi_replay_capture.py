@@ -85,6 +85,8 @@ def test_replay_legal_operation_capture_list_invalidates_snapshot_index_on_rewri
     section_2 = SectionSnapshotIdentity(part="", chapter="", section="2")
     assert _snapshot_section_los_for_identity(history, section_1) == [op]
     history.base_provision_index_cache = {("base",): object()}
+    prior_paragraph_sentinel = object()
+    history.prior_paragraph_label_index = {("prior-paragraph",): prior_paragraph_sentinel}
     base_target_sentinel = object()
     history.base_target_exists_cache = {("base-target",): base_target_sentinel}
     exact_target_sentinel = object()
@@ -101,6 +103,7 @@ def test_replay_legal_operation_capture_list_invalidates_snapshot_index_on_rewri
     history[0] = rewritten
 
     assert history.base_provision_index_cache is None
+    assert history.prior_paragraph_label_index is None
     assert history.base_target_exists_cache == {("base-target",): base_target_sentinel}
     assert history.timeline_exact_target_index is None
     assert history.timeline_latest_repeal_placeholder_index is None
@@ -136,6 +139,8 @@ def test_replay_legal_operation_capture_list_preserves_snapshot_index_on_metadat
 def test_replay_legal_operation_capture_list_keeps_indexes_across_append() -> None:
     history = ReplayLegalOperationCaptureList()
     history.base_provision_index_cache = {("base",): object()}
+    prior_paragraph_sentinel = object()
+    history.prior_paragraph_label_index = {("prior-paragraph",): prior_paragraph_sentinel}
     base_target_sentinel = object()
     history.base_target_exists_cache = {("base-target",): base_target_sentinel}
     exact_target_sentinel = object()
@@ -158,6 +163,7 @@ def test_replay_legal_operation_capture_list_keeps_indexes_across_append() -> No
     )
 
     assert history.base_provision_index_cache is not None
+    assert history.prior_paragraph_label_index == {("prior-paragraph",): prior_paragraph_sentinel}
     assert history.base_target_exists_cache == {("base-target",): base_target_sentinel}
     assert history.timeline_exact_target_index == {("exact",): exact_target_sentinel}
     assert history.timeline_latest_repeal_placeholder_index == {
@@ -354,3 +360,36 @@ def test_prior_paragraph_labels_for_subsection_paths_batches_history_scan() -> N
 
     assert labels_by_path[subsection_path] == {"1", "3", "4"}
     assert labels_by_path[second_subsection_path] == {"a"}
+    assert history.prior_paragraph_label_index is not None
+
+    history.append(
+        LegalOperation(
+            op_id="append_past_paragraph",
+            sequence=5,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=subsection_path + (("paragraph", "6"),)),
+            source=OperationSource(statute_id="1999/5", effective="2019-12-01"),
+        )
+    )
+    labels_after_append = _prior_paragraph_labels_for_subsection_paths(
+        child_paths={subsection_path},
+        replay_history_ops=history,
+        base_ir=base_ir,
+        before_effective="2020-01-01",
+    )
+
+    assert labels_after_append[subsection_path] == {"1", "3", "4", "6"}
+
+    history[1] = replace(
+        history[1],
+        target=LegalAddress(path=subsection_path + (("paragraph", "7"),)),
+    )
+    assert history.prior_paragraph_label_index is None
+    labels_after_rewrite = _prior_paragraph_labels_for_subsection_paths(
+        child_paths={subsection_path},
+        replay_history_ops=history,
+        base_ir=base_ir,
+        before_effective="2020-01-01",
+    )
+
+    assert labels_after_rewrite[subsection_path] == {"1", "3", "6", "7"}
