@@ -1448,9 +1448,9 @@ def _similarity_point(
     all_paths = sorted(replayed_index.keys() | oracle_index.keys())
     shared_paths = replayed_index.keys() & oracle_index.keys()
     cleaned_text_by_node: dict[NZSourceNode, str] = {}
-    for node in replayed_index.values():
+    for node in replayed.nodes:
         cleaned_text_by_node[node] = _cached_cleaned_node_similarity_text(node, cleaned_text_cache)
-    for node in oracle_index.values():
+    for node in oracle.nodes:
         cleaned_text_by_node[node] = _cached_cleaned_node_similarity_text(node, cleaned_text_cache)
 
     union_scores: list[float] = []

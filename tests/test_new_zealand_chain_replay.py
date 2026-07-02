@@ -340,6 +340,35 @@ def test_stable_track_ignores_id_churn_that_raw_track_penalizes() -> None:
     assert point.combined_similarity_stable == pytest.approx(1.0)
 
 
+def test_stable_similarity_scores_duplicate_raw_path_nodes() -> None:
+    # The raw path index keeps the first node for a duplicate path, while the
+    # stable bucket retains both. The stable scorer must cache text for the full
+    # document node list, not only the duplicate-collapsed raw index values.
+    replayed = _doc(
+        (
+            _node(("prov:1",), text="body text"),
+            _node(("prov:1",), text="duplicate path body text"),
+        ),
+        version_id="r",
+    )
+    oracle = _doc(
+        (
+            _node(("prov:1",), text="body text"),
+            _node(("prov:1",), text="duplicate path body text"),
+        ),
+        version_id="o",
+    )
+    version = NZArchivedVersion(version_id="o", xml_locator="o", version_date="2010-01-01")
+
+    point = _similarity_point(
+        replayed, oracle, version, transitions_applied=0, repeals_applied=0, repeals_skipped=0
+    )
+
+    assert point.path_jaccard == pytest.approx(1.0)
+    assert point.path_jaccard_stable == pytest.approx(1.0)
+    assert point.combined_similarity_stable == pytest.approx(1.0)
+
+
 # --- A small fixture chain end-to-end via build_chain_replay ---
 
 
