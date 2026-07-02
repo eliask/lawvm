@@ -5767,10 +5767,9 @@ def _unique_byte_run_body_records(
     # Collect the deduplicated, document-order flattened element bodies, then let
     # the shared indexed kernel decide global byte-run uniqueness (replaces the
     # per-candidate two-``find`` O(N^2) scan — AGENTS.md §2.7). Clause membership is
-    # checked after byte-run uniqueness: uniqueness is a raw-byte fact independent
-    # of the emitted op clauses, and filtering after the stable LONGEST-first sort
-    # preserves the same selected body order while avoiding thousands of expensive
-    # substring searches through the joined clause blob for non-anchorable bodies.
+    # a negative prefilter only: _anchor_op can select a body only if it is a
+    # substring of an emitted op clause. Global uniqueness is still proven against
+    # the full raw bytes for every retained candidate.
     candidates: List[str] = []
     for node in root.iter():
         if not isinstance(node.tag, str) or _localname(node.tag) not in _US_SOURCE_ANCHOR_BODY_TAGS:
@@ -5780,10 +5779,10 @@ def _unique_byte_run_body_records(
             seen.add(text)
             continue
         seen.add(text)
-        candidates.append(text)
-    for text, first in unique_byte_run_text_positions(raw_bytes, candidates):
         if candidate_clauses is not None and text not in candidate_blob:
             continue
+        candidates.append(text)
+    for text, first in unique_byte_run_text_positions(raw_bytes, candidates):
         needle = text.encode("utf-8")
         bodies.append(
             _UniqueByteRunBody(

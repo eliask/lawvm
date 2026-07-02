@@ -467,6 +467,44 @@ def test_us_unique_byte_run_bodies_prefilters_to_candidate_clauses() -> None:
     assert bodies == ["Clause body selected by an emitted operation."]
 
 
+def test_us_unique_byte_run_body_records_prefilters_before_unique_kernel(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw = b"""\
+<section>
+  <chapeau>Clause body selected by an emitted operation.</chapeau>
+  <quotedText>Unrelated body from another instruction.</quotedText>
+</section>
+"""
+    seen_candidates: list[list[str]] = []
+
+    def fake_unique_byte_run_text_positions(
+        haystack: bytes, candidates: list[str]
+    ) -> list[tuple[str, int]]:
+        seen_candidates.append(list(candidates))
+        return [
+            (candidate, haystack.find(candidate.encode("utf-8")))
+            for candidate in candidates
+        ]
+
+    monkeypatch.setattr(
+        amendatory,
+        "unique_byte_run_text_positions",
+        fake_unique_byte_run_text_positions,
+    )
+
+    records = _unique_byte_run_body_records(
+        raw,
+        source_artifact_id="PL TEST",
+        candidate_clauses=("Prefix Clause body selected by an emitted operation.",),
+    )
+
+    assert seen_candidates == [["Clause body selected by an emitted operation."]]
+    assert [record.text for record in records] == [
+        "Clause body selected by an emitted operation."
+    ]
+
+
 def test_us_unique_byte_run_body_records_reuse_verified_offsets() -> None:
     raw = b"""\
 <section>
