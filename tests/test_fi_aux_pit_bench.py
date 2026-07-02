@@ -307,9 +307,10 @@ def test_main_routes_all_pit_mode(monkeypatch) -> None:
     WITHOUT touching the standard scoring/save flow."""
     routed: dict[str, object] = {}
 
-    def _fake_run_all_pit_mode(corpus, *, workers):
+    def _fake_run_all_pit_mode(corpus, *, workers, anchor_touch=False):
         routed["corpus"] = corpus
         routed["workers"] = workers
+        routed["anchor_touch"] = anchor_touch
 
     def _boom(*a, **k):  # pragma: no cover - standard flow must not run
         raise AssertionError("all_pit must not enter the standard bench flow")
@@ -331,3 +332,6 @@ def test_main_routes_all_pit_mode(monkeypatch) -> None:
     bench.main(args)
     assert routed["corpus"] == [(1, "1969/10")]
     assert routed["workers"] == 1
+    # the anchor-touch attribution report is opt-in and defaults off, so a plain
+    # all_pit route must not request it (#183 additive-discipline invariant).
+    assert routed["anchor_touch"] is False
