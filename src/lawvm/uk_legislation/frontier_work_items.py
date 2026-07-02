@@ -881,7 +881,9 @@ def uk_frontier_work_item_dict_from_manual_frontier_row(
 ) -> dict[str, Any]:
     """Serialized UK manual-frontier work item for hot diagnostic projection."""
     payload = _uk_frontier_work_item_payload_from_manual_frontier_row(row)
-    issues = validate_frontier_work_item(payload)
+    detail = _mapping(payload.get("detail"))
+    packet_completeness = _mapping(detail.get("packet_completeness"))
+    issues = tuple(packet_completeness.get("frontier_work_item_validation_issues") or ())
     if issues:
         raise ValueError("; ".join(issues))
     return _frontier_work_item_payload_to_dict(payload)
