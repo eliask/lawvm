@@ -1001,10 +1001,15 @@ def _tail_continuation_chapter_for_unscoped_section_insert(
         return None
 
     target_key = default_label_sort_key(section_label or "")
+    target_numeric_stem = target_key[0] if isinstance(target_key, tuple) else None
+    target_has_letter_suffix = bool(
+        isinstance(target_key, tuple) and len(target_key) > 1 and target_key[1]
+    )
     max_section_key = None
     below_key = None
     below_chapter: str | None = None
     last_chapter: str | None = None
+    last_chapter_numeric_stems: set[object] = set()
 
     def _walk(node: IRNode, current_chapter: str | None) -> None:
         nonlocal max_section_key, below_key, below_chapter, last_chapter
@@ -1012,6 +1017,7 @@ def _tail_continuation_chapter_for_unscoped_section_insert(
             child_kind = child.kind
             if child_kind is IRNodeKind.CHAPTER and child.label:
                 last_chapter = child.label
+                last_chapter_numeric_stems.clear()
                 next_chapter: str | None = child.label
             else:
                 next_chapter = current_chapter
@@ -1019,6 +1025,8 @@ def _tail_continuation_chapter_for_unscoped_section_insert(
                 child_key = default_label_sort_key(child.label)
                 if max_section_key is None or child_key > max_section_key:
                     max_section_key = child_key
+                if current_chapter is not None and isinstance(child_key, tuple):
+                    last_chapter_numeric_stems.add(child_key[0])
                 if (
                     child_key < target_key
                     and current_chapter is not None
@@ -1032,6 +1040,21 @@ def _tail_continuation_chapter_for_unscoped_section_insert(
         return None
     # Genuine tail: the target must extend past every live section label.
     if max_section_key is not None and target_key <= max_section_key:
+        return None
+    # A letter-suffixed target (``59a``) is, by drafting convention, an insert
+    # anchored to its numeric stem section (``59``), not a fresh trailing number.
+    # It should follow wherever that stem lives. If the last chapter does not
+    # actually contain the stem, do not force the suffixed section into it: on
+    # 1990/1295 the stem ``§59`` is inserted flat (outside every chapter) at a
+    # different replay moment, so routing ``§59a-d`` into chapter 11 while ``§59``
+    # stays flat splits a contiguous run and diverges from the oracle. Plain
+    # numeric tails (the verified 1959/279, 1993/1573, 2015/65, 2021/617 cases)
+    # carry no letter suffix and are unaffected by this guard.
+    if (
+        target_has_letter_suffix
+        and target_numeric_stem is not None
+        and target_numeric_stem not in last_chapter_numeric_stems
+    ):
         return None
     # The nearest live section below the target must sit in the last chapter;
     # this is what makes "continue the last chapter" unambiguous.

@@ -4778,6 +4778,7 @@ def _emit_section_snapshot(
             child_payload = _inherit_parent_snapshot_ownership_attrs(child_payload, payload)
             child_source = op_source
             prior_paragraph_labels: set[str] = set()
+            latest_prior_child_preserves_unstated_tail = False
             if _snapshot_payload_is_complete_owner(child_payload):
                 # Capture the pre-child-snapshot paragraph surface before the
                 # subsection snapshot below is appended to replay history. The
@@ -4785,6 +4786,17 @@ def _emit_section_snapshot(
                 # prior would turn genuinely new inserted paragraphs into
                 # absent-target REPLACE ops that timeline compilation rejects.
                 prior_paragraph_labels = prior_paragraph_labels_by_path.get(child_path, set())
+                # Also capture whether the *pre-existing* latest snapshot of this
+                # subsection was a sparse ``preserve_unstated_tail`` payload. This
+                # must be read before the append below overwrites the latest op
+                # for this path with the current (complete) snapshot.
+                latest_prior_child_snapshot = _latest_snapshot_for_path(child_path)
+                latest_prior_child_preserves_unstated_tail = (
+                    latest_prior_child_snapshot is not None
+                    and latest_prior_child_snapshot.payload is not None
+                    and latest_prior_child_snapshot.payload.attrs.get("lawvm_tail_policy")
+                    == "preserve_unstated_tail"
+                )
             for rop in group_rops:
                 rop_subsection = _norm_num_token(_snapshot_subsection_target_label(rop))
                 if rop_subsection != child_norm_label:
@@ -4863,8 +4875,25 @@ def _emit_section_snapshot(
                                 group_id=f"finland-johto:{amendment_id or 'unknown'}",
                             )
                         )
+                    # A complete-owner subsection replacement supersedes the prior
+                    # paragraph surface, so prior paragraphs it omits must be
+                    # repealed rather than left to rehydrate (1989/819 §15: the
+                    # pre-1995 ten-item §15(1) collapses to two items). The one
+                    # exception is when the child only *inherited* completeness
+                    # from its parent section snapshot and the latest prior
+                    # snapshot of this very subsection was a sparse
+                    # ``preserve_unstated_tail`` payload: that prior sparse snapshot
+                    # legitimately introduced out-of-scope tail paragraphs the
+                    # complete replacement never addressed, so they are preserved,
+                    # not repealed (see
+                    # test_emit_section_snapshot_does_not_prune_complete_child_from_prior_sparse_child_snapshot).
                     repealable_prior_paragraph_labels = (
-                        prior_paragraph_labels if child_payload_is_native_complete_owner else set()
+                        prior_paragraph_labels
+                        if (
+                            child_payload_is_native_complete_owner
+                            or not latest_prior_child_preserves_unstated_tail
+                        )
+                        else set()
                     )
                     for paragraph_label in sorted(
                         repealable_prior_paragraph_labels - payload_paragraph_labels,
