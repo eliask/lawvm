@@ -37,10 +37,11 @@ from __future__ import annotations
 import argparse
 import re
 import sys
-import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterator
+
+from lxml import etree as ET
 
 from lawvm.core.ir import LegalAddress
 from lawvm.us_federal.sources import (
@@ -195,7 +196,7 @@ class _ConcatBytesReader:
 
 
 def _record_from_element(
-    el: ET.Element, act_num: str, act_congress: str, public_law: str
+    el: ET._Element, act_num: str, act_congress: str, public_law: str
 ) -> Table3Record:
     act_section = ""
     usc_title = ""
@@ -223,7 +224,7 @@ def _record_from_element(
     )
 
 
-def _child_text(el: ET.Element, name: str) -> str:
+def _child_text(el: ET._Element, name: str) -> str:
     child = el.find(name)
     return (child.text or "").strip() if child is not None and child.text else ""
 
