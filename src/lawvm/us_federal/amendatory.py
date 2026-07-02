@@ -5825,6 +5825,30 @@ def _anchor_op(
     return _dc_replace(op, source=_dc_replace(src, source_anchor=body.source_anchor))
 
 
+def _anchor_for_clause(
+    clause: str,
+    bodies: list[_UniqueByteRunBody],
+) -> SourceAnchor | None:
+    body = next((b for b in bodies if b.text and b.text in clause), None)
+    return body.source_anchor if body is not None else None
+
+
+def _anchor_op_with_clause_cache(
+    op: LegalOperation,
+    anchors_by_clause: dict[str, SourceAnchor | None],
+) -> LegalOperation:
+    src = op.source
+    if src is None or src.source_anchor is not None:
+        return op
+    clause = src.raw_text or op.raw_text or ""
+    if not clause:
+        return op
+    anchor = anchors_by_clause.get(clause)
+    if anchor is None:
+        return op
+    return _dc_replace(op, source=_dc_replace(src, source_anchor=anchor))
+
+
 def _anchor_clause_texts(ops: Iterable[LegalOperation]) -> tuple[str, ...]:
     clauses: list[str] = []
     for op in ops:
@@ -5886,21 +5910,26 @@ def _anchor_instructions(
     ]
     if not ops_for_prefilter:
         return instructions
+    anchor_clauses = _anchor_clause_texts(ops_for_prefilter)
     bodies = _unique_byte_run_body_records(
         raw_bytes,
         source_artifact_id=artifact_id,
-        candidate_clauses=_anchor_clause_texts(ops_for_prefilter),
+        candidate_clauses=anchor_clauses,
         root=root,
     )
+    anchors_by_clause = {
+        clause: _anchor_for_clause(clause, bodies)
+        for clause in set(anchor_clauses)
+    }
     rewritten: list[USAmendmentInstruction] = []
     for instr in instructions:
         primary = (
-            _anchor_op(instr.operation, bodies)
+            _anchor_op_with_clause_cache(instr.operation, anchors_by_clause)
             if instr.operation is not None
             else None
         )
         extra = tuple(
-            _anchor_op(op, bodies)
+            _anchor_op_with_clause_cache(op, anchors_by_clause)
             for op in instr.extra_operations
         )
         if primary is instr.operation and extra == instr.extra_operations:
