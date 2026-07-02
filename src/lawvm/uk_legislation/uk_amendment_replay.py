@@ -231,7 +231,6 @@ from lawvm.uk_legislation.text_rewrite_fragments import (
 from lawvm.uk_legislation.xml_helpers import (
     _tag as _tag,
     _text_content as _text_content,
-    evict_xml_helper_caches as evict_xml_helper_caches,
 )
 
 _UK_AMENDMENT_REPLAY_COMPAT_EXPORTS = (
@@ -389,6 +388,13 @@ class _UniqueByteRunBody:
     source_anchor: SourceAnchor
 
 
+def _anchor_pass_text_content(el: ET._Element) -> str:
+    """Text-content normalization for throwaway source-anchor parses."""
+    if len(el) == 0:
+        return " ".join((el.text or "").split())
+    return " ".join(" ".join(str(part) for part in el.itertext()).split())
+
+
 def set_uk_raw_source_context(
     raw_by_artifact: Dict[str, bytes],
 ) -> "contextvars.Token[Dict[str, bytes] | None]":
@@ -442,23 +448,17 @@ def _unique_byte_run_body_records(
         return []
     seen: set[str] = set()
     candidates: List[str] = []
-    try:
-        for node in tree.iter():
-            if not isinstance(node.tag, str) or _tag(node) not in _UK_SOURCE_ANCHOR_BODY_TAGS:
-                continue
-            text = _text_content(node)
-            if not text or text in seen:
-                seen.add(text)
-                continue
-            if clause_haystack and text not in clause_haystack:
-                continue
+    for node in tree.iter():
+        if not isinstance(node.tag, str) or _tag(node) not in _UK_SOURCE_ANCHOR_BODY_TAGS:
+            continue
+        text = _anchor_pass_text_content(node)
+        if not text or text in seen:
             seen.add(text)
-            candidates.append(text)
-    finally:
-        # §source_root_lifecycle: this is a throwaway parse local to the anchor
-        # pass; evict its elements from the shared _text_content cache so they do
-        # not leak past this call (the cache cannot weak-ref lxml elements).
-        evict_xml_helper_caches(tree)
+            continue
+        if clause_haystack and text not in clause_haystack:
+            continue
+        seen.add(text)
+        candidates.append(text)
     # Shared indexed kernel decides global byte-run uniqueness (replaces the
     # per-candidate two-``find`` O(N^2) scan — AGENTS.md §2.7). Byte-identical to
     # the old loop: same dedup, same predicate, same LONGEST-first stable sort.

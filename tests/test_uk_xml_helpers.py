@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from lxml import etree as ET
 
+from lawvm.uk_legislation.uk_amendment_replay import _anchor_pass_text_content
 from lawvm.uk_legislation.xml_helpers import (
     _TEXT_CONTENT_CACHE,
     _clone_element,
@@ -33,6 +34,36 @@ def test_text_content_preserves_nested_inline_tail_order() -> None:
     )
 
     assert _text_content(root) == "a insert “before term after” ;"
+
+
+def test_anchor_pass_text_content_matches_text_content_without_cache() -> None:
+    root = ET.fromstring(
+        """
+        <P3>
+          <Pnumber>a</Pnumber>
+          <P3para>
+            <Text>insert <InlineAmendment>“before <Term>term</Term> after”</InlineAmendment>;</Text>
+          </P3para>
+        </P3>
+        """
+    )
+
+    assert _anchor_pass_text_content(root) == _text_content(root)
+    assert _TEXT_CONTENT_CACHE.get(root) == "a insert “before term after” ;"
+    evict_xml_helper_caches(root)
+
+    other = ET.fromstring(
+        """
+        <P3>
+          <Pnumber>a</Pnumber>
+          <P3para>
+            <Text>insert <InlineAmendment>“before <Term>term</Term> after”</InlineAmendment>;</Text>
+          </P3para>
+        </P3>
+        """
+    )
+    assert _anchor_pass_text_content(other) == "a insert “before term after” ;"
+    assert _TEXT_CONTENT_CACHE.get(other) is None
 
 
 def test_text_content_leaf_fast_path_ignores_own_tail() -> None:
