@@ -2365,7 +2365,9 @@ def _source_zone(xml_path: str) -> str:
 
 def _direct_child_text(node: etree._Element, localname: str) -> str:
     for child in node:
-        if isinstance(child.tag, str) and _localname_of_tag(child.tag) == localname:
+        if not isinstance(child.tag, str):
+            continue
+        if child.tag == localname or _localname_of_tag(child.tag) == localname:
             return _node_text(child)
     return ""
 
