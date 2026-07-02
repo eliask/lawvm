@@ -3435,7 +3435,13 @@ def test_normalize_and_compile_ops_2016_1227_scopes_flat_79_replace_from_sibling
     ]
 
     assert [op.description() for op in section_79_ops] == ["REPLACE 8 luku 79 § 1 mom"]
-    assert section_79_ops[0].witness_rule_id == "fi_flat_body_replace_scope_from_bracketing_live_siblings"
+    # The johtolause names ``79 §:n 1 momentti`` in a flat chapterless run
+    # (``..., 78 §, 79 §:n 1 momentti, 80, 81 ja 83 §...``); chapter 8 is the
+    # only live host for §79, so the surface ``fi.section_ref`` resolver now
+    # scopes it directly rather than deferring to the frontend
+    # bracketing-live-siblings fallback.  Either path yields the same chapter-8
+    # scope; the scope contract is the resolved target path, asserted below.
+    assert section_79_ops[0].witness_rule_id == "fi.section_ref"
     assert section_79_ops[0].lo is not None
     assert tuple(section_79_ops[0].lo.target.path) == (
         ("chapter", "8"),
