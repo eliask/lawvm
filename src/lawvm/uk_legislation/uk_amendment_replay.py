@@ -536,6 +536,7 @@ def mint_uk_source_anchors(
     # Per-artifact unique-byte-run body index, parsed at most once per affecting act
     # touched by the op stream (the affecting acts are 9–56 per statute).
     bodies_by_artifact: Dict[str, List[_UniqueByteRunBody]] = {}
+    anchors_by_artifact_clause: Dict[str, Dict[str, Optional[SourceAnchor]]] = {}
     clauses_by_artifact: Dict[str, List[str]] = {}
     seen_clauses_by_artifact: Dict[str, set[str]] = {}
     for op in ops:
@@ -562,6 +563,40 @@ def mint_uk_source_anchors(
             bodies_by_artifact[artifact_id] = cached
         return cached
 
+    def _anchors_for_artifact(
+        artifact_id: str,
+        raw_bytes: bytes,
+    ) -> Dict[str, Optional[SourceAnchor]]:
+        cached = anchors_by_artifact_clause.get(artifact_id)
+        if cached is not None:
+            return cached
+        anchors: Dict[str, Optional[SourceAnchor]] = {
+            clause: None for clause in clauses_by_artifact.get(artifact_id, ())
+        }
+        unresolved = set(anchors)
+        for candidate in _bodies_for(artifact_id, raw_bytes):
+            if not candidate.text:
+                continue
+            matched = [clause for clause in unresolved if candidate.text in clause]
+            for clause in matched:
+                anchors[clause] = candidate.source_anchor
+            unresolved.difference_update(matched)
+            if not unresolved:
+                break
+        anchors_by_artifact_clause[artifact_id] = anchors
+        return anchors
+
+    def _anchor_for_clause(
+        artifact_id: str,
+        raw_bytes: bytes,
+        clause: str,
+    ) -> Optional[SourceAnchor]:
+        # Re-scope to the operative body: the first longest-first unique-byte-run
+        # element body of the affecting act that is a substring of this op's
+        # clause.  The artifact-local pass preserves that same body order while
+        # resolving every distinct clause once.
+        return _anchors_for_artifact(artifact_id, raw_bytes).get(clause)
+
     anchored: List[LegalOperation] = []
     for op in ops:
         src = op.source
@@ -572,18 +607,7 @@ def mint_uk_source_anchors(
         clause = src.raw_text or op.raw_text or ""
         anchor = None
         if raw_bytes and clause:
-            # Re-scope to the operative body: the longest unique-byte-run element
-            # body of the affecting act that is a substring of this op's clause.
-            body = next(
-                (
-                    candidate
-                    for candidate in _bodies_for(src.statute_id, raw_bytes)
-                    if candidate.text and candidate.text in clause
-                ),
-                None,
-            )
-            if body:
-                anchor = body.source_anchor
+            anchor = _anchor_for_clause(src.statute_id, raw_bytes, clause)
         if anchor is None:
             anchored.append(op)
             continue

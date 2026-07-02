@@ -2510,9 +2510,13 @@ def _chapter_expiry_from_base(
     return m.group(1), expiry
 
 
+_ISSUE_DATE_UNSET = object()
+
+
 def _amendment_effective_date_with_step(
     tree: "etree._Element",
     *,
+    precomputed_issue_date: Optional[dt.date] | object = _ISSUE_DATE_UNSET,
     resolve_separate_commencement: bool = True,
 ) -> "tuple[Optional[dt.date], str]":
     """Return (effective_date, step_used) where step_used is one of:
@@ -2528,7 +2532,10 @@ def _amendment_effective_date_with_step(
         parsed = _parse_iso_date(entry.get('date'))
         if parsed is not None:
             return parsed, 'metadata'
-    issued = _statute_issue_date(tree)
+    if precomputed_issue_date is _ISSUE_DATE_UNSET:
+        issued = _statute_issue_date(tree)
+    else:
+        issued = cast(Optional[dt.date], precomputed_issue_date)
     # 2. Text regex "Tämä laki tulee voimaan..." gives actual effective date
     #    (differs from issuance date — Finnish laws often enter force later).
     #

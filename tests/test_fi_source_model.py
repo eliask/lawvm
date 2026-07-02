@@ -367,7 +367,12 @@ def test_source_model_metadata_surface_caches_xml_adapter_calls(
         calls["issue"] += 1
         return dt.date(2020, 1, 2)
 
-    def fake_effective(_tree: etree._Element) -> tuple[dt.date, str]:
+    def fake_effective(
+        _tree: etree._Element,
+        *,
+        precomputed_issue_date: dt.date | None = None,
+    ) -> tuple[dt.date, str]:
+        assert precomputed_issue_date == dt.date(2020, 1, 2)
         calls["effective"] += 1
         return dt.date(2020, 3, 4), "test-step"
 

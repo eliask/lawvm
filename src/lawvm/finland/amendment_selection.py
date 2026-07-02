@@ -238,15 +238,17 @@ def _read_amendment_candidates(
         amendment_tree = etree.fromstring(xml_bytes)
         title_el = amendment_tree.find(".//{*}docTitle")
         title = " ".join("".join(str(text) for text in title_el.itertext()).split()) if title_el is not None else ""
+        issue_date = _statute_issue_date(amendment_tree)
         effective_date, effective_date_step = _amendment_effective_date_with_step(
-            amendment_tree
+            amendment_tree,
+            precomputed_issue_date=issue_date,
         )
         candidates.append(
             AmendmentSelectionCandidate(
                 amendment_id=amendment_id,
                 effective_date=effective_date,
                 effective_date_step=effective_date_step,
-                issue_date=_statute_issue_date(amendment_tree),
+                issue_date=issue_date,
                 title=title,
                 edge_kind=edge_kind_by_amendment.get(amendment_id, "oracle_amendedBy"),
             )

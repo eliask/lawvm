@@ -1354,10 +1354,11 @@ class AmendmentSourceModel:
                     _statute_issue_date,
                 )
 
-                effective_date, effective_step = _amendment_effective_date_with_step(
-                    self.muutos_tree
-                )
                 source_issue_date = _statute_issue_date(self.muutos_tree)
+                effective_date, effective_step = _amendment_effective_date_with_step(
+                    self.muutos_tree,
+                    precomputed_issue_date=source_issue_date,
+                )
                 source_title = _tree_title(self.muutos_tree)
             else:
                 effective_date = seed.effective_date
