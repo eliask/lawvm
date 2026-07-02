@@ -1148,26 +1148,33 @@ def _fold_penal_sentencing_wrapup_subsection(
         # it as its own momentti, so the fold must not fire; likewise when the
         # offence frame is preceded by another offence frame, the sentencing
         # clause serves several frames and stays a standalone momentti.
-        following_subsections = [
-            c for c in children[i + 2 :] if c.kind == IRNodeKind.SUBSECTION
-        ]
-        preceding_offence_frame = any(
-            c.kind == IRNodeKind.SUBSECTION
-            and is_penal_offence_frame_without_sentencing(c)
-            for c in rewritten
-        )
-        # A flat penal block (the clause right after the sentencing continues
-        # the penal provision: "Jollei ..." severity qualifier or another
-        # offender frame) is kept unflattened by Finlex; do not fold.
-        next_continues_penal_block = bool(
-            following_subsections
-        ) and continues_penal_block(following_subsections[0])
-        if (
+        can_consider_fold = (
             not changed
             and child.kind == IRNodeKind.SUBSECTION
             and i + 1 < len(children)
             and children[i + 1].kind == IRNodeKind.SUBSECTION
-            and following_subsections
+        )
+        following_subsections: list[IRNode] = []
+        if can_consider_fold:
+            following_subsections = [
+                c for c in children[i + 2 :] if c.kind == IRNodeKind.SUBSECTION
+            ]
+            can_consider_fold = bool(following_subsections)
+        if can_consider_fold:
+            preceding_offence_frame = any(
+                c.kind == IRNodeKind.SUBSECTION
+                and is_penal_offence_frame_without_sentencing(c)
+                for c in rewritten
+            )
+            # A flat penal block (the clause right after the sentencing continues
+            # the penal provision: "Jollei ..." severity qualifier or another
+            # offender frame) is kept unflattened by Finlex; do not fold.
+            next_continues_penal_block = continues_penal_block(following_subsections[0])
+        else:
+            preceding_offence_frame = False
+            next_continues_penal_block = False
+        if (
+            can_consider_fold
             and not preceding_offence_frame
             and not next_continues_penal_block
             and is_penal_offence_frame_without_sentencing(child)
@@ -4010,9 +4017,6 @@ def _split_nonpenal_trailing_duplicate_paragraph(
         if child.kind != IRNodeKind.SUBSECTION:
             rebuilt_children.append(child)
             continue
-        if may_attach_post_list_loppukappale(child):
-            rebuilt_children.append(child)
-            continue
 
         paragraph_children = [gc for gc in child.children if gc.kind == IRNodeKind.PARAGRAPH]
         if len(paragraph_children) < 2:
@@ -4041,6 +4045,9 @@ def _split_nonpenal_trailing_duplicate_paragraph(
 
         label_match = _NUMERIC_LABEL_RE.match(str(child.label or "").strip())
         if not label_match:
+            rebuilt_children.append(child)
+            continue
+        if may_attach_post_list_loppukappale(child):
             rebuilt_children.append(child)
             continue
         next_label = str(int(label_match.group(1)) + 1)
