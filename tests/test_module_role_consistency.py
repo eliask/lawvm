@@ -67,22 +67,13 @@ DEAD_ALLOWLIST: dict[str, str] = {
         "(test_uk_pdf_marginal_notes.py); production wiring is INTENTIONALLY "
         "deferred to the bulk tier-1 PDF acquisition lane (the #177 follow-up)."
     ),
-    "lawvm.sweden.totalization_table": (
-        "#186 θ TotalizationTable — SE's strict/REJECT frontend θ table, a "
-        "DECLARED conformance-tested spec (test_totalization_conformance.py binds "
-        "each cell to the real apply_se_ops_conserved disposition). Parallel-first "
-        "like ctsf_residual_report: the grafter control-flow routing THROUGH the "
-        "table (making θ load-bearing) is the explicit load-bearing follow-up, "
-        "deferred to keep this increment additive and byte-identical."
-    ),
-    "lawvm.norway.totalization_table": (
-        "#186 θ TotalizationTable — NO's rich-recovery frontend θ table, a "
-        "DECLARED conformance-tested spec (test_totalization_conformance.py binds "
-        "each cell to the real apply_no_ops_conserved disposition). Parallel-first "
-        "like ctsf_residual_report: the grafter control-flow routing THROUGH the "
-        "table (making θ load-bearing) is the explicit load-bearing follow-up, "
-        "deferred to keep this increment additive and byte-identical."
-    ),
+    # #186 load-bearing follow-up: sweden/norway ``totalization_table`` are no
+    # longer here — the grafters now statically import them and dispatch on
+    # ``table.lookup(...)`` at every declared off-domain site, so the tables (and
+    # the neutral ``core.totalization`` type they build on) are LIVE, reachable
+    # from the production apply paths. The allowlist entries + the
+    # ``core.totalization`` test_only_live baseline row were removed (a
+    # legitimate one-way ratchet shrink: frontier wired to production).
 }
 
 

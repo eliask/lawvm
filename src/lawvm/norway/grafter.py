@@ -75,6 +75,13 @@ from lawvm.norway.mutation_boundary_per_op_probe import (
     drain_seam_boundary_observations as _no_drain_seam_boundary_observations,
 )
 from lawvm.norway.scope_confidence import NOScopeConfidence
+from lawvm.core.totalization import (
+    FailureClass,
+    NoopIdempotent,
+    Recover,
+    Reject,
+)
+from lawvm.norway.totalization_table import NO_TOTALIZATION_TABLE
 
 NO_PARSE_REPLACE_PROMOTED_TO_INSERT_FOR_RENUMBER = "no_parse_replace_promoted_to_insert_for_same_target_renumber"
 NO_PARSE_STRUCTURED_TARGET_REBOUND_FROM_LEAD = "no_parse_structured_target_rebound_from_lead"
@@ -4215,14 +4222,24 @@ def apply_no_ops(
                             )
                             if inferred_section_parent is not None:
                                 parent_path = inferred_section_parent
+                        # θ: (REPLACE, target_absent) — the table declares NO
+                        # recovers a missing-target section REPLACE by rewriting
+                        # to INSERT (§2.3). The recovery rule_id + the rewritten
+                        # action come from the table cell.
+                        disposition = NO_TOTALIZATION_TABLE.lookup(
+                            StructuralAction.REPLACE, FailureClass.TARGET_ABSENT
+                        )
+                        assert isinstance(disposition, Recover)
                         _record_action_family_recovery(
                             kind="no_replay_replace_recovered_by_insert",
                             message="Norway replay recovered missing-target replace by inserting a section.",
                             op=op,
                             detail={
-                                "rule_id": "no_replace_missing_section_insert",
-                                "original_action": "replace",
-                                "executed_action": "insert",
+                                "rule_id": disposition.rule_id,
+                                "original_action": _no_action_value(op.action),
+                                "executed_action": _no_action_value(
+                                    disposition.rewritten_action
+                                ),
                                 "target": str(op.target),
                                 "insert_parent_path": _no_path_label(parent_path),
                                 **_no_replay_payload_detail(payload),
@@ -4275,9 +4292,16 @@ def apply_no_ops(
 
             elif op.action is StructuralAction.REPEAL:
                 if resolved_path is None:
+                    # θ: (REPEAL, target_absent) — the table is the source of the
+                    # off-domain disposition (§2.3). NO declares this a strict
+                    # Reject; the grafter reads the code from the table cell.
+                    disposition = NO_TOTALIZATION_TABLE.lookup(
+                        StructuralAction.REPEAL, FailureClass.TARGET_ABSENT
+                    )
+                    assert isinstance(disposition, Reject)
                     _append_no_replay_adjudication(
                         adjudications_out,
-                        kind="replay_unresolved_target",
+                        kind=disposition.code,
                         message="Norway replay skipped operation: target not found.",
                         op=op,
                         detail={"action": _no_action_value(op.action), "target": str(op.target)},
@@ -4289,14 +4313,23 @@ def apply_no_ops(
             elif op.action is StructuralAction.INSERT and op.payload is not None:
                 payload = op.payload
                 if resolved_path is not None:
+                    # θ: (INSERT, target_occupied) — the table declares NO
+                    # recovers by rewriting to REPLACE (§2.3). The rule_id the
+                    # WriteReceipt/adjudication cites comes from the table cell.
+                    disposition = NO_TOTALIZATION_TABLE.lookup(
+                        StructuralAction.INSERT, FailureClass.TARGET_OCCUPIED
+                    )
+                    assert isinstance(disposition, Recover)
                     _record_action_family_recovery(
                         kind="no_replay_insert_occupied_target_replaced",
                         message="Norway replay recovered insert into an occupied target by replacing that target.",
                         op=op,
                         detail={
-                            "rule_id": "no_insert_occupied_target_replace",
+                            "rule_id": disposition.rule_id,
                             "original_action": "insert",
-                            "executed_action": "replace",
+                            "executed_action": _no_action_value(
+                                disposition.rewritten_action
+                            ),
                             "target": str(op.target),
                             "resolved_path": _no_path_label(resolved_path),
                             **_no_replay_payload_detail(payload),
@@ -4411,6 +4444,14 @@ def apply_no_ops(
                     and op.destination.path not in renumber_sources
                 ):
                     occupied_destination = tree_ops.resolve(body, destination_path)
+                    # θ: (RENUMBER, dest_occupied) — the table declares NO
+                    # recovers by removing the occupant and proceeding with the
+                    # RENUMBER (§2.3). The recovery rule_id comes from the table
+                    # cell (the rewritten action is RENUMBER itself).
+                    disposition = NO_TOTALIZATION_TABLE.lookup(
+                        StructuralAction.RENUMBER, FailureClass.DEST_OCCUPIED
+                    )
+                    assert isinstance(disposition, Recover)
                     _record_lineage_recovery(
                         kind="no_replay_renumber_occupied_destination_removed",
                         message=(
@@ -4419,7 +4460,7 @@ def apply_no_ops(
                         ),
                         op=op,
                         detail={
-                            "rule_id": "no_renumber_occupied_destination_removed",
+                            "rule_id": disposition.rule_id,
                             "family": "migration_or_lineage_recovery",
                             "source_path": _no_path_label(resolved_path),
                             "destination_path": _no_path_label(destination_path),
@@ -4549,9 +4590,20 @@ def apply_no_ops(
             diff_ir_paths_identity_pruned(pre_op_body, body)
         )
         if applied_result.applied and not changed:
+            # θ: content_identical — the op resolved and applied but landed no
+            # content write. The table declares this the I1-strong NoopIdempotent
+            # conservation cell (§2.3); the grafter detects content_identical (the
+            # identity-pruned empty diff above) and reads the no-op code from the
+            # table. NO's no-op disposition is uniform across the resolving
+            # actions (REPLACE / text_replace), so the canonical REPLACE cell is
+            # the source of the code.
+            disposition = NO_TOTALIZATION_TABLE.lookup(
+                StructuralAction.REPLACE, FailureClass.CONTENT_IDENTICAL
+            )
+            assert isinstance(disposition, NoopIdempotent)
             _append_no_replay_adjudication(
                 adjudications_out,
-                kind="replay_noop",
+                kind=disposition.code,
                 message="Norway replay emitted a content-identical no-op for operation.",
                 op=op,
                 detail={"action": _no_action_value(op.action), "target": str(op.target)},

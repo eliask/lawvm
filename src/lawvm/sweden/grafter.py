@@ -90,6 +90,12 @@ from lawvm.sweden.mutation_boundary_per_op_probe import (
     drain_seam_boundary_observations as _se_drain_seam_boundary_observations,
 )
 from lawvm.core.write_receipt import WriteReceipt, receipt_address_string
+from lawvm.core.totalization import (
+    FailureClass,
+    NoopIdempotent,
+    Reject,
+)
+from lawvm.sweden.totalization_table import SE_TOTALIZATION_TABLE
 
 _SFS_ID_RE = re.compile(r"\b(\d{4}:\d+)\b")
 _DATE_RE = re.compile(r"(\d{4}-\d{2}-\d{2})")
@@ -3859,9 +3865,15 @@ def apply_se_ops(
                     if op.action is StructuralAction.INSERT:
                         heading = op.payload
                         if heading is None or heading.kind is not IRNodeKind.HEADING:
+                            # θ: (INSERT, payload_missing) — the table is the
+                            # source of the strict Reject code (§2.3).
+                            disposition = SE_TOTALIZATION_TABLE.lookup(
+                                StructuralAction.INSERT, FailureClass.PAYLOAD_MISSING
+                            )
+                            assert isinstance(disposition, Reject)
                             _append_se_replay_adjudication(
                                 adjudications_out,
-                                kind="se_replay_payload_missing",
+                                kind=disposition.code,
                                 message="Sweden heading insert skipped: payload missing or wrong kind.",
                                 op=op,
                                 detail={"action": op.action, "target": op.target.leaf_label()},
@@ -3896,18 +3908,30 @@ def apply_se_ops(
                         return
                     section_path = tree_ops.find(body, "section", section_label)
                     if section_path is None:
+                        # θ: (RENUMBER, target_absent) — table-sourced Reject.
+                        disposition = SE_TOTALIZATION_TABLE.lookup(
+                            StructuralAction.RENUMBER, FailureClass.TARGET_ABSENT
+                        )
+                        assert isinstance(disposition, Reject)
                         _append_se_replay_adjudication(
                             adjudications_out,
-                            kind="se_replay_target_not_found",
+                            kind=disposition.code,
                             message="Sweden renumber replay skipped: source section not found.",
                             op=op,
                             detail={"action": op.action, "target": section_label},
                         )
                         return
                     if tree_ops.find(body, "section", destination_label) is not None:
+                        # θ: (RENUMBER, dest_occupied) — table-sourced Reject (SE
+                        # is the strict counterpoint to NO's remove-occupant
+                        # recovery for this cell).
+                        disposition = SE_TOTALIZATION_TABLE.lookup(
+                            StructuralAction.RENUMBER, FailureClass.DEST_OCCUPIED
+                        )
+                        assert isinstance(disposition, Reject)
                         _append_se_replay_adjudication(
                             adjudications_out,
-                            kind="se_replay_renumber_collision",
+                            kind=disposition.code,
                             message="Sweden renumber replay skipped: destination already exists.",
                             op=op,
                             detail={"action": op.action, "target": section_label, "destination": destination_label},
@@ -3915,9 +3939,15 @@ def apply_se_ops(
                         return
                     existing = tree_ops.resolve(body, section_path)
                     if existing is None:
+                        # θ: (RENUMBER, target_absent) — the source resolved a
+                        # path but the node is gone; same strict Reject cell.
+                        disposition = SE_TOTALIZATION_TABLE.lookup(
+                            StructuralAction.RENUMBER, FailureClass.TARGET_ABSENT
+                        )
+                        assert isinstance(disposition, Reject)
                         _append_se_replay_adjudication(
                             adjudications_out,
-                            kind="se_replay_target_not_found",
+                            kind=disposition.code,
                             message="Sweden renumber replay skipped: source section could not be resolved.",
                             op=op,
                             detail={"action": op.action, "target": section_label},
@@ -3933,9 +3963,14 @@ def apply_se_ops(
                     section_label = op.target.leaf_label()
                     section_path = tree_ops.find(body, "section", section_label)
                     if section_path is None:
+                        # θ: (REPEAL, target_absent) — table-sourced Reject.
+                        disposition = SE_TOTALIZATION_TABLE.lookup(
+                            StructuralAction.REPEAL, FailureClass.TARGET_ABSENT
+                        )
+                        assert isinstance(disposition, Reject)
                         _append_se_replay_adjudication(
                             adjudications_out,
-                            kind="se_replay_target_not_found",
+                            kind=disposition.code,
                             message="Sweden section repeal skipped: target not found.",
                             op=op,
                             detail={"action": op.action, "target": section_label},
@@ -3948,9 +3983,14 @@ def apply_se_ops(
                     section_label = op.target.leaf_label()
                     section_path = tree_ops.find(body, "section", section_label)
                     if section_path is None:
+                        # θ: (TEXT_REPLACE, target_absent) — table-sourced Reject.
+                        disposition = SE_TOTALIZATION_TABLE.lookup(
+                            StructuralAction.TEXT_REPLACE, FailureClass.TARGET_ABSENT
+                        )
+                        assert isinstance(disposition, Reject)
                         _append_se_replay_adjudication(
                             adjudications_out,
-                            kind="se_replay_target_not_found",
+                            kind=disposition.code,
                             message="Sweden section text replacement skipped: target not found.",
                             op=op,
                             detail={"action": op.action, "target": section_label},
@@ -3958,9 +3998,14 @@ def apply_se_ops(
                         return
                     patch = op.text_patch
                     if patch is None:
+                        # θ: (TEXT_REPLACE, payload_missing) — table-sourced Reject.
+                        disposition = SE_TOTALIZATION_TABLE.lookup(
+                            StructuralAction.TEXT_REPLACE, FailureClass.PAYLOAD_MISSING
+                        )
+                        assert isinstance(disposition, Reject)
                         _append_se_replay_adjudication(
                             adjudications_out,
-                            kind="se_replay_payload_missing",
+                            kind=disposition.code,
                             message="Sweden section text replacement skipped: structured text_patch missing.",
                             op=op,
                             detail={"action": op.action, "target": section_label},
@@ -3973,9 +4018,15 @@ def apply_se_ops(
                     if not new_text and op.payload is not None:
                         new_text = _normalize_space(op.payload.text or "")
                     if not old_text or not new_text:
+                        # θ: (TEXT_REPLACE, payload_missing) — the patch resolved
+                        # but lacks old/new text; same strict Reject cell.
+                        disposition = SE_TOTALIZATION_TABLE.lookup(
+                            StructuralAction.TEXT_REPLACE, FailureClass.PAYLOAD_MISSING
+                        )
+                        assert isinstance(disposition, Reject)
                         _append_se_replay_adjudication(
                             adjudications_out,
-                            kind="se_replay_payload_missing",
+                            kind=disposition.code,
                             message="Sweden section text replacement skipped: old or new text missing.",
                             op=op,
                             detail={"action": op.action, "target": section_label},
@@ -3983,9 +4034,15 @@ def apply_se_ops(
                         return
                     section_node = tree_ops.resolve(body, section_path)
                     if section_node is None:
+                        # θ: (TEXT_REPLACE, target_absent) — resolved a path but
+                        # the node is gone; same strict Reject cell.
+                        disposition = SE_TOTALIZATION_TABLE.lookup(
+                            StructuralAction.TEXT_REPLACE, FailureClass.TARGET_ABSENT
+                        )
+                        assert isinstance(disposition, Reject)
                         _append_se_replay_adjudication(
                             adjudications_out,
-                            kind="se_replay_target_not_found",
+                            kind=disposition.code,
                             message="Sweden section text replacement skipped: source section could not be resolved.",
                             op=op,
                             detail={"action": op.action, "target": section_label},
@@ -3993,9 +4050,15 @@ def apply_se_ops(
                         return
                     replaced_section, changed = _replace_se_text_in_node(section_node, old_text, new_text)
                     if not changed:
+                        # θ: (TEXT_REPLACE, selector_no_match) — the selector
+                        # found no match; table-sourced Reject.
+                        disposition = SE_TOTALIZATION_TABLE.lookup(
+                            StructuralAction.TEXT_REPLACE, FailureClass.SELECTOR_NO_MATCH
+                        )
+                        assert isinstance(disposition, Reject)
                         _append_se_replay_adjudication(
                             adjudications_out,
-                            kind="se_replay_text_replace_no_match",
+                            kind=disposition.code,
                             message="Sweden section text replacement skipped: old text not found in target subtree.",
                             op=op,
                             detail={
@@ -4010,9 +4073,18 @@ def apply_se_ops(
                     _mark_applied()
                     return
                 if op.payload is None or op.payload.kind is not IRNodeKind.SECTION:
+                    # θ: payload_missing on a section op — SE rejects strictly.
+                    # The table declares this code for both REPLACE and INSERT
+                    # (SE's payload_missing code is uniform); the guard runs
+                    # before the action split, so the canonical REPLACE cell is
+                    # the source of the code.
+                    disposition = SE_TOTALIZATION_TABLE.lookup(
+                        StructuralAction.REPLACE, FailureClass.PAYLOAD_MISSING
+                    )
+                    assert isinstance(disposition, Reject)
                     _append_se_replay_adjudication(
                         adjudications_out,
-                        kind="se_replay_payload_missing",
+                        kind=disposition.code,
                         message="Sweden section replay skipped: payload missing or wrong kind.",
                         op=op,
                         detail={"action": op.action, "target": op.target.leaf_label()},
@@ -4022,9 +4094,15 @@ def apply_se_ops(
                 section_path = tree_ops.find(body, "section", section_label)
                 if op.action is StructuralAction.REPLACE:
                     if section_path is None:
+                        # θ: (REPLACE, target_absent) — SE rejects strictly (the
+                        # counterpoint to NO's REPLACE→INSERT recovery cell).
+                        disposition = SE_TOTALIZATION_TABLE.lookup(
+                            StructuralAction.REPLACE, FailureClass.TARGET_ABSENT
+                        )
+                        assert isinstance(disposition, Reject)
                         _append_se_replay_adjudication(
                             adjudications_out,
-                            kind="se_replay_target_not_found",
+                            kind=disposition.code,
                             message="Sweden section replace skipped: target not found.",
                             op=op,
                             detail={"action": op.action, "target": section_label},
@@ -4035,9 +4113,15 @@ def apply_se_ops(
                     return
                 if op.action is StructuralAction.INSERT:
                     if section_path is not None:
+                        # θ: (INSERT, target_occupied) — SE refuses the occupied
+                        # INSERT (the counterpoint to NO's INSERT→REPLACE cell).
+                        disposition = SE_TOTALIZATION_TABLE.lookup(
+                            StructuralAction.INSERT, FailureClass.TARGET_OCCUPIED
+                        )
+                        assert isinstance(disposition, Reject)
                         _append_se_replay_adjudication(
                             adjudications_out,
-                            kind="se_replay_unsupported_action",
+                            kind=disposition.code,
                             message="Sweden section insert replay skipped: section already exists.",
                             op=op,
                             detail={"action": op.action, "target": section_label},
@@ -4228,9 +4312,20 @@ def apply_se_ops(
             and op.target.leaf_kind() != "appendix"
             and not diff_ir_paths_identity_pruned(pre_op_body, body)
         ):
+            # θ: content_identical — the op resolved and applied but landed no
+            # content write. The table declares this the NoopIdempotent
+            # conservation cell (§2.3); the grafter detects content_identical (the
+            # identity-pruned empty diff above) and reads the no-op code from the
+            # table. SE's no-op code is uniform across the resolving actions
+            # (REPLACE / TEXT_REPLACE), so the canonical REPLACE cell is the
+            # source of the code.
+            disposition = SE_TOTALIZATION_TABLE.lookup(
+                StructuralAction.REPLACE, FailureClass.CONTENT_IDENTICAL
+            )
+            assert isinstance(disposition, NoopIdempotent)
             _append_se_replay_adjudication(
                 adjudications_out,
-                kind="se_replay_noop",
+                kind=disposition.code,
                 message="Sweden replay emitted a content-identical no-op for operation.",
                 op=op,
                 detail={"action": op.action, "target": op.target.leaf_label()},
