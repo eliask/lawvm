@@ -452,5 +452,20 @@ def test_uk_unique_byte_run_bodies_can_prefilter_to_op_clauses() -> None:
     assert filtered_bodies == {"Referenced amendment body is unique."}
 
 
+def test_uk_unique_byte_run_bodies_prefilter_does_not_match_across_clauses() -> None:
+    raw = b"""\
+<Legislation>
+  <P2para>Alpha Beta</P2para>
+</Legislation>
+"""
+
+    bodies = _unique_byte_run_bodies(
+        raw,
+        candidate_clauses=("prefix Alpha", "Beta suffix"),
+    )
+
+    assert bodies == []
+
+
 if __name__ == "__main__":  # pragma: no cover - manual probe
     raise SystemExit(pytest.main([__file__, "-q"]))

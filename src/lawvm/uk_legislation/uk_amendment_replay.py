@@ -433,7 +433,9 @@ def _unique_byte_run_body_records(
     is carried forward as a :class:`SourceAnchor`, so the op-stamping pass does not
     re-scan the raw artifact for a fact already proven here.
     """
-    clause_filter = tuple(clause for clause in (candidate_clauses or ()) if clause)
+    clause_haystack = "\x00".join(
+        clause for clause in (candidate_clauses or ()) if clause and "\x00" not in clause
+    )
     try:
         tree = ET.fromstring(raw_bytes)
     except ET.XMLSyntaxError:
@@ -448,7 +450,7 @@ def _unique_byte_run_body_records(
             if not text or text in seen:
                 seen.add(text)
                 continue
-            if clause_filter and not any(text in clause for clause in clause_filter):
+            if clause_haystack and text not in clause_haystack:
                 continue
             seen.add(text)
             candidates.append(text)
