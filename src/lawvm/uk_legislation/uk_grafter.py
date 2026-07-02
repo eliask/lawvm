@@ -2556,7 +2556,7 @@ def _extract_eid_map_from_root(root: Any, pit_date: Optional[str] = None) -> Dic
     # consolidation artifact is neutral.  See _oracle_text_eliding_retained_repeals.
     retain_text_elided_text_map: dict[str, str] = {}
     try:
-        is_eur = any(_tag(el) == "EURetained" for el in root.iter() if isinstance(el.tag, str))
+        is_eur = root.find(f".//{{{_LEG_NS}}}EURetained") is not None
         body = root.find(f".//{{{_LEG_NS}}}Body")
         if body is None:
             body = root.find(f".//{{{_LEG_NS}}}EURetained")
