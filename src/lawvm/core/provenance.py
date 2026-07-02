@@ -122,10 +122,10 @@ def compute_source_anchor(
 # Length of the byte prefix bucketed by :func:`unique_byte_run_texts`. Any needle
 # at least this long is resolved through the O(1)-average prefix index; shorter
 # needles fall back to the plain two-``find`` scan. A shorter prefix admits more
-# candidates to the indexed path; 8 keeps buckets selective enough on the profiled
+# candidates to the indexed path; 10 keeps buckets selective enough on the profiled
 # govinfo PLAW / legislation.gov.uk artifacts while avoiding many full-blob scans
 # for short source-anchor bodies.
-_UNIQUE_RUN_PREFIX = 8
+_UNIQUE_RUN_PREFIX = 10
 _UNIQUE_RUN_FIND_PREFIX_LIMIT = 128
 
 
