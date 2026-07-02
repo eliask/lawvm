@@ -42,8 +42,7 @@ from lawvm.uk_legislation.source_adjudication import (
     classify_uk_replay_adjudication_bucket,
 )
 
-_REPO_ROOT = Path(__file__).resolve().parents[3]  # LawVM/
-_DEFAULT_DB = _REPO_ROOT / "data" / "uk_legislation.farchive"
+_REPO_ROOT = Path(__file__).resolve().parents[3]  # LawVM/ (git-tracked resources)
 
 # Replay-bug adjudication kinds that denote a missing/absent target rather than a
 # payload/application failure.  Everything else in the replay-bug bucket is an
@@ -63,12 +62,24 @@ def build_uk_store() -> Any:
     Returns an open ``Farchive`` handle used read-only by the projector.  The
     parallel harness builds one of these per worker (not per statute), matching
     the Finland corpus-store-per-worker contract.
+
+    The path is resolved through the shared ``corpus_store.resolve_farchive_path``
+    chokepoint (precedence: ``LAWVM_UK_LEGISLATION_FARCHIVE_DB`` explicit override
+    → ``$LAWVM_CANONICAL_DATA_ROOT/data/uk_legislation.farchive`` →
+    ``<repo_root>/data/uk_legislation.farchive``), exactly like every other corpus
+    consumer (FI/NZ/US), so a git worktree finds the archive via the canonical
+    data root with no manual symlink (mirrors the NZ #157 fix).
     """
     from farchive import Farchive
 
-    if not _DEFAULT_DB.exists():
-        raise FileNotFoundError(f"UK archive not found: {_DEFAULT_DB}")
-    return Farchive(_DEFAULT_DB, readonly=True)
+    from lawvm.corpus_store import resolve_farchive_path
+
+    db_path, _rule = resolve_farchive_path(
+        "uk_legislation.farchive", explicit_env="LAWVM_UK_LEGISLATION_FARCHIVE_DB"
+    )
+    if not db_path.exists():
+        raise FileNotFoundError(f"UK archive not found: {db_path}")
+    return Farchive(db_path, readonly=True)
 
 
 # ---------------------------------------------------------------------------

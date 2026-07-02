@@ -8,12 +8,20 @@ receipt; it does not change replay semantics).
 """
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
 from typing import cast
 
 from lawvm.core.filter_result import FilterResult, RejectedItem
 from lawvm.core.ir import IRNode, IRStatute, LegalAddress, LegalOperation, OperationSource, StructuralAction
 from lawvm.core.semantic_types import IRNodeKind
+
+# EU annex nodes carry the raw string kind "annex": no IRNodeKind.ANNEX enum
+# member exists yet, so production's grafter builds them with
+# ``cast(IRNodeKind, kind)`` (kind == "annex"). Mirror that idiom here so the
+# fixtures match real annex-node typing rather than tripping ty.
+_ANNEX_KIND = cast(IRNodeKind, "annex")
 from lawvm.core.write_receipt import WriteReceipt
 from lawvm.eu.pipeline import apply_eu_ops, apply_eu_ops_conserved, EUApplyResult
 from lawvm.replay_adjudication import CompileAdjudication

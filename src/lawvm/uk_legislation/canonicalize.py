@@ -536,6 +536,80 @@ def _uk_parent_allows_child_kind(parent: IRNode, node_kind: str) -> bool:
     return str(node_kind or "").lower() in {str(k).lower() for k in allowed}
 
 
+_UK_SECTIONISH_LEAF_KINDS = frozenset({"section", "paragraph"})
+
+
+def uk_agreeing_neighbor_container_for_section_insert(
+    root_node: IRNode,
+    section_label: Optional[str],
+    *,
+    label_sort_key,
+) -> Optional[IRNode]:
+    """Part/chapter a scope-less section INSERT should nest into, from its neighbours.
+
+    A UK amendment often adds a lettered schedule/body section (``6A``, ``41ZA``)
+    whose lowered target parent is the *schedule root* (``schedule:1/section:6A``
+    → parent ``schedule:1``) or the *body root*.  When that root natively holds
+    only ``part``/``chapter`` containers, planting the new section as a bare
+    sibling of the parts produces the ``mixed_hierarchy_child`` structural defect
+    (``direct section:6A alongside part:PART VI``): the section belongs *inside*
+    the part whose numbered provisions bracket it, never at the root.
+
+    Mirroring the Finnish agreeing-neighbour rule
+    (``_agreeing_neighbor_chapter_for_unscoped_section_insert``): find the highest
+    numbered live provision ordering *below* the new label and the lowest ordering
+    *above* it; when BOTH exist and sit in the *same* top-level part/chapter, the
+    gap being filled is interior to that container, so return it as the nesting
+    parent.  Straddling neighbours (the new section falls on a part boundary) or a
+    missing neighbour on either side (a leading/trailing tail) are genuinely
+    ambiguous, so we decline (return ``None``) and leave the existing root
+    fallback untouched rather than guess a container across a boundary.
+    """
+    if not section_label:
+        return None
+    top_containers = [
+        child
+        for child in root_node.children
+        if str(child.kind or "").lower() in {"part", "chapter"}
+    ]
+    if not top_containers:
+        return None
+
+    target_key = label_sort_key(section_label)
+    below_key = None
+    below_container: Optional[IRNode] = None
+    above_key = None
+    above_container: Optional[IRNode] = None
+
+    def _walk(node: IRNode, enclosing: Optional[IRNode]) -> None:
+        nonlocal below_key, below_container, above_key, above_container
+        for child in node.children:
+            child_kind = str(child.kind or "").lower()
+            next_enclosing = child if child_kind in {"part", "chapter"} else enclosing
+            if (
+                child_kind in _UK_SECTIONISH_LEAF_KINDS
+                and child.label
+                and enclosing is not None
+            ):
+                child_key = label_sort_key(child.label)
+                if child_key < target_key:
+                    if below_key is None or child_key > below_key:
+                        below_key, below_container = child_key, enclosing
+                elif child_key > target_key:
+                    if above_key is None or child_key < above_key:
+                        above_key, above_container = child_key, enclosing
+            _walk(child, next_enclosing)
+
+    _walk(root_node, None)
+    if (
+        below_container is not None
+        and above_container is not None
+        and below_container is above_container
+    ):
+        return below_container
+    return None
+
+
 def uk_resolve_insertion_parent(
     *,
     target: LegalAddress,
@@ -561,6 +635,21 @@ def uk_resolve_insertion_parent(
     if parent_addr is not None:
         p_node, _, _ = find_node_by_target(parent_addr)
         if p_node:
+            # A schedule/body-descendant section INSERT whose lowered parent
+            # resolves to a container that natively holds only parts/chapters
+            # (``schedule:1/section:6A`` → parent ``schedule:1``) must not be
+            # planted as a bare sibling of those parts — the
+            # ``mixed_hierarchy_child`` defect.  Nest it into the enclosing
+            # part/chapter when its live numeric neighbours agree on one; decline
+            # to the root fallback when they straddle a boundary or are absent.
+            if str(node_kind or "").lower() == "section":
+                enclosing = uk_agreeing_neighbor_container_for_section_insert(
+                    p_node,
+                    node_label,
+                    label_sort_key=label_sort_key,
+                )
+                if enclosing is not None:
+                    return UKInsertionParentResolution(enclosing, None)
             return UKInsertionParentResolution(p_node, None)
 
     if uk_addr_container(target) == "schedule":
@@ -569,6 +658,20 @@ def uk_resolve_insertion_parent(
             return UKInsertionParentResolution(schedule_node, None)
 
     if node_label and len(target.path) == 1 and uk_addr_container(target) != "schedule":
+        # A scope-less top-level body section INSERT (``section:4A``) resolves
+        # here.  When the body natively holds parts/chapters, prefer nesting the
+        # new section into the enclosing part/chapter its numeric neighbours agree
+        # on rather than after a loose body-level predecessor (which would leave
+        # it hoisted alongside the parts — ``direct section:4A alongside
+        # part:PART II``).
+        if str(node_kind or "").lower() == "section":
+            enclosing = uk_agreeing_neighbor_container_for_section_insert(
+                body_root,
+                node_label,
+                label_sort_key=label_sort_key,
+            )
+            if enclosing is not None:
+                return UKInsertionParentResolution(enclosing, None)
         p_node, p_idx, _ = uk_find_body_predecessor_parent(
             body_root,
             node_kind,

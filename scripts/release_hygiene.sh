@@ -135,10 +135,17 @@ literal_secret_re = re.compile(
     \s* [:=] \s*
     (?P<quote>['"])
     (?!(?:test|example|dummy|placeholder|changeme)(?P=quote))
-    [^'"]{12,}
+    (?P<val>[^'"]{12,})
     (?P=quote)
     """
 )
+# A quoted value that is a (possibly stringized) Python type annotation is not a
+# secret. Real credential literals are base64/hex/alnum and never contain the
+# square brackets or spaced pipe of a generic/union type expression, whereas a
+# forward-ref annotation like  token: "contextvars.Token[tuple[str, bytes] | None]"
+# always does. Excluding that class kills the false positive without weakening
+# detection of any actual credential shape.
+type_annotation_re = re.compile(r"[\[\]]|\s\|\s")
 offenders: list[str] = []
 for raw in subprocess.check_output(("git", "ls-files", "-z")).split(b"\0"):
     if not raw:
@@ -151,7 +158,11 @@ for raw in subprocess.check_output(("git", "ls-files", "-z")).split(b"\0"):
     except UnicodeDecodeError:
         continue
     for line_no, line in enumerate(text.splitlines(), start=1):
-        if private_key_re.search(line) or literal_secret_re.search(line):
+        if private_key_re.search(line):
+            offenders.append(f"{path}:{line_no}: {line.strip()}")
+            continue
+        m = literal_secret_re.search(line)
+        if m and not type_annotation_re.search(m.group("val")):
             offenders.append(f"{path}:{line_no}: {line.strip()}")
 if offenders:
     print("\n".join(offenders))

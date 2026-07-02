@@ -1688,6 +1688,18 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         ),
     )
     bench_p.add_argument(
+        "--anchor-touch",
+        dest="anchor_touch",
+        action="store_true",
+        help=(
+            "(--mode all_pit only) additionally run the frozen-anchor "
+            "touch-relation attribution engine (#183): per-anchor suspect "
+            "gating + spontaneous-appearance/healing oracle conviction + "
+            "persistent-post-touch candidate-bug localization. Appended after "
+            "the standard summary; does not change it."
+        ),
+    )
+    bench_p.add_argument(
         "--corpus",
         metavar="CSV_PATH",
         help="path to corpus CSV (default: data/finland/bench_corpus.csv; fallback: .tmp/batch_test_list.csv)",
