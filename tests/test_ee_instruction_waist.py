@@ -164,6 +164,23 @@ def test_extract_ee_ops_insert_exposes_sentence_target_meta_with_mode() -> None:
     )
 
 
+def test_extract_ee_ops_insert_second_sentence_exposes_insert_position_meta() -> None:
+    source = OperationSource(statute_id="ee/test", title="Testseadus")
+    ops = extract_ee_ops(
+        "paragrahvi 82 täiendatakse teise lausega järgmises sõnastuses: "
+        "„Lapsel ei või olla rohkem kui kaks vanemat.”",
+        source,
+    )
+
+    instructions = to_ee_parsed_instructions(ops)
+
+    assert len(instructions) == 1
+    assert instructions[0].sentence_target_meta == EESentenceTargetMeta(
+        sentence_indexes=(0,),
+        mode="insert_after",
+    )
+
+
 def test_extract_ee_ops_singular_subsection_sentence_repeal_exposes_sentence_target_meta() -> None:
     source = OperationSource(statute_id="ee/test", title="Testseadus")
     ops = extract_ee_ops(

@@ -3924,6 +3924,22 @@ def _set_sentence_insert_payload_attrs(payload: IRNode, clean: str) -> IRNode:
     sentence_index = sentence_index_from_notes(clean_lower)
     if sentence_index is None:
         return payload
+    if (
+        re.search(r"\bt[aä]iendatakse\b", clean_lower)
+        and re.search(
+            r"\b(?:esime(?:se|sega)|tei(?:se|sega)|kolma(?:nda|ndaga)|nelja(?:nda|ndaga)|"
+            r"vii(?:enda|endaga)|kuu(?:enda|endaga)|seitsme(?:nda|ndaga)|"
+            r"kaheks(?:anda|andaga))\s+lausega\b",
+            clean_lower,
+        )
+        and not re.search(r"\b(?:p[aä]rast|enne|j[aä]rel)\b", clean_lower)
+    ):
+        attrs = dict(payload.attrs)
+        attrs["sentence_target_meta"] = make_sentence_target_meta(
+            sentence_indexes=(max(0, sentence_index - 1),),
+            mode="insert_after",
+        )
+        return replace(payload, attrs=attrs)
     mode = ""
     if "loetakse teiseks lauseks" in clean_lower and "esimese lausega" in clean_lower:
         mode = "insert_before"

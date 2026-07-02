@@ -1405,6 +1405,15 @@ def _parse_ee_amendment_ops_body(
                 ]
             preambul_shape = [(op.action, op.target.path) for op in preambul_ops]
             old_shape = [(op.action, op.target.path) for op in old_format_ops]
+            if old_has_numbered_item_witness and old_shape != preambul_shape:
+                return [
+                    replace(
+                        op,
+                        provenance_tags=(*op.provenance_tags, numbered_item_rule_id),
+                        witness_rule_id=op.witness_rule_id or numbered_item_rule_id,
+                    )
+                    for op in old_format_ops
+                ]
             preambul_payload_len = sum(
                 len(op.payload.text) for op in preambul_ops if op.payload is not None
             )
