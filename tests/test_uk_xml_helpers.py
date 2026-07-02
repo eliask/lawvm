@@ -2,7 +2,13 @@ from __future__ import annotations
 
 from lxml import etree as ET
 
-from lawvm.uk_legislation.xml_helpers import _clone_element, _tag, _text_content
+from lawvm.uk_legislation.xml_helpers import (
+    _TEXT_CONTENT_CACHE,
+    _clone_element,
+    _tag,
+    _text_content,
+    evict_xml_helper_caches,
+)
 
 
 def test_tag_ignores_lxml_comment_nodes_from_iter() -> None:
@@ -34,7 +40,9 @@ def test_text_content_leaf_fast_path_ignores_own_tail() -> None:
     leaf = root[0]
 
     assert _text_content(leaf) == "alpha beta"
+    assert _TEXT_CONTENT_CACHE.get(leaf) is None
     assert _text_content(root) == "alpha beta tail"
+    evict_xml_helper_caches(root)
 
 
 # ---------------------------------------------------------------------------

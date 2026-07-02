@@ -159,9 +159,7 @@ def _text_content(el: ET._Element) -> str:
     if cached is not None:
         return cached
     if len(el) == 0:
-        text = " ".join((el.text or "").split())
-        _TEXT_CONTENT_CACHE[el] = text
-        return text
+        return " ".join((el.text or "").split())
     parts: list[str] = []
 
     def collect(node: ET._Element, *, include_tail: bool) -> None:
