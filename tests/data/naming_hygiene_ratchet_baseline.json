@@ -82,7 +82,7 @@
     "sparse_slot_candidate_certificate",
     "sparse_slot_candidate_certificates"
   ],
-  "public_schema_count": 163,
+  "public_schema_count": 164,
   "public_schemas": [
     "lawvm.address_id.v1",
     "lawvm.address_node.v1",
@@ -222,6 +222,7 @@
     "lawvm.stage_residual_ledger.v0",
     "lawvm.state_root.v0",
     "lawvm.strict_profile.v0",
+    "lawvm.temporal_holdout.v1",
     "lawvm.token_tape.v1",
     "lawvm.uk_acquire_plan_report.v1",
     "lawvm.uk_acquire_report.v1",
