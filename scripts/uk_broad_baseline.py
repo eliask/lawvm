@@ -41,7 +41,7 @@ from __future__ import annotations
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from collections import Counter
 import hashlib
 import json
@@ -4900,7 +4900,7 @@ def _adjudication_row_key(row: AdjudicationRow) -> tuple[str, str]:
 def _emit_compare_adjudication_rows(
     *,
     statute_id: str,
-    manual_frontier_records: list[Mapping[str, Any]],
+    manual_frontier_records: Sequence[Mapping[str, Any]],
     oracle_suspect_eids: set[str],
     deterministic_gap_eids: set[str],
 ) -> list[AdjudicationRow]:
