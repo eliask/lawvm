@@ -44,6 +44,11 @@ DEAD_ALLOWLIST: dict[str, str] = {
         "Shared same-moment conflict detector frontier; synthetic coverage exists, "
         "production EE/UK wiring is intentionally deferred to the refactor wave."
     ),
+    "lawvm.tools.temporal_holdout": (
+        "Offline temporal-holdout experiment/reporting module added with synthetic "
+        "coverage; production CLI wiring is intentionally deferred until the "
+        "holdout corpus list and runtime budget are settled."
+    ),
 }
 
 
