@@ -208,26 +208,44 @@ def _read(scan: _Scan, parser) -> Optional[Token]:
     return None
 
 
+def _read_cat(scan: _Scan, category: str) -> Optional[Token]:
+    """Fast path for the scanner's single-token category reads."""
+    t = scan.peek()
+    if t is not None and t.cat == category:
+        scan.advance()
+        return t
+    return None
+
+
+def _read_cat_case(scan: _Scan, category: str, case: str) -> Optional[Token]:
+    """Fast path for the scanner's single-token category/case reads."""
+    t = scan.peek()
+    if t is not None and t.cat == category and t.case == case:
+        scan.advance()
+        return t
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Number list (faithful to _number_list / _number_with_suffix).
 # ---------------------------------------------------------------------------
 
 
 def _number_with_suffix(scan: _Scan) -> Optional[NumSuffix]:
-    n = _read(scan, _NUM)
+    n = _read_cat(scan, "NUM")
     if n is None:
         return None
-    sf = _read(scan, _LETTER)
+    sf = _read_cat(scan, "LETTER")
     return (n.text, sf.lemma if sf is not None else "")
 
 
 def _number(scan: _Scan) -> Optional[str]:
-    n = _read(scan, _NUM)
+    n = _read_cat(scan, "NUM")
     return n.text if n is not None else None
 
 
 def _letter(scan: _Scan) -> Optional[str]:
-    t = _read(scan, _LETTER)
+    t = _read_cat(scan, "LETTER")
     return t.lemma if t is not None else None
 
 
@@ -323,7 +341,7 @@ def _number_list(scan: _Scan) -> Optional[list[NumSuffix]]:
     results = [first]
     while True:
         saved = scan.pos
-        if _read(scan, _DASH) is not None:
+        if _read_cat(scan, "DASH") is not None:
             end = _number_with_suffix(scan)
             if end is None:
                 let = _letter(scan)
@@ -361,7 +379,7 @@ def _part_ctx(scan: _Scan) -> Optional[str]:
     n = _number(scan)
     if n is None:
         return None
-    if _read(scan, _OSA_GEN) is not None:
+    if _read_cat_case(scan, "OSA", "GEN") is not None:
         return n
     scan.goto(saved)
     return None
@@ -374,7 +392,7 @@ def _chapter_ctx(scan: _Scan) -> Optional[str]:
     if n is None:
         return None
     sf = _letter(scan) or ""
-    if _read(scan, _LUKU_GEN) is not None:
+    if _read_cat_case(scan, "LUKU", "GEN") is not None:
         return n + sf
     scan.goto(saved)
     return None
@@ -397,7 +415,7 @@ def _same_item_alakohta_continuation(scan: _Scan, subs: list["SubRef"]) -> Optio
         nums = _number_list(scan)
         labels = [n + sf for n, sf in nums] if nums else None
     if labels:
-        _read(scan, _DASH)
+        _read_cat(scan, "DASH")
     if labels and (t := scan.peek()) and t.cat == "ALAKOHTA":
         scan.advance()
         return [
@@ -569,7 +587,7 @@ def _renumber_target_list(scan: _Scan) -> Optional[list[NumSuffix]]:
             break
         more, more_trans = more_data
         if not more_trans:
-            if _read(scan, _DASH) is None:
+            if _read_cat(scan, "DASH") is None:
                 scan.goto(saved)
                 break
             end_data = _renumber_number_with_suffix(scan)
@@ -608,10 +626,10 @@ def _parse_renumber_backref_continuation(scan: _Scan) -> Optional[list[SubRef]]:
     """
     saved = scan.pos
     _sep(scan)
-    if _read(scan, _BACKREF) is None:
+    if _read_cat(scan, "BACKREF") is None:
         scan.goto(saved)
         return None
-    if _read(scan, _PYKALA) is None:
+    if _read_cat(scan, "PYKALA") is None:
         scan.goto(saved)
         return None
     subs = _sub_ref(scan)
