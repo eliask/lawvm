@@ -131,19 +131,34 @@ def iter_table3_records(data: bytes) -> Iterator[Table3Record]:
     ``<table3>`` root so ``iterparse`` sees a well-formed document without
     materializing the 125 MB into a string.
     """
-    for _event, el in ET.iterparse(_byte_source(data), events=("end",), tag="act"):
-        act_num = ""
-        public_law = ""
-        act_congress = el.get("congress", "")
-        for child in el:
-            child_tag = child.tag
-            if child_tag == "num":
-                act_num = (child.text or "").strip()
-            elif child_tag == "public-law":
-                public_law = (child.text or "").strip()
-            elif child_tag == "record":
-                yield _record_from_element(child, act_num, act_congress, public_law)
-        el.clear()
+    act_num = ""
+    public_law = ""
+    act_congress = ""
+    for _event, el in ET.iterparse(
+        _byte_source(data),
+        events=("end",),
+        tag=("act", "num", "public-law", "record"),
+    ):
+        tag = el.tag
+        if tag == "num":
+            parent = el.getparent()
+            if parent is not None and parent.tag == "act":
+                act_num = (el.text or "").strip()
+                act_congress = parent.get("congress", "")
+            el.clear()
+        elif tag == "public-law":
+            parent = el.getparent()
+            if parent is not None and parent.tag == "act":
+                public_law = (el.text or "").strip()
+            el.clear()
+        elif tag == "record":
+            yield _record_from_element(el, act_num, act_congress, public_law)
+            el.clear()
+        else:
+            act_num = ""
+            public_law = ""
+            act_congress = ""
+            el.clear()
 
 
 _TABLE3_ROOT_OPEN = b"<table3>"

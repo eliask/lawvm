@@ -63,6 +63,7 @@ def test_iter_records_parses_rootless_fragment() -> None:
         path=(("title", "42"), ("section", "1396a"))
     )
     assert modern.act_num == "117-2"
+    assert modern.public_law == ""
     assert modern.is_note
     assert not modern.is_classified
     assert modern.usc_address() is None
