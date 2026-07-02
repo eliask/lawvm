@@ -178,6 +178,17 @@ class _ConcatBytesReader:
             self._idx = len(self._chunks)
             self._pos = 0
             return out
+        if self._idx >= len(self._chunks) or size == 0:
+            return b""
+        chunk = self._chunks[self._idx]
+        available = len(chunk) - self._pos
+        if size <= available:
+            start = self._pos
+            self._pos += size
+            if self._pos >= len(chunk):
+                self._idx += 1
+                self._pos = 0
+            return chunk[start : start + size]
         out_parts: list[bytes] = []
         remaining = size
         while remaining > 0 and self._idx < len(self._chunks):

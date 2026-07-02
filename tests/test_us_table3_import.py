@@ -12,6 +12,7 @@ from pathlib import Path
 
 from lawvm.core.ir import LegalAddress
 from lawvm.us_federal.import_table3 import (
+    _ConcatBytesReader,
     Table3Index,
     import_tables,
     iter_table3_records,
@@ -65,6 +66,15 @@ def test_iter_records_parses_rootless_fragment() -> None:
     assert modern.is_note
     assert not modern.is_classified
     assert modern.usc_address() is None
+
+
+def test_concat_bytes_reader_fast_path_preserves_cross_chunk_reads() -> None:
+    reader = _ConcatBytesReader((b"abc", b"defgh", b"ij"))
+    assert reader.read(2) == b"ab"
+    assert reader.read(3) == b"cde"
+    assert reader.read(4) == b"fghi"
+    assert reader.read(10) == b"j"
+    assert reader.read(1) == b""
 
 
 # A Table III row whose USC title is the legacy "50 App." (Title 50 Appendix)
