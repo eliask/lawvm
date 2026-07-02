@@ -22,6 +22,12 @@ from lawvm.core.semantic_types import (
     StructuralAction,
     TextPatchKindEnum,
 )
+from lawvm.core.target_resolution import (
+    SCOPE_CONFIDENCE_EXPLICIT_SOURCE,
+    TARGET_RESOLVED,
+    TargetResolutionCandidate,
+    TargetResolutionCoverage,
+)
 from lawvm.tools import uk_effects
 from lawvm.tools import uk_effect
 from lawvm.tools import uk_replay
@@ -839,6 +845,60 @@ def test_uk_frontier_candidate_set_coverage_matches_shared_projection() -> None:
     ).to_dict()
 
     assert work_item.to_dict()["detail"]["candidate_set_coverage"] == expected
+
+
+def test_uk_frontier_target_resolution_coverage_matches_shared_projection() -> None:
+    work_item = uk_frontier_work_item_from_manual_frontier_row(
+        {
+            "statute_id": "ukpga/2000/1",
+            "effect_id": "eff-target-resolution",
+            "manual_compile_rule_id": "uk_manual_frontier_heading_facet_candidate",
+            "manual_compile_status": "manual_compile_candidate",
+            "authorization_status": "manual_claim_required",
+            "owner_phase": "typed_elaboration",
+            "safe_default": "classify_without_replay",
+            "required_proofs": ["mutation_boundary_proof"],
+            "forbidden_shortcuts": ["agreement_as_execution_authorization"],
+            "replay_authorized": False,
+            "executable": False,
+            "source": {"text_preview": "source preview"},
+            "affected_provisions": "s. 1",
+        }
+    )
+    expected = TargetResolutionCoverage(
+        rule_id="uk_frontier_work_item_target_resolution_projection",
+        phase="typed_elaboration",
+        reason=(
+            "manual-frontier target witness is projected for validation and "
+            "does not authorize replay"
+        ),
+        resolution_status=TARGET_RESOLVED,
+        source_target="s. 1",
+        candidate_count=1,
+        candidates=(
+            TargetResolutionCandidate(
+                target="s. 1",
+                reason="manual_frontier_candidate_target",
+                detail={
+                    "target_witness_surface": "effect_feed_affected_provisions",
+                    "target_resolution_not_replay_authorization": True,
+                },
+            ),
+        ),
+        selected_target="s. 1",
+        scope_confidence=SCOPE_CONFIDENCE_EXPLICIT_SOURCE,
+        blocking=False,
+        strict_disposition="record",
+        detail={
+            "target_witness_surface": "effect_feed_affected_provisions",
+            "affected_provisions": "s. 1",
+            "resolver_eids": (),
+            "target_resolution_not_replay_authorization": True,
+        },
+    ).to_diagnostic_detail()
+    expected = json.loads(json.dumps(expected))
+
+    assert work_item.to_dict()["detail"]["target_resolution_coverage"] == expected
 
 
 def test_uk_frontier_work_item_preserves_execution_authorization_packet(

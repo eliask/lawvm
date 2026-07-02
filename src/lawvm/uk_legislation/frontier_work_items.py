@@ -23,8 +23,6 @@ from lawvm.core.target_resolution import (
     TARGET_AMBIGUOUS,
     TARGET_RESOLVED,
     TARGET_UNRESOLVED,
-    TargetResolutionCandidate,
-    TargetResolutionCoverage,
 )
 from lawvm.uk_legislation.execution_authorization import (
     uk_execution_authorization_from_manual_frontier,
@@ -1657,17 +1655,6 @@ def _target_resolution_coverage(
         or (candidate_targets[0] if candidate_targets else "")
         or "unknown"
     )
-    candidates = tuple(
-        TargetResolutionCandidate(
-            target=target,
-            reason="manual_frontier_candidate_target",
-            detail={
-                "target_witness_surface": str(target_witness.get("surface") or ""),
-                "target_resolution_not_replay_authorization": True,
-            },
-        )
-        for target in candidate_targets
-    )
     resolver_eids = _string_tuple(target_witness.get("resolver_eids"))
     modeled_targets = _string_tuple(target_witness.get("modeled_targets"))
     target_model_statuses = _string_tuple(target_witness.get("target_model_statuses"))
@@ -1693,28 +1680,42 @@ def _target_resolution_coverage(
                 "modeled_targets_not_replay_authorization": True,
             }
         )
-    return TargetResolutionCoverage(
-        rule_id="uk_frontier_work_item_target_resolution_projection",
-        phase=owner_phase or "unknown",
-        reason=(
+    row: dict[str, Any] = {
+        "rule_id": "uk_frontier_work_item_target_resolution_projection",
+        "phase": owner_phase or "unknown",
+        "blocking": False,
+        "strict_disposition": "record",
+        "quirks_disposition": str(QuirksDisposition.RECORD),
+        "family": "target_resolution",
+        "reason": (
             "manual-frontier target witness is projected for validation and "
             "does not authorize replay"
         ),
-        resolution_status=status,
-        source_target=source_target,
-        candidate_count=candidate_count,
-        candidates=candidates,
-        selected_target=selected_target,
-        scope_confidence=(
-            SCOPE_CONFIDENCE_EXPLICIT_SOURCE_WITH_CONTEXT
-            if resolver_eids
-            else SCOPE_CONFIDENCE_EXPLICIT_SOURCE
-        ),
-        blocking=False,
-        strict_disposition="record",
-        quirks_disposition=QuirksDisposition.RECORD,
-        detail=detail,
-    ).to_diagnostic_detail()
+        **detail,
+        "target_resolution_status": status,
+        "source_target": source_target,
+        "candidate_count": candidate_count,
+    }
+    if candidate_targets:
+        target_witness_surface = str(target_witness.get("surface") or "")
+        row["target_candidates"] = tuple(
+            {
+                "target": target,
+                "reason": "manual_frontier_candidate_target",
+                "target_witness_surface": target_witness_surface,
+                "target_resolution_not_replay_authorization": True,
+            }
+            for target in candidate_targets
+        )
+    if selected_target:
+        row["selected_target"] = selected_target
+        row["selected_target_differs_from_source"] = selected_target != source_target
+    row["scope_confidence"] = (
+        SCOPE_CONFIDENCE_EXPLICIT_SOURCE_WITH_CONTEXT
+        if resolver_eids
+        else SCOPE_CONFIDENCE_EXPLICIT_SOURCE
+    )
+    return row
 
 
 def _packet_completeness(
