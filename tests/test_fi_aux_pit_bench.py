@@ -188,7 +188,7 @@ def _snap(as_of, sim, *, status="OK"):
         struct_sim=sim,
         n_sections=10,
         n_penalized=0,
-        status=status,
+        phase_status=status,
     )
 
 
@@ -268,7 +268,7 @@ def test_show_all_pit_summary_reports_headline(capsys) -> None:
             sid="clean/1",
             snapshots=(_snap("2020-01-01", 1.0), _snap("2021-01-01", 1.0)),
         ),
-        bench._AllPitStatuteResult(sid="broken/1", snapshots=(), status="ERROR:boom"),
+        bench._AllPitStatuteResult(sid="broken/1", snapshots=(), phase_status="ERROR:boom"),
     ]
     bench._show_all_pit_summary(results)
     out = capsys.readouterr().out

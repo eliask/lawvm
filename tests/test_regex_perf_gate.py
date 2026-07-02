@@ -156,6 +156,17 @@ _KNOWN_UNFIXED: dict[str, str] = {
         "Pre-existing baseline: _EE_RT_INLINE_CHANGE_NOTE_RE nested+adjacent "
         "quantifiers. Pre-existing baseline."
     ),
+    "src/lawvm/estonia/grafter_parse.py": (
+        "Baseline from the 111-commit perf merge: the RT change-note / item-label "
+        "recognizers (_EE_RT_INLINE_CHANGE_NOTE_RE, _EE_ITEM_LABEL_RE) split out of "
+        "estonia/grafter.py into this new parse module — same shape already "
+        "allowlisted for estonia/grafter.py. _EE_RT_INLINE_CHANGE_NOTE_RE has every "
+        "quantifier bounded (\\d{1,2}/\\d{4}) or literal-delimited (RT / , / -) and "
+        "_EE_ITEM_LABEL_RE is ^-anchored (^(\\d[\\d\\s_]*)\\)...), so the adjacent "
+        "\\d[\\d\\s_]* / bounded-date pairs are benign-linear false positives. Owned "
+        "by the estonia lane (concurrent-edit fence, task #196) — resolved by "
+        "allowlist here; source cleanup deferred to the estonia grafter grammar pass."
+    ),
     # finland
     "src/lawvm/finland/citation_routing.py": (
         "Pre-existing baseline: _FI_META_REPEAL_RE — bounded .{0,400}? with "
@@ -557,6 +568,36 @@ _KNOWN_UNFIXED: dict[str, str] = {
         "target normalization is next touched."
     ),
     # us_federal
+    "src/lawvm/us_federal/classification_tables.py": (
+        "Baseline from the 111-commit perf merge: _USC_SECTION_RE "
+        "(^\\d+[a-zA-Z]?(?:-[a-zA-Z0-9]+)?$|^\\d+[a-zA-Z]?$) is a fully "
+        "^...$-anchored two-branch USC section-id token validator. Both branches "
+        "are bounded (\\d+ then a single optional letter, then an optional "
+        "'-'-delimited alnum tail); the char classes are disjoint and the '-' is a "
+        "literal delimiter, so no overlapping backtracking is reachable under the "
+        "anchors. The static lint flags the branch alternation as 'nested "
+        "backtracking quantifiers'; benign-linear false positive on a short token "
+        "input. Batch 6."
+    ),
+    "src/lawvm/us_federal/import_release.py": (
+        "Baseline from the 111-commit perf merge: _RELEASE_POINT_MEMBER_RE "
+        "(^(?:.*/)?(?:xml_)?usc(?P<title>\\d{2})(?:@\\d+-\\d+)?\\.xml$) is a fully "
+        "^...$-anchored archive-member FILENAME matcher. The leading (?:.*/)? path "
+        "prefix is hard-stopped by the literal 'usc' + bounded \\d{2} title + "
+        "'.xml' suffix, so the greedy .* cannot overlap the bounded body. Verified "
+        "linear on adversarial filename inputs. The static lint flags the "
+        "optional-group nesting; benign-linear false positive. Batch 6."
+    ),
+    "src/lawvm/us_federal/sources.py": (
+        "Baseline: _USC_USLM_MEMBER_RE "
+        "(^(?:.*/)?usc(?P<title>\\d{1,2})(?P<suffix>[A-Za-z]?)\\.xml$) is a fully "
+        "^...$-anchored USLM archive-member FILENAME matcher — same family as "
+        "us_federal/import_release._RELEASE_POINT_MEMBER_RE. The leading (?:.*/)? "
+        "path prefix is hard-stopped by the literal 'usc' + bounded \\d{1,2} title "
+        "+ single optional suffix letter + '.xml', so the greedy .* cannot overlap "
+        "the bounded body. The static lint flags the optional-group nesting; "
+        "benign-linear false positive on a short filename input. Batch 6."
+    ),
     "src/lawvm/us_federal/dry_run.py": (
         "_SECTION_CATCHLINE_RE is the anchored USC new-section catchline head "
         "(^\\s*[\"quote]?\\[?\\s*§+\\s*<bounded num>\\.) — same family as "

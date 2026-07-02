@@ -253,6 +253,7 @@ def detail_mapping_to_json_safe_dict(detail: Any) -> dict:
                 # nothing is silently skipped (§1.10 fail-loud: triager
                 # should see the unexpected value, not assume None).
                 out[str(key)] = str(value)
+    # lawvm-failloud: failure surfaced as the typed "detail_render_failed" marker, never dropped
     except Exception:  # noqa: BLE001 — best-effort stringification, never strict
         return {"detail_render_failed": str(detail)[:200]}
     return out

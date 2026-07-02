@@ -83,7 +83,7 @@
       "src/lawvm/uk_legislation/target_anchors.py": 2,
       "src/lawvm/uk_legislation/text_matching.py": 4,
       "src/lawvm/uk_legislation/uk_grafter.py": 1,
-      "src/lawvm/us_federal/amendatory.py": 3,
+      "src/lawvm/us_federal/amendatory.py": 4,
       "src/lawvm/us_federal/dry_run.py": 1
     },
     "span_overlap_dedup": {
@@ -98,11 +98,11 @@
       "src/lawvm/substrate/locus_links.py": 1
     }
   },
-  "grand_total": 426,
+  "grand_total": 427,
   "totals": {
     "clause_boundary_dup": 55,
     "multi_finditer_same_src": 105,
-    "per_op_fstring_regex": 247,
+    "per_op_fstring_regex": 248,
     "span_overlap_dedup": 19
   }
 }

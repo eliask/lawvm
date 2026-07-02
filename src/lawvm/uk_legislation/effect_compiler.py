@@ -597,7 +597,7 @@ def _compile_effect_to_ir_ops_impl(
                 "affected_provisions": effect.affected_provisions,
                 "lowering_action": None,
                 "strict_disposition": "block",
-                "quirks_disposition": "skip",
+                "quirks_disposition": QuirksDisposition.SKIP,
                 # AGENTS.md §0 promotion-chain: the lowering receipt records
                 # the boundary; the manual-frontier classification downstream
                 # is NOT a replay authority — the row remains out-of-scope

@@ -3139,14 +3139,18 @@ class _AllPitSnapshotResult:
     struct_sim: float     # in [0,1]; -1.0 ⇒ not scored (no/absent oracle)
     n_sections: int
     n_penalized: int
-    status: str
+    # §11.8 namespaced status kind (VOCAB-02): snapshot-level phase status
+    # ("OK" / "UNPLACEABLE:..." / "ERROR:..." / "ORACLE_CONTENT_ABSENT").
+    phase_status: str
 
 
 @dataclass(frozen=True)
 class _AllPitStatuteResult:
     sid: str
     snapshots: Tuple[_AllPitSnapshotResult, ...]
-    status: str = "OK"  # non-OK ⇒ statute-level failure (e.g. ERROR:...)
+    # §11.8 namespaced status kind (VOCAB-02): non-OK ⇒ statute-level failure
+    # (e.g. ERROR:...).
+    phase_status: str = "OK"
 
     @property
     def scored(self) -> List[_AllPitSnapshotResult]:
@@ -3185,10 +3189,12 @@ def _all_pit_score_one_statute(sid: str) -> _AllPitStatuteResult:
         corpus = get_corpus()
         archive = _archive_from_source(corpus)
         if archive is None:
-            return _AllPitStatuteResult(sid=sid, snapshots=(), status="ERROR:no-archive")
+            return _AllPitStatuteResult(
+                sid=sid, snapshots=(), phase_status="ERROR:no-archive"
+            )
         plans = plan_snapshots(archive, sid)
     except Exception as exc:  # noqa: BLE001 — surface, don't crash the batch
-        return _AllPitStatuteResult(sid=sid, snapshots=(), status=f"ERROR:{exc}")
+        return _AllPitStatuteResult(sid=sid, snapshots=(), phase_status=f"ERROR:{exc}")
 
     snapshots: List[_AllPitSnapshotResult] = []
     for plan in plans:
@@ -3201,7 +3207,7 @@ def _all_pit_score_one_statute(sid: str) -> _AllPitStatuteResult:
                     struct_sim=-1.0,
                     n_sections=0,
                     n_penalized=0,
-                    status=f"UNPLACEABLE:{plan.reason}",
+                    phase_status=f"UNPLACEABLE:{plan.reason}",
                 )
             )
             continue
@@ -3223,11 +3229,11 @@ def _all_pit_score_one_statute(sid: str) -> _AllPitStatuteResult:
                     struct_sim=-1.0,
                     n_sections=0,
                     n_penalized=0,
-                    status=f"ERROR:{exc}",
+                    phase_status=f"ERROR:{exc}",
                 )
             )
             continue
-        status = "OK" if sim >= 0.0 else "ORACLE_CONTENT_ABSENT"
+        snapshot_phase_status = "OK" if sim >= 0.0 else "ORACLE_CONTENT_ABSENT"
         snapshots.append(
             _AllPitSnapshotResult(
                 version_tag=plan.version_tag,
@@ -3236,7 +3242,7 @@ def _all_pit_score_one_statute(sid: str) -> _AllPitStatuteResult:
                 struct_sim=sim,
                 n_sections=n_sections,
                 n_penalized=n_penalized,
-                status=status,
+                phase_status=snapshot_phase_status,
             )
         )
     return _AllPitStatuteResult(sid=sid, snapshots=tuple(snapshots))
@@ -3296,8 +3302,8 @@ def _fmt_all_pit_sim(sim: float) -> str:
 
 
 def _print_all_pit_statute(res: _AllPitStatuteResult, *, prefix: str = "") -> None:
-    if res.status != "OK":
-        print(f"\n{prefix}=== {res.sid} === {res.status}")
+    if res.phase_status != "OK":
+        print(f"\n{prefix}=== {res.sid} === {res.phase_status}")
         return
     print(f"\n{prefix}=== {res.sid}  ({len(res.snapshots)} published snapshots) ===")
     print(
@@ -3310,7 +3316,7 @@ def _print_all_pit_statute(res: _AllPitStatuteResult, *, prefix: str = "") -> No
         print(
             f"  {as_of:<12} {s.version_tag:<10} {s.amendment_id:<10} "
             f"{_fmt_all_pit_sim(s.struct_sim):>7} {s.n_sections:>5} "
-            f"{s.n_penalized:>4}  {s.status}"
+            f"{s.n_penalized:>4}  {s.phase_status}"
         )
         traj.append("n/a" if s.struct_sim < 0 else f"{100 * s.struct_sim:.1f}")
     if res.scored:
@@ -3327,8 +3333,8 @@ def _print_all_pit_statute(res: _AllPitStatuteResult, *, prefix: str = "") -> No
 
 def _show_all_pit_summary(results: List[_AllPitStatuteResult]) -> None:
     """Print the all_pit aggregate: per-snapshot pool + headline min<latest."""
-    ok = [r for r in results if r.status == "OK"]
-    failed = [r for r in results if r.status != "OK"]
+    ok = [r for r in results if r.phase_status == "OK"]
+    failed = [r for r in results if r.phase_status != "OK"]
     n_snapshots = sum(len(r.snapshots) for r in ok)
     n_scored = sum(len(r.scored) for r in ok)
     scored_sims = [s.struct_sim for r in ok for s in r.scored]
@@ -3360,7 +3366,7 @@ def _show_all_pit_summary(results: List[_AllPitStatuteResult]) -> None:
     if failed:
         print("\n  failed statutes:")
         for r in failed:
-            print(f"    {r.sid:12s}  {r.status}")
+            print(f"    {r.sid:12s}  {r.phase_status}")
 
 
 def _run_all_pit_mode(
