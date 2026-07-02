@@ -63,6 +63,14 @@ def test_parse_usc_title_document_cache_reuses_sections_with_fresh_report(
     assert third.report.findings == []
 
 
+def test_us_source_normalize_text_fast_path_preserves_semantics() -> None:
+    already_normalized = "This text is already normalized."
+
+    assert source_tree._normalize_text(already_normalized) is already_normalized
+    assert source_tree._normalize_text("  This   text\nneeds\twork. ") == "This text needs work."
+    assert source_tree._normalize_text("A\u00a0B") == "A B"
+
+
 def test_section_address_is_title_section_pinned_convention(fixture_bytes: bytes) -> None:
     doc = parse_usc_title_document(fixture_bytes, year="2023")
     s362 = doc.section_by_number("362")

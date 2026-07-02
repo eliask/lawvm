@@ -376,6 +376,19 @@ def _element_text(el: etree._Element) -> str:
 
 
 def _normalize_text(text: str) -> str:
+    if (
+        text
+        and text.isascii()
+        and text[0] != " "
+        and text[-1] != " "
+        and "  " not in text
+        and "\n" not in text
+        and "\t" not in text
+        and "\r" not in text
+        and "\f" not in text
+        and "\v" not in text
+    ):
+        return text
     return " ".join(text.split())
 
 
