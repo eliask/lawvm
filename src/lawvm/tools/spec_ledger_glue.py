@@ -202,6 +202,11 @@ _LENS: Tuple[GlueComponent, ...] = (
         changelog=(
             "v1: #184 first-classed the grammar text-normalization equivalence as a "
             "CTSF rule ctsf.text.grammar_normalization (control-pair admission-gated).",
+            "v1: #197 two label-redundancy siblings admitted under this lens — "
+            "ctsf.text.momentti_ordinal_elision (leading 'N.' ordinal duplicating a "
+            "momentti label) and ctsf.structure.digit_item_renesting_elision (flat "
+            "digit-item 'N)' prefix duplicating an item label); both control-pair "
+            "admission-gated.",
         ),
         ctsf_rule_id="ctsf.text.grammar_normalization",
     ),

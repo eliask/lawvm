@@ -938,6 +938,11 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # gate (incl. negative rejection test) + migrated editorial rules + the
         # spec-ledger glue unification + bench byte-identity guard.
         "test_ctsf.py",
+        # #197 CTSF Phase 2: STATE_INDEX commensurability layer (each typed
+        # residual + the commensurability-first short-circuit), the two
+        # newly-migrated label-redundancy rules (+ negative gate test), the
+        # parallel residual-set report, and the bench byte-identity guard.
+        "test_ctsf_phase2.py",
         "test_diagnose_phase.py",
         "test_diff.py",
         "test_dump.py",

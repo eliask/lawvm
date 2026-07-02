@@ -121,12 +121,15 @@ def test_every_registered_rule_passes_admission_gate():
         assert res.admitted, f"{res.rule_id} rejected: {res.failures}"
 
 
-def test_registered_rules_are_exactly_the_three_migrated():
+def test_registered_rules_are_exactly_the_five_migrated():
     ids = {r.rule_id for r in registered_ctsf_rules()}
     assert ids == {
         "ctsf.text.grammar_normalization",
         "ctsf.occupancy.repeal_tombstone_elision",
         "ctsf.text.aiempi_sanamuoto_elision",
+        # Phase 2 (#197):
+        "ctsf.text.momentti_ordinal_elision",
+        "ctsf.structure.digit_item_renesting_elision",
     }
 
 
@@ -260,7 +263,10 @@ def test_migrated_glue_lenses_point_back_at_registered_rules():
             )
             assert glue_to_dict(g)["ctsf_rule_id"] == g.ctsf_rule_id
             bound += 1
-    assert bound == 3, "expected exactly the three migrated lenses to bind CTSF rules"
+    # Three lenses each bind ONE CTSF rule (grammar_normalization,
+    # repeal_tombstone, aiempi_sanamuoto). The two Phase-2 rules share the
+    # grammar_text_normalization lens, so the bound-lens COUNT is still 3.
+    assert bound == 3, "expected exactly the three lenses to bind a CTSF rule"
 
 
 def test_ctsf_rules_carry_falsifier_and_ledger_pointer():

@@ -49,6 +49,12 @@ DEAD_ALLOWLIST: dict[str, str] = {
         "coverage; production CLI wiring is intentionally deferred until the "
         "holdout corpus list and runtime budget are settled."
     ),
+    "lawvm.core.ctsf_residual_report": (
+        "CTSF Phase 2 (#197) parallel residual-set report — the READ-ONLY shape a "
+        "Phase-3 residual-set-diff gate will consume. Synthetic coverage exists "
+        "(test_ctsf_phase2.py); production/bench wiring is INTENTIONALLY deferred "
+        "to Phase 3 to keep this increment additive and byte-identical."
+    ),
 }
 
 

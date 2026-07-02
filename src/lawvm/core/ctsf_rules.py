@@ -6,16 +6,26 @@ falsifier sentence, and is registered in the #181 spec-ledger glue catalog.
 The admission gate (``ctsf_admission_gate``) proves each passes; the shard test
 fails if any registered rule lacks its control pairs.
 
-Three rules are migrated in v0 (the safest, per the task):
+Three rules were migrated in v0 (#184); Phase 2 (#197) migrates two more, each
+label-redundancy elisions justified by the addressability criterion (the amendment
+grammar addresses the unit LABEL separately, so a leading ordinal equal to the
+label is presentation):
 
 1. ``ctsf.text.grammar_normalization`` — whitespace / dot-leader / §-spacing
    normalization (from ``_is_wording_whitespace_only_diff`` + the dot-leader
-   normalizer).  Glue: ``fi.lens.grammar_text_normalization`` (new).
+   normalizer).  Glue: ``fi.lens.grammar_text_normalization``.
 2. ``ctsf.occupancy.repeal_tombstone_elision`` — a repealed unit's residual
    tombstone/RetainText wording is editorial (from the editorial_only /
    repeal-indicator neutralization).  Glue: ``uk.lens.retain_text_repeal_elision``.
 3. ``ctsf.text.aiempi_sanamuoto_elision`` — Finlex "Aiempi sanamuoto kuuluu:"
    former-wording banner elision.  Glue: ``fi.lens.aiempi_sanamuoto_elision``.
+4. ``ctsf.text.momentti_ordinal_elision`` (#197) — a momentti's label-redundant
+   "N. " ordinal prefix (from ``_strip_momentti_ordinal_prefix`` in
+   ``semantic/diff.py``).  Glue: ``fi.lens.grammar_text_normalization``.
+5. ``ctsf.structure.digit_item_renesting_elision`` (#197) — a flat digit-item's
+   label-redundant "N) " prefix (from ``_is_digit_renesting_mismatch`` in
+   ``tools/bench.py``, the flat→merged renesting encoding).  Glue:
+   ``fi.lens.grammar_text_normalization``.
 """
 
 from __future__ import annotations
@@ -243,10 +253,152 @@ _RULE_AIEMPI_SANAMUOTO = CTSFEditorialRule(
 )
 
 
+# ---------------------------------------------------------------------------
+# Rule 4 — momentti ordinal prefix elision (label-redundant "N." on a momentti)
+# ---------------------------------------------------------------------------
+
+
+def _mom(label: str, *, text: str = "") -> SemanticStructureNode:
+    return SemanticStructureNode(
+        kind="subsection",
+        label=label,
+        label_basis="explicit",
+        facets=_wf(text) if text else (),
+    )
+
+
+def _apply_substitute_mom2(node: SemanticStructureNode) -> SemanticStructureNode:
+    return _mom("2", text="uusi momenttiteksti")
+
+
+def _apply_substitute_mom2_ctsf(node: CTSFNode) -> CTSFNode:
+    return replace(node, normalized_text="uusi momenttiteksti", elisions=())
+
+
+_RULE_MOMENTTI_ORDINAL = CTSFEditorialRule(
+    rule_id="ctsf.text.momentti_ordinal_elision",
+    jurisdiction="fi",
+    believed_spec=(
+        "Finlex renders a momentti's wording with its own ordinal prefixed "
+        "('2. <text>'); LawVM carries that number in the label/badge only. The "
+        "leading 'N.' that DUPLICATES the unit's own label is presentation "
+        "redundant with the label (which the amendment grammar addresses "
+        "separately); it is elided label-aware, only when N equals the label."
+    ),
+    falsifier=(
+        "A momentti whose wording legitimately begins with a number equal to its "
+        "label as OPERATIVE content (not the ordinal rendering), so stripping the "
+        "'N.' prefix drops real text the grammar could quote."
+    ),
+    ledger_glue_id="fi.lens.grammar_text_normalization",
+    unamended_control_pairs=(
+        # (a) untouched momentti: source-as-enacted (no ordinal) vs oracle's
+        # ordinal-prefixed rendering of the same momentti must project equal.
+        ControlPair(
+            label="unamended momentti ordinal vs clean",
+            left=_mom("2", text="momentin teksti"),
+            right=_mom("2", text="2. momentin teksti"),
+        ),
+    ),
+    quoted_payload_control_pairs=(
+        # (b) freshly-substituted momentti: quoted payload vs ordinal-prefixed oracle.
+        ControlPair(
+            label="quoted payload vs ordinal-prefixed oracle",
+            left=_mom("2", text="uusi momenttiteksti"),
+            right=_mom("2", text="2. uusi momenttiteksti"),
+        ),
+    ),
+    congruence_cases=(
+        CongruenceCase(
+            label="substitute 2 mom wording",
+            pre=_mom("2", text="momentin teksti"),
+            apply_fn=_apply_substitute_mom2,
+            apply_ctsf=_apply_substitute_mom2_ctsf,
+        ),
+    ),
+    witness_cases=(
+        WitnessCase(label="momentti ordinal elision witness", node=_mom("2", text="2. momentin teksti")),
+    ),
+)
+
+
+# ---------------------------------------------------------------------------
+# Rule 5 — digit-item renesting elision (label-redundant "N)" on a flat item)
+# ---------------------------------------------------------------------------
+
+
+def _item(label: str, *, text: str = "") -> SemanticStructureNode:
+    return SemanticStructureNode(
+        kind="item",
+        label=label,
+        label_basis="explicit",
+        facets=_wf(text) if text else (),
+    )
+
+
+def _apply_substitute_item3(node: SemanticStructureNode) -> SemanticStructureNode:
+    return _item("3", text="uusi kohdan teksti")
+
+
+def _apply_substitute_item3_ctsf(node: CTSFNode) -> CTSFNode:
+    return replace(node, normalized_text="uusi kohdan teksti", elisions=())
+
+
+_RULE_DIGIT_ITEM_RENESTING = CTSFEditorialRule(
+    rule_id="ctsf.structure.digit_item_renesting_elision",
+    jurisdiction="fi",
+    believed_spec=(
+        "A Finlex flat digit-item ('N) <text>') keeps its ordinal in the wording; "
+        "LawVM renests flat digit-items into merged item children carrying the "
+        "number in the label only (the flat→merged digit-renesting encoding). The "
+        "leading 'N)' that DUPLICATES the item's own label is presentation "
+        "redundant with the label (addressed separately by the grammar); it is "
+        "elided label-aware, only when N equals the item label."
+    ),
+    falsifier=(
+        "A merged/flat encoding pair where stripping the 'N)' prefix merges two "
+        "items the grammar's own quoted-span matcher would distinguish, so the "
+        "renesting elision hides a real content divergence rather than an "
+        "encoding difference."
+    ),
+    ledger_glue_id="fi.lens.grammar_text_normalization",
+    unamended_control_pairs=(
+        # (a) untouched item: source-as-enacted (merged, no prefix) vs oracle's
+        # flat 'N)'-prefixed rendering of the same item must project equal.
+        ControlPair(
+            label="unamended flat digit-item vs merged",
+            left=_item("3", text="kohdan teksti"),
+            right=_item("3", text="3) kohdan teksti"),
+        ),
+    ),
+    quoted_payload_control_pairs=(
+        # (b) freshly-substituted item: quoted payload vs flat-prefixed oracle.
+        ControlPair(
+            label="quoted payload vs flat-prefixed oracle",
+            left=_item("3", text="uusi kohdan teksti"),
+            right=_item("3", text="3) uusi kohdan teksti"),
+        ),
+    ),
+    congruence_cases=(
+        CongruenceCase(
+            label="substitute 3 kohta wording",
+            pre=_item("3", text="kohdan teksti"),
+            apply_fn=_apply_substitute_item3,
+            apply_ctsf=_apply_substitute_item3_ctsf,
+        ),
+    ),
+    witness_cases=(
+        WitnessCase(label="digit-item renesting elision witness", node=_item("3", text="3) kohdan teksti")),
+    ),
+)
+
+
 _REGISTERED: tuple[CTSFEditorialRule, ...] = (
     _RULE_GRAMMAR_NORMALIZATION,
     _RULE_REPEAL_TOMBSTONE,
     _RULE_AIEMPI_SANAMUOTO,
+    _RULE_MOMENTTI_ORDINAL,
+    _RULE_DIGIT_ITEM_RENESTING,
 )
 
 

@@ -74,6 +74,28 @@ _AIEMPI_SANAMUOTO_MARKER_RE = compile_classifier_regex(
     classifier_id="ctsf.aiempi_sanamuoto_marker",
 )
 
+# Momentti ordinal prefix — Finlex renders a momentti's wording with its own
+# ordinal prefixed ("1. <text>"); LawVM carries that number in the label/badge
+# only.  The prefix is label-redundant presentation (§1.1: the label is addressed
+# separately by the grammar), so a wording whose leading "N." equals the unit's
+# own label has that prefix elided.  Label-aware match built per node.
+_MOMENTTI_ORDINAL_PREFIX_RE = compile_classifier_regex(
+    r"^\s*(\d+)\s*a?\.\s+",
+    re.IGNORECASE,
+    classifier_id="ctsf.momentti_ordinal_prefix",
+)
+
+# Digit-item prefix — a flat Finlex digit-item ("N) <text>") whose N duplicates
+# the item's own label.  LawVM renests these into merged item children carrying
+# the number in the label only (the flat→merged digit-renesting encoding).  The
+# "N) " prefix is label-redundant (the item label is addressed separately), so it
+# is elided when N equals the unit's own label.  Label-aware match built per node.
+_DIGIT_ITEM_PREFIX_RE = compile_classifier_regex(
+    r"^\s*(\d+[a-zäöå]?)\)\s+",
+    re.IGNORECASE,
+    classifier_id="ctsf.digit_item_prefix",
+)
+
 # The disclaimer, exported so telemetry surfaces and docs quote it verbatim.
 CTSF_EQUALITY_DISCLAIMER = (
     "CTSF-equality is the equality relation for LawVM replay text-state claims; "
@@ -231,6 +253,43 @@ def _addressable_child(child: SemanticStructureNode) -> bool:
     return not is_semantic_facet_kind(child.kind)
 
 
+def _elide_label_redundant_prefix(
+    text: str,
+    label: str,
+    address: str,
+    elisions: list[CTSFElisionWitness],
+) -> str:
+    """Elide a leading ordinal / digit-item prefix that duplicates ``label``.
+
+    One-sided and label-aware: strips a leading ``"N. "`` (momentti ordinal) or
+    ``"N) "`` (flat digit-item) prefix ONLY when ``N`` equals the unit's own
+    ``label``.  The label is compared separately, so a label-redundant leading
+    number is presentation; a leading number that does NOT match the label
+    (a genuine date/list value) is preserved verbatim.  Emits a witness when it
+    strips.  Realizes two migrated rules: ``ctsf.text.momentti_ordinal_elision``
+    (from ``_strip_momentti_ordinal_prefix``) and
+    ``ctsf.structure.digit_item_renesting_elision`` (from
+    ``_is_digit_renesting_mismatch``'s ``N)`` prefix strip).
+    """
+    if not label:
+        return text
+    for pattern, rule_id in (
+        (_MOMENTTI_ORDINAL_PREFIX_RE, "ctsf.text.momentti_ordinal_elision"),
+        (_DIGIT_ITEM_PREFIX_RE, "ctsf.structure.digit_item_renesting_elision"),
+    ):
+        m = pattern.match(text)
+        if m and m.group(1).lower() == label.lower():
+            elisions.append(
+                CTSFElisionWitness(
+                    rule_id=rule_id,
+                    address=address,
+                    witness=ctsf_witness(text),
+                )
+            )
+            return text[m.end():]
+    return text
+
+
 def to_ctsf(node: SemanticStructureNode, *, _path: str = "") -> CTSFNode:
     """Project a logical IR node into its Canonical Text-State Form.
 
@@ -293,6 +352,17 @@ def to_ctsf(node: SemanticStructureNode, *, _path: str = "") -> CTSFNode:
                     witness=ctsf_witness(raw_wording),
                 )
             )
+        # label-redundant ordinal elision — elide a leading ordinal that
+        # DUPLICATES the unit's own label: a momentti "N. " prefix (Finlex ordinal
+        # rendering, ctsf.text.momentti_ordinal_elision) or a flat digit-item
+        # "N) " prefix (the flat→merged digit-renesting encoding,
+        # ctsf.structure.digit_item_renesting_elision).  The label is addressed
+        # separately by the
+        # grammar (§1.1), so a leading number equal to the label is presentation.
+        # Label-aware: elide ONLY when the leading N equals node.label, so a
+        # genuine leading number ("1. tammikuuta", "3) muu asia" under a
+        # differently-numbered unit) is never masked.
+        stripped = _elide_label_redundant_prefix(stripped, node.label, address, elisions)
         normalized_text = _normalize_wording_for_diff(stripped, node.label)
         if normalized_text != stripped:
             elisions.append(
