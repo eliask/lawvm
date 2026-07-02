@@ -19,7 +19,11 @@ from __future__ import annotations
 
 import random
 
-from lawvm.core.provenance import unique_byte_run_text_positions, unique_byte_run_texts
+from lawvm.core.provenance import (
+    _UNIQUE_RUN_PREFIX,
+    unique_byte_run_text_positions,
+    unique_byte_run_texts,
+)
 
 
 def _reference(raw_bytes: bytes, candidate_texts: list[str]) -> list[str]:
@@ -86,8 +90,10 @@ def test_equal_length_order_is_document_order_stable() -> None:
 def test_short_needles_take_reference_path() -> None:
     # Needles shorter than the prefix-bucket width fall back to two-``find``; verify
     # a mix of short unique / short repeated / short absent matches the reference.
-    raw = b"a bb ccc a dddd"
-    cands = ["bb", "ccc", "a", "dddd", "zz"]
+    short = "s" * (_UNIQUE_RUN_PREFIX - 1)
+    boundary = "b" * _UNIQUE_RUN_PREFIX
+    raw = f"a {short} {boundary} a {boundary}2".encode()
+    cands = [short, boundary, "a", "zz"]
     assert unique_byte_run_texts(raw, cands) == _reference(raw, cands)
 
 
