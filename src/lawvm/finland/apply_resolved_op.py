@@ -12,7 +12,7 @@ from lawvm.core.mutation_accounting import (
     MutationAccountingResult,
     observed_vs_declared_cross_check,
 )
-from lawvm.core.mutation_boundary import diff_ir_paths_identity_pruned
+from lawvm.core.mutation_boundary import TreePaths, diff_ir_paths_identity_pruned
 from lawvm.core.mutation_boundary_proof import (
     MUTATION_BOUNDARY_FINDING_AT_OP_CODE,
     MUTATION_BOUNDARY_VIOLATION_AT_OP_CODE,
@@ -269,6 +269,9 @@ def _apply_required_resolved_op(
                     )
                 )
         undeclared_touch: Optional[MutationAccountingResult] = None
+        observed_paths: TreePaths | None = None
+        if prev_state.ir is not state.ir:
+            observed_paths = diff_ir_paths_identity_pruned(prev_state.ir, state.ir)
         if sinks.mutation_events_out is not None:
             undeclared_touch = cross_check_observed_vs_declared(
                 prev_state,
@@ -276,6 +279,7 @@ def _apply_required_resolved_op(
                 rop.op_id or "",
                 sinks.mutation_events_out[event_cursor:],
                 sinks.observed_touch_results_out,
+                observed_paths=observed_paths,
             )
         # Conservation receipt for this op's landed write, computed by
         # construction from the actual before/after IR diff (landed reality),
@@ -292,6 +296,7 @@ def _apply_required_resolved_op(
             source_statute=request.amendment_id,
             sinks=sinks,
             undeclared_touch=undeclared_touch,
+            observed_paths=observed_paths,
         )
         # Per-op apply-authority gates (LS-01 / LS-03 / EV-05+FW-01): run after
         # the write landed so the changed-path subset, the occupancy transition,
@@ -345,6 +350,8 @@ def cross_check_observed_vs_declared(
     op_id: str,
     events: list[ApplyMutationEvent],
     observed_touch_results_out: Optional[list[MutationAccountingResult]],
+    *,
+    observed_paths: TreePaths | None = None,
 ) -> Optional[MutationAccountingResult]:
     """Passively verify the op's observed tree diff against its declared events.
 
@@ -357,7 +364,8 @@ def cross_check_observed_vs_declared(
         return None
     if prev_state.ir is new_state.ir:
         return None
-    observed_paths = diff_ir_paths_identity_pruned(prev_state.ir, new_state.ir)
+    if observed_paths is None:
+        observed_paths = diff_ir_paths_identity_pruned(prev_state.ir, new_state.ir)
     if not observed_paths:
         return None
     helper = events[-1].helper if events else ""
@@ -796,6 +804,7 @@ def _collect_op_write_receipt(
     source_statute: str,
     sinks: ApplyResolvedOpSinks,
     undeclared_touch: Optional[MutationAccountingResult] = None,
+    observed_paths: TreePaths | None = None,
 ) -> None:
     """Produce + account one landed write's receipt and observed-write audit.
 
@@ -859,7 +868,8 @@ def _collect_op_write_receipt(
     # primary with the canonical bound. With no observed change the landed
     # primary falls back to the canonical bound (matching receipt_from_diff's
     # existing semantic).
-    observed_paths = diff_ir_paths_identity_pruned(prev_state.ir, new_state.ir)
+    if observed_paths is None:
+        observed_paths = diff_ir_paths_identity_pruned(prev_state.ir, new_state.ir)
     normalized_landed_path = (
         _normalize_receipt_path_for_comparison(observed_paths[0])
         if observed_paths
