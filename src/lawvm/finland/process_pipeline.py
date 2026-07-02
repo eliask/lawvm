@@ -342,6 +342,7 @@ def process_muutoslaki_resolved(
                 replay_print=_replay_print,
                 tree_title=_tree_title,
                 amendment_lacks_operative_structure=_amendment_lacks_operative_structure,
+                selection_metadata=process_call.selection_metadata,
             ).acquire(),
             process_findings=process_findings,
             parent_id=parent_id,

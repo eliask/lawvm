@@ -14,7 +14,7 @@ import pytest
 from lawvm.core.phase_result import Finding
 from lawvm.finland.process_acquisition import ProcessAcquisitionContext
 from lawvm.finland.process_findings import ProcessFindingRecorder
-from lawvm.finland.source_model import AmendmentSourceModel
+from lawvm.finland.source_model import AmendmentSourceModel, SourceMetadataSeed
 
 _POST_XML = (
     b"<akomaNtoso><act><preamble>muutetaan 3 ss seuraavasti:</preamble>"
@@ -121,3 +121,47 @@ def test_no_patch_flags_unowned_content_drift() -> None:
         == model.pre_correction_digest.digest
     )
     assert finding.detail["digest_drift"] == "content_changed_without_owning_patch"
+
+
+def test_acquisition_uses_selection_metadata_seed_when_source_is_uncorrected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seed = SourceMetadataSeed(
+        source_issue_date=None,
+        source_title="selection title",
+        effective_date=None,
+        effective_date_step="selection-step",
+    )
+    ctx = _context()
+    ctx.selection_metadata = seed
+    monkeypatch.setattr(
+        ProcessAcquisitionContext,
+        "_apply_source_corrections",
+        lambda self, xml_bytes: (xml_bytes, ()),
+    )
+
+    acquired = ctx.acquire()
+
+    assert acquired.source_model.metadata_seed is seed
+
+
+def test_acquisition_drops_selection_metadata_seed_when_source_is_corrected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seed = SourceMetadataSeed(
+        source_issue_date=None,
+        source_title="stale selection title",
+        effective_date=None,
+        effective_date_step="selection-step",
+    )
+    ctx = _context()
+    ctx.selection_metadata = seed
+    monkeypatch.setattr(
+        ProcessAcquisitionContext,
+        "_apply_source_corrections",
+        lambda self, xml_bytes: (xml_bytes, ("patch-op",)),
+    )
+
+    acquired = ctx.acquire()
+
+    assert acquired.source_model.metadata_seed is None

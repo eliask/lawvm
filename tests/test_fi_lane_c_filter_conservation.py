@@ -163,12 +163,14 @@ def test_filter_candidates_partition_conserves_out_of_scope(monkeypatch) -> None
     in_scope = sel.AmendmentSelectionCandidate(
         amendment_id="2001/1",
         effective_date=dt.date(2001, 1, 1),
+        effective_date_step="metadata",
         issue_date=None,
         title="a",
     )
     out_of_scope = sel.AmendmentSelectionCandidate(
         amendment_id="2005/1",
         effective_date=dt.date(2005, 1, 1),
+        effective_date_step="metadata",
         issue_date=None,
         title="b",
     )

@@ -25,7 +25,7 @@ from lawvm.finland.corpus import (
     get_consolidated_oracle_reflected_source_vts_children,
 )
 from lawvm.finland.metadata import (
-    _amendment_effective_date,
+    _amendment_effective_date_with_step,
     _statute_id_sort_key,
     _statute_issue_date,
 )
@@ -48,6 +48,7 @@ class AmendmentSelectionCandidate:
 
     amendment_id: str
     effective_date: dt.date | None
+    effective_date_step: str
     issue_date: dt.date | None
     title: str
     edge_kind: str = "oracle_amendedBy"
@@ -237,10 +238,14 @@ def _read_amendment_candidates(
         amendment_tree = etree.fromstring(xml_bytes)
         title_el = amendment_tree.find(".//{*}docTitle")
         title = " ".join("".join(str(text) for text in title_el.itertext()).split()) if title_el is not None else ""
+        effective_date, effective_date_step = _amendment_effective_date_with_step(
+            amendment_tree
+        )
         candidates.append(
             AmendmentSelectionCandidate(
                 amendment_id=amendment_id,
-                effective_date=_amendment_effective_date(amendment_tree),
+                effective_date=effective_date,
+                effective_date_step=effective_date_step,
                 issue_date=_statute_issue_date(amendment_tree),
                 title=title,
                 edge_kind=edge_kind_by_amendment.get(amendment_id, "oracle_amendedBy"),
@@ -410,6 +415,7 @@ def _record_for_candidate(
         "statute_id": candidate.amendment_id,
         "title": candidate.title,
         "effective_date": candidate.effective_date.isoformat() if candidate.effective_date else "",
+        "effective_date_step": candidate.effective_date_step,
         "issue_date": candidate.issue_date.isoformat() if candidate.issue_date else "",
         "sort_mode": mode,
         "included": True,

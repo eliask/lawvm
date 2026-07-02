@@ -10,6 +10,7 @@ from lawvm.core.compile_result import StrictProfile
 from lawvm.core.provenance import MigrationEvent
 from lawvm.finland.future_repeal import RepealTargetRef
 from lawvm.finland.chapter_seed_targets import ChapterSeedSkipInput
+from lawvm.finland.source_model import SourceMetadataSeed
 from lawvm.finland.statute import ReplayState, StatuteContext
 
 
@@ -31,4 +32,5 @@ class ProcessAmendmentRequest:
     future_repeals: Optional[Set[RepealTargetRef]] = None
     prior_migration_events: tuple[MigrationEvent, ...] = ()
     processed_amendment_titles: Optional[Dict[str, str]] = None
+    selection_metadata: Optional[SourceMetadataSeed] = None
     amendment_edge_kind: str = "oracle_amendedBy"

@@ -219,6 +219,16 @@ class SourceMetadataSurface:
 
 
 @dataclass(frozen=True, slots=True)
+class SourceMetadataSeed:
+    """Precomputed non-mutating source metadata facts from amendment selection."""
+
+    source_issue_date: dt.date | None
+    source_title: str
+    effective_date: dt.date | None
+    effective_date_step: str
+
+
+@dataclass(frozen=True, slots=True)
 class SourceBodyInventoryIndex:
     """Normalized indexes over observed source-body units."""
 
@@ -573,6 +583,7 @@ class AmendmentSourceModel:
     source_bytes: bytes | None = None
     source_digest: DigestWitness | None = None
     pre_correction_digest: DigestWitness | None = None
+    metadata_seed: SourceMetadataSeed | None = None
 
     def __post_init__(self) -> None:
         # Intrinsic content identity: present whenever bytes are present.
@@ -688,6 +699,7 @@ class AmendmentSourceModel:
         source_ref: str = "",
         source_bytes: bytes | None = None,
         pre_correction_bytes: bytes | None = None,
+        metadata_seed: SourceMetadataSeed | None = None,
     ) -> "AmendmentSourceModel":
         """Build a source model and bind intrinsic content digests.
 
@@ -709,6 +721,7 @@ class AmendmentSourceModel:
             source_ref=source_ref,
             source_bytes=source_bytes,
             pre_correction_digest=pre_correction_digest,
+            metadata_seed=metadata_seed,
         )
 
     @property
@@ -1329,19 +1342,31 @@ class AmendmentSourceModel:
     def metadata_surface(self) -> SourceMetadataSurface:
         """Return cached source metadata facts used by compile and temporal phases."""
         if self._metadata_surface_cache is None:
-            from lawvm.finland.frontend_compile import _tree_title
             from lawvm.finland.metadata import (
-                _amendment_effective_date_with_step,
                 _amendment_expiry_date,
-                _statute_issue_date,
             )
 
-            effective_date, effective_step = _amendment_effective_date_with_step(
-                self.muutos_tree
-            )
+            seed = self.metadata_seed
+            if seed is None:
+                from lawvm.finland.frontend_compile import _tree_title
+                from lawvm.finland.metadata import (
+                    _amendment_effective_date_with_step,
+                    _statute_issue_date,
+                )
+
+                effective_date, effective_step = _amendment_effective_date_with_step(
+                    self.muutos_tree
+                )
+                source_issue_date = _statute_issue_date(self.muutos_tree)
+                source_title = _tree_title(self.muutos_tree)
+            else:
+                effective_date = seed.effective_date
+                effective_step = seed.effective_date_step
+                source_issue_date = seed.source_issue_date
+                source_title = seed.source_title
             self._metadata_surface_cache = SourceMetadataSurface(
-                source_issue_date=_statute_issue_date(self.muutos_tree),
-                source_title=_tree_title(self.muutos_tree),
+                source_issue_date=source_issue_date,
+                source_title=source_title,
                 effective_date=effective_date,
                 effective_date_step=effective_step,
                 expiry_date=_amendment_expiry_date(
