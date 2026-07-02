@@ -732,6 +732,14 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # bound, and emits typed INVARIANT_COVERAGE_DIVERGENCE rows (e.g. EE's
         # LS-03 occupancy=block vs the other tree frontends' no-op default).
         "test_cross_jurisdiction_parity.py",
+        # #186 θ (theta) TotalizationTable: the DECLARED, conformance-tested spec
+        # of the grafters' off-domain (precondition-failure) behaviour. The core
+        # neutral θ type (Reject/NoopIdempotent/Recover) + SE (strict default) &
+        # NO (rich recovery) tables, with each declared (action, failure_class)
+        # cell bound to the ACTUAL runtime disposition via the real conserved
+        # apply path. Parallel-first: control-flow routing deferred to the
+        # load-bearing follow-up.
+        "test_totalization_conformance.py",
     ),
     "core_compile_projection": (
         "test_compile_metadata_default_fail_loud.py",

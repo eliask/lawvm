@@ -3,7 +3,7 @@
   "counts": {
     "dead": 85,
     "live": 1088,
-    "test_only_live": 44
+    "test_only_live": 45
   },
   "replay_counts": {
     "exercised": 170,
@@ -109,6 +109,7 @@
     "lawvm.core.fire_drill_registry",
     "lawvm.core.invariant_spec",
     "lawvm.core.proof_surfaces",
+    "lawvm.core.totalization",
     "lawvm.eu.eu_acquire",
     "lawvm.eu.eu_acquire_closure",
     "lawvm.eu.eu_amendment_graph",

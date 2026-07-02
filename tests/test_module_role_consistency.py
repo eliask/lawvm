@@ -67,6 +67,22 @@ DEAD_ALLOWLIST: dict[str, str] = {
         "(test_uk_pdf_marginal_notes.py); production wiring is INTENTIONALLY "
         "deferred to the bulk tier-1 PDF acquisition lane (the #177 follow-up)."
     ),
+    "lawvm.sweden.totalization_table": (
+        "#186 θ TotalizationTable — SE's strict/REJECT frontend θ table, a "
+        "DECLARED conformance-tested spec (test_totalization_conformance.py binds "
+        "each cell to the real apply_se_ops_conserved disposition). Parallel-first "
+        "like ctsf_residual_report: the grafter control-flow routing THROUGH the "
+        "table (making θ load-bearing) is the explicit load-bearing follow-up, "
+        "deferred to keep this increment additive and byte-identical."
+    ),
+    "lawvm.norway.totalization_table": (
+        "#186 θ TotalizationTable — NO's rich-recovery frontend θ table, a "
+        "DECLARED conformance-tested spec (test_totalization_conformance.py binds "
+        "each cell to the real apply_no_ops_conserved disposition). Parallel-first "
+        "like ctsf_residual_report: the grafter control-flow routing THROUGH the "
+        "table (making θ load-bearing) is the explicit load-bearing follow-up, "
+        "deferred to keep this increment additive and byte-identical."
+    ),
 }
 
 
