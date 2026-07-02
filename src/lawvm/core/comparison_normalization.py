@@ -204,6 +204,16 @@ def normalize_inline_comparison_text(text: str) -> str:
     normalized = " ".join(text.split())
     if not normalized:
         return ""
+    if (
+        " ," not in normalized
+        and " ." not in normalized
+        and " ;" not in normalized
+        and " :" not in normalized
+        and " )" not in normalized
+        and " ]" not in normalized
+        and "( " not in normalized
+    ):
+        return normalized
     normalized = _INLINE_SPACE_BEFORE_PUNCT_RE.sub(r"\1", normalized)
     return _INLINE_SPACE_AFTER_OPEN_PAREN_RE.sub(r"\1", normalized)
 
