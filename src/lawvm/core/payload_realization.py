@@ -69,6 +69,8 @@ def audit_payload_realization(
     target address, authorize a repair, or change action family.
     """
 
+    if _all_chunks_exactly_realized(units, after_text):
+        return ()
     normalized_after = _normalized_text(after_text)
     if not normalized_after:
         return ()
@@ -155,6 +157,19 @@ def _chunk_realized_in_text(
     if len(chunk_tokens) < _MIN_ORDERED_TOKENS:
         return False
     return _ordered_tokens_in_bounded_window(chunk_tokens, after_tokens)
+
+
+def _all_chunks_exactly_realized(
+    units: tuple[PayloadRealizationUnit, ...],
+    after_text: str,
+) -> bool:
+    saw_chunk = False
+    for unit in units:
+        for chunk in unit.text_chunks:
+            saw_chunk = True
+            if chunk not in after_text:
+                return False
+    return saw_chunk
 
 
 def _ordered_tokens_in_bounded_window(

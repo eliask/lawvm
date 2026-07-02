@@ -64,6 +64,52 @@ def test_audit_payload_realization_accepts_normalized_text_match() -> None:
     assert gaps == ()
 
 
+def test_audit_payload_realization_exact_chunk_fast_path_accepts_all_chunks() -> None:
+    units = (
+        PayloadRealizationUnit(
+            unit_id="section_1",
+            unit_kind="section",
+            observed_label="1",
+            text_chunks=(
+                "First substantive payload text lands.",
+                "Second substantive payload text lands.",
+            ),
+        ),
+    )
+
+    gaps = audit_payload_realization(
+        units=units,
+        after_text=(
+            "Before. First substantive payload text lands. Between. "
+            "Second substantive payload text lands. After."
+        ),
+    )
+
+    assert gaps == ()
+
+
+def test_audit_payload_realization_exact_chunk_fast_path_falls_back_on_miss() -> None:
+    units = (
+        PayloadRealizationUnit(
+            unit_id="section_1",
+            unit_kind="section",
+            observed_label="1",
+            text_chunks=(
+                "Present substantive payload text lands.",
+                "Absent substantive payload text should report.",
+            ),
+        ),
+    )
+
+    gaps = audit_payload_realization(
+        units=units,
+        after_text="Present substantive payload text lands.",
+    )
+
+    assert len(gaps) == 1
+    assert gaps[0].chunk_text == "Absent substantive payload text should report."
+
+
 def test_audit_payload_realization_accepts_bounded_ordered_interleaving() -> None:
     units = (
         PayloadRealizationUnit(
