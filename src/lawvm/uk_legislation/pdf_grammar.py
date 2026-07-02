@@ -25,12 +25,14 @@ Grammar (validated against real tier-1 OCR, 1963–1987)
 
 Scope / deferred
 ----------------
-Prototype.  The **C19 double-column marginal-note segmentation** (side-notes such
-as ``Amendments`` / ``Short title`` that OCR interleaves into the section's first
-line) is DEFERRED — here we only *strip* a trailing marginal-note fragment
-heuristically off a section's opening line and stash it in ``attrs``; true
-x-coordinate banding belongs in a layout pre-pass.  OCR digit/letter confusions
-(``(b)``→``(6)``) are tolerated but not corrected.
+The **C19 King's-Printer marginal-note segmentation** (side-notes such as
+``Definition of partnership`` / ``Short title`` that OCR interleaves into a
+section's first line) is handled by ``pdf_layout_uk.segment_uk_pdf_layout`` (an
+x-coordinate banding pre-pass over pdfplumber word geometry) and bound onto
+sections as headings by :func:`uk_layout_to_ir`.  The legacy inline heuristic
+``_split_marginal_note`` (below) is a no-op text-only fallback for the plain
+``pdftotext`` path, which lacks the x-coordinates the banding needs.  OCR
+digit/letter confusions (``(b)``→``(6)``) are tolerated but not corrected.
 
 Regex discipline (§2.4): every module-scope pattern is a single fixed-shape
 classifier compiled via ``compile_classifier_regex`` (safety lint + prefilter),
@@ -210,10 +212,23 @@ class _Builder:
 # ---------------------------------------------------------------------------
 
 
-def _text_lines_to_ir(lines: List[str], *, source_ref: str = "") -> IRNode:
+def _text_lines_to_ir(
+    lines: List[str],
+    *,
+    source_ref: str = "",
+    positions: Optional[List[tuple[int, float]]] = None,
+) -> IRNode:
     """Build a UK IR tree from already-ordered body text lines.
 
     Body → Part → section → subsection, plus Schedule → (Part) → paragraph.
+
+    ``positions`` (optional, parallel to ``lines``) supplies a ``(page, y_top)``
+    anchor per line.  When present, each section opener records its anchor in a
+    transient ``attrs["_pdf_anchor"]`` so a downstream pass
+    (:func:`_bind_marginal_notes`) can attach the vertically-nearest right-margin
+    side-note as the section's ``heading``.  The transient attr is cleared by
+    that pass; a caller who never binds notes sees no anchor leak because the
+    layout entry point always runs the bind pass.
     """
     body = _Builder(
         IRNodeKind.BODY,
@@ -235,10 +250,11 @@ def _text_lines_to_ir(lines: List[str], *, source_ref: str = "") -> IRNode:
     def section_parent() -> _Builder:
         return cur_part if cur_part is not None else body
 
-    for raw in lines:
+    for idx, raw in enumerate(lines):
         line = raw.strip()
         if not line:
             continue
+        anchor = positions[idx] if positions is not None and idx < len(positions) else None
 
         # --- Chapter/act banner: metadata only, record on body attrs once. ---
         m = _CHAPTER_BANNER_RE.match(line)
@@ -350,6 +366,8 @@ def _text_lines_to_ir(lines: List[str], *, source_ref: str = "") -> IRNode:
                 IRNodeKind.SECTION, label=sec_label,
                 attrs={"eId": section_eid(sec_label), "source_text": line},
             )
+            if anchor is not None:
+                cur_section.attrs["_pdf_anchor"] = anchor
             section_parent().children.append(cur_section)
             cur_subsec = _Builder(
                 IRNodeKind.SUBSECTION, label=sub_label,
@@ -372,6 +390,8 @@ def _text_lines_to_ir(lines: List[str], *, source_ref: str = "") -> IRNode:
                 IRNodeKind.SECTION, label=sec_label,
                 attrs={"eId": section_eid(sec_label), "source_text": line},
             )
+            if anchor is not None:
+                cur_section.attrs["_pdf_anchor"] = anchor
             section_parent().children.append(cur_section)
             cur_subsec = None
             cur_leaf = cur_section
@@ -462,6 +482,127 @@ def layout_to_uk_ir(layout: Any, *, source_ref: str = "") -> IRNode:
         layout.body_blocks, key=lambda b: (b.page_num, b.y_position)
     )
     return _text_lines_to_ir([b.text for b in blocks], source_ref=source_ref)
+
+
+# ---------------------------------------------------------------------------
+# C19 marginal-note binding (x-coordinate-segmented side-notes → section heading)
+# ---------------------------------------------------------------------------
+
+# A note binds to a section only when it sits within this many points below the
+# section opener's top (the side-note is set level with — never far below — the
+# section it heads). Larger vertical distance means the note belongs to a later
+# section, so an intervening opener will claim it instead.
+_NOTE_BIND_MAX_DY = 260.0
+
+
+def _strip_pdf_anchor(node: IRNode) -> IRNode:
+    """Return ``node`` with the transient ``_pdf_anchor`` attr removed (deep)."""
+    new_children = tuple(_strip_pdf_anchor(c) for c in node.children)
+    if "_pdf_anchor" in node.attrs:
+        attrs = {k: v for k, v in dict(node.attrs).items() if k != "_pdf_anchor"}
+        return IRNode(kind=node.kind, label=node.label, text=node.text,
+                      attrs=attrs, children=new_children)
+    if new_children != node.children:
+        return IRNode(kind=node.kind, label=node.label, text=node.text,
+                      attrs=dict(node.attrs), children=new_children)
+    return node
+
+
+def _collect_section_anchors(node: IRNode, out: List[tuple[int, float, str]]) -> None:
+    """Collect ``(page, y_top, section_label)`` for every anchored section."""
+    if node.kind is IRNodeKind.SECTION:
+        anchor = node.attrs.get("_pdf_anchor")
+        if anchor is not None:
+            out.append((int(anchor[0]), float(anchor[1]), node.label or ""))
+    for c in node.children:
+        _collect_section_anchors(c, out)
+
+
+def _bind_marginal_notes(
+    body: IRNode,
+    notes: Any,
+    *,
+    already_headed: bool = False,
+) -> tuple[IRNode, list[Any]]:
+    """Attach each marginal note to its vertically-nearest section as a heading.
+
+    A note binds to the section whose opener sits on the same page at/above the
+    note's ``y_top`` and is the nearest such opener within ``_NOTE_BIND_MAX_DY``.
+    The bound note becomes a ``HEADING`` first-child on the section (matching the
+    XML loader's ``uk_p1group_title_heading_carrier`` shape).  Notes that bind to
+    no section are returned as the ``unbound`` list — a typed residual for
+    genuine PDF lossiness (never silently dropped).
+
+    Returns ``(new_body, unbound_notes)``.  The transient ``_pdf_anchor`` attr is
+    stripped from the result regardless of binding outcome.
+    """
+    anchors: List[tuple[int, float, str]] = []
+    _collect_section_anchors(body, anchors)
+
+    # For each note, pick the section opener on the same page at/above the note,
+    # nearest in y (smallest positive dy), within the bind window.
+    bound: Dict[str, str] = {}
+    unbound: list[Any] = []
+    for note in notes:
+        best_label: Optional[str] = None
+        best_dy = _NOTE_BIND_MAX_DY
+        for page, y, label in anchors:
+            if page != note.page_num:
+                continue
+            dy = note.y_top - y
+            if -8.0 <= dy <= best_dy and label not in bound:
+                # note sits at/just-above/below the opener; nearest wins
+                if abs(dy) < abs(best_dy) or best_label is None:
+                    best_dy = dy
+                    best_label = label
+        if best_label is not None:
+            # keep the first (topmost) note per section — the section's own
+            # side-note is the one level with its opener.
+            bound.setdefault(best_label, note.text)
+        else:
+            unbound.append(note)
+
+    def rebuild(node: IRNode) -> IRNode:
+        new_children = tuple(rebuild(c) for c in node.children)
+        attrs = dict(node.attrs)
+        attrs.pop("_pdf_anchor", None)
+        if node.kind is IRNodeKind.SECTION and node.label in bound:
+            has_heading = any(c.kind is IRNodeKind.HEADING for c in new_children)
+            if not (already_headed or has_heading):
+                heading = IRNode(
+                    kind=IRNodeKind.HEADING,
+                    text=bound[node.label],
+                    attrs={"source_rule_id": "uk_pdf_marginal_note_heading_carrier"},
+                )
+                new_children = (heading, *new_children)
+        return IRNode(kind=node.kind, label=node.label, text=node.text,
+                      attrs=attrs, children=new_children)
+
+    return rebuild(body), unbound
+
+
+def uk_layout_to_ir(
+    layout: Any, *, source_ref: str = ""
+) -> tuple[IRNode, list[Any]]:
+    """Parse a :class:`pdf_layout_uk.UKPdfLayout` into UK IR with bound side-notes.
+
+    Runs the UK grammar over the marginal-free ``body_lines`` (side-note column
+    already excised by the x-coordinate segmentation), threading each line's
+    ``(page, y_top)`` anchor, then binds each recovered marginal note onto its
+    section as a ``heading`` — the PDF analogue of the XML loader's
+    ``P1group/Title`` heading carrier.
+
+    Returns ``(body_ir, unbound_notes)``; ``unbound_notes`` is the typed residual
+    of side-notes that bound to no section (genuine PDF lossiness).
+    """
+    positioned = list(getattr(layout, "positioned_body_lines", ()) or ())
+    lines = [b.text for b in positioned]
+    positions = [(b.page_num, b.y_top) for b in positioned]
+    body = _text_lines_to_ir(lines, source_ref=source_ref, positions=positions)
+    notes = list(getattr(layout, "marginal_notes", ()) or ())
+    if not notes:
+        return _strip_pdf_anchor(body), []
+    return _bind_marginal_notes(body, notes)
 
 
 def spine_summary(root: IRNode) -> dict[str, Any]:
