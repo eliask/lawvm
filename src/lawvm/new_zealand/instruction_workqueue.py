@@ -584,8 +584,17 @@ def build_instruction_workqueue(
 def build_archived_work_instruction_workqueue(db_path: Path, work_id: str) -> NZInstructionWorkQueueReport:
     target_document = parse_archived_work_latest(db_path, work_id)
     operation_surface = build_archived_work_operation_surface(db_path, work_id)
-    payload_surface = build_archived_work_payload_surface(db_path, work_id)
-    effect_readiness = build_archived_work_effect_readiness_surface(db_path, work_id)
+    payload_surface = build_archived_work_payload_surface(
+        db_path,
+        work_id,
+        operation_surface=operation_surface,
+    )
+    effect_readiness = build_archived_work_effect_readiness_surface(
+        db_path,
+        work_id,
+        operation_surface=operation_surface,
+        payload_surface=payload_surface,
+    )
     return build_instruction_workqueue(operation_surface, payload_surface, effect_readiness, target_document)
 
 

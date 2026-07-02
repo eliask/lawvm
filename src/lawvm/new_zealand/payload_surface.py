@@ -353,8 +353,14 @@ def build_payload_surface(
     )
 
 
-def build_archived_work_payload_surface(db_path: Path, work_id: str) -> NZPayloadSurfaceReport:
-    operation_surface = build_archived_work_operation_surface(db_path, work_id)
+def build_archived_work_payload_surface(
+    db_path: Path,
+    work_id: str,
+    *,
+    operation_surface: NZOperationSurfaceReport | None = None,
+) -> NZPayloadSurfaceReport:
+    if operation_surface is None:
+        operation_surface = build_archived_work_operation_surface(db_path, work_id)
     dependency_work_ids = {
         row.amending_work_id
         for row in operation_surface.rows
