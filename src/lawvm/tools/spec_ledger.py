@@ -64,6 +64,29 @@ WitnessDisposition = Literal[
 # Dispositions that count as falsifying evidence against a rule.
 _FALSIFYING = ("lawvm_wrong", "structural")
 
+# §3.5 of notes_internal/FABLE_SPEC_RECONSTRUCTION.md: every catalogued rule is one of
+# two sorts, and conflating them is the main way a published "reconstructed spec" smuggles
+# in implementation detail.
+#   S = a hypothesis ABOUT THE LAW (the drafting language's semantics) — belongs in the
+#       final published spec (the S-rule subset ∪ the negative spec);
+#   P = a policy of THIS COMPILER for surviving its own coverage gaps (recovery /
+#       tolerance / fallback heuristics). Not a statement about FI/UK/EU law at all.
+# P-rule firing DENSITY is the heatmap of undiscovered spec (SPEC_DISCOVERY_DESIGN Gap A):
+# where P-rules fire a lot, the real S-spec is still unknown, and the trajectory metric
+# that matters is P-rule firing share -> 0 as S-rules absorb their territory.
+RuleRole = Literal["S", "P"]
+
+# When a catalogued rule carries no explicit role, it is treated as ``"S"`` (a
+# law-hypothesis): the conservative default keeps an un-annotated legacy catalog reading
+# as spec, and the coverage guard (test) is what forces new rules to declare a role
+# rather than silently defaulting.
+_DEFAULT_RULE_ROLE: RuleRole = "S"
+
+# Shared read-only empty sidecars: an adapter that supplies neither a role map nor a
+# falsifier map gets byte-identical behaviour to the pre-enrichment ledger.
+_EMPTY_ROLES: Mapping[str, RuleRole] = {}
+_EMPTY_FALSIFIERS: Mapping[str, str] = {}
+
 
 def disposition_for(
     raw: str, mapping: Mapping[str, WitnessDisposition]
@@ -128,6 +151,12 @@ class RuleLedgerEntry:
     by_disposition: Dict[str, int] = field(default_factory=lambda: defaultdict(int))
     exemplars: List[Dict[str, str]] = field(default_factory=list)
     believed_spec: str = ""
+    # §3.5 S/P one-bit annotation and §3.2(4) named falsifier. Both are read-only
+    # catalog metadata (populated by ``build_ledger`` from the adapter's role/falsifier
+    # sidecars); they never touch replay. ``rule_role`` defaults to ``"S"`` when the
+    # catalog does not annotate the rule (see ``_DEFAULT_RULE_ROLE``).
+    rule_role: RuleRole = _DEFAULT_RULE_ROLE
+    falsifier: str = ""
 
     @property
     def divergences(self) -> int:
@@ -143,11 +172,18 @@ class RuleLedgerEntry:
         """Firings not implicated in any divergence (derived estimate, not a count)."""
         return max(0, self.firings - self.divergences)
 
+    @property
+    def is_p_rule(self) -> bool:
+        """A compiler-survival policy (P), not a hypothesis about the law (S)."""
+        return self.rule_role == "P"
+
     def to_dict(self) -> Dict[str, object]:
         return {
             "rule_id": self.rule_id,
             "believed_spec": self.believed_spec,
             "cataloged": bool(self.believed_spec),
+            "rule_role": self.rule_role,
+            "falsifier": self.falsifier,
             "firings": self.firings,
             "corroborated_est": self.corroborated_est,
             "contradicted": self.contradicted,
@@ -170,10 +206,19 @@ class SpecLedger:
     # mining targets: statutes where real bugs concentrate, vs the diffuse per-rule view
     statute_real_bugs: Dict[str, int] = field(default_factory=lambda: defaultdict(int))
 
-    def _rule(self, rule_id: str, catalog: Mapping[str, str]) -> RuleLedgerEntry:
+    def _rule(
+        self,
+        rule_id: str,
+        catalog: Mapping[str, str],
+        roles: Mapping[str, RuleRole] = _EMPTY_ROLES,
+        falsifiers: Mapping[str, str] = _EMPTY_FALSIFIERS,
+    ) -> RuleLedgerEntry:
         if rule_id not in self.rules:
             self.rules[rule_id] = RuleLedgerEntry(
-                rule_id=rule_id, believed_spec=catalog.get(rule_id, "")
+                rule_id=rule_id,
+                believed_spec=catalog.get(rule_id, ""),
+                rule_role=roles.get(rule_id, _DEFAULT_RULE_ROLE),
+                falsifier=falsifiers.get(rule_id, ""),
             )
         return self.rules[rule_id]
 
@@ -185,6 +230,32 @@ class SpecLedger:
             reverse=True,
         )
 
+    def p_rule_density(self) -> List[RuleLedgerEntry]:
+        """P-rules ranked by firing count — the undiscovered-spec heatmap (§3.5).
+
+        Where compiler-survival policies fire a lot, the real (S) spec of the drafting
+        language is still unknown there. Ranked firings-desc, then rule_id for a stable
+        tie-break, so the top rows are the hottest gaps in spec coverage.
+        """
+        return sorted(
+            (e for e in self.rules.values() if e.is_p_rule),
+            key=lambda e: (-e.firings, e.rule_id),
+        )
+
+    def role_counts(self) -> Dict[str, int]:
+        """S vs P catalogued-rule counts (only rules carrying a believed_spec).
+
+        Uncatalogued ("·") rules have no stated hypothesis, so they are neither S nor P
+        yet — they are pre-falsifiable and counted separately as ``uncataloged``.
+        """
+        counts = {"S": 0, "P": 0, "uncataloged": 0}
+        for e in self.rules.values():
+            if not e.believed_spec:
+                counts["uncataloged"] += 1
+            else:
+                counts[e.rule_role] += 1
+        return counts
+
     def to_dict(self) -> Dict[str, object]:
         return {
             "jurisdiction": self.jurisdiction,
@@ -193,6 +264,15 @@ class SpecLedger:
             "statute_errors": self.statute_errors,
             "n_rules": len(self.rules),
             "n_unattributed": len(self.unattributed),
+            "role_counts": self.role_counts(),
+            "p_rule_density": [
+                {
+                    "rule_id": e.rule_id,
+                    "firings": e.firings,
+                    "contradicted": e.contradicted,
+                }
+                for e in self.p_rule_density()
+            ],
             "rules": [e.to_dict() for e in self.ranked_entries()],
             "unattributed": self.unattributed[:40],
             "top_statutes": sorted(
@@ -207,18 +287,27 @@ def build_ledger(
     jurisdiction: str,
     mode: str,
     catalog: Mapping[str, str],
+    roles: Mapping[str, RuleRole] = _EMPTY_ROLES,
+    falsifiers: Mapping[str, str] = _EMPTY_FALSIFIERS,
 ) -> SpecLedger:
-    """Aggregate neutral per-statute inputs into a ranked witness-attribution ledger."""
+    """Aggregate neutral per-statute inputs into a ranked witness-attribution ledger.
+
+    ``catalog`` maps rule_id -> believed_spec (unchanged). ``roles`` and ``falsifiers``
+    are OPTIONAL read-only sidecars (rule_id -> ``"S"|"P"`` and rule_id -> falsifier
+    sentence): supplying neither reproduces the pre-enrichment ledger byte-for-byte.
+    They annotate the S/P sort and the Popper-falsifier per §3.5 / §3.2(4) of
+    ``notes_internal/FABLE_SPEC_RECONSTRUCTION.md`` without any replay/apply change.
+    """
     ledger = SpecLedger(jurisdiction=jurisdiction, mode=mode)
     for inp in inputs:
         ledger.statutes += 1
         for rule_id, count in inp.rule_firings.items():
-            ledger._rule(rule_id, catalog).firings += count
+            ledger._rule(rule_id, catalog, roles, falsifiers).firings += count
         for div in inp.divergences:
             if div.disposition in _FALSIFYING:
                 ledger.statute_real_bugs[div.sid] += 1
             if div.rule_id:
-                entry = ledger._rule(div.rule_id, catalog)
+                entry = ledger._rule(div.rule_id, catalog, roles, falsifiers)
                 entry.by_disposition[div.disposition] += 1
                 if len(entry.exemplars) < 8 and div.disposition in _FALSIFYING:
                     entry.exemplars.append(div.exemplar())
@@ -229,21 +318,43 @@ def build_ledger(
 
 
 def render_markdown(ledger: SpecLedger) -> str:
+    rc = ledger.role_counts()
     lines = [
         f"# Spec-discovery ledger (-j {ledger.jurisdiction}, {ledger.mode})",
         f"statutes={ledger.statutes} errors={ledger.statute_errors} "
         f"rules={len(ledger.rules)} unattributed_divergences={len(ledger.unattributed)}",
+        f"catalogued S-rules (law-hypotheses)={rc['S']} "
+        f"P-rules (compiler-survival policy)={rc['P']} "
+        f"uncataloged={rc['uncataloged']}",
         "",
-        "| rule_id | cat | firings | corrob~ | contradicted | dispositions |",
-        "|---------|-----|---------|---------|--------------|--------------|",
+        "| rule_id | cat | S/P | firings | corrob~ | contradicted | dispositions |",
+        "|---------|-----|-----|---------|---------|--------------|--------------|",
     ]
     for e in ledger.ranked_entries():
         cat = "Y" if e.believed_spec else "·"
+        # An uncatalogued row has no stated hypothesis, so its S/P sort is undefined ("·").
+        sort = e.rule_role if e.believed_spec else "·"
         disp = " ".join(f"{k}:{v}" for k, v in sorted(e.by_disposition.items()))
         lines.append(
-            f"| {e.rule_id} | {cat} | {e.firings} | {e.corroborated_est} "
+            f"| {e.rule_id} | {cat} | {sort} | {e.firings} | {e.corroborated_est} "
             f"| {e.contradicted} | {disp} |"
         )
+    density = ledger.p_rule_density()
+    if density:
+        lines += [
+            "",
+            "## P-rule firing density — the undiscovered-spec heatmap",
+            "P-rules are compiler-survival policies, not law-hypotheses; where they fire "
+            "a lot, the real (S) spec of the drafting language is still unknown.",
+            "",
+            "| rule_id | firings | contradicted | believed_spec |",
+            "|---------|---------|--------------|---------------|",
+        ]
+        for e in density:
+            spec = e.believed_spec.replace("|", "\\|")
+            lines.append(
+                f"| {e.rule_id} | {e.firings} | {e.contradicted} | {spec} |"
+            )
     if ledger.unattributed:
         lines += ["", f"## Unattributed divergences (blind spots): {len(ledger.unattributed)}"]
         for u in ledger.unattributed[:20]:
@@ -281,6 +392,10 @@ class LedgerAdapter:
     # CLI corpus loaders keyed by flag name ("bench" -> --corpus-bench,
     # "full" -> --corpus-full); a jurisdiction wires only the flags it supports.
     corpus_loaders: Mapping[str, Callable[[], List[str]]] = field(default_factory=dict)
+    # Optional read-only spec-metadata sidecars (§3.5 S/P sort, §3.2(4) falsifier).
+    # Default-empty so an adapter that wires neither behaves exactly as before.
+    roles: Mapping[str, "RuleRole"] = field(default_factory=dict)
+    falsifiers: Mapping[str, str] = field(default_factory=dict)
 
 
 _LEDGER_ADAPTERS: Dict[str, LedgerAdapter] = {}
@@ -340,7 +455,12 @@ def run_ledger(jurisdiction: str, sids: List[str], mode: Mode) -> SpecLedger:
     adapter = get_ledger_adapter(jurisdiction)
     inputs = list(adapter.ledger_inputs(sids, mode))
     ledger = build_ledger(
-        inputs, jurisdiction=jurisdiction, mode=mode, catalog=adapter.catalog
+        inputs,
+        jurisdiction=jurisdiction,
+        mode=mode,
+        catalog=adapter.catalog,
+        roles=adapter.roles,
+        falsifiers=adapter.falsifiers,
     )
     # The adapter drops un-classifiable statutes from the stream; reflect them honestly.
     ledger.statute_errors = len(sids) - ledger.statutes

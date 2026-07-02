@@ -21,6 +21,7 @@ from lawvm.tools.spec_ledger import (
     DivergenceRow,
     LedgerAdapter,
     Mode,
+    RuleRole,
     StatuteLedgerInput,
     WitnessDisposition,
     disposition_for,
@@ -95,6 +96,30 @@ def _load_fi_rule_specs() -> Dict[str, str]:
 _FI_RULE_SPECS_FULL: Dict[str, str] = _load_fi_rule_specs()
 
 
+def _load_fi_rule_roles() -> Dict[str, RuleRole]:
+    """S/P sort per catalogued FI rule id (§3.5); {} if the sidecar is absent."""
+    try:
+        from lawvm.tools.spec_ledger_fi_catalog_meta import _FI_RULE_ROLES
+
+        return dict(_FI_RULE_ROLES)
+    except ImportError:
+        return {}
+
+
+def _load_fi_rule_falsifiers() -> Dict[str, str]:
+    """Per-rule falsifier sentence (§3.2(4)); {} if the sidecar is absent."""
+    try:
+        from lawvm.tools.spec_ledger_fi_catalog_meta import _FI_RULE_FALSIFIERS
+
+        return dict(_FI_RULE_FALSIFIERS)
+    except ImportError:
+        return {}
+
+
+_FI_RULE_ROLES_FULL: Dict[str, RuleRole] = _load_fi_rule_roles()
+_FI_RULE_FALSIFIERS_FULL: Dict[str, str] = _load_fi_rule_falsifiers()
+
+
 def fi_ledger_inputs(sids: List[str], mode: Mode) -> Iterator[StatuteLedgerInput]:
     """Turn Finland's ClassifyResult surface into neutral ledger inputs.
 
@@ -163,5 +188,7 @@ register_ledger_adapter(
         ledger_inputs=fi_ledger_inputs,
         catalog=_FI_RULE_SPECS_FULL,
         corpus_loaders={"bench": _load_bench_core_ids},
+        roles=_FI_RULE_ROLES_FULL,
+        falsifiers=_FI_RULE_FALSIFIERS_FULL,
     )
 )
