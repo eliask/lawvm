@@ -610,6 +610,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_effect_lowering.py",
         "test_fi_dates_recognizer.py",
         "test_filter_result.py",
+        "test_filter_result_pending_cell.py",
         "test_fi_intent_compat.py",
         "test_fi_optype_strenum.py",
         "test_ir_*.py",

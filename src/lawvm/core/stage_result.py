@@ -10,7 +10,7 @@ WHAT THIS MODULE IS
 The target contract every LawVM pipeline waist eventually converges to::
 
     StageResult[T] = (value, evidence, residuals, findings, coverage, authority)
-    PartitionResult[T] = (accepted, rejected, residuals, findings, coverage)  # filters
+    PartitionResult[T] = (accepted, rejected, pending, residuals, findings, coverage)  # filters
 
 This module DEFINES that shape by COMPOSING the already-canonical building
 blocks — it does NOT reinvent them and (Pro §7) it is NOT a universal ``Thing``.
@@ -46,7 +46,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from lawvm.core.execution_authorization import ExecutionAuthorization
-from lawvm.core.filter_result import FilterResult, RejectedItem
+from lawvm.core.filter_result import FilterResult, PendingItem, RejectedItem
 from lawvm.core.phase_result import Finding
 from lawvm.core.source_acquisition import SourceBundleAdmission
 from lawvm.core.source_witness import DigestWitness, SourceWitness
@@ -59,6 +59,7 @@ __all__ = [
     "StageResult",
     "PartitionResult",
     "RejectedItem",
+    "PendingItem",
 ]
 
 # A typed witness — the narrow evidence-footing waists (Pro §7). Kept as a union
@@ -389,9 +390,10 @@ class PartitionResult[T]:
     ``FilterResult`` with coverage/residuals (violating §7) or leave
     ``PartitionResult`` unable to carry them.
 
-    The ``accepted`` / ``rejected`` accessors delegate to the wrapped
-    ``FilterResult`` so a consumer reads the same shape Pro §2 specifies
-    (``accepted, rejected, residuals, findings, coverage``).
+    The ``accepted`` / ``rejected`` / ``pending`` accessors delegate to the wrapped
+    ``FilterResult`` so a consumer reads the same shape Pro §2 specifies, extended
+    with the §6.3 temporally-deferred pending lane
+    (``accepted, rejected, pending, residuals, findings, coverage``).
 
     Attributes:
         filter_result: The accepted/rejected lossless lane (canonical FilterResult).
@@ -426,6 +428,10 @@ class PartitionResult[T]:
     @property
     def rejected(self) -> tuple[RejectedItem[T], ...]:
         return self.filter_result.rejected_items
+
+    @property
+    def pending(self) -> tuple[PendingItem[T], ...]:
+        return self.filter_result.pending_items
 
     @property
     def has_blocking_residual(self) -> bool:
