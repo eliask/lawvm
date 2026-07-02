@@ -84,7 +84,12 @@ def test_replay_legal_operation_capture_list_invalidates_snapshot_index_on_rewri
     section_1 = SectionSnapshotIdentity(part="", chapter="", section="1")
     section_2 = SectionSnapshotIdentity(part="", chapter="", section="2")
     assert _snapshot_section_los_for_identity(history, section_1) == [op]
-    history.base_provision_index_cache = {("base",): object()}
+    base_provision_sentinel = object()
+    history.base_provision_index_cache = {("base",): base_provision_sentinel}
+    base_section_sentinel = object()
+    history.base_section_node_cache = {("base-section",): base_section_sentinel}
+    base_subsection_sentinel = object()
+    history.base_subsection_node_cache = {("base-subsection",): base_subsection_sentinel}
     prior_paragraph_sentinel = object()
     history.prior_paragraph_label_index = {("prior-paragraph",): prior_paragraph_sentinel}
     base_target_sentinel = object()
@@ -102,7 +107,9 @@ def test_replay_legal_operation_capture_list_invalidates_snapshot_index_on_rewri
     rewritten = replace(op, target=LegalAddress(path=(("section", "2"),)))
     history[0] = rewritten
 
-    assert history.base_provision_index_cache is None
+    assert history.base_provision_index_cache == {("base",): base_provision_sentinel}
+    assert history.base_section_node_cache == {("base-section",): base_section_sentinel}
+    assert history.base_subsection_node_cache == {("base-subsection",): base_subsection_sentinel}
     assert history.prior_paragraph_label_index is None
     assert history.base_target_exists_cache == {("base-target",): base_target_sentinel}
     assert history.timeline_exact_target_index is None
@@ -138,7 +145,12 @@ def test_replay_legal_operation_capture_list_preserves_snapshot_index_on_metadat
 
 def test_replay_legal_operation_capture_list_keeps_indexes_across_append() -> None:
     history = ReplayLegalOperationCaptureList()
-    history.base_provision_index_cache = {("base",): object()}
+    base_provision_sentinel = object()
+    history.base_provision_index_cache = {("base",): base_provision_sentinel}
+    base_section_sentinel = object()
+    history.base_section_node_cache = {("base-section",): base_section_sentinel}
+    base_subsection_sentinel = object()
+    history.base_subsection_node_cache = {("base-subsection",): base_subsection_sentinel}
     prior_paragraph_sentinel = object()
     history.prior_paragraph_label_index = {("prior-paragraph",): prior_paragraph_sentinel}
     base_target_sentinel = object()
@@ -162,7 +174,9 @@ def test_replay_legal_operation_capture_list_keeps_indexes_across_append() -> No
         )
     )
 
-    assert history.base_provision_index_cache is not None
+    assert history.base_provision_index_cache == {("base",): base_provision_sentinel}
+    assert history.base_section_node_cache == {("base-section",): base_section_sentinel}
+    assert history.base_subsection_node_cache == {("base-subsection",): base_subsection_sentinel}
     assert history.prior_paragraph_label_index == {("prior-paragraph",): prior_paragraph_sentinel}
     assert history.base_target_exists_cache == {("base-target",): base_target_sentinel}
     assert history.timeline_exact_target_index == {("exact",): exact_target_sentinel}
@@ -171,6 +185,29 @@ def test_replay_legal_operation_capture_list_keeps_indexes_across_append() -> No
     }
     assert history.timeline_payload_target_index == {("payload",): payload_target_sentinel}
     assert history.timeline_target_exists_cache == {("cached",): True}
+
+
+def test_replay_legal_operation_capture_list_clear_releases_base_ir_indexes() -> None:
+    history = ReplayLegalOperationCaptureList()
+    history.base_provision_index_cache = {("base",): object()}
+    history.base_section_node_cache = {("base-section",): object()}
+    history.base_subsection_node_cache = {("base-subsection",): object()}
+    history.base_target_exists_cache = {("base-target",): object()}
+    history.append(
+        LegalOperation(
+            op_id="snapshot_section_1",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "1"),)),
+        )
+    )
+
+    history.clear()
+
+    assert history.base_provision_index_cache is None
+    assert history.base_section_node_cache is None
+    assert history.base_subsection_node_cache is None
+    assert history.base_target_exists_cache is None
 
 
 def test_timeline_exact_target_index_preserves_effective_cutoff_semantics() -> None:
