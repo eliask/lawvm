@@ -14,7 +14,7 @@ from collections import Counter
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any, Iterable, Mapping, cast
 
 from lxml import etree
 
@@ -919,7 +919,11 @@ def _collect_legal_text(
             # Excluded subtree: skip its text and the tail that trails it, to
             # keep the historical "notes/history contribute nothing" behaviour.
             continue
-        child_text = _collect_legal_text(child, is_root=False, cache=cache)
+        child_text = (
+            child.text or ""
+            if len(child) == 0
+            else _collect_legal_text(child, is_root=False, cache=cache)
+        )
         if child_text:
             texts.append(child_text)
         if child.tail:
@@ -2410,7 +2414,7 @@ def _descendant_attrs(node: etree._Element, localname: str, attr: str) -> Iterab
 def _node_text(node: etree._Element) -> str:
     if len(node) == 0:
         return _normalize_text(node.text or "")
-    return _normalize_text(" ".join(str(part) for part in node.itertext()))
+    return _normalize_text(" ".join(cast(Iterable[str], node.itertext())))
 
 
 def _normalize_text(text: str) -> str:
