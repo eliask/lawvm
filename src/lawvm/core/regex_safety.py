@@ -444,9 +444,15 @@ class PrefilteredPattern:
         if isinstance(plan, Lit):
             return self._literal_present(plan, text, pos, endpos)
         if isinstance(plan, And):
-            return all(self._plan_passes(p, text, pos, endpos) for p in plan.parts)
+            for part in plan.parts:
+                if not self._plan_passes(part, text, pos, endpos):
+                    return False
+            return True
         if isinstance(plan, Or):
-            return any(self._plan_passes(p, text, pos, endpos) for p in plan.parts)
+            for part in plan.parts:
+                if self._plan_passes(part, text, pos, endpos):
+                    return True
+            return False
         return True  # unknown node type — conservative pass
 
     def _prefilter_ok(self, string: str, pos: int, endpos: int | None) -> tuple[bool, int, int]:
