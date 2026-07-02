@@ -509,12 +509,14 @@ def test_separate_commencement_index_uses_internal_scan_read(monkeypatch) -> Non
             return None
 
     metadata._separate_commencement_witness_index.cache_clear()
+    metadata._separate_commencement_witnesses_for_target.cache_clear()
     monkeypatch.setattr("lawvm.finland.corpus.get_corpus", lambda: ScanOnlyCorpus())
 
     try:
         witness = separate_commencement_law_witness("2018/947")
     finally:
         metadata._separate_commencement_witness_index.cache_clear()
+        metadata._separate_commencement_witnesses_for_target.cache_clear()
 
     assert witness is not None
     assert witness.commencement_statute_id == "2020/1"
@@ -564,16 +566,77 @@ def test_separate_commencement_index_uses_bulk_internal_scan_when_available(monk
             return None
 
     metadata._separate_commencement_witness_index.cache_clear()
+    metadata._separate_commencement_witnesses_for_target.cache_clear()
     monkeypatch.setattr("lawvm.finland.corpus.get_corpus", lambda: BulkScanCorpus())
 
     try:
         witness = separate_commencement_law_witness("2018/947")
     finally:
         metadata._separate_commencement_witness_index.cache_clear()
+        metadata._separate_commencement_witnesses_for_target.cache_clear()
 
     assert witness is not None
     assert witness.commencement_statute_id == "2020/1"
     assert witness.effective_date == dt.date(2021, 1, 1)
+
+
+def test_separate_commencement_target_scan_skips_unrelated_candidate_bytes(monkeypatch) -> None:
+    class BulkScanCorpus(CorpusStore):
+        def read_source(self, sid: str) -> bytes | None:
+            raise AssertionError(f"per-id read path should not be used for {sid}")
+
+        def read_source_for_internal_scan(self, sid: str) -> bytes | None:
+            raise AssertionError(f"per-id internal scan path should not be used for {sid}")
+
+        def iter_source_bytes_for_internal_scan(self):
+            yield (
+                "2019/999",
+                b"<not-xml>Seuraavat lait tulevat voimaan 1 paivana tammikuuta 2021: "
+                b"laki testista (999/2018).</not-xml>",
+            )
+            yield (
+                "2020/1",
+                _xml(
+                    "<body><section><num>1 §</num><content>"
+                    "Seuraavat lait tulevat voimaan 1 päivänä tammikuuta 2021: "
+                    "laki testistä (947/2018)."
+                    "</content></section></body>"
+                ),
+            )
+
+        def read_oracle(self, sid: str) -> bytes | None:
+            return None
+
+        def read_media(self, sid: str, filename: str) -> bytes | None:
+            return None
+
+        def read_corrigendum_media(self, sid: str, filename: str) -> bytes | None:
+            return None
+
+        def read_attachment_media(self, sid: str, filename: str) -> bytes | None:
+            return None
+
+        def list_statute_ids(self) -> list[str]:
+            raise AssertionError("list_statute_ids should not be used by the bulk scan path")
+
+        def oracle_path_index(self, **kwargs: object) -> dict[str, str]:
+            return {}
+
+        def read_locator(self, locator: str) -> bytes | None:
+            return None
+
+    metadata._separate_commencement_witness_index.cache_clear()
+    metadata._separate_commencement_witnesses_for_target.cache_clear()
+    monkeypatch.setattr("lawvm.finland.corpus.get_corpus", lambda: BulkScanCorpus())
+
+    try:
+        witness = separate_commencement_law_witness("2018/947")
+    finally:
+        metadata._separate_commencement_witness_index.cache_clear()
+        metadata._separate_commencement_witnesses_for_target.cache_clear()
+
+    assert witness is not None
+    assert witness.commencement_statute_id == "2020/1"
 
 
 def test_statute_issue_date_prefers_signature_when_frbr_year_conflicts_with_doc_number_year() -> None:
