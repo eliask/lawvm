@@ -11,7 +11,6 @@ from __future__ import annotations
 from typing import cast
 
 import pytest
-from typing import cast
 
 from lawvm.core.filter_result import FilterResult, RejectedItem
 from lawvm.core.ir import IRNode, IRStatute, LegalAddress, LegalOperation, OperationSource, StructuralAction
@@ -25,9 +24,6 @@ _ANNEX_KIND = cast(IRNodeKind, "annex")
 from lawvm.core.write_receipt import WriteReceipt
 from lawvm.eu.pipeline import apply_eu_ops, apply_eu_ops_conserved, EUApplyResult
 from lawvm.replay_adjudication import CompileAdjudication
-
-
-_ANNEX_KIND = cast(IRNodeKind, "annex")
 
 
 def _baseline_statute() -> IRStatute:
