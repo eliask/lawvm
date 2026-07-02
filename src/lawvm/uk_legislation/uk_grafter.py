@@ -1182,6 +1182,7 @@ def _parse_block_amendment_tables(
     return tables
 
 
+@lru_cache(maxsize=512)
 def _get_kind(tag: str, context: str = "body", is_eur: bool = False) -> str:
     t = tag.lower()
     if is_eur and t in ("p1", "section", "article", "eusection"):
