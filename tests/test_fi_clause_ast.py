@@ -285,7 +285,7 @@ def test_ref_amend_rejects_non_insert_anchor() -> None:
 
 
 def test_text_amend_rejects_structural_action() -> None:
-    with pytest.raises(ValueError, match="text_replace/text_repeal"):
+    with pytest.raises(ValueError, match="text_patch action"):
         TextAmend(
             action=StructuralAction.REPLACE,
             target=LegalAddress(path=(("section", "1"),)),
