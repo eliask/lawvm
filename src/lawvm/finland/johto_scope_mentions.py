@@ -428,6 +428,7 @@ def collect_johto_mentioned_section_labels_frozenset(johto_text: str) -> frozens
     return frozenset(labels)
 
 
+@functools.lru_cache(maxsize=8192)
 def collect_johto_chapter_scope_mentions(johto_text: str) -> JohtoChapterScopeMentions:
     """Extract chapter-level ownership clues from a Finnish johtolause."""
     new_chapter_labels: set[str] = set()
