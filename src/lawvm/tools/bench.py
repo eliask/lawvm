@@ -3370,7 +3370,14 @@ def _show_all_pit_summary(results: List[_AllPitStatuteResult]) -> None:
 
 
 def _run_all_pit_mode(
-    corpus: List[Tuple[int, str]], *, workers: int, anchor_touch: bool = False
+    corpus: List[Tuple[int, str]],
+    *,
+    workers: int,
+    anchor_touch: bool = False,
+    chunked: bool = False,
+    chunk_size: Optional[int] = None,
+    run_dir: Optional[str] = None,
+    no_resume: bool = False,
 ) -> None:
     """Entry for ``lawvm bench --mode all_pit``: run + print + summarize.
 
@@ -3378,13 +3385,39 @@ def _run_all_pit_mode(
     is byte-identical to the pre-existing all_pit report. When True, an extra
     per-anchor-gated touch-relation section (#183) is appended AFTER the standard
     summary — it never alters the standard lines.
+
+    ``chunked`` (also ADDITIVE) swaps the single-shot ``_run_all_pit`` fan-out
+    for the chunked/resumable :func:`all_pit_driver.run_all_pit_chunked` driver
+    (#187), which bounds peak memory/process count so the full corpus can be
+    swept without the OOM/contention deadlock. It produces the SAME
+    ``_AllPitStatuteResult`` list, so ``_show_all_pit_summary`` and the anchor-
+    touch report are byte-identical to a single-shot run over the same corpus.
     """
     sids = [sid for _, sid in corpus]
-    print(
-        f"Running all-historical-PIT aux target: {len(sids)} statutes  "
-        f"workers={workers}"
-    )
-    results = _run_all_pit(sids, workers=workers, verbose=True)
+    if chunked:
+        from lawvm.tools.all_pit_driver import (
+            _DEFAULT_CHUNK_SIZE,
+            run_all_pit_chunked,
+        )
+
+        results = run_all_pit_chunked(
+            sids,
+            workers=workers,
+            chunk_size=chunk_size if chunk_size is not None else _DEFAULT_CHUNK_SIZE,
+            run_dir=Path(run_dir) if run_dir else None,
+            resume=not no_resume,
+            verbose=True,
+        )
+        # Emit the per-statute detail the single-shot path streams live, so the
+        # chunked path's aggregate is preceded by the same per-statute report.
+        for idx, res in enumerate(results):
+            _print_all_pit_statute(res, prefix=f"[{idx + 1}/{len(results)}] ")
+    else:
+        print(
+            f"Running all-historical-PIT aux target: {len(sids)} statutes  "
+            f"workers={workers}"
+        )
+        results = _run_all_pit(sids, workers=workers, verbose=True)
     _show_all_pit_summary(results)
     if anchor_touch:
         _show_all_pit_anchor_touch(sids, workers=workers)
@@ -3588,6 +3621,10 @@ def main(args) -> None:
             corpus,
             workers=workers,
             anchor_touch=bool(getattr(args, "anchor_touch", False)),
+            chunked=bool(getattr(args, "chunked", False)),
+            chunk_size=getattr(args, "all_pit_chunk_size", None),
+            run_dir=getattr(args, "all_pit_run_dir", None),
+            no_resume=bool(getattr(args, "all_pit_no_resume", False)),
         )
         return
 
@@ -3777,6 +3814,55 @@ def register_cli(sub: Any, _j_parent: Any) -> None:
             "all_pit (aux target) scores legal_pit replay@as-of against EVERY published consolidation "
             "snapshot's own-version oracle and reports the hidden-mid-life-divergence population "
             "(statutes whose worst mid-life score is below their latest)"
+        ),
+    )
+    bench_p.add_argument(
+        "--anchor-touch",
+        dest="anchor_touch",
+        action="store_true",
+        help=(
+            "(--mode all_pit only) additionally run the frozen-anchor "
+            "touch-relation attribution engine (#183). Appended after the "
+            "standard summary; does not change it."
+        ),
+    )
+    bench_p.add_argument(
+        "--chunked",
+        dest="chunked",
+        action="store_true",
+        help=(
+            "(--mode all_pit only) use the chunked/resumable all_pit driver "
+            "(#187): bounded chunks + fresh bounded worker pool per chunk + "
+            "per-chunk journal, so the full corpus sweeps without the "
+            "OOM/contention deadlock and interrupted runs resume. Aggregate is "
+            "identical to the single-shot path over the same corpus."
+        ),
+    )
+    bench_p.add_argument(
+        "--all-pit-chunk-size",
+        dest="all_pit_chunk_size",
+        type=int,
+        default=None,
+        metavar="N",
+        help="(--mode all_pit --chunked) statutes per chunk (default: 64)",
+    )
+    bench_p.add_argument(
+        "--all-pit-run-dir",
+        dest="all_pit_run_dir",
+        metavar="DIR",
+        default=None,
+        help=(
+            "(--mode all_pit --chunked) run/journal directory "
+            "(default: data/all_pit_runs/current)"
+        ),
+    )
+    bench_p.add_argument(
+        "--all-pit-no-resume",
+        dest="all_pit_no_resume",
+        action="store_true",
+        help=(
+            "(--mode all_pit --chunked) ignore + clear any existing journal and "
+            "recompute every chunk from scratch"
         ),
     )
     bench_p.add_argument(

@@ -1700,6 +1700,50 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         ),
     )
     bench_p.add_argument(
+        "--chunked",
+        dest="chunked",
+        action="store_true",
+        help=(
+            "(--mode all_pit only) use the chunked/resumable all_pit driver "
+            "(#187): process the corpus in bounded chunks with a fresh bounded "
+            "worker pool per chunk, journaling each completed chunk so the full "
+            "corpus can be swept without the OOM/contention deadlock and an "
+            "interrupted run resumes from the last completed chunk. Aggregate "
+            "output is identical to the single-shot path over the same corpus."
+        ),
+    )
+    bench_p.add_argument(
+        "--all-pit-chunk-size",
+        dest="all_pit_chunk_size",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "(--mode all_pit --chunked) statutes per chunk (default: 64). Lower "
+            "bounds peak memory further; higher amortizes per-chunk pool spawn."
+        ),
+    )
+    bench_p.add_argument(
+        "--all-pit-run-dir",
+        dest="all_pit_run_dir",
+        metavar="DIR",
+        default=None,
+        help=(
+            "(--mode all_pit --chunked) run/journal directory "
+            "(default: data/all_pit_runs/current). Completed chunks are "
+            "persisted here for resume."
+        ),
+    )
+    bench_p.add_argument(
+        "--all-pit-no-resume",
+        dest="all_pit_no_resume",
+        action="store_true",
+        help=(
+            "(--mode all_pit --chunked) ignore + clear any existing journal in "
+            "the run dir and recompute every chunk from scratch."
+        ),
+    )
+    bench_p.add_argument(
         "--corpus",
         metavar="CSV_PATH",
         help="path to corpus CSV (default: data/finland/bench_corpus.csv; fallback: .tmp/batch_test_list.csv)",

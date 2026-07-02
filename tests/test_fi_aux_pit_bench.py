@@ -307,10 +307,20 @@ def test_main_routes_all_pit_mode(monkeypatch) -> None:
     WITHOUT touching the standard scoring/save flow."""
     routed: dict[str, object] = {}
 
-    def _fake_run_all_pit_mode(corpus, *, workers, anchor_touch=False):
+    def _fake_run_all_pit_mode(
+        corpus,
+        *,
+        workers,
+        anchor_touch=False,
+        chunked=False,
+        chunk_size=None,
+        run_dir=None,
+        no_resume=False,
+    ):
         routed["corpus"] = corpus
         routed["workers"] = workers
         routed["anchor_touch"] = anchor_touch
+        routed["chunked"] = chunked
 
     def _boom(*a, **k):  # pragma: no cover - standard flow must not run
         raise AssertionError("all_pit must not enter the standard bench flow")
@@ -335,3 +345,6 @@ def test_main_routes_all_pit_mode(monkeypatch) -> None:
     # the anchor-touch attribution report is opt-in and defaults off, so a plain
     # all_pit route must not request it (#183 additive-discipline invariant).
     assert routed["anchor_touch"] is False
+    # the chunked driver (#187) is likewise opt-in: a plain all_pit route stays
+    # on the single-shot path.
+    assert routed["chunked"] is False
