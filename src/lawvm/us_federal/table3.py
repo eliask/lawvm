@@ -76,6 +76,7 @@ _PAREN_TAIL_RE = re.compile(r"\([0-9A-Za-z]+\)\s*$")
 # ClassificationIndex._MAX_RANGE_EXPANSION).
 _MAX_RANGE_EXPANSION = 256
 _SECTION_ROOT_CACHE_SIZE = 65536
+_RESOLUTION_CACHE_SIZE = 8192
 
 
 def normalize_act_key(act_key: str) -> str:
@@ -199,6 +200,7 @@ class Table3Resolver:
     def __init__(self, records: Iterable[Table3Record]) -> None:
         # (act_key, section_root) -> records that classify under that root.
         self._by_key: dict[tuple[str, str], list[Table3Record]] = {}
+        self._resolve_cache: dict[tuple[str, str], Table3Resolution] = {}
         self.record_count = 0
         for rec in records:
             self.record_count += 1
@@ -297,19 +299,28 @@ class Table3Resolver:
         codified but a matching ``nt`` row exists -> ``UNCODIFIED`` (held out). No
         match at all -> ``UNMAPPED``.
         """
-        rows = self.lookup(act_key, act_section)
+        norm_key = normalize_act_key(act_key)
+        norm_section = (act_section or "").strip()
+        cache_key = (norm_key, norm_section)
+        cached = self._resolve_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        rows = self.lookup(norm_key, norm_section)
         if not rows:
+            self._cache_resolution(cache_key, _UNMAPPED)
             return _UNMAPPED
         classified = [r for r in rows if r.is_classified]
         if not classified:
             # Only note/uncodified rows matched — never mapped onto a section.
-            return Table3Resolution(
+            resolution = Table3Resolution(
                 status=Table3ResolveStatus.UNCODIFIED,
                 address=None,
                 usckey=rows[0].usckey,
-                act_key=normalize_act_key(act_key),
-                act_section=(act_section or "").strip(),
+                act_key=norm_key,
+                act_section=norm_section,
             )
+            self._cache_resolution(cache_key, resolution)
+            return resolution
         # Distinct codified targets, in first-seen order.
         ordered_targets: list[tuple[str, str]] = []
         seen_targets: set[tuple[str, str]] = set()
@@ -320,13 +331,15 @@ class Table3Resolver:
                 ordered_targets.append(tgt)
         candidates = tuple(f"{t[0]}:{t[1]}" for t in ordered_targets)
         if len(ordered_targets) != 1:
-            return Table3Resolution(
+            resolution = Table3Resolution(
                 status=Table3ResolveStatus.AMBIGUOUS,
                 address=None,
-                act_key=normalize_act_key(act_key),
-                act_section=(act_section or "").strip(),
+                act_key=norm_key,
+                act_section=norm_section,
                 candidates=candidates,
             )
+            self._cache_resolution(cache_key, resolution)
+            return resolution
         title_s, section_s = ordered_targets[0]
         # Prefer a live (no-status) row as the resolving witness; fall back to the
         # first matching row when every row carries a status (e.g. all repealed).
@@ -336,15 +349,26 @@ class Table3Resolver:
             if (str(int(r.usc_title)), r.usc_section.strip()) == (title_s, section_s)
         ]
         witness = next((r for r in rows_for_target if not r.status), rows_for_target[0])
-        return Table3Resolution(
+        resolution = Table3Resolution(
             status=Table3ResolveStatus.CLASSIFIED,
             address=usc_section_address(int(title_s), section_s),
             usc_status=witness.status,
             usckey=witness.usckey,
-            act_key=normalize_act_key(act_key),
-            act_section=(act_section or "").strip(),
+            act_key=norm_key,
+            act_section=norm_section,
             candidates=candidates,
         )
+        self._cache_resolution(cache_key, resolution)
+        return resolution
+
+    def _cache_resolution(
+        self,
+        key: tuple[str, str],
+        resolution: Table3Resolution,
+    ) -> None:
+        if len(self._resolve_cache) >= _RESOLUTION_CACHE_SIZE:
+            self._resolve_cache.clear()
+        self._resolve_cache[key] = resolution
 
     # -- ClassificationIndex-compatible adapter --------------------------
 
