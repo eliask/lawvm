@@ -64,6 +64,11 @@ from lawvm.uk_legislation.apply_rebuild import uk_ir_node_kind
 from lawvm.core.quirks_disposition import QuirksDisposition
 
 _LEG_NS = "http://www.legislation.gov.uk/namespaces/legislation"
+_LEG_PNUMBER_PATH = f"./{{{_LEG_NS}}}Pnumber"
+_LEG_NUMBER_PATH = f"./{{{_LEG_NS}}}Number"
+_LEG_DESC_NUMBER_PATH = f".//{{{_LEG_NS}}}Number"
+_LEG_TITLE_PATH = f"./{{{_LEG_NS}}}Title"
+_LEG_P1GROUP_TITLE_PATH = f"./{{{_LEG_NS}}}P1group/{{{_LEG_NS}}}Title"
 _USER_AGENT = "LawVM-Replayer/1.0"
 _LEG_BASE = "http://www.legislation.gov.uk"
 _ROMAN_IVX_RE = re.compile(r"^[ivx]+$", re.IGNORECASE)
@@ -105,6 +110,22 @@ _SEMANTIC_HASH_NOISE_RE = re.compile(
 _EDITORIAL_TAGS: frozenset[str] = frozenset({"Commentary", "Citation", "CitationSubRef", "Footnote", "Term"})
 _VISIBLE_INLINE_TEXT_TAGS: frozenset[str] = frozenset({"Citation", "CitationSubRef", "Term"})
 _NON_LEGAL_UNIT_EID_TAGS: frozenset[str] = frozenset({"Text"})
+_EID_TRANSPARENT_TAGS: frozenset[str] = frozenset(
+    {
+        "p1para",
+        "p2para",
+        "p3para",
+        "p4para",
+        "schedules",
+        "schedulebody",
+        "pnumber",
+        "number",
+        "title",
+        "body",
+        "eubody",
+        "euretained",
+    }
+)
 _ZOMBIE_LOCAL_TEXT_STRUCTURAL_TAGS: frozenset[str] = frozenset(
     {
         "part",
@@ -2281,12 +2302,12 @@ def _visit_eid(
         return
     skip_own_eid = tag in _NON_LEGAL_UNIT_EID_TAGS
     eid = el.get("eId") or el.get("id")
-    _pnum = el.find(f"./{{{_LEG_NS}}}Pnumber")
-    _nnum = el.find(f"./{{{_LEG_NS}}}Number")
+    _pnum = el.find(_LEG_PNUMBER_PATH)
+    _nnum = el.find(_LEG_NUMBER_PATH)
     num_el = _pnum if _pnum is not None else _nnum
     kind = _get_kind(tag, context, is_eur)
     if num_el is None and kind in ("chapter", "part"):
-        num_el = el.find(f".//{{{_LEG_NS}}}Number")
+        num_el = el.find(_LEG_DESC_NUMBER_PATH)
     num = _extract_num(num_el)
     clean_num = _clean_num(num)
 
@@ -2325,26 +2346,12 @@ def _visit_eid(
     elif kind == "body":
         new_context = "body"
 
-    title_el = el.find(f"./{{{_LEG_NS}}}Title")
+    title_el = el.find(_LEG_TITLE_PATH)
     title = _text_content(title_el) if title_el is not None else ""
     slug = _slugify(title)
-    transparent_tags = (
-        "p1para",
-        "p2para",
-        "p3para",
-        "p4para",
-        "schedules",
-        "schedulebody",
-        "pnumber",
-        "number",
-        "title",
-        "body",
-        "eubody",
-        "euretained",
-    )
     node_key_part = f"{kind}-{clean_num}" if clean_num else (f"{kind}-{slug}" if slug else kind)
 
-    if kind in transparent_tags:
+    if kind in _EID_TRANSPARENT_TAGS:
         this_node_path = parent_path_key
     else:
         this_node_path = f"{parent_path_key}:{node_key_part}" if parent_path_key else node_key_part
@@ -2452,7 +2459,7 @@ def _visit_eid(
             and not slug
         ):
             _inferred_slug = ""
-            _p1g_title_el = el.find(f"./{{{_LEG_NS}}}P1group/{{{_LEG_NS}}}Title")
+            _p1g_title_el = el.find(_LEG_P1GROUP_TITLE_PATH)
             if _p1g_title_el is not None:
                 _inferred_slug = _slugify(_text_content(_p1g_title_el))
             if not _inferred_slug and "-crossheading-" in str(eid or ""):
@@ -2494,7 +2501,7 @@ def _visit_eid(
         if _is_zombie(child, False, pit_date):
             continue
         ck = _get_kind(ct, new_context, is_eur)
-        if ck not in transparent_tags:
+        if ck not in _EID_TRANSPARENT_TAGS:
             kind_counts[ck] = kind_counts.get(ck, 0) + 1
             ord_path = f"{next_parent_path}:{ck}[{kind_counts[ck]}]".lower()
             ceid = child.get("eId") or child.get("id")
