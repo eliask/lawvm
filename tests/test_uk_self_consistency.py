@@ -229,8 +229,10 @@ def test_build_uk_store_missing_archive_does_not_create_path(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    # build_uk_store resolves through resolve_farchive_path; the explicit-env
+    # override is the highest-precedence input, so point it at a missing path.
     missing = tmp_path / "unused"
-    monkeypatch.setattr(uksc, "_DEFAULT_DB", missing)
+    monkeypatch.setenv("LAWVM_UK_LEGISLATION_FARCHIVE_DB", str(missing))
 
     with pytest.raises(FileNotFoundError):
         uksc.build_uk_store()
@@ -243,7 +245,11 @@ def test_build_uk_store_missing_archive_does_not_create_path(
 # ---------------------------------------------------------------------------
 
 def _uk_store_or_skip():
-    db = uksc._DEFAULT_DB
+    from lawvm.corpus_store import resolve_farchive_path
+
+    db, _rule = resolve_farchive_path(
+        "uk_legislation.farchive", explicit_env="LAWVM_UK_LEGISLATION_FARCHIVE_DB"
+    )
     if not Path(db).exists():
         pytest.skip(f"UK archive not present at {db}")
     try:
