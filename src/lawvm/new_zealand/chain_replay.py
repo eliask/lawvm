@@ -1786,15 +1786,19 @@ def build_archived_work_chain_replay(
     from lawvm.new_zealand.corpus_cache import corpus_run_cache
 
     with corpus_run_cache():
-        preflight = build_archived_work_effect_candidate_preflight(db_path, work_id)
+        surface = None
         # The structural families read candidate witnesses from the operation
         # surface; build it only when a structural family is requested (it parses
         # the amending acts lazily inside the kernel).
-        surface = None
         if resolved & {"replace", "insert"}:
             from lawvm.new_zealand.operation_surface import build_archived_work_operation_surface
 
             surface = build_archived_work_operation_surface(db_path, work_id)
+        preflight = build_archived_work_effect_candidate_preflight(
+            db_path,
+            work_id,
+            operation_surface=surface,
+        )
         archive = open_farchive(db_path)
         try:
             return build_chain_replay(

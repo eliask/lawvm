@@ -1025,13 +1025,19 @@ def build_effect_candidate_surface(
     return NZCanonicalEffectCandidateReport(work_id=operation_surface.work_id, rows=tuple(rows))
 
 
-def build_archived_work_effect_candidate_surface(db_path: Path, work_id: str) -> NZCanonicalEffectCandidateReport:
+def build_archived_work_effect_candidate_surface(
+    db_path: Path,
+    work_id: str,
+    *,
+    operation_surface: NZOperationSurfaceReport | None = None,
+) -> NZCanonicalEffectCandidateReport:
     from lawvm.new_zealand.operation_surface import build_archived_work_operation_surface
     from lawvm.new_zealand.payload_surface import build_archived_work_payload_surface
     from lawvm.new_zealand.source_tree import parse_archived_work_latest
 
     target_document = parse_archived_work_latest(db_path, work_id)
-    operation_surface = build_archived_work_operation_surface(db_path, work_id)
+    if operation_surface is None:
+        operation_surface = build_archived_work_operation_surface(db_path, work_id)
     payload_surface = build_archived_work_payload_surface(
         db_path,
         work_id,
@@ -1101,8 +1107,19 @@ def build_effect_candidate_preflight(
     return NZEffectCandidatePreflightReport(work_id=candidate_report.work_id, candidate_report=candidate_report)
 
 
-def build_archived_work_effect_candidate_preflight(db_path: Path, work_id: str) -> NZEffectCandidatePreflightReport:
-    return build_effect_candidate_preflight(build_archived_work_effect_candidate_surface(db_path, work_id))
+def build_archived_work_effect_candidate_preflight(
+    db_path: Path,
+    work_id: str,
+    *,
+    operation_surface: NZOperationSurfaceReport | None = None,
+) -> NZEffectCandidatePreflightReport:
+    return build_effect_candidate_preflight(
+        build_archived_work_effect_candidate_surface(
+            db_path,
+            work_id,
+            operation_surface=operation_surface,
+        )
+    )
 
 
 def _source_version_date_windows_for_archived_work(
