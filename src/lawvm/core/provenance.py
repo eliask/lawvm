@@ -126,7 +126,10 @@ def compute_source_anchor(
 # govinfo PLAW / legislation.gov.uk artifacts while avoiding many full-blob scans
 # for short source-anchor bodies.
 _UNIQUE_RUN_PREFIX = 10
-_UNIQUE_RUN_FIND_PREFIX_LIMIT = 128
+# Keep the C-level prefix-find path for moderately sized prefix sets; current
+# US/UK anchor profiles still beat the Python byte-window scan up through this
+# range, while larger sets favor the single pass.
+_UNIQUE_RUN_FIND_PREFIX_LIMIT = 256
 
 
 def unique_byte_run_text_positions(
