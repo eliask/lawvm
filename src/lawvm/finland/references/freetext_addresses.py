@@ -43,6 +43,7 @@ Site passes (mirroring the legacy ``parse_legal_addresses`` passes, grammar-back
 """
 from __future__ import annotations
 
+import functools
 import re
 from typing import List
 
@@ -199,6 +200,11 @@ def _section_addresses_from_surface(surface: str) -> List[ParsedLegalAddress]:
 
 
 def scan_legal_addresses(text: str) -> List[ParsedLegalAddress]:
+    return list(_scan_legal_addresses_tuple(text))
+
+
+@functools.lru_cache(maxsize=8192)
+def _scan_legal_addresses_tuple(text: str) -> tuple[ParsedLegalAddress, ...]:
     """Scan *text* for legal-address citation sites and parse each via the grammar.
 
     Drop-in superset replacement for the (now-removed) legacy
@@ -237,4 +243,4 @@ def scan_legal_addresses(text: str) -> List[ParsedLegalAddress]:
             for ch in _expand_chapter_run(m.group("surf")):
                 addresses.append(ParsedLegalAddress(chapter=ch))
 
-    return addresses
+    return tuple(addresses)
