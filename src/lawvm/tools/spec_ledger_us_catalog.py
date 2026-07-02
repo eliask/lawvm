@@ -55,6 +55,8 @@ documented exclusions (``US_NON_RULE_LITERALS``):
   mutation-boundary-proof outcome id (one per window, not a per-section ledger firing);
 * ``us_dry_run_title`` — the constant prefix of an f-string ``proof_id`` /
   ``operation_id`` (``f"us_dry_run_title{title}_window"``), not a rule id.
+* US apply/order/profile helper names such as ``us_apply_profile`` and
+  ``us_ordering_profile`` — exported functions/profile labels, not ledger firings.
 
 (The f-string fragments that carry a ``:`` — e.g. ``us_dry_run:title`` — are excluded by
 the discovery's ``:``-fragment filter, not enumerated here.)
@@ -84,6 +86,14 @@ US_NON_RULE_LITERALS: FrozenSet[str] = frozenset(
         "us_dry_run_changed_section_set_matches_oracle",
         "us_dry_run_changed_section_set_diverges_from_oracle",
         "us_dry_run_title",
+        "us_apply_profile",
+        "us_char_span_boundary_audit",
+        "us_coverage_claim_for_op",
+        "us_ordering_profile",
+        "us_public_law_authorization_rule_id",
+        "us_raw_source_ctx",
+        "us_same_moment_effective_date",
+        "us_temporal_key",
     }
 )
 
@@ -595,6 +605,33 @@ _US_RULE_SPECS: Dict[str, str] = {
         "and underlying exception, never dropped silently. The member is absent from "
         "the archive as a visible acquisition gap, not a missing-law hole."
     ),
+    "us_plaw_import_archive_member_too_large": (
+        "A PLAW bulkdata zip member exceeded the configured safe-read byte cap — "
+        "skipped with a typed transport-cleanup receipt carrying declared size, cap, "
+        "entry name, and locator rather than read into memory or silently dropped."
+    ),
+    # --- OLRC classification-table import hygiene ------------------------------------
+    "us_classification_source_unreadable": (
+        "An OLRC classification-table source document could not be read — recorded as "
+        "an acquisition receipt with the source path instead of silently omitting the "
+        "table."
+    ),
+    "us_classification_existing_content_skipped": (
+        "An OLRC classification-table document already exists byte-identically in the "
+        "archive and --skip-existing was enabled — skipped as idempotent acquisition "
+        "cleanup rather than rewritten."
+    ),
+    "us_classification_unrecognized_table": (
+        "An OLRC classification-table HTML filename did not match the expected "
+        "usctable{N}.htm shape — skipped with a typed source-pathology receipt rather "
+        "than imported under a guessed table key."
+    ),
+    # --- US apply / execution-authorization seam -------------------------------------
+    "us_public_law_authorizes_apply": (
+        "A US dry-run operation is execution-authorized only by the originating Public "
+        "Law recorded on the op source; a blank source identity mints no authorization "
+        "proof and remains an explicit authority gap."
+    ),
     # --- Statutes-at-Large import hygiene (older public laws) -------------------------
     "us_statute_import_volume_unreachable": (
         "A Statutes-at-Large volume USLM document could not be fetched from govinfo — "
@@ -672,6 +709,23 @@ _US_RULE_SPECS: Dict[str, str] = {
         "connection reset). The URL and exception class are embedded so the gap is "
         "inspectable without re-running the fetch."
     ),
+    "us_usc_release_unrecognized_member": (
+        "A release-point USC XML member filename did not match the expected "
+        "usc{NN}[suffix].xml shape — skipped with a typed source-pathology receipt "
+        "rather than imported under a guessed title."
+    ),
+    "us_usc_release_member_identity_mismatch": (
+        "A release-point USC XML member's title disagreed with the requested title — "
+        "skipped with a typed receipt rather than filing a sibling title as the target."
+    ),
+    "us_usc_release_source_unreadable": (
+        "A release-point USC XML source file could not be read — recorded as a typed "
+        "source-pathology receipt instead of silently omitting that title."
+    ),
+    "us_usc_release_existing_content_skipped": (
+        "A release-point USC XML title already exists byte-identically in the archive "
+        "and --skip-existing was enabled — skipped as idempotent acquisition cleanup."
+    ),
     # --- USC source-tree parse hygiene ------------------------------------------------
     "us_usc_subsection_parse_ambiguous": (
         "A section's sub-structure (leading (a)/(1)/(A)/(i) markers plus indent depth) "
@@ -723,6 +777,27 @@ _US_RULE_SPECS: Dict[str, str] = {
     "us_nonpositive_target_paren_href_disagree": (
         "The parenthetical and href classification references disagreed on the target "
         "— a flagged ambiguity, never silently picking one."
+    ),
+    "us_nonpositive_target_via_table3": (
+        "A non-positive-law amendment's act-section target was resolved through OLRC "
+        "Table III's Statutes-at-Large-to-USC classification row when href and "
+        "parenthetical channels were absent."
+    ),
+    "us_nonpositive_target_table3_href_agree": (
+        "Table III and the structural href resolved the same non-positive-law target "
+        "address — corroborated resolution."
+    ),
+    "us_nonpositive_target_table3_href_disagree": (
+        "Table III and the structural href disagreed on the non-positive-law target "
+        "address — the existing href witness is kept and the disagreement is surfaced."
+    ),
+    "us_nonpositive_target_via_act_name_table3": (
+        "A named-act citation was mapped to an originating act key and then resolved "
+        "through Table III to a codified non-positive-law USC section."
+    ),
+    "us_nonpositive_target_act_name_ambiguous": (
+        "A named-act citation matched multiple possible act keys for Table III "
+        "resolution — surfaced as an ambiguity instead of choosing by registry order."
     ),
     "us_nonpositive_target_unmapped": (
         "A non-positive-law amendment's target could not be mapped to a USC "
