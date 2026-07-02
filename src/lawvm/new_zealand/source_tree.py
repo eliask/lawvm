@@ -331,6 +331,8 @@ def _walk_source_nodes(
     # ``isinstance(value, str)`` branch on ~2M calls, keeping the lru_cached
     # tag-split (which dominates for ~30 unique NZ tag names).
     kind = _localname_of_tag(node.tag)
+    if kind in _TEXT_EXCLUDE_TAGS:
+        return
     if kind in _STRUCTURAL_TAGS:
         if kind == "def-para":
             label = _first_def_term(node)
