@@ -34,6 +34,8 @@ _FRONTIER_CLAIM_TEMPLATE_FORBIDDEN_SHORTCUTS: tuple[str, ...] = (
     "frontier_claim_template_as_validator_result",
 )
 
+_PLAIN_JSONABLE_SCALAR_TYPES = (str, int, float, bool, type(None))
+
 
 @dataclass(frozen=True, slots=True)
 class FrontierWorkItem:
@@ -825,7 +827,7 @@ def _counts(values: Any) -> dict[str, int]:
 
 
 def _plain_jsonable(value: Any) -> Any:
-    if value is None or isinstance(value, str | int | float | bool):
+    if type(value) in _PLAIN_JSONABLE_SCALAR_TYPES:
         return value
     if isinstance(value, Mapping):
         return {str(key): _plain_jsonable(inner) for key, inner in value.items()}
