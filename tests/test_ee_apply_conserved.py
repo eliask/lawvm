@@ -87,6 +87,74 @@ def test_apply_ee_ops_conserved_partitions_accepted_and_skipped() -> None:
     assert accepted_ids & rejected_ids == set()  # disjoint
 
 
+def test_apply_ee_ops_conserved_content_identical_noop_is_rejected_not_accepted() -> None:
+    """§1.8 / I1-strong: an op that produces NO content write must be REJECTED.
+
+    Regression for the #185 conservation leak. EE's per-op ``changed`` signal was
+    the seam's OBJECT-IDENTITY signal (``new_state is not base_state``). EE's
+    materializer rebuilds the targeted subtree on every REPLACE, so a REPLACE
+    whose payload text EQUALS the live text returns a fresh-but-content-equal
+    node — object identity reported ``applied=True`` and the op was counted
+    ACCEPTED even though it landed NOTHING (no write receipt, no ``ee_replay_noop``
+    adjudication). That violated I1's strong form ("accepted ⟺ op landed a
+    write"): a silent no-op was overstated as an applied op.
+
+    The write receipt (the identity-pruned content diff) is the ground truth:
+    a content-identical no-op mints ZERO receipts. The conserved partition must
+    agree — the op lands in the REJECTED lane with ``ee_replay_noop``.
+    """
+    from lawvm.core.write_receipt import WriteReceipt
+    from lawvm.estonia.grafter import apply_ee_ops
+
+    statute = _statute_with_section("5", "Identical text.")
+    # REPLACE §5 with a payload whose text is byte-identical to the live text.
+    noop = _replace_op(op_id="ee-noop", sequence=1, label="5", text="Identical text.")
+
+    # Ground truth: the write-receipt lane emits ZERO receipts for this op (the
+    # identity-pruned diff is empty — no write landed).
+    receipts: list[WriteReceipt] = []
+    apply_ee_ops(statute, [noop], write_receipts_out=receipts)
+    assert receipts == [], "a content-identical no-op must mint no write receipt"
+
+    result = apply_ee_ops_conserved(statute, [noop])
+
+    # The no-op lands in the REJECTED lane (not the accepted lane).
+    assert [op.op_id for op in result.applied_ops] == [], (
+        "a content-identical no-op REPLACE landed no write and must NOT be "
+        "counted accepted (I1-strong conservation leak, #185)."
+    )
+    assert len(result.skipped_items) == 1
+    rejected = result.skipped_items[0]
+    assert isinstance(rejected, RejectedItem)
+    assert rejected.item.op_id == "ee-noop"
+    assert rejected.reason_code == "ee_replay_noop"
+    assert rejected.blocking is False
+
+    # Partition stays total + disjoint.
+    accepted_ids = {op.op_id for op in result.filter_result.accepted_items}
+    rejected_ids = {item.item.op_id for item in result.filter_result.rejected_items}
+    assert accepted_ids | rejected_ids == {"ee-noop"}
+    assert accepted_ids & rejected_ids == set()
+
+
+def test_apply_ee_ops_conserved_genuine_write_still_accepted() -> None:
+    """The #185 content-diff fix must NOT reclassify a GENUINE write.
+
+    A REPLACE whose payload text differs from the live text lands a real content
+    mutation (non-empty identity-pruned diff) and stays ACCEPTED — the fix only
+    reclassifies false-positive content-identical no-ops, so every op that truly
+    mutated is byte-identically accepted.
+    """
+    statute = _statute_with_section("5", "Old text.")
+    real = _replace_op(op_id="ee-real", sequence=1, label="5", text="New text.")
+
+    result = apply_ee_ops_conserved(statute, [real])
+
+    assert [op.op_id for op in result.applied_ops] == ["ee-real"]
+    assert result.skipped_items == ()
+    assert result.statute.body.children[0].text == "New text."
+
+
 def test_apply_ee_ops_conserved_statute_identical_to_bare_variant() -> None:
     """The conserved wrapper mirrors the bare variant — same replay output.
 

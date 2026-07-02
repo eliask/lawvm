@@ -58,7 +58,7 @@ from lawvm.core.ir import (
 )
 from lawvm.core.diagnostic_records import diagnostic_detail, QuirksDisposition
 from lawvm.core.filter_result import FilterResult, RejectedItem
-from lawvm.core.mutation_boundary import TreePath
+from lawvm.core.mutation_boundary import TreePath, diff_ir_paths_identity_pruned
 from lawvm.core.semantic_types import IRNodeKind, structural_action_from_str
 from lawvm.core.statute_facets import is_statute_title_address, replace_statute_title
 from lawvm.replay_adjudication import CompileAdjudication
@@ -10006,7 +10006,32 @@ def apply_ee_ops(
             source_statute=op.source.statute_id if op.source is not None else "",
         )
         new_body = applied_result.new_state
-        changed = applied_result.applied
+        # ── I1-strong conservation: derive the applied signal from the CONTENT
+        # footprint, not object identity (#185). ───────────────────────────────
+        # ``applied_result.applied`` is the seam's OBJECT-IDENTITY signal
+        # (``new_state is not base_state``). EE's materializer (``_ee_apply_op``)
+        # rebuilds the targeted subtree on every REPLACE/text_replace, so it
+        # returns a FRESH-but-content-equal node whenever the payload text equals
+        # the live text (a genuine no-op amendment). Object identity then reports
+        # ``applied=True`` for a write that landed NOTHING — the op is counted
+        # ACCEPTED-without-write, the exact conservation leak AGENTS.md §1.8 /
+        # the universal-algebra I1 strong form ("accepted ⟺ op landed a write")
+        # forbids: ``apply_ee_ops_conserved`` partitions on the ``ee_replay_noop``
+        # skip adjudication, which the object-identity signal suppressed.
+        #
+        # The ground-truth footprint is the identity-pruned content diff — the
+        # SAME signal ``emit_ee_op_receipt`` already uses to decide whether a
+        # write receipt exists (empty diff ⇒ no receipt ⇒ no write). Reuse it so
+        # ``changed`` means "a real content mutation landed": object identity is
+        # a necessary precondition (no fresh object ⇒ definitely no write), and a
+        # fresh object counts as a write ONLY when the content actually differs.
+        # A genuine landed write always has a non-empty diff, so this is
+        # byte-identical for every op that truly mutated; it only reclassifies
+        # the false-positive content-identical no-ops (which mint no receipt, no
+        # lo_ops version snapshot, and were the leaked-accepted ops).
+        changed = applied_result.applied and bool(
+            diff_ir_paths_identity_pruned(pre_op_body, new_body)
+        )
         body = new_body
 
         # ── B-enforcement increment 4 (LS-03): drain the seam's OBSERVE lane. ──
