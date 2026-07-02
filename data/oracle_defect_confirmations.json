@@ -1,0 +1,18 @@
+{
+  "_meta": {
+    "description": "External-confirmation rail for oracle-defect (oracle_suspect) residuals. Each record is a third-party (keeper) confirmation that a LawVM oracle_suspect divergence was oracle-side, tied to the exact residual ids it validates. Read-only telemetry: never authorizes replay, never turns an oracle surface into source truth, never changes scoring/gating.",
+    "schema": "lawvm.oracle_defect_external_confirmation.v1",
+    "keeper_responses": {
+      "pending": "reported to the keeper; no reply yet",
+      "acknowledged": "keeper agrees the consolidation is defective here",
+      "corrected": "keeper has corrected the consolidation (carries correction_date)",
+      "rejected": "keeper disputes the defect (re-opens the divergence)"
+    },
+    "confirming_responses": [
+      "acknowledged",
+      "corrected"
+    ],
+    "source_note": "Design source: notes_internal/pro_on_fable_notes.txt section 5 and FABLE_PUBLICATION_THESIS.md. A keeper acknowledgment is third-party validation of oracle_suspect (the adoption wedge)."
+  },
+  "confirmations": []
+}

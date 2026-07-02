@@ -14,6 +14,7 @@ eu/compiled/
 uk/compiled/
 uk/openapi/normalized/
 data/**
+!data/oracle_defect_confirmations.json
 !data/fi/
 !data/fi/canonical_budget_lines/
 !data/fi/canonical_budget_lines/*.yaml

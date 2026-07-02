@@ -908,6 +908,8 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_proof_gate_summary.py",
         "test_fi_self_consistency.py",
         "test_spec_authority.py",
+        # #191 oracle-defect external-confirmation rail (keeper acknowledgments).
+        "test_oracle_defect_confirmation.py",
         "test_spec_ledger.py",
         "test_spec_ledger_discovery.py",
         "test_spec_ledger_uk.py",
