@@ -20,6 +20,7 @@ Pipeline stages executed here:
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from functools import lru_cache
 import logging
 import re
@@ -698,7 +699,10 @@ def _restore_heading_facet_for_mixed_scope_section_replaces(
     return ops, []
 
 
-_cited_scope_cache: dict[tuple[str, str, int], dict[str, tuple[str | None, str | None]]] = {}
+_CITED_SCOPE_CACHE_MAX = 4096
+_CitedScopeCacheKey = tuple[str, str, int]
+_CitedScopeMap = dict[str, tuple[str | None, str | None]]
+_cited_scope_cache: OrderedDict[_CitedScopeCacheKey, _CitedScopeMap] = OrderedDict()
 _cited_effective_date_cache: dict[str, str | None] = {}
 _REINSTATEMENT_SECTION_LIST_FRAGMENT = (
     r"\d{1,4}(?:\s*[a-zäöå])?"
@@ -783,13 +787,15 @@ def _compiled_cited_section_scopes(
     if not cited_id or cited_id == amendment_id:
         return {}
     cache_key = (parent_id, cited_id, id(master.ir))
-    if cache_key in _cited_scope_cache:
-        return _cited_scope_cache[cache_key]
+    cached = _cited_scope_cache.get(cache_key)
+    if cached is not None:
+        _cited_scope_cache.move_to_end(cache_key)
+        return cached
 
     cs = get_corpus()
     xml_bytes = cs.read_source(cited_id)
     if xml_bytes is None:
-        _cited_scope_cache[cache_key] = {}
+        _store_cited_scope_cache(cache_key, {})
         return {}
 
     cited_tree = etree.fromstring(xml_bytes)
@@ -822,8 +828,20 @@ def _compiled_cited_section_scopes(
             _norm_num_token(cited_op.target_cols.target_section),
             (cited_op.target_cols.target_part, cited_op.target_cols.target_chapter),
         )
-    _cited_scope_cache[cache_key] = section_scopes
+    _store_cited_scope_cache(cache_key, section_scopes)
     return section_scopes
+
+
+def _store_cited_scope_cache(
+    cache_key: _CitedScopeCacheKey,
+    section_scopes: _CitedScopeMap,
+) -> None:
+    """Store one cited-scope map without unbounded process-lifetime growth."""
+
+    _cited_scope_cache[cache_key] = section_scopes
+    _cited_scope_cache.move_to_end(cache_key)
+    while len(_cited_scope_cache) > _CITED_SCOPE_CACHE_MAX:
+        _cited_scope_cache.popitem(last=False)
 
 
 def _cited_repealed_section_scope_for_replacement(

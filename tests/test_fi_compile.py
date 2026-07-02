@@ -5918,6 +5918,30 @@ def test_cached_cited_parse_result_keys_by_diagnostic_statute(monkeypatch: pytes
     ]
 
 
+def test_cited_scope_cache_is_lru_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Cited-scope cache evicts old scope maps instead of growing for a whole run."""
+    import lawvm.finland.frontend_compile as frontend_compile
+
+    old_cache = frontend_compile._cited_scope_cache.copy()
+    old_cap = frontend_compile._CITED_SCOPE_CACHE_MAX
+    monkeypatch.setattr(frontend_compile, "_CITED_SCOPE_CACHE_MAX", 2)
+    frontend_compile._cited_scope_cache.clear()
+    try:
+        frontend_compile._store_cited_scope_cache(("parent", "2018/575", 1), {"1": (None, "1")})
+        frontend_compile._store_cited_scope_cache(("parent", "2018/576", 1), {"2": (None, "2")})
+        frontend_compile._cited_scope_cache.move_to_end(("parent", "2018/575", 1))
+        frontend_compile._store_cited_scope_cache(("parent", "2018/577", 1), {"3": (None, "3")})
+
+        assert list(frontend_compile._cited_scope_cache) == [
+            ("parent", "2018/575", 1),
+            ("parent", "2018/577", 1),
+        ]
+    finally:
+        frontend_compile._cited_scope_cache.clear()
+        frontend_compile._cited_scope_cache.update(old_cache)
+        monkeypatch.setattr(frontend_compile, "_CITED_SCOPE_CACHE_MAX", old_cap)
+
+
 def test_explicit_payload_fixed_term_prefilter_skips_payload_conversion_without_literal() -> None:
     """A unique source section without 'voimassa' cannot carry fixed-term expiry."""
     import lawvm.finland.frontend_compile as frontend_compile
