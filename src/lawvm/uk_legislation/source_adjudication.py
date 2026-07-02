@@ -952,9 +952,16 @@ def normalize_uk_replay_compare_eids(
       EIDs; table wording remains compared through ancestor text, but row/cell
       fallback identity is not yet a common benchmark surface
     """
+    proper_prefix_cache: dict[str, tuple[str, ...]] = {}
+
     def _proper_prefixes(eid: str) -> tuple[str, ...]:
+        cached = proper_prefix_cache.get(eid)
+        if cached is not None:
+            return cached
         parts = [part for part in str(eid or "").split("-") if part]
-        return tuple("-".join(parts[:idx]) for idx in range(1, len(parts)))
+        prefixes = tuple("-".join(parts[:idx]) for idx in range(1, len(parts)))
+        proper_prefix_cache[eid] = prefixes
+        return prefixes
 
     alias_norm: dict[str, str] = {}
     for aliases in (oracle_physical_eid_aliases or {}, oracle_visible_number_eid_aliases or {}):
@@ -981,6 +988,7 @@ def normalize_uk_replay_compare_eids(
         and not _is_uk_nonlegal_text_fragment_eid(normalized)
     }
     dropped_prefixes: set[str] = set()
+    dropped_prefix_descendants: set[str] = set()
     kept: set[str] = set()
     collapsed_roots: set[str] = set()
     oracle_has_table_eids = any(_uk_compare_eid_has_table_segment(eid) for eid in oracle_norm)
@@ -1003,7 +1011,7 @@ def normalize_uk_replay_compare_eids(
             collapsed_roots.add(root)
 
     for eid in sorted(replay_norm, key=lambda s: len(s)):
-        if any(eid == prefix or eid.startswith(prefix + "-") for prefix in dropped_prefixes):
+        if eid in dropped_prefixes or eid in dropped_prefix_descendants:
             continue
         if collapsed_roots and any(
             prefix in collapsed_roots for prefix in replay_proper_prefixes_by_eid.get(eid, ())
@@ -1021,6 +1029,11 @@ def normalize_uk_replay_compare_eids(
             parent = match.group(1)
             if parent in oracle_norm and ("-part-" in parent or "-crossheading-" in parent):
                 dropped_prefixes.add(eid)
+                dropped_prefix_descendants.update(
+                    candidate
+                    for candidate in replay_norm
+                    if candidate.startswith(eid + "-")
+                )
                 continue
         kept.add(eid)
 
