@@ -131,10 +131,7 @@ def iter_table3_records(data: bytes) -> Iterator[Table3Record]:
     ``<table3>`` root so ``iterparse`` sees a well-formed document without
     materializing the 125 MB into a string.
     """
-    for _event, el in ET.iterparse(_byte_source(data), events=("end",)):
-        tag = el.tag
-        if tag != "act":
-            continue
+    for _event, el in ET.iterparse(_byte_source(data), events=("end",), tag="act"):
         act_num = ""
         public_law = ""
         act_congress = el.get("congress", "")
