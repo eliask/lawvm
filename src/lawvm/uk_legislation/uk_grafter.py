@@ -2306,6 +2306,7 @@ def _visit_eid(
     visible_number_eid_aliases: dict[str, str],
     oracle_identity_observations: list[dict[str, Any]],
     retain_text_elided_text_map: dict[str, str],
+    text_content_cache: dict[ET._Element, str],
     *,
     tag: Optional[str] = None,
     is_known_live: bool = False,
@@ -2318,6 +2319,17 @@ def _visit_eid(
     # and must not contribute eIds to the oracle scoring set.
     if tag in _EDITORIAL_TAGS:
         return
+
+    def _cached_text_content(target: Optional[ET._Element]) -> str:
+        if target is None:
+            return ""
+        cached = text_content_cache.get(target)
+        if cached is not None:
+            return cached
+        text = _text_content(target)
+        text_content_cache[target] = text
+        return text
+
     skip_own_eid = tag in _NON_LEGAL_UNIT_EID_TAGS
     eid = el.get("eId") or el.get("id")
     _pnum = el.find(_LEG_PNUMBER_PATH)
@@ -2326,7 +2338,7 @@ def _visit_eid(
     kind = _get_kind(tag, context, is_eur)
     if num_el is None and kind in ("chapter", "part"):
         num_el = el.find(_LEG_DESC_NUMBER_PATH)
-    num = _extract_num(num_el)
+    num = _cached_text_content(num_el)
     clean_num = _clean_num(num)
 
     # If no Pnumber element, infer num from the id/eId attribute itself.
@@ -2365,7 +2377,7 @@ def _visit_eid(
         new_context = "body"
 
     title_el = el.find(_LEG_TITLE_PATH)
-    title = _text_content(title_el) if title_el is not None else ""
+    title = _cached_text_content(title_el)
     slug = _slugify(title)
     node_key_part = f"{kind}-{clean_num}" if clean_num else (f"{kind}-{slug}" if slug else kind)
 
@@ -2395,7 +2407,7 @@ def _visit_eid(
             aliases=visible_number_eid_aliases,
             observations=oracle_identity_observations,
         )
-        text = _text_content(el)
+        text = _cached_text_content(el)
         if text and not _DOT_OR_SPACE_ONLY_RE.match(text):
             norm = _normalize_text_for_grounding(text)
             text_map[eid] = norm
@@ -2479,7 +2491,7 @@ def _visit_eid(
             _inferred_slug = ""
             _p1g_title_el = el.find(_LEG_P1GROUP_TITLE_PATH)
             if _p1g_title_el is not None:
-                _inferred_slug = _slugify(_text_content(_p1g_title_el))
+                _inferred_slug = _slugify(_cached_text_content(_p1g_title_el))
             if not _inferred_slug and "-crossheading-" in str(eid or ""):
                 _eid_slug_part = str(eid).rsplit("-crossheading-", 1)[1]
                 _inferred_slug = _slugify(_eid_slug_part)
@@ -2537,6 +2549,7 @@ def _visit_eid(
             visible_number_eid_aliases,
             oracle_identity_observations,
             retain_text_elided_text_map,
+            text_content_cache,
             tag=ct,
             is_known_live=True,
         )
@@ -2555,6 +2568,7 @@ def _extract_eid_map_from_root(root: Any, pit_date: Optional[str] = None) -> Dic
     # comparison accept EITHER form (repeal applied / not applied) so the 1-D
     # consolidation artifact is neutral.  See _oracle_text_eliding_retained_repeals.
     retain_text_elided_text_map: dict[str, str] = {}
+    text_content_cache: dict[ET._Element, str] = {}
     try:
         is_eur = root.find(f".//{{{_LEG_NS}}}EURetained") is not None
         body = root.find(f".//{{{_LEG_NS}}}Body")
@@ -2573,6 +2587,7 @@ def _extract_eid_map_from_root(root: Any, pit_date: Optional[str] = None) -> Dic
                 visible_number_eid_aliases,
                 oracle_identity_observations,
                 retain_text_elided_text_map,
+                text_content_cache,
             )
         schedules = root.find(f".//{{{_LEG_NS}}}Schedules")
         if schedules is not None:
@@ -2588,6 +2603,7 @@ def _extract_eid_map_from_root(root: Any, pit_date: Optional[str] = None) -> Dic
                 visible_number_eid_aliases,
                 oracle_identity_observations,
                 retain_text_elided_text_map,
+                text_content_cache,
             )
         return {
             "eid_map": eid_map,
