@@ -191,6 +191,9 @@ _INLINE_TEXT_COMPARISON_RULE_ISSUES = validate_comparison_normalization_rules(
 if _INLINE_TEXT_COMPARISON_RULE_ISSUES:
     raise ValueError("; ".join(_INLINE_TEXT_COMPARISON_RULE_ISSUES))
 
+_INLINE_SPACE_BEFORE_PUNCT_RE = re.compile(r"\s+([,.;:)\]])")
+_INLINE_SPACE_AFTER_OPEN_PAREN_RE = re.compile(r"([(])\s+")
+
 
 def normalize_inline_comparison_text(text: str) -> str:
     """Normalize inline text for witness/oracle comparison (common-law default).
@@ -198,7 +201,11 @@ def normalize_inline_comparison_text(text: str) -> str:
     Comparison-only: never use this to repair source text, replay payloads, or
     legal tree state.
     """
-    return normalize_comparison_text(text, INLINE_TEXT_COMPARISON_RULES).text
+    normalized = " ".join(text.split())
+    if not normalized:
+        return ""
+    normalized = _INLINE_SPACE_BEFORE_PUNCT_RE.sub(r"\1", normalized)
+    return _INLINE_SPACE_AFTER_OPEN_PAREN_RE.sub(r"\1", normalized)
 
 
 def normalized_inline_occurrence_count(haystack: str, needle: str) -> int:

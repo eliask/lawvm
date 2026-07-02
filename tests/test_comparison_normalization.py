@@ -196,6 +196,22 @@ def test_normalize_inline_comparison_text_normalizes_whitespace_and_punctuation(
     assert normalize_inline_comparison_text("  old \n text  , (  a )  ") == "old text, (a)"
 
 
+def test_normalize_inline_comparison_text_matches_rule_pipeline() -> None:
+    samples = (
+        "",
+        "plain",
+        "  old \n text  , (  a )  ",
+        "section 197 ) and item 4 ]",
+        "\talpha  ; beta: ( gamma )",
+    )
+
+    for sample in samples:
+        assert normalize_inline_comparison_text(sample) == normalize_comparison_text(
+            sample,
+            INLINE_TEXT_COMPARISON_RULES,
+        ).text
+
+
 def test_normalize_inline_comparison_text_removes_space_before_closing_paren() -> None:
     assert normalize_inline_comparison_text("section 197 )") == "section 197)"
     assert normalize_inline_comparison_text("item 4 ]") == "item 4]"
