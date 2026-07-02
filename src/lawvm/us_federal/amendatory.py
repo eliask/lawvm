@@ -5884,6 +5884,8 @@ def _anchor_instructions(
         for op in ((instr.operation,) + instr.extra_operations)
         if op is not None
     ]
+    if not ops_for_prefilter:
+        return instructions
     bodies = _unique_byte_run_body_records(
         raw_bytes,
         source_artifact_id=artifact_id,
