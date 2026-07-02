@@ -739,6 +739,14 @@ def _legal_text(node: etree._Element, *, cache: dict[tuple[etree._Element, bool]
             if child.tail:
                 texts.append(child.tail)
         return _normalize_text(" ".join(texts))
+    if cache is not None:
+        cached = cache.get((node, True))
+        if cached is not None:
+            return _normalize_text(cached)
+        if not (node.text or "").strip():
+            cached = cache.get((node, False))
+            if cached is not None:
+                return _normalize_text(cached)
     return _normalize_text(_collect_legal_text(node, is_root=True, cache=cache))
 
 
@@ -878,6 +886,8 @@ def _collect_legal_text(
         return ""
     if _localname_of_tag(node.tag) in _TEXT_EXCLUDE_TAGS:
         return ""
+    if len(node) == 0:
+        return "" if is_root else (node.text or "")
     key = (node, is_root)
     if cache is not None:
         cached = cache.get(key)
@@ -887,11 +897,6 @@ def _collect_legal_text(
             cached = cache.get((node, False))
             if cached is not None:
                 return cached
-    if len(node) == 0:
-        text = "" if is_root else (node.text or "")
-        if cache is not None:
-            cache[key] = text
-        return text
     texts: list[str] = []
     # The structural root contributes only its descendant flow text, not its own
     # leading ``text`` (which for a structural element is empty/whitespace); this

@@ -113,7 +113,9 @@ def test_parse_nz_source_document_indexes_label_para_nodes_as_source_structure()
     ]
 
 
-def test_legal_text_reuses_child_mode_cache_for_whitespace_structural_root() -> None:
+def test_legal_text_reuses_child_mode_cache_for_whitespace_structural_root(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     root = etree.fromstring(
         b"""\
 <prov>
@@ -126,16 +128,24 @@ def test_legal_text_reuses_child_mode_cache_for_whitespace_structural_root() -> 
 """
     )
     subprov = root.find(".//subprov")
+    label = root.find(".//label")
     assert subprov is not None
+    assert label is not None
     cache: dict[tuple[etree._Element, bool], str] = {}
 
     parent_text = source_tree._legal_text(root, cache=cache)
     child_mode_text = cache[(subprov, False)]
+
+    def fail_collect(*args: object, **kwargs: object) -> str:
+        raise AssertionError("child-mode cache should avoid a fresh collect")
+
+    monkeypatch.setattr(source_tree, "_collect_legal_text", fail_collect)
     child_text = source_tree._legal_text(subprov, cache=cache)
 
     assert parent_text == "1 1 Body text ."
     assert child_text == "1 Body text ."
     assert child_text == source_tree._normalize_text(child_mode_text)
+    assert (label, False) not in cache
 
 
 def test_node_text_leaf_fast_path_matches_mixed_content_normalization() -> None:
