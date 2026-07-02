@@ -74,7 +74,7 @@ def main() -> int:
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUT_PATH.write_text(json.dumps(out, ensure_ascii=False, indent=2))
     print(f"summary: {out['summary']}", file=sys.stderr)
-    print(f"total amendments needing re-triage:", file=sys.stderr)
+    print("total amendments needing re-triage:", file=sys.stderr)
     for kind in LOOSE_KINDS:
         if kind in by_kind:
             print(f"  {kind}: {len(by_kind[kind])} amendments ({len(out['records'][kind])} records)", file=sys.stderr)

@@ -98,7 +98,9 @@ def _official_rows_by_amendment(amendment_id_numyr: str) -> dict[str, dict[str, 
 
 def _match_substring_variants(text: str, source_xml: str) -> dict[str, int]:
     """Return exact, case-folded, ws-norm occurrences for each text fragment."""
-    ws_norm = lambda s: re.sub(r"\s+", " ", s).strip()
+    def ws_norm(s: str) -> str:
+        return re.sub(r"\s+", " ", s).strip()
+
     exact = source_xml.count(text)
     cf = source_xml.lower().count(text.lower())
     sn = ws_norm(source_xml).count(ws_norm(text))
@@ -113,8 +115,6 @@ def main(argv: list[str] | None = None) -> int:
 
     amendment_id = args.amendment_id
     cs = get_corpus_store()
-    rows_by_stable_id = _official_rows_by_amendment(amendment_id)
-    mis_by_stable_id = _load_misapplied_by_amendment(amendment_id)  # uses op_id, see dict
 
     # For body_patch op_ids the stable_id is not directly carried; fall back to
     # grouping by source_pdf+#N pattern. The misapplied record itself has no

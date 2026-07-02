@@ -226,7 +226,7 @@ def main() -> int:
         for s in sorted(sites_by_enum[ename], key=lambda x: (x.file, x.line)):
             print(f"  {s.kind:28} {s.file.replace('src/lawvm/','')}:{s.line}  [{s.detail}]")
 
-    print(f"\n=== TOTALS ===")
+    print("\n=== TOTALS ===")
     print(f"enums defined: {len(enums)}")
     print(f"total dispatch sites detected: {len(all_sites)}")
     tot_kinds: dict[str, int] = defaultdict(int)

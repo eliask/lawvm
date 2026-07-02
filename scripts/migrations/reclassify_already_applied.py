@@ -10,7 +10,6 @@ Scans ``corrigendum_unresolvable_fi.yaml`` for records where:
 Re-writes those records with evidence.kind = "already_applied_in_source".
 Retired records are preserved in the audit log.
 """
-import json
 import re
 import sys
 from pathlib import Path

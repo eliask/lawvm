@@ -106,7 +106,7 @@ def _harvest_ops(statute_ids: list[str], pins: dict[str, str]) -> tuple[list[Any
         captured.extend(ops)
         return real_compile(state, ops, *args, **kwargs)
 
-    setattr(process_pipeline, "compile_amendment_ops", _capturing_compile)
+    process_pipeline.compile_amendment_ops = _capturing_compile
     replay_errors: dict[str, str] = {}
     try:
         for sid in statute_ids:
@@ -122,7 +122,7 @@ def _harvest_ops(statute_ids: list[str], pins: dict[str, str]) -> tuple[list[Any
             except Exception as exc:  # noqa: BLE001 — record, continue corpus
                 replay_errors[sid] = f"{type(exc).__name__}: {str(exc)[:200]}"
     finally:
-        setattr(process_pipeline, "compile_amendment_ops", real_compile)
+        process_pipeline.compile_amendment_ops = real_compile
     return captured, replay_errors
 
 
