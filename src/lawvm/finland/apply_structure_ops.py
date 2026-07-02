@@ -927,6 +927,119 @@ def _agreeing_neighbor_chapter_for_unscoped_section_insert(
     return None
 
 
+def _base_is_fully_chaptered_flat_regime(base_ir: IRNode) -> bool:
+    """True when the as-enacted base has no parts, no flat sections, unique chapters.
+
+    This is the load-bearing regime gate for tail-continuation (T3). Under the
+    Finnish drafting convention a new chapter cannot be opened silently, so an
+    unscoped ``lisätään lakiin uusi N §`` past every live label can only continue
+    the last chapter *when there is no flat trailer to join instead*. The three
+    predicates are all evaluated over the base source, cheaply:
+
+    - **no parts**: a ``<part>`` regime (e.g. EVL 1968/360) numbers chapters per
+      part and keeps sections directly under osat; a naive tail rule would dump
+      many sections into a wrong chapter. Decline.
+    - **fully chaptered**: any flat section directly under body/hcontainer means
+      a base-authored final-provisions block exists, so the oracle may keep the
+      insert flat (Class-B). Decline — the single gate that excludes every
+      Class-B statute.
+    - **unique chapter labels**: duplicate labels (per-part restart) make "the
+      last chapter" ambiguous. Decline.
+    """
+    has_flat_section = False
+    chapter_labels: list[str] = []
+
+    def _walk(node: IRNode, *, in_container: bool) -> None:
+        nonlocal has_flat_section
+        for child in node.children:
+            kind = child.kind
+            if kind is IRNodeKind.PART:
+                # Presence of any part element disqualifies the regime.
+                chapter_labels.append("\x00part")
+                _walk(child, in_container=True)
+                continue
+            if kind is IRNodeKind.CHAPTER:
+                if child.label:
+                    chapter_labels.append(_norm_num_token(child.label))
+                _walk(child, in_container=True)
+                continue
+            if kind is IRNodeKind.SECTION and child.label and not in_container:
+                has_flat_section = True
+            _walk(child, in_container=in_container)
+
+    _walk(base_ir, in_container=False)
+    if "\x00part" in chapter_labels:
+        return False
+    if has_flat_section:
+        return False
+    real_labels = [label for label in chapter_labels if label]
+    if len(real_labels) != len(set(real_labels)):
+        return False
+    return bool(real_labels)
+
+
+def _tail_continuation_chapter_for_unscoped_section_insert(
+    state: _IRStateLike,
+    section_label: str,
+    base_ir: Optional[IRNode],
+) -> str | None:
+    """Chapter a trailing unscoped section INSERT continues, under strict gates.
+
+    Fires only for a scope-less whole-section INSERT whose label is greater than
+    every live section label (a genuine tail), when the base is a fully-chaptered
+    flat regime (:func:`_base_is_fully_chaptered_flat_regime`) and the highest
+    live section below the target sits in the LAST live chapter. The section then
+    continues that last chapter — matching the drafting convention that trailing
+    ``uusi N §`` inserts extend the final-provisions chapter rather than open a
+    new one silently. Verified oracle-correct on 1959/279, 1993/1573, 2015/65,
+    2021/617; verified to safely decline 1968/360 (parts) and the Class-B flat
+    statutes (flat trailer in base).
+    """
+    if base_ir is None:
+        return None
+    if not _base_is_fully_chaptered_flat_regime(base_ir):
+        return None
+
+    target_key = default_label_sort_key(section_label or "")
+    max_section_key = None
+    below_key = None
+    below_chapter: str | None = None
+    last_chapter: str | None = None
+
+    def _walk(node: IRNode, current_chapter: str | None) -> None:
+        nonlocal max_section_key, below_key, below_chapter, last_chapter
+        for child in node.children:
+            child_kind = child.kind
+            if child_kind is IRNodeKind.CHAPTER and child.label:
+                last_chapter = child.label
+                next_chapter: str | None = child.label
+            else:
+                next_chapter = current_chapter
+            if child_kind is IRNodeKind.SECTION and child.label:
+                child_key = default_label_sort_key(child.label)
+                if max_section_key is None or child_key > max_section_key:
+                    max_section_key = child_key
+                if (
+                    child_key < target_key
+                    and current_chapter is not None
+                    and (below_key is None or child_key > below_key)
+                ):
+                    below_key, below_chapter = child_key, current_chapter
+            _walk(child, next_chapter)
+
+    _walk(state.ir, None)
+    if last_chapter is None or below_chapter is None:
+        return None
+    # Genuine tail: the target must extend past every live section label.
+    if max_section_key is not None and target_key <= max_section_key:
+        return None
+    # The nearest live section below the target must sit in the last chapter;
+    # this is what makes "continue the last chapter" unambiguous.
+    if _norm_num_token(below_chapter) != _norm_num_token(last_chapter):
+        return None
+    return last_chapter
+
+
 def _is_unscoped_root_section_parent_in_containered_tree(
     state: "ReplayState",
     parent_path: Path,
@@ -3826,6 +3939,21 @@ def _apply_whole_section_op(
             if not _target_chapter and not _target_part
             else None
         )
+        # Tier-3 tail continuation: when both neighbours do not bracket the target
+        # (agreeing-neighbour declined) but the target is a genuine tail insert
+        # into a fully-chaptered flat-regime base whose last chapter holds the
+        # nearest section below it, continue the last chapter. Strictly gated on
+        # the base source so Class-B flat trailers and part-regime statutes are
+        # excluded (see ``_base_is_fully_chaptered_flat_regime``).
+        if (
+            agreeing_neighbor_chapter is None
+            and _op_type == "INSERT"
+            and not _target_chapter
+            and not _target_part
+        ):
+            agreeing_neighbor_chapter = _tail_continuation_chapter_for_unscoped_section_insert(
+                state, _ts, base_ir
+            )
         if family_path is not None:
             family_parent = family_path[:-1]
             family_parent_is_chaptered = any(

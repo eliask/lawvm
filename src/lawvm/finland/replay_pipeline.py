@@ -28,6 +28,9 @@ from lawvm.core.tree_ops import resort_children as _resort_children
 from lawvm.finland.amendment_selection import AmendmentSourcePathology
 from lawvm.finland.apply_events import ApplyMutationEvent
 from lawvm.finland.chapter_seed import ChapterSeedDiagnostic
+from lawvm.finland.empty_trailing_chapter_adoption import (
+    adopt_empty_trailing_chapter_flat_sections,
+)
 from lawvm.finland.op_provenance import (
     ConfidenceTier,
     Recovered,
@@ -693,6 +696,30 @@ def execute_replay_plan(
         for diagnostic in chapter_seed_diagnostics
     )
     append_chapter_seed_compiled_ops(compiled_ops_out, chapter_seed_diagnostics)
+
+    # Adopt base-authored trailing flat sections into a base-declared empty
+    # trailing chapter (the editor closed the chapter element too early). This is
+    # a base-tree repair: the base source itself names the target chapter, and
+    # the in-force consolidation nests the sections into it.
+    adopted_ir, empty_chapter_adoptions = adopt_empty_trailing_chapter_flat_sections(
+        state.ir
+    )
+    if adopted_ir is not state.ir:
+        state = state.with_ir(adopted_ir)
+        signals.findings.extend(
+            Finding(
+                kind="BASE_EMPTY_TRAILING_CHAPTER_ADOPTED",
+                role=OBSERVATION_ROLE,
+                stage="base_source_analysis",
+                blocking=False,
+                source_statute=plan.parent_id,
+                detail={
+                    "chapter_label": adoption.chapter_label,
+                    "adopted_section_labels": list(adoption.adopted_section_labels),
+                },
+            )
+            for adoption in empty_chapter_adoptions
+        )
 
     vts_skipped_targets: list[VtsSkippedTarget] = []
     vts_source_diagnostics: list[VtsSourceDiagnostic] = []
