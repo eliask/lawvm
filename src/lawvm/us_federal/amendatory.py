@@ -5410,11 +5410,23 @@ def _iter_instruction_units(
     the sunset date for a group of sibling amendments.
     """
     unit_tags = ("subsection", "paragraph", "subparagraph", "clause", "subclause")
+    subtrees_with_amending_action: set[ET.Element] = set()
+
+    def _mark_amending_action_subtrees(node: ET.Element) -> bool:
+        # One post-order pass replaces repeated elem.iter() descendant scans in
+        # unit detection and leaf-unit selection.
+        has_action = _localname(node.tag) == "amendingAction"
+        for child in node:
+            if _mark_amending_action_subtrees(child):
+                has_action = True
+        if has_action:
+            subtrees_with_amending_action.add(node)
+        return has_action
+
+    _mark_amending_action_subtrees(section)
 
     def _is_unit(elem: ET.Element) -> bool:
-        return _localname(elem.tag) in unit_tags and any(_localname(a.tag) == "amendingAction" for a in elem.iter())
-
-    nested = [elem for elem in section.iter() if _is_unit(elem)]
+        return _localname(elem.tag) in unit_tags and elem in subtrees_with_amending_action
 
     # Map each unit to its nearest amendatory-unit ancestor (within the section),
     # so we can thread the parent instruction's resolved target into leaf units.
@@ -5423,11 +5435,13 @@ def _iter_instruction_units(
     # position independently of amendatory-unit nesting.
     xml_parent_of: dict[ET.Element, ET.Element | None] = {section: None}
     stack: list[ET.Element] = []
+    nested: list[ET.Element] = []
 
     def _descend(node: ET.Element) -> None:
         pushed = False
         if node is not section and _is_unit(node):
             parent_of[node] = stack[-1] if stack else None
+            nested.append(node)
             stack.append(node)
             pushed = True
         for child in node:
@@ -5438,16 +5452,8 @@ def _iter_instruction_units(
 
     _descend(section)
 
-    leaf_units = []
-    for elem in nested:
-        has_deeper = any(
-            child is not elem
-            and _localname(child.tag) in unit_tags
-            and any(_localname(a.tag) == "amendingAction" for a in child.iter())
-            for child in elem.iter()
-        )
-        if not has_deeper:
-            leaf_units.append(elem)
+    parent_units = {parent for parent in parent_of.values() if parent is not None}
+    leaf_units = [elem for elem in nested if elem not in parent_units]
 
     section_chapeau = _shallow_text(
         section, exclude=_amendatory_unit_children(section)
