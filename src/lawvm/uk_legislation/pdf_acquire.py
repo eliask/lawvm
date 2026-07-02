@@ -41,11 +41,12 @@ import hashlib
 import time
 import urllib.error
 import urllib.request
-import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from typing import Any
 
 from lawvm.core.http_identity import LAWVM_USER_AGENT
+from lawvm.core.xml_parse import parse_corpus_xml
+from lxml import etree
 
 _LEG_BASE = "https://www.legislation.gov.uk"
 _USER_AGENT = LAWVM_USER_AGENT
@@ -84,8 +85,8 @@ def extract_pdf_url_from_stub(stub_xml: bytes) -> PdfAlternative | None:
     no I/O.
     """
     try:
-        root = ET.fromstring(stub_xml)
-    except ET.ParseError:
+        root = parse_corpus_xml(stub_xml)
+    except etree.XMLSyntaxError:
         return None
 
     # Preferred: ukm:Alternatives/ukm:Alternative with a PDF URI + Size.
