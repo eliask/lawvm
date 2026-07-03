@@ -1,0 +1,42 @@
+{
+  "_doc": "CTSF residual-set-diff gate baseline — ESTONIA (#183/#205). Frozen typed-residual set of the REAL EE touch-relation anchor corpus (REAL_ANCHOR_EE_CORPUS_SIDS), keyed {sid: {family: count}} with only non-zero families retained. The gate FAILs iff a NEW replay_bug/unknown residual appears vs this set; WARNs on a typed oracle/editorial/temporal move. This corpus is curated 0-BILLABLE (the honest steady state); deep EE chains that surface genuine replay bugs are deliberately excluded (they are defects to fix, not to freeze). Regenerate with `uv run python -m lawvm.core.ctsf_gate --update-ee-baseline` (needs the RT Farchive) after a legitimate, reviewed corpus/projection change — a preregistered predict-then-compare event, never a silent baseline move.",
+  "gate_version": "v0",
+  "jurisdiction": "estonia",
+  "corpus_sids": [
+    "1000509",
+    "1000762",
+    "1002539",
+    "1010163",
+    "1010901",
+    "1053073",
+    "1055383",
+    "1055878",
+    "1057989"
+  ],
+  "families": [
+    "replay_bug",
+    "oracle_editorial_pathology",
+    "temporal_mismatch",
+    "state_index",
+    "cnf_unsupported",
+    "unknown"
+  ],
+  "fail_families": [
+    "replay_bug",
+    "unknown"
+  ],
+  "total_residuals": 2,
+  "residuals": {
+    "1000509": {},
+    "1000762": {},
+    "1002539": {},
+    "1010163": {},
+    "1010901": {},
+    "1053073": {},
+    "1055383": {},
+    "1055878": {
+      "oracle_editorial_pathology": 2
+    },
+    "1057989": {}
+  }
+}

@@ -272,10 +272,12 @@ def _cnf_table_oracle() -> SemanticStructureNode:
 # ---------------------------------------------------------------------------
 
 
-# Jurisdiction of the real corpus. Only FI has a #183 touch-relation attribution
-# engine (``fi_anchor_manifest``); EE/UK have no anchor-manifest / plan_snapshots
-# path yet, so they are documented as the next-jurisdiction step, not silently
-# dropped. See notes_internal/CTSF_PHASE3_REALANCHORS_2026_07_03.md.
+# Jurisdiction of the FI real corpus. FI was the first #183 touch-relation
+# attribution engine (``fi_anchor_manifest``); EE now has its own analogue
+# (``ee_anchor_manifest``, task #205) and participates as a SECOND jurisdiction
+# corpus below. UK still has no anchor-manifest / plan_snapshots path yet, so it is
+# documented as the next-jurisdiction step, not silently dropped.
+# See notes_internal/CTSF_PHASE3_REALANCHORS_2026_07_03.md.
 REAL_ANCHOR_JURISDICTION = "finland"
 
 # The frozen, content-pinned statute-id corpus. Sorted, explicit — the corpus
@@ -294,6 +296,105 @@ REAL_ANCHOR_CORPUS_SIDS: tuple[str, ...] = (
     "2002/1248",  # temporal_mismatch
     "2011/1287",  # scored, clean — a second clean real sid
 )
+
+
+# ---------------------------------------------------------------------------
+# The REAL #183 touch-relation corpus — ESTONIA (task #205, the second jurisdiction).
+#
+# EE anchors are the published Riigi Teataja *terviktekst* versions of a statute
+# family (``grupi_id``): a content-addressed consolidated-text snapshot at one
+# effective date, exactly analogous to Finland's consolidation snapshots. For each
+# grupi_id the ``ee_anchor_manifest`` attribution engine replays base→as_of per
+# anchor and emits typed ``TouchObservation`` verdicts that project 1:1 onto the
+# same CTSF residual families (via the shared ``_VERDICT_TO_FAMILY``). The gate
+# diffs THAT set against the frozen EE baseline.
+#
+# This corpus is curated to be 0-BILLABLE (no replay_bug/unknown) — the honest
+# steady state, mirroring the FI baseline. It DOES exercise the typed non-billable
+# lane (``1055878`` carries ``oracle_editorial_pathology``). Deep multi-amendment EE
+# chains that surfaced genuine replay text-preservation bugs (``1022254``,
+# ``1048615``) are DELIBERATELY EXCLUDED from the baseline: those are real defects
+# to fix, not to freeze — leaving them convicting is the point of the metric. See
+# the deliverable report / notes_internal for the itemized bug list.
+# ---------------------------------------------------------------------------
+
+REAL_ANCHOR_EE_JURISDICTION = "estonia"
+
+# The frozen, content-pinned EE grupi_id corpus (sorted, explicit — membership is
+# part of the frozen input). Each is a real statute family with a genuine amendment
+# chain that replays; annotated with the residual family it contributes at freeze.
+REAL_ANCHOR_EE_CORPUS_SIDS: tuple[str, ...] = (
+    "1000509",   # scored clean (1 window)
+    "1000762",   # scored clean (1 window)
+    "1002539",   # scored clean (1 window)
+    "1010163",   # scored clean (1 window)
+    "1010901",   # scored clean (1 window)
+    "1053073",   # scored clean (2 windows — multi-anchor touch relation)
+    "1055383",   # scored clean (1 window)
+    "1055878",   # oracle_editorial_pathology(2) — the typed non-billable WARN lane
+    "1057989",   # scored clean (2 windows — multi-anchor touch relation)
+)
+
+# The committed EE baseline artifact (frozen, sibling of the FI one).
+GATE_EE_BASELINE_PATH = Path("tests/data/ctsf_gate_ee_residual_baseline.json")
+
+
+def ee_anchor_corpus_available() -> bool:
+    """True iff the Riigi Teataja archive backing the EE real corpus is present.
+
+    Scoring the EE #183 corpus re-derives the touch relation per anchor via EE
+    replay, which reads the RT Farchive. When it is absent (a corpus-free CI
+    checkout) the EE real-corpus tests SKIP; the gate's unit surface stays
+    corpus-free and always runs.
+    """
+    try:
+        from lawvm.estonia.fetch import open_rt_archive
+        from lawvm.tools.ee_bench import _DEFAULT_DB
+
+        if not _DEFAULT_DB.exists():
+            return False
+        archive = open_rt_archive(_DEFAULT_DB, readonly=True)
+        close = getattr(archive, "close", None)
+        if callable(close):
+            close()
+        return True
+    # An availability PROBE: any archive-open failure legitimately means "corpus
+    # absent" (tests skip; the CLI reports the frozen baseline).
+    # lawvm-failloud: corpus-availability probe; absence is the answer, not an error
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def score_ee_real_corpus(
+    sids: Iterable[str] | None = None,
+) -> dict[str, dict[str, int]]:
+    """Score the EE #183 touch-relation corpus into its typed-residual set.
+
+    For each grupi_id, run the ``ee_anchor_manifest`` attribution engine over its
+    published-terviktekst anchors and project each ``TouchObservation`` into its CTSF
+    residual family (the shared ``_VERDICT_TO_FAMILY``). Returns the same diffable
+    ``{sid: {family: count}}`` shape as :func:`score_real_corpus`, only non-zero
+    families retained, a clean-but-scored statute present with an empty family map.
+    Deterministic in sid order.
+
+    Reads the RT Farchive (per-anchor EE replay). Deterministic given the frozen
+    corpus bytes; NOT the wall-clock-free path — same as the FI real corpus.
+    """
+    from lawvm.tools.ee_anchor_manifest import (
+        _VERDICT_TO_FAMILY as _EE_VERDICT_TO_FAMILY,
+        attribute_statute as ee_attribute_statute,
+    )
+
+    corpus_sids = tuple(sids) if sids is not None else REAL_ANCHOR_EE_CORPUS_SIDS
+    out: dict[str, dict[str, int]] = {}
+    for sid in corpus_sids:
+        attr = ee_attribute_statute(sid)
+        families: dict[str, int] = {}
+        for obs in attr.observations:
+            family = _EE_VERDICT_TO_FAMILY[obs.verdict]
+            families[family] = families.get(family, 0) + 1
+        out[sid] = {fam: n for fam, n in sorted(families.items()) if n}
+    return dict(sorted(out.items()))
 
 
 def real_anchor_corpus_available() -> bool:
@@ -546,6 +647,80 @@ def write_baseline(
     return p
 
 
+# ---------------------------------------------------------------------------
+# Estonia baseline artifact (task #205) — a sibling of the FI one, same shape.
+# ---------------------------------------------------------------------------
+
+
+def _ee_baseline_payload(residuals: dict[str, dict[str, int]]) -> dict[str, Any]:
+    total = sum(
+        count for families in residuals.values() for count in families.values()
+    )
+    return {
+        "_doc": (
+            "CTSF residual-set-diff gate baseline — ESTONIA (#183/#205). Frozen typed-"
+            "residual set of the REAL EE touch-relation anchor corpus "
+            "(REAL_ANCHOR_EE_CORPUS_SIDS), keyed {sid: {family: count}} with only "
+            "non-zero families retained. The gate FAILs iff a NEW replay_bug/unknown "
+            "residual appears vs this set; WARNs on a typed oracle/editorial/temporal "
+            "move. This corpus is curated 0-BILLABLE (the honest steady state); deep "
+            "EE chains that surface genuine replay bugs are deliberately excluded "
+            "(they are defects to fix, not to freeze). Regenerate with `uv run python "
+            "-m lawvm.core.ctsf_gate --update-ee-baseline` (needs the RT Farchive) "
+            "after a legitimate, reviewed corpus/projection change — a preregistered "
+            "predict-then-compare event, never a silent baseline move."
+        ),
+        "gate_version": GATE_VERSION,
+        "jurisdiction": REAL_ANCHOR_EE_JURISDICTION,
+        "corpus_sids": list(REAL_ANCHOR_EE_CORPUS_SIDS),
+        "families": list(RESIDUAL_VERDICT_FAMILIES),
+        "fail_families": list(FAIL_FAMILIES),
+        "total_residuals": total,
+        "residuals": residuals,
+    }
+
+
+def load_ee_baseline(path: Path | None = None) -> dict[str, dict[str, int]]:
+    """Load the frozen EE typed-residual baseline ({sid: {family: count}})."""
+    p = path if path is not None else _repo_root() / GATE_EE_BASELINE_PATH
+    data = json.loads(p.read_text(encoding="utf-8"))
+    residuals = data.get("residuals", {})
+    return {
+        sid: {fam: int(cnt) for fam, cnt in families.items()}
+        for sid, families in sorted(residuals.items())
+    }
+
+
+def write_ee_baseline(
+    residuals: dict[str, dict[str, int]] | None = None, path: Path | None = None
+) -> Path:
+    """Write the frozen EE typed-residual baseline. Regeneration entrypoint.
+
+    Defaults to snapshotting the REAL EE corpus (``score_ee_real_corpus()``). Reads
+    the RT Farchive; pass ``residuals`` to write a precomputed set (corpus-free).
+    """
+    p = path if path is not None else _repo_root() / GATE_EE_BASELINE_PATH
+    payload = _ee_baseline_payload(
+        residuals if residuals is not None else score_ee_real_corpus()
+    )
+    p.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
+    return p
+
+
+def run_ee_gate_report(baseline_path: Path | None = None) -> GateResult:
+    """Score the REAL EE corpus and diff it against the frozen EE baseline.
+
+    Reads the RT Farchive (the EE corpus is scored via replay). Deterministic given
+    the frozen corpus bytes. Returns the :class:`GateResult`; the fail-red
+    enforcement lives in :func:`run_gate` / :func:`main` (which gate BOTH corpora).
+    """
+    current = score_ee_real_corpus()
+    baseline = load_ee_baseline(baseline_path)
+    return residual_set_diff_gate(current, baseline)
+
+
 def _repo_root() -> Path:
     # src/lawvm/core/ctsf_gate.py → parents[3] == repo root.
     return Path(__file__).resolve().parents[3]
@@ -596,20 +771,28 @@ def emit_verdict_signals(result: GateResult) -> None:
 def run_gate(baseline_path: Path | None = None) -> int:
     """PRIMARY callable gate entry → exit code.
 
-    Data-aware: when the Finlex archive backing the real #183 corpus is PRESENT, score
-    it, diff against the frozen baseline, emit the verdict signals, and return NONZERO
-    (1) iff a NEW billable (``replay_bug``/``unknown``) residual appeared — WARN and
-    PASS return 0. When the archive is ABSENT the real corpus cannot be scored (it is
-    derived via replay), so the gate SKIPS cleanly: it reports the frozen baseline
-    diffed against itself (always PASS) and returns 0, so data-less CI is never failed
-    by this gate. The authoritative fail-red surface is the data-present path.
+    Data-aware, MULTI-JURISDICTION: gates BOTH the FI #183 corpus and the EE #205
+    corpus. For each jurisdiction whose archive is PRESENT, score its real corpus,
+    diff against the frozen baseline, emit the verdict signals, and fail red (1) iff a
+    NEW billable (``replay_bug``/``unknown``) residual appeared. A jurisdiction whose
+    archive is ABSENT SKIPS cleanly (its corpus is derived via replay), so data-less
+    CI is never failed. The exit code is NONZERO iff ANY present jurisdiction FAILs.
+
+    ``baseline_path`` overrides the FI baseline only (kept for back-compat with the FI
+    callers/tests); the EE baseline is always the committed sibling artifact.
     """
-    if not real_anchor_corpus_available():
-        # Corpus absent → cannot score the real corpus → skip cleanly (return 0).
-        return 0
-    result = run_gate_report(baseline_path)
-    emit_verdict_signals(result)
-    return 1 if result.failed else 0
+    rc = 0
+    if real_anchor_corpus_available():
+        result = run_gate_report(baseline_path)
+        emit_verdict_signals(result)
+        if result.failed:
+            rc = 1
+    if ee_anchor_corpus_available():
+        ee_result = run_ee_gate_report()
+        emit_verdict_signals(ee_result)
+        if ee_result.failed:
+            rc = 1
+    return rc
 
 
 def format_report(result: GateResult) -> str:
@@ -663,11 +846,29 @@ def main(argv: list[str] | None = None) -> int:
         help="Rewrite the frozen CTSF gate residual baseline from the corpus.",
     )
     parser.add_argument(
+        "--update-ee-baseline",
+        action="store_true",
+        help="Rewrite the frozen EE (#205) CTSF gate residual baseline from the "
+        "Riigi Teataja corpus.",
+    )
+    parser.add_argument(
         "--json",
         action="store_true",
         help="Emit the gate result as JSON instead of the human report.",
     )
     args = parser.parse_args(argv)
+
+    if args.update_ee_baseline:
+        if not ee_anchor_corpus_available():
+            print(
+                "Cannot regenerate the EE #205 baseline: the Riigi Teataja Farchive "
+                "is absent. Set LAWVM_CANONICAL_DATA_ROOT to a checkout with the EE "
+                "corpus and retry."
+            )
+            return 0
+        out = write_ee_baseline()
+        print(f"Wrote CTSF gate EE residual baseline: {out}")
+        return 0
 
     if args.update_baseline:
         if not real_anchor_corpus_available():
@@ -686,6 +887,7 @@ def main(argv: list[str] | None = None) -> int:
         # replay). Report the frozen baseline as the pinned state and exit 0 — the
         # PRIMARY gate SKIPS cleanly when the archive is absent, so data-less CI is
         # never failed. The fail-red enforcement runs where the corpus is present.
+        # (EE mirrors this: an absent RT archive skips its lane too.)
         baseline = load_baseline()
         frozen = residual_set_diff_gate(baseline, baseline)
         if args.json:
@@ -699,7 +901,8 @@ def main(argv: list[str] | None = None) -> int:
                 "the frozen baseline as the pinned state (fail-red runs where the "
                 "corpus is present)."
             )
-        return 0
+        # Even with FI absent, the EE corpus may be present — gate it independently.
+        return _fold_ee_gate_into_rc(0, json_mode=args.json)
 
     result = run_gate_report()
     emit_verdict_signals(result)
@@ -708,8 +911,31 @@ def main(argv: list[str] | None = None) -> int:
     else:
         print(format_report(result))
     # PRIMARY GATE: a new billable residual (FAIL) flips the exit code red; WARN/PASS
-    # exit 0.
-    return 1 if result.failed else 0
+    # exit 0. Fold the EE jurisdiction's verdict into the same exit code.
+    rc = 1 if result.failed else 0
+    return _fold_ee_gate_into_rc(rc, json_mode=args.json)
+
+
+def _fold_ee_gate_into_rc(rc: int, *, json_mode: bool) -> int:
+    """Gate the EE (#205) corpus and fold its verdict into the process exit code.
+
+    Data-aware: an absent RT archive SKIPS the EE lane cleanly (returns ``rc``
+    unchanged). When present, score the EE corpus, print/log its verdict, and raise
+    ``rc`` to 1 iff the EE gate FAILs (a new EE billable). Keeps FI and EE
+    independent — either jurisdiction FAILing flips CI red.
+    """
+    if not ee_anchor_corpus_available():
+        return rc
+    ee_result = run_ee_gate_report()
+    emit_verdict_signals(ee_result)
+    if json_mode:
+        payload = ee_result.to_dict()
+        payload["jurisdiction"] = REAL_ANCHOR_EE_JURISDICTION
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+    else:
+        print("\n--- ESTONIA (#205) corpus ---")
+        print(format_report(ee_result))
+    return 1 if ee_result.failed else rc
 
 
 if __name__ == "__main__":  # pragma: no cover
