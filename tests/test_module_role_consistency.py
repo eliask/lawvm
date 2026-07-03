@@ -74,6 +74,17 @@ DEAD_ALLOWLIST: dict[str, str] = {
     # from the production apply paths. The allowlist entries + the
     # ``core.totalization`` test_only_live baseline row were removed (a
     # legitimate one-way ratchet shrink: frontier wired to production).
+    "lawvm.finland.totalization_table": (
+        "#186 θ TotalizationTable extended to Finland as a DECLARED spec. FI is "
+        "OBSERVATION-BASED (off-domain occupancy is a non-blocking observation — "
+        "the op still applies — with a three-outcome applied/skipped/failed "
+        "mutation-event ledger, NOT a reject/adjudicate partition), so there is no "
+        "reject lane for θ.lookup to be the single source of; routing is DEFERRED / "
+        "N-A. The table is conformance-tested (test_totalization_conformance_fi.py "
+        "binds each declared cell to FI's ACTUAL runtime code at the source level) "
+        "but has no production importer yet — the SE/NO frontier-before-routing "
+        "shape. Wiring, if ever wanted, is the load-bearing follow-up."
+    ),
 }
 
 

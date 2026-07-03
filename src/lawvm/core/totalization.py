@@ -125,6 +125,17 @@ class FailureClass(str, Enum):
       separate emit code from ``eu_replay_parent_not_found``, so it needs its own
       cell alongside ``parent_unresolved``.
 
+    FI's off-domain model (routed as a DECLARED table in #186; FI is
+    observation-based, so routing is deferred) exhibits one precondition class the
+    reject/adjudicate frontends do not: a RENUMBER/RELABEL whose SOURCE address
+    equals its DESTINATION address — an identity relabel that lands no write. This
+    is the additive FI member (purely additive; SE/NO/EE/UK tables untouched):
+
+    * ``self_relabel`` — a RENUMBER/relabel whose parsed source address equals its
+      destination address, so there is nothing to move/renumber (FI
+      ``self_relabel_noop``; distinct from ``dest_occupied``, where a DIFFERENT
+      occupant already holds the destination label).
+
     The value is the boundary/adjudication string so a resolver reading a
     frontend adjudication code can round-trip to a ``FailureClass`` without a
     jurisdiction-local map.
@@ -146,6 +157,8 @@ class FailureClass(str, Enum):
     # ── EU action-admissibility failure classes (#186, additive). ──────────────
     UNKNOWN_ACTION = "unknown_action"
     PARENT_SCOPE_UNRESOLVED = "parent_scope_unresolved"
+    # ── FI identity-relabel failure class (#186, additive). ────────────────────
+    SELF_RELABEL = "self_relabel"
 
 
 @dataclass(frozen=True, slots=True)

@@ -383,6 +383,13 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_replay_findings.py",
         "test_fi_replay_state.py",
         "test_fi_resolution_conformance.py",
+        # #186 θ (theta) TotalizationTable extended to Finland. FI is
+        # observation-based (off-domain occupancy is a non-blocking observation;
+        # the op still applies) with a three-outcome mutation-event ledger, so the
+        # deliverable is a DECLARED FI_TOTALIZATION_TABLE with routing DEFERRED;
+        # this test binds each declared cell to FI's ACTUAL runtime code at the
+        # source level (the faithful-spec guard).
+        "test_totalization_conformance_fi.py",
         "test_fi_item_number_display.py",
         "test_fi_tail_prose_absorb.py",
         "test_fi_penal_sentencing_wrapup_fold.py",

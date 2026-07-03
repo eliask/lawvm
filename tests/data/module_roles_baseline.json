@@ -7,8 +7,8 @@
   },
   "replay_counts": {
     "exercised": 170,
-    "cold": 256,
-    "in_scope": 426
+    "cold": 257,
+    "in_scope": 427
   },
   "dead": [
     "lawvm.core.claim_assumption_binding",
@@ -799,6 +799,7 @@
     "lawvm.finland.temporal_rewrites": true,
     "lawvm.finland.timeline_export_plan": false,
     "lawvm.finland.timeline_version_dedupe": false,
+    "lawvm.finland.totalization_table": false,
     "lawvm.finland.transition_graph_profile": false,
     "lawvm.finland.transition_graph_replay": false,
     "lawvm.finland.transparent_store": true,
