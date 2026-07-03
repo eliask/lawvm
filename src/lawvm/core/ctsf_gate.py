@@ -311,11 +311,13 @@ REAL_ANCHOR_CORPUS_SIDS: tuple[str, ...] = (
 #
 # This corpus is curated to be 0-BILLABLE (no replay_bug/unknown) — the honest
 # steady state, mirroring the FI baseline. It DOES exercise the typed non-billable
-# lane (``1055878`` carries ``oracle_editorial_pathology``). Deep multi-amendment EE
-# chains that surfaced genuine replay text-preservation bugs (``1022254``,
-# ``1048615``) are DELIBERATELY EXCLUDED from the baseline: those are real defects
-# to fix, not to freeze — leaving them convicting is the point of the metric. See
-# the deliverable report / notes_internal for the itemized bug list.
+# lane (``1055878`` carries ``oracle_editorial_pathology``). Two deep multi-amendment
+# EE chains that once surfaced genuine replay text-preservation bugs (``1022254`` §2,
+# ``1048615`` §1) were the #205 excluded defects; #208 FIXED both at the root (nested
+# „…" quote handling in the EE amendment-instruction parser and the omnibus intro-
+# fragment title matcher), proved byte-exact against the oracle across every window,
+# and PROMOTED them into this frozen 0-billable corpus — the metric convicted, the
+# fix cleared the conviction. See the #208 deliverable report / notes_internal.
 # ---------------------------------------------------------------------------
 
 REAL_ANCHOR_EE_JURISDICTION = "estonia"
@@ -329,6 +331,13 @@ REAL_ANCHOR_EE_CORPUS_SIDS: tuple[str, ...] = (
     "1002539",   # scored clean (1 window)
     "1010163",   # scored clean (1 window)
     "1010901",   # scored clean (1 window)
+    "1022254",   # scored clean (2 windows) — was a genuine replay bug (#208): §2's
+    #               inserted COFOG clause was truncated at a nested „…" quote; fixed
+    #               in the EE amendment-instruction parser, now byte-matches oracle
+    "1048615",   # scored clean (5 windows) — was a genuine replay bug (#208): the
+    #               omnibus §14 „punktiga 18" list-item insert was orphaned because
+    #               the target statute's own nested-quote title failed intro-fragment
+    #               matching; fixed, all 5 windows now byte-match oracle
     "1053073",   # scored clean (2 windows — multi-anchor touch relation)
     "1055383",   # scored clean (1 window)
     "1055878",   # oracle_editorial_pathology(2) — the typed non-billable WARN lane
