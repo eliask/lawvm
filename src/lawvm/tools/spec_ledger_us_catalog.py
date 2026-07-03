@@ -93,6 +93,11 @@ US_NON_RULE_LITERALS: FrozenSet[str] = frozenset(
         # public US label parse function (US_LABEL_ALGEBRA's parse op), NOT a witness
         # rule_id. Mirrors EE's ee_parse_label exclusion.
         "us_parse_label",
+        # Dynamic atomic-group id PREFIX minted per compound instruction
+        # (``f"us_compound_{instruction_id}"`` in amendatory._us_compound_group_id).
+        # It is a per-instruction group key, not a witness rule_id. Mirrors EE's
+        # ``ee_snap_`` dynamic op-id prefix exclusion.
+        "us_compound_",
         "us_char_span_boundary_audit",
         "us_coverage_claim_for_op",
         "us_ordering_profile",
@@ -201,6 +206,13 @@ _US_RULE_SPECS: Dict[str, str] = {
     "us_amend_repeal": (
         "A repeal instruction removes the target section (no quoted payload; the "
         "section's content is struck in full)."
+    ),
+    "us_amend_compound_group_atomic": (
+        "Every member op lowered from ONE compound amendatory instruction is an "
+        "atomic legal act: the members carry a shared purpose-built group id and are "
+        "adjudicated together by the kernel enforce_group_atomicity transform, so if "
+        "any member cannot land the WHOLE group is rejected (no half-applied "
+        "compound). Fable UNIVERSAL_ALGEBRA §5.5 / §7 delta #7."
     ),
     "us_amend_redesignate": (
         "A 'redesignate <from> as <to>' instruction renumbers the target node from its "
