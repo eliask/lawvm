@@ -86,19 +86,17 @@ DEAD_ALLOWLIST: dict[str, str] = {
         "but has no production importer yet — the SE/NO frontier-before-routing "
         "shape. Wiring, if ever wanted, is the load-bearing follow-up."
     ),
-    "lawvm.finland.label_algebra": (
-        "#186 §4.2 item 4 LabelAlgebra extended to Finland as a DECLARED spec. "
-        "FI_LABEL_ALGEBRA mirrors Finland's Arabic + lettered ``14 a §`` "
-        "section-label calculus (parse / order / successor / collision) built from "
-        "FI's ACTUAL primitives (_section_sort_key / _norm_num_token / "
-        "next_letter_label) and conformance-tested (test_label_algebra_fi.py binds "
-        "each op to that real code). Parallel-first per #186: unlike EE — whose "
-        "grafter routes sibling ordering through EE_LABEL_ALGEBRA (load-bearing) — "
-        "FI's grafter still positions inserts via core insert_sorted / "
-        "default_label_sort_key, so the declared algebra has no production importer "
-        "yet. Routing the grafter through it is the load-bearing follow-up (the EE "
-        "shape), deferred here."
-    ),
+    # #186 load-bearing follow-up (#206 tail): ``finland.label_algebra`` is no
+    # longer here — ``finland/merge.py`` now statically imports ``fi_label_sort_key``
+    # and dispatches the container-section sibling-merge ORDERING through it (the
+    # ``FI_LABEL_ALGEBRA.order`` operation), so the algebra is LIVE, reachable from
+    # the production merge path — the FI analogue of EE routing its sibling-merge
+    # sorts through ``ee_label_sort_key``. The allowlist entry + the
+    # ``replay_exercised: false`` baseline row were flipped (a legitimate one-way
+    # ratchet shrink: frontier wired to production). The generic ``insert_sorted``
+    # reroute and the fresh-letter ``successor_set`` mint stay direct — see the
+    # module docstring for why FI (built on ``_section_sort_key``, not the core
+    # ``default_label_sort_key``) cannot re-route them byte-identically.
     "lawvm.us_federal.label_algebra": (
         "#186 §4.2 item 4 LabelAlgebra extended to U.S. federal as a DECLARED spec. "
         "US_LABEL_ALGEBRA mirrors the U.S. Code numeric-stem + ``106A`` letter-insert "

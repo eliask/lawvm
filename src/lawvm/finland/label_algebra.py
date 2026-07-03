@@ -33,18 +33,36 @@ FI's label surface (VERIFIED against the FI section primitives):
   fresh-sibling calculus (``uncovered_recovery_support.next_letter_label``, also
   duplicated verbatim as ``group_ops._next_letter_label``).
 
-SCOPE (declared-first, byte-identical). This is a DECLARED, conformance-tested
-MIRROR of FI's real section-label code, NOT routed into the grafter's insert /
-relabel path (``tests/test_label_algebra_fi.py`` binds each declared behaviour to
-FI's ACTUAL ``_section_sort_key`` / ``_norm_num_token`` / ``next_letter_label``
-code, so it FAILS if FI's label logic drifts). It covers the Arabic + lettered
-stem-family calculus — the ``14 a §`` shape — which is the FI section surface the
-§4.2 seam names (``14 a §``). The typed leaf-label algebra
-(``finland/labels.py``'s ``InsertableArabic`` / ``AlphaSequence`` items /
-subitems, roman parts) and routing the grafter through the algebra are follow-ups
-(see the module note; FI's grafter positions via core ``insert_sorted`` /
-``default_label_sort_key``, so routing is the load-bearing follow-up EE already
-took, deferred here per #186's parallel-first discipline).
+SCOPE (byte-identical; PARTIALLY load-bearing). This is a conformance-tested
+profile of FI's real section-label code (``tests/test_label_algebra_fi.py`` binds
+each declared behaviour to FI's ACTUAL ``_section_sort_key`` / ``_norm_num_token``
+/ ``next_letter_label`` code, so it FAILS if FI's label logic drifts). It covers
+the Arabic + lettered stem-family calculus — the ``14 a §`` shape — which is the
+FI section surface the §4.2 seam names.
+
+ROUTING (load-bearing, #206 tail). FI's ONE section-family sibling-ORDERING site —
+``finland/merge.py``'s container-section sibling-merge sort — now dispatches its
+``label -> key`` through ``fi_label_sort_key`` (``FI_LABEL_ALGEBRA.order``), so the
+algebra is the load-bearing source of that insert ordering rather than a parallel
+mirror, mirroring how EE routes its sibling-merge sorts through
+``ee_label_sort_key``. Byte-identical: ``fi_label_sort_key`` is BUILT from
+``_section_sort_key`` (the conformance test pins the equality).
+
+STILL DIRECT (documented follow-ups). Unlike EE — whose algebra is built ON the
+core ``default_label_sort_key`` so re-routing every ``insert_sorted`` positioning
+is byte-identical — FI's algebra is built on ``_section_sort_key``, which
+DISAGREES with ``default_label_sort_key`` on non-Arabic-section surfaces (``1
+luku`` → ``(1, '')`` vs ``(1, 'luku', 0)``; ``V osa`` → ``(5, '')`` vs
+``(-1, 'vosa', 0)``; roman ``ii`` → ``(2, '')`` vs ``(-1, 'ii', 0)``). Routing
+FI's generic ``insert_sorted`` (chapter / part / roman) sites — which pass the
+core ``default_label_sort_key`` — through the FI section algebra would therefore
+CHANGE replay ordering, so those stay direct. The ``successor_set`` fresh-letter
+mint (``next_letter_label``) also stays direct: its call sites
+(``uncovered_recovery_runner.py`` / ``group_ops.py``) treat a ``None`` (series
+exhausted) result as a graceful skip, whereas the algebra's ``_fi_successor`` is
+fail-loud on that same case — routing would convert a skip into an exception. The
+typed leaf-label algebra (``finland/labels.py``'s ``InsertableArabic`` /
+``AlphaSequence`` items / subitems, roman parts) also remains a follow-up.
 
 PLANE. This frontend module imports the neutral seam type from
 ``core.label_algebra`` (the kernel never imports a jurisdiction) plus FI's own
@@ -60,7 +78,12 @@ from lawvm.core.label_algebra import LabelAlgebra, LabelComponent, ParsedLabel
 from lawvm.finland.helpers import _norm_num_token, _section_sort_key
 from lawvm.finland.uncovered_recovery_support import next_letter_label
 
-__all__ = ["FI_LABEL_ALGEBRA", "build_fi_label_algebra", "fi_parse_label"]
+__all__ = [
+    "FI_LABEL_ALGEBRA",
+    "build_fi_label_algebra",
+    "fi_parse_label",
+    "fi_label_sort_key",
+]
 
 
 def _fi_stem_and_components(
@@ -152,3 +175,47 @@ def build_fi_label_algebra() -> LabelAlgebra:
 
 #: FI's concrete label algebra (module-level singleton; the frontend datum).
 FI_LABEL_ALGEBRA: LabelAlgebra = build_fi_label_algebra()
+
+
+def fi_label_sort_key(label: str) -> Tuple[int, str]:
+    """FI's authoritative section sibling-order key, dispatched THROUGH the algebra.
+
+    Returns ``FI_LABEL_ALGEBRA.parse(label).sort_key`` — the algebra's ``order``
+    operation packaged as the ``label -> key`` callable FI's section-family
+    positioning site (``finland/merge.py``'s container-section sibling-merge sort)
+    requires. Routing that site here makes the ``LabelAlgebra`` seam LOAD-BEARING
+    for FI's section-insert ORDERING (§2.1 O2: "the insertion POSITION comes from
+    the label algebra's ordering") instead of it calling FI's raw
+    ``helpers._section_sort_key`` primitive directly — the FI analogue of EE's
+    ``estonia/label_algebra.ee_label_sort_key`` routing through
+    ``EE_LABEL_ALGEBRA``.
+
+    Signature MATCHES ``helpers._section_sort_key`` (``str -> (int, str)``) so it
+    is a drop-in ``key=`` callable at that sort site.
+
+    BYTE-IDENTICAL to ``helpers._section_sort_key`` on every label: the algebra's
+    ``parse`` is BUILT from ``_section_sort_key`` (``fi_parse_label`` sets
+    ``sort_key = _section_sort_key(label)``), and the conformance test
+    (``tests/test_label_algebra_fi.py``) pins that equality, so a drift fails
+    there. The FI parse always yields ``_section_sort_key``'s ``(int, str)``
+    shape (``number``, ``letter_suffix``), so the return type is that concrete
+    pair.
+
+    NOTE (why this is section-scoped, not a ``default_label_sort_key`` drop-in):
+    unlike EE — whose algebra is built ON the core ``default_label_sort_key`` and
+    so re-routes every ``insert_sorted`` positioning byte-identically — FI's
+    algebra is built on ``_section_sort_key``, which DISAGREES with
+    ``default_label_sort_key`` on non-Arabic-section surfaces (``1 luku`` →
+    ``(1, '')`` vs ``(1, 'luku', 0)``; ``V osa`` → ``(5, '')`` vs
+    ``(-1, 'vosa', 0)``; roman ``ii`` → ``(2, '')`` vs ``(-1, 'ii', 0)``).
+    Routing FI's generic ``insert_sorted`` (chapter/part/roman) sites through this
+    key would therefore CHANGE replay ordering. So this key is routed ONLY at the
+    one FI site that already keys on ``_section_sort_key`` (the section-family
+    merge sort), where byte-identity holds by construction. The generic
+    ``insert_sorted`` reroute — and the ``successor_set`` fresh-letter mint (whose
+    ``next_letter_label`` ``None``-exhaustion is handled gracefully at its call
+    sites, but is fail-loud in the algebra's ``_fi_successor``) — remain direct,
+    documented follow-ups.
+    """
+    number, letter_suffix = FI_LABEL_ALGEBRA.parse(label).sort_key
+    return (number, letter_suffix)

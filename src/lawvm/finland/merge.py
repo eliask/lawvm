@@ -46,9 +46,9 @@ from lawvm.core import tree_ops as _tops
 from lawvm.core.tree_ops import normalized_label_key
 from lawvm.finland.helpers import (
     _is_omission_ir,
-    _section_sort_key,
     _previous_item_token,
 )
+from lawvm.finland.label_algebra import fi_label_sort_key
 from lawvm.finland.op_provenance import RecognizerId, has_recognizer
 from lawvm.finland.ops import AmendmentOp, FailedOp, OpType, ReplayProfile, ResolvedOp, _op_target_subsection_label
 from lawvm.finland.helpers import _norm_num_token
@@ -1462,7 +1462,15 @@ def _merge_same_numbered_container_insert_ir(
         merged_units.append(selected_unit)
         appended_amend_labels.add(amend_unit.label)
 
-    merged_units.sort(key=lambda unit: _section_sort_key(unit.label))
+    # #186 §4.2 item 4 / §7 delta #4: FI's section-family sibling-merge ORDERING
+    # dispatches its ``label -> key`` through ``fi_label_sort_key`` (the
+    # ``FI_LABEL_ALGEBRA.order`` operation), so the declared label algebra is the
+    # LOAD-BEARING source of this insert ordering rather than a parallel mirror —
+    # the FI analogue of EE routing its sibling-merge sorts through
+    # ``ee_label_sort_key``. Byte-identical: ``fi_label_sort_key`` is BUILT from
+    # ``helpers._section_sort_key`` and the conformance test
+    # (``tests/test_label_algebra_fi.py``) pins the equality.
+    merged_units.sort(key=lambda unit: fi_label_sort_key(unit.label))
     new_children = list(_container_top_children(master_node, amend_node))
     for unit in merged_units:
         new_children.extend(unit.prefix)
