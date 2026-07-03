@@ -355,7 +355,32 @@ def _walk_source_nodes(
     legal_text_cache: dict[tuple[etree._Element, bool], str],
     amend_instruction_text_nodes_by_candidate: Mapping[etree._Element, tuple[etree._Element, ...]],
 ) -> None:
-    if not isinstance(node.tag, str):
+    # The per-document invariants (the output list, the two caches, the
+    # candidate map) are threaded through millions of recursive calls unchanged.
+    # Bind them once in a closure so the hot recursion passes only ``(node,
+    # path)`` positionally instead of re-binding six keyword arguments on every
+    # one of the ~5.6M node visits. Byte-identical: same visit order, same
+    # per-node extraction, same shared mutable state.
+    _walk_source_subtree(
+        node,
+        path,
+        nodes,
+        attached_history_note_keys,
+        legal_text_cache,
+        amend_instruction_text_nodes_by_candidate,
+    )
+
+
+def _walk_source_subtree(
+    node: etree._Element,
+    path: tuple[str, ...],
+    nodes: list[NZSourceNode],
+    attached_history_note_keys: set[str],
+    legal_text_cache: dict[tuple[etree._Element, bool], str],
+    amend_instruction_text_nodes_by_candidate: Mapping[etree._Element, tuple[etree._Element, ...]],
+) -> None:
+    tag = node.tag
+    if not isinstance(tag, str):
         return
     # ``_localname`` is the #1 chain-replay hotspot (~25M calls); here and at
     # the other call sites below we inline ``_localname_of_tag(node.tag)``
@@ -363,7 +388,7 @@ def _walk_source_nodes(
     # the ``_localname`` Python frame, the ``hasattr`` precheck, and the
     # ``isinstance(value, str)`` branch on ~2M calls, keeping the lru_cached
     # tag-split (which dominates for ~30 unique NZ tag names).
-    kind = _localname_of_tag(node.tag)
+    kind = _localname_of_tag(tag)
     if kind in _TEXT_EXCLUDE_TAGS:
         return
     if kind in _STRUCTURAL_TAGS:
@@ -371,7 +396,13 @@ def _walk_source_nodes(
             label = _first_def_term(node)
         else:
             label = _direct_child_text(node, "label")
-        segment = _path_segment(kind, label, _attr(node, "id"), len(nodes) + 1)
+        # ``node.attrib.get`` is read several times below (``id`` twice, plus
+        # ``deletion-status``); bind the attrib mapping once so each read is a
+        # single dict lookup rather than a fresh ``_attr`` frame + ``.attrib``
+        # attribute access. Byte-identical: same mapping, same defaults.
+        attrib = node.attrib
+        xml_id = attrib.get("id", "")
+        segment = _path_segment(kind, label, xml_id, len(nodes) + 1)
         current_path = (*path, segment)
         history_notes = tuple(_direct_history_notes(node))
         attached_history_note_keys.update(_element_source_key(note) for note in history_notes)
@@ -379,12 +410,12 @@ def _walk_source_nodes(
         source_node = NZSourceNode(
             kind=kind,
             path=current_path,
-            xml_id=_attr(node, "id"),
+            xml_id=xml_id,
             xml_path=xml_path,
             source_zone=_source_zone(xml_path),
             label=label,
             heading=_direct_child_text(node, "heading"),
-            deletion_status=_attr(node, "deletion-status"),
+            deletion_status=attrib.get("deletion-status", ""),
             text=_legal_text(node, cache=legal_text_cache),
             history=tuple(_history_witness(note) for note in history_notes),
             amend_instructions=(
@@ -395,23 +426,23 @@ def _walk_source_nodes(
         )
         nodes.append(source_node)
         for child in node:
-            _walk_source_nodes(
+            _walk_source_subtree(
                 child,
-                path=current_path,
-                nodes=nodes,
-                attached_history_note_keys=attached_history_note_keys,
-                legal_text_cache=legal_text_cache,
-                amend_instruction_text_nodes_by_candidate=amend_instruction_text_nodes_by_candidate,
+                current_path,
+                nodes,
+                attached_history_note_keys,
+                legal_text_cache,
+                amend_instruction_text_nodes_by_candidate,
             )
         return
     for child in node:
-        _walk_source_nodes(
+        _walk_source_subtree(
             child,
-            path=path,
-            nodes=nodes,
-            attached_history_note_keys=attached_history_note_keys,
-            legal_text_cache=legal_text_cache,
-            amend_instruction_text_nodes_by_candidate=amend_instruction_text_nodes_by_candidate,
+            path,
+            nodes,
+            attached_history_note_keys,
+            legal_text_cache,
+            amend_instruction_text_nodes_by_candidate,
         )
 
 
@@ -1005,12 +1036,18 @@ def _collect_legal_text(
         # behaviour); a non-root leaf contributes its raw text, normalized here so
         # the parent composes from normalized pieces.
         return "" if is_root else _normalize_text(node.text or "")
-    key = (node, is_root)
+    if not is_root:
+        # A validated non-leaf, non-root element: delegate to the lean recursive
+        # body, which shares the identical piece-composition logic without
+        # re-running the ``is_root`` branches. This is the shape the dominant
+        # child recursion takes (see below), so keeping it guard-light matters.
+        return _collect_child_flow_text(node, cache)
+    key = (node, True)
     if cache is not None:
         cached = cache.get(key)
         if cached is not None:
             return cached
-        if is_root and not (node.text or "").strip():
+        if not (node.text or "").strip():
             # With blank leading text the only difference between the root and
             # non-root forms is that dropped-but-blank ``node.text``, which
             # normalizes away — the normalized results are identical.
@@ -1022,34 +1059,82 @@ def _collect_legal_text(
     # The structural root contributes only its descendant flow text, not its own
     # leading ``text`` (which for a structural element is empty/whitespace); this
     # matches the historical extraction so non-inline nodes are unchanged.
-    if not is_root and node.text:
-        piece = _normalize_text(node.text)
+    _append_child_flow_pieces(node, pieces, cache)
+    text = " ".join(pieces)
+    if cache is not None:
+        cache[key] = text
+    return text
+
+
+def _collect_child_flow_text(
+    node: etree._Element,
+    cache: dict[tuple[etree._Element, bool], str] | None,
+) -> str:
+    """``_collect_legal_text(node, is_root=False)`` for a validated non-leaf.
+
+    The caller has already established that ``node`` is a string-tagged,
+    non-excluded element with children (``len(node) > 0``), so the entry guards
+    and the ``is_root`` branches of :func:`_collect_legal_text` are skipped. The
+    composed value is byte-identical to the public function's ``is_root=False``
+    path: same ``(node, False)`` cache key, same leading-``node.text`` piece, and
+    the same per-child flow-text composition.
+    """
+
+    key = (node, False)
+    if cache is not None:
+        cached = cache.get(key)
+        if cached is not None:
+            return cached
+    pieces: list[str] = []
+    node_text = node.text
+    if node_text:
+        piece = _normalize_text(node_text)
         if piece:
             pieces.append(piece)
+    _append_child_flow_pieces(node, pieces, cache)
+    text = " ".join(pieces)
+    if cache is not None:
+        cache[key] = text
+    return text
+
+
+def _append_child_flow_pieces(
+    node: etree._Element,
+    pieces: list[str],
+    cache: dict[tuple[etree._Element, bool], str] | None,
+) -> None:
+    """Append each child's flow text + tail, in document order, to ``pieces``.
+
+    Shared body of :func:`_collect_legal_text` (root path) and
+    :func:`_collect_child_flow_text` (recursive path). Leaf children are
+    normalized inline; non-leaf children recurse through the guard-light
+    :func:`_collect_child_flow_text`. Byte-identical to the historical inline
+    loop.
+    """
+
+    append = pieces.append
     for child in node:
-        if not isinstance(child.tag, str):
+        child_tag = child.tag
+        if not isinstance(child_tag, str):
             # Comment/PI nodes contribute nothing (text or tail), matching the
             # historical extractor's ``isinstance(tag, str)`` skip.
             continue
-        if _localname_of_tag(child.tag) in _TEXT_EXCLUDE_TAGS:
+        if _localname_of_tag(child_tag) in _TEXT_EXCLUDE_TAGS:
             # Excluded subtree: skip its text and the tail that trails it, to
             # keep the historical "notes/history contribute nothing" behaviour.
             continue
         child_text = (
             _normalize_text(child.text or "")
             if len(child) == 0
-            else _collect_legal_text(child, is_root=False, cache=cache)
+            else _collect_child_flow_text(child, cache)
         )
         if child_text:
-            pieces.append(child_text)
-        if child.tail:
-            tail = _normalize_text(child.tail)
+            append(child_text)
+        tail = child.tail
+        if tail:
+            tail = _normalize_text(tail)
             if tail:
-                pieces.append(tail)
-    text = " ".join(pieces)
-    if cache is not None:
-        cache[key] = text
-    return text
+                append(tail)
 
 
 # Amend-subtree section disambiguation. --------------------------------------
@@ -2487,9 +2572,15 @@ def _source_zone(xml_path: str) -> str:
 
 def _direct_child_text(node: etree._Element, localname: str) -> str:
     for child in node:
-        if not isinstance(child.tag, str):
+        tag = child.tag
+        if not isinstance(tag, str):
             continue
-        if child.tag == localname or _localname_of_tag(child.tag) == localname:
+        # ``_localname_of_tag`` subsumes the bare ``tag == localname`` case: an
+        # unnamespaced tag has no ``}`` so its localname is the tag itself. So the
+        # former ``tag == localname or ...`` short-circuit only ever matched what
+        # the localname compare also matches — dropping it is byte-identical and
+        # removes a redundant string compare on the ~2M direct-child scans.
+        if _localname_of_tag(tag) == localname:
             if len(child) == 0:
                 return _normalize_text(child.text or "")
             return _node_text(child)
