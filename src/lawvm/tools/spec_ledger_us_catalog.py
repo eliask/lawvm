@@ -56,7 +56,9 @@ documented exclusions (``US_NON_RULE_LITERALS``):
 * ``us_dry_run_title`` — the constant prefix of an f-string ``proof_id`` /
   ``operation_id`` (``f"us_dry_run_title{title}_window"``), not a rule id.
 * US apply/order/profile helper names such as ``us_apply_profile`` and
-  ``us_ordering_profile`` — exported functions/profile labels, not ledger firings.
+  ``us_ordering_profile`` — exported functions/profile labels, not ledger firings;
+  likewise ``us_parse_label`` — the ``__all__`` export naming ``US_LABEL_ALGEBRA``'s
+  parse op (#186 LabelAlgebra), not a witness rule id (mirrors EE ``ee_parse_label``).
 
 (The f-string fragments that carry a ``:`` — e.g. ``us_dry_run:title`` — are excluded by
 the discovery's ``:``-fragment filter, not enumerated here.)
@@ -87,6 +89,10 @@ US_NON_RULE_LITERALS: FrozenSet[str] = frozenset(
         "us_dry_run_changed_section_set_diverges_from_oracle",
         "us_dry_run_title",
         "us_apply_profile",
+        # __all__ function-name export in label_algebra.py (#186 LabelAlgebra) — the
+        # public US label parse function (US_LABEL_ALGEBRA's parse op), NOT a witness
+        # rule_id. Mirrors EE's ee_parse_label exclusion.
+        "us_parse_label",
         "us_char_span_boundary_audit",
         "us_coverage_claim_for_op",
         "us_ordering_profile",

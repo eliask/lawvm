@@ -99,6 +99,35 @@ DEAD_ALLOWLIST: dict[str, str] = {
         "yet. Routing the grafter through it is the load-bearing follow-up (the EE "
         "shape), deferred here."
     ),
+    "lawvm.us_federal.label_algebra": (
+        "#186 §4.2 item 4 LabelAlgebra extended to U.S. federal as a DECLARED spec. "
+        "US_LABEL_ALGEBRA mirrors the U.S. Code numeric-stem + ``106A`` letter-insert "
+        "section-label calculus (parse / order / successor / collision) built from "
+        "the SHARED kernel primitives the US frontend orders on "
+        "(core.tree_ops.default_label_sort_key / normalized_label_key); the "
+        "successor is synthesized from that decomposition (US has NO standalone "
+        "next-section-label helper — an honest gap, structurally the letter "
+        "transpose of EE's synthesized ``stem_(max+1)`` superscript successor). It "
+        "is conformance-tested (test_label_algebra_us.py binds each op to that real "
+        "code) but, parallel-first per #186, has no production importer yet — like "
+        "FI, US's grafter still positions inserts via the shared "
+        "default_label_sort_key. Routing the grafter through it is the load-bearing "
+        "follow-up (the EE shape), deferred here."
+    ),
+    "lawvm.uk_legislation.label_algebra": (
+        "#186 §4.2 item 4 LabelAlgebra extended to U.K. legislation as a DECLARED "
+        "spec. UK_LABEL_ALGEBRA mirrors UK's numeric-stem + ``4A`` / ``4ZA`` "
+        "letter-insert label calculus (parse / order / successor / collision) built "
+        "from UK's ACTUAL primitives (ordering._label_sort_key / "
+        "canonicalize._clean_num / source_parent_payloads._next_same_stem_alnum_label). "
+        "It faithfully mirrors UK's REAL lexicographic order (4 < 4A < 4B < 4ZA), "
+        "NOT the brief's ZA < A interstitial priority (which UK's ordering primitive "
+        "does not encode — a declared-but-honest gap). It is conformance-tested "
+        "(test_label_algebra_uk.py binds each op to that real code) but, "
+        "parallel-first per #186, has no production importer yet — UK's grafter "
+        "still positions inserts via _label_sort_key directly. Routing the grafter "
+        "through it is the load-bearing follow-up (the EE shape), deferred here."
+    ),
 }
 
 

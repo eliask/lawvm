@@ -194,6 +194,13 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_uk_*.py",
         "test_ops_uk.py",
         "test_regex_batch6_perf.py",
+        # #186 §4.2 item 4 / §7 delta #4: UK_LABEL_ALGEBRA, the DECLARED,
+        # conformance-tested mirror of UK's numeric-stem + ``4A`` / ``4ZA`` insert
+        # label calculus. Each op is bound to UK's ACTUAL label code
+        # (_label_sort_key / _clean_num / _next_same_stem_alnum_label). Not matched
+        # by the ``test_uk_*`` glob (name is ``test_label_algebra_uk``), so pinned
+        # explicitly. Parallel-first: grafter insert-path routing deferred.
+        "test_label_algebra_uk.py",
     ),
     "eu": (
         "test_eu_*.py",
@@ -225,6 +232,15 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # task #105: US same-moment cross-act conflict detection + ordering parity
         # (``us_federal/us_ordering.py`` routed through the shared ``order_ops``).
         "test_us_same_moment.py",
+        # #186 §4.2 item 4 / §7 delta #4: US_LABEL_ALGEBRA, the DECLARED,
+        # conformance-tested mirror of the US Code numeric-stem + ``106A`` letter
+        # insert label calculus. Each op is bound to the SHARED label code the US
+        # frontend orders on (default_label_sort_key / normalized_label_key); the
+        # successor is synthesized from that decomposition (no standalone US
+        # next-label helper). Not matched by the ``test_jurisdiction_starter_*`` /
+        # ``test_us_*`` globs (name is ``test_label_algebra_us``), so pinned
+        # explicitly. Parallel-first: grafter insert-path routing deferred.
+        "test_label_algebra_us.py",
     ),
     "finland_sources": (
         "test_fi_amendment_index.py",
