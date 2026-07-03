@@ -579,6 +579,8 @@ _UK_RULE_SPECS: Dict[str, str] = {
         "A replace whose target leaf is missing is materialized as an insert of the replacement leaf.",
     "uk_replay_schedule_entry_repeal_granularity_blocked":
         "A schedule-entry repeal coarser than the resolved target granularity is blocked rather than over-deleting.",
+    "uk_replay_untyped_whole_container_structural_blocked":
+        "A whole-Part/Chapter replace whose same-kind payload carries no child sections is blocked rather than clobbering the live container's untargeted children.",
     "uk_replay_schedule_item_target_from_parent_substitution_resolved":
         "A schedule-item target is resolved from a parent substitution's payload structure.",
     "uk_replay_schedule_p1group_paragraph_wrapper_resolved":

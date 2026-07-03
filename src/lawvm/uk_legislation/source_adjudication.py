@@ -495,6 +495,7 @@ UK_REPLAY_SOURCE_SHAPE_ADJUDICATION_KINDS = frozenset(
         "uk_replay_text_match_synthetic_selector_gap",
         "uk_replay_text_patch_preimage_drift_multi_prior_same_target",
         "uk_replay_same_source_text_patch_overlap_blocked",
+        "uk_replay_untyped_whole_container_structural_blocked",
     }
 )
 
@@ -827,6 +828,7 @@ _UK_REPLAY_SOURCE_SHAPE_RESIDUAL_DEFAULT_ADJUDICATION_KINDS = frozenset(
         "uk_replay_table_entry_row_insert_unresolved",
         "uk_replay_table_entry_row_replace_unresolved",
         "uk_replay_target_ambiguous_recursive_descent",
+        "uk_replay_untyped_whole_container_structural_blocked",
     }
 )
 

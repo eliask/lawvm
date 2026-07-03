@@ -29,6 +29,9 @@ from lawvm.uk_legislation.totalization_table import UK_TOTALIZATION_TABLE
 UK_REPLAY_SCHEDULE_ENTRY_REPEAL_GRANULARITY_BLOCKED_RULE_ID = (
     "uk_replay_schedule_entry_repeal_granularity_blocked"
 )
+UK_REPLAY_UNTYPED_WHOLE_CONTAINER_STRUCTURAL_BLOCKED_RULE_ID = (
+    "uk_replay_untyped_whole_container_structural_blocked"
+)
 
 
 @dataclass(frozen=True)
@@ -212,6 +215,34 @@ def append_schedule_entry_repeal_granularity_blocked_adjudication(
             "target": str(op.target),
             "reason": "schedule_entry_repeal_widened_to_schedule",
             "family": "source_schedule_list_entry_elaboration",
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": QuirksDisposition.RECORD,
+        },
+    )
+
+
+def append_untyped_whole_container_structural_blocked_adjudication(
+    adjudications_out: Optional[list[CompileAdjudication]],
+    *,
+    op: LegalOperation,
+) -> CompileAdjudication:
+    return _append_uk_replay_adjudication(
+        adjudications_out,
+        kind=UK_REPLAY_UNTYPED_WHOLE_CONTAINER_STRUCTURAL_BLOCKED_RULE_ID,
+        message=(
+            "UK replay prepare step skipped a whole-Part/Chapter replace whose "
+            "same-kind payload carries no child sections: a legitimate container "
+            "substitution carries its replacement sections as children, so this "
+            "empty-children payload would only delete every untargeted child "
+            "section of the live container."
+        ),
+        op=op,
+        detail={
+            "action": legacy_text_action_value(op),
+            "target": str(op.target),
+            "reason": "empty_children_whole_container_replace_would_clobber_children",
+            "family": "source_container_replacement_payload_empty",
             "blocking": True,
             "strict_disposition": "block",
             "quirks_disposition": QuirksDisposition.RECORD,
