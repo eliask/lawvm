@@ -750,6 +750,14 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # apply path. Parallel-first: control-flow routing deferred to the
         # load-bearing follow-up.
         "test_totalization_conformance.py",
+        # #186 §4.2 item 4 / §7 delta #4: the neutral LabelAlgebra seam
+        # (parse / successor-set / order / collision) + EE_LABEL_ALGEBRA, the
+        # DECLARED, conformance-tested mirror of Estonia's superscript ``§10¹`` /
+        # lettered ``14a`` label calculus. Each op is bound to EE's ACTUAL label
+        # code (default_label_sort_key / normalized_label_key / _normalize_num),
+        # plus neutral-type order-law + parse round-trip unit tests.
+        # Parallel-first: grafter relabel-path routing deferred to the follow-up.
+        "test_label_algebra.py",
     ),
     "core_compile_projection": (
         "test_compile_metadata_default_fail_loud.py",

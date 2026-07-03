@@ -72,6 +72,7 @@ from lawvm.core.totalization import (
     Reject,
 )
 from lawvm.estonia.totalization_table import EE_TOTALIZATION_TABLE
+from lawvm.estonia.label_algebra import EE_LABEL_ALGEBRA
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.core import tree_ops
 from lawvm.core.apply_seam import (
@@ -314,6 +315,21 @@ def _node_has_html_table_items(node: IRNode) -> bool:
         and child.attrs.get("source_cleanup_rule") == _EE_HTML_TABLE_NUMBERED_ITEMS_RULE
         for child in node.children
     )
+
+
+# #186 §4.2 item 4 / §7 delta #4: EE's concrete label algebra (superscript
+# ``§10¹`` / lettered ``14a`` stem-family calculus) as a first-class, neutral
+# ``core.label_algebra.LabelAlgebra`` seam object. DECLARED-FIRST /
+# parallel-first (the θ / CTSF discipline): the algebra is a conformance-tested
+# MIRROR of EE's real relabel/collision code (``tests/test_label_algebra.py``),
+# NOT yet routed into the grafter's relabel path — the existing per-site
+# relabel/collision code below (``_ee_relabel_duplicate_division_suffix_before_insert``,
+# the ``default_label_sort_key`` inserts, ``_predecessor_rank``) stays the source
+# of truth this increment. This module-level binding references the datum so the
+# EE label algebra is LIVE (reachable over the import graph from the production
+# grafter), the same wiring the θ table uses; routing is the load-bearing
+# follow-up.
+EE_LABEL_ALGEBRA_DECLARED = EE_LABEL_ALGEBRA
 
 
 def _is_inserted_numbered_label(label: str | None) -> bool:
