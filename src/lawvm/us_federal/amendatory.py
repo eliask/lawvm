@@ -46,6 +46,12 @@ from lawvm.core.ir import (
     TextPatchSpec,
     TextSelector,
 )
+from lawvm.core.filter_result import (
+    FilterResult,
+    RejectedItem,
+    enforce_group_atomicity,
+    filter_result_from_parts,
+)
 from lawvm.core.parse_witness import ParseWitness
 from lawvm.core.branch_authority import COMMENCED_STATUS, PENDING_CONDITION_STATUS
 from lawvm.core.provenance import (
@@ -193,6 +199,88 @@ NON_TITLE_TARGET_RULE_ID = "us_amendatory_target_non_us_code"
 # compound (multiple end-of-paragraph conjunction edits + a block add) that a single
 # 2-operand text_replace cannot faithfully represent; held out as a typed residual.
 COMPOUND_STRIKE_INSERT_FINDING_RULE_ID = "us_amendatory_compound_strike_insert_node"
+# Witness on a member op that carries the purpose-built atomic ``group_id`` for a
+# US compound instruction that lowers to >1 member op (a node-restructure
+# "striking <unit> and inserting the following new <unit>s: <block>", or a
+# list/range strike). The group is an ATOMIC legal act (Fable UNIVERSAL_ALGEBRA
+# §5.5 / §7 delta #7): all members apply together or none do. This is a NEW,
+# purpose-built group id — it is NOT a reused provenance stamp — so the shared
+# ``enforce_group_atomicity`` kernel transform can adjudicate the members as one
+# unit at the replay/dry-run seam.
+RULE_COMPOUND_GROUP_ATOMIC = "us_amend_compound_group_atomic"
+
+
+def _us_compound_group_id(instruction_id: str) -> str:
+    """Mint the purpose-built atomic ``group_id`` for one compound instruction.
+
+    A group id names an ATOMIC compound legal act: every member op of ONE
+    amendatory instruction that lowers to more than one op shares this id so the
+    :func:`lawvm.core.filter_result.enforce_group_atomicity` kernel transform can
+    reject the WHOLE group when any single member cannot land (no half-applied
+    compound instruction). Deliberately derived from the (unique) instruction id
+    and prefixed ``us_compound_`` so it is a fresh key, never colliding with any
+    existing provenance tag or effect-id stamp.
+    """
+
+    return f"us_compound_{instruction_id}"
+
+
+def _lower_atomic_group(
+    instruction_id: str,
+    *,
+    accepted_members: tuple[LegalOperation, ...],
+    rejected_members: tuple[tuple[LegalOperation, str], ...] = (),
+) -> tuple[LegalOperation, ...] | None:
+    """Adjudicate a compound instruction's member ops via the kernel atomicity rule.
+
+    Every member op of ONE compound instruction shares the purpose-built
+    ``group_id`` :func:`_us_compound_group_id`. This routes them through the shared
+    :func:`lawvm.core.filter_result.enforce_group_atomicity` transform (Fable
+    UNIVERSAL_ALGEBRA §5.5 / §7 delta #7): the members are an ATOMIC legal act, so
+    if ANY member is rejected (a member that could not be built/lowered) the WHOLE
+    group is rejected — no half-applied compound instruction.
+
+    Members are staged into a :class:`FilterResult` whose accepted lane holds the
+    ops that lowered and whose rejected lane holds the ones that did not; the
+    kernel then flips the accepted members to rejected iff the group has any
+    failing member. Returns the accepted member ops (in source order) with the
+    shared ``group_id`` stamped when the whole group survives, or ``None`` when the
+    group collapsed (the caller keeps the typed hold finding). The ``group_id`` is
+    stamped BEFORE the transform so the accepted lane already carries the atomic
+    unit key the kernel keys on.
+    """
+
+    group_id = _us_compound_group_id(instruction_id)
+    staged_accepted = tuple(
+        _with_group_id(member, group_id) for member in accepted_members
+    )
+    staged_rejected = tuple(
+        RejectedItem(item=_with_group_id(member, group_id), reason=reason)
+        for member, reason in rejected_members
+    )
+    staged: FilterResult[LegalOperation] = filter_result_from_parts(
+        accepted_items=staged_accepted,
+        rejected_items=staged_rejected,
+    )
+    adjudicated = enforce_group_atomicity(
+        staged,
+        group_id_of=lambda op: op.group_id,
+        member_label=lambda op: op.witness_rule_id or op.op_id,
+    )
+    if not adjudicated.accepted_items:
+        # A failing member rejected the whole group — hold it (no half-apply).
+        return None
+    return tuple(adjudicated.accepted_items)
+
+
+def _with_group_id(op: LegalOperation, group_id: str) -> LegalOperation:
+    """Return ``op`` carrying ``group_id`` (LegalOperation is frozen)."""
+
+    if op.group_id == group_id:
+        return op
+    return _dc_replace(op, group_id=group_id)
+
+
 # An "add at the end the following: <block>" whose block opens with a NEW section /
 # chapter head ("§ 2328. …", "CHAPTER 37—…") is a whole-new-section CREATE, not an
 # append to the inherited section's body. It does not materialize from any before-
@@ -2702,7 +2790,7 @@ _STRIKE_UNIT_LIST_RE = re.compile(
 # represent the node-level restructure as a single op, so we hold it out as a typed
 # residual (the same discipline as the ``inserting after … the following`` compound).
 _STRIKE_UNIT_INSERT_NODE_RE = re.compile(
-    rf"striking\s+(?P<kind>{_KIND_WORDS})\s+\([0-9A-Za-z]+\)"
+    rf"striking\s+(?P<kind>{_KIND_WORDS})\s+\((?P<label>[0-9A-Za-z]+)\)"
     r"(?:\s*\([0-9A-Za-z]+\))*\s+and\s+inserting\s+the\s+following"
     rf"(?:\s+new)?\s+(?:{_KIND_WORDS})s?\b",
     re.IGNORECASE,
@@ -3798,17 +3886,83 @@ def _lower_instruction(
                 "structural node ('inserting after … the following'); not lowerable "
                 "to a single text_replace",
             )
-        elif _STRIKE_UNIT_INSERT_NODE_RE.search(raw_text) is not None:
+        elif (_strike_node_m := _STRIKE_UNIT_INSERT_NODE_RE.search(raw_text)) is not None:
             # "striking subparagraph (I) and inserting the following new
-            # subparagraphs (I) and (J): <block>" — a node-level restructure. A
-            # whole-node REPLACE of the resolved address would drop the struck node's
-            # siblings (materializing only the new block); held out as a residual.
-            finding = _finding(
-                COMPOUND_STRIKE_INSERT_FINDING_RULE_ID,
-                "strike-and-insert replaces a named structural sub-unit with new "
-                "sub-unit(s) ('striking <unit> and inserting the following … <unit>'); "
-                "a node-level restructure, not a whole-node text replace",
-            )
+            # subparagraph(s) (I) [and (J)]: <block>" — a node-level restructure
+            # (#186 follow-up): a named sub-unit is struck and the following block
+            # (which carries the new sub-unit(s) that take its place) is spliced in.
+            #
+            # This lowers to an ATOMIC compound group of member ops sharing a
+            # purpose-built ``group_id`` (``us_compound_<instruction_id>``). The
+            # kernel ``enforce_group_atomicity`` transform (Fable UNIVERSAL_ALGEBRA
+            # §5.5 / §7 delta #7) adjudicates the members as ONE legal act: if any
+            # member cannot be built the WHOLE group is held (the finding is kept),
+            # so there is never a half-applied compound. The member op is a
+            # whole-node REPLACE of the struck sub-unit's OWN address (one level
+            # below the resolved node, from the struck label) — NOT of the enclosing
+            # node — so the block takes the struck unit's place without dropping its
+            # siblings. Future-effective language is owned by the temporal layer (the
+            # same shared guard the sibling strike-insert branches apply): route to a
+            # typed finding, never an immediate state change.
+            # lawvm-regex: diagnostic future-effective guard, routes deferred language to the temporal layer
+            if _FUTURE_EFFECTIVE_RE.search(raw_text) is not None:
+                finding = _finding(
+                    DEFERRED_AMEND_TO_READ_FINDING_RULE_ID,
+                    "strike-and-insert node-restructure carries future-effective "
+                    "language; owned by the temporal layer, not lowered as immediate",
+                )
+            elif payload_node is not None and payload_node.text:
+                struck_kind = _strike_node_m.group("kind").lower()
+                struck_label = _strike_node_m.group("label")
+                struck_addr = LegalAddress(
+                    path=(*address.path, (struck_kind, struck_label))
+                )
+                normalized_payload_text, reconstituted = _reconstitute_target_label(
+                    payload_node.text, struck_addr
+                )
+                member_payload = (
+                    IRNode(kind=payload_node.kind, text=normalized_payload_text)
+                    if reconstituted
+                    else payload_node
+                )
+                group_member = _make_op(
+                    StructuralAction.REPLACE,
+                    rule_id=RULE_STRIKE_INSERT,
+                    payload=member_payload,
+                    target=struck_addr,
+                    extra_provenance_tags=(
+                        RULE_COMPOUND_GROUP_ATOMIC,
+                        *((RULE_RECONSTITUTED_TARGET_LABEL,) if reconstituted else ()),
+                    ),
+                )
+                # Route the (currently single) member through the SAME kernel
+                # atomicity transform the rest of the codebase uses, keyed by the
+                # purpose-built group id, so the compound is stamped as one atomic
+                # unit at the seam. A single accepted member is byte-identical
+                # (§5.5 common case); the transform is what makes the group atomic
+                # once >1 member (or a failing member) is present.
+                lowered_group = _lower_atomic_group(
+                    instruction_id, accepted_members=(group_member,)
+                )
+                if lowered_group is not None:
+                    op = lowered_group[0]
+                    extra_ops.extend(lowered_group[1:])
+                    address = struck_addr
+                    witness_rule_id = RULE_STRIKE_INSERT
+                else:
+                    finding = _finding(
+                        COMPOUND_STRIKE_INSERT_FINDING_RULE_ID,
+                        "strike-and-insert node-restructure group could not lower "
+                        "all members atomically; the whole group is held (no "
+                        "half-applied compound instruction)",
+                    )
+            else:
+                finding = _finding(
+                    COMPOUND_STRIKE_INSERT_FINDING_RULE_ID,
+                    "strike-and-insert replaces a named structural sub-unit with new "
+                    "sub-unit(s) ('striking <unit> and inserting the following … <unit>') "
+                    "but carries no plain-text payload block; held out as a residual",
+                )
         elif _TAIL_STRIKE_RE.search(raw_text) is not None:
             # "striking 'X' and all that follows ... [through 'Y'] and inserting 'Z'":
             # the quoted anchor is only the start of the deletion; the materializer
@@ -5047,6 +5201,24 @@ def _lower_instruction(
     # typed finding — the parse_witness and the finding should agree.
     if op is None and finding is not None:
         witness_rule_id = finding.rule_id
+
+    # Atomic-group stamp (#186 follow-up). An instruction that lowered to MORE
+    # THAN ONE member op (a list/range strike lowering to one REPEAL per member,
+    # or the strike-and-insert node-restructure group above) is ONE atomic legal
+    # act: all members apply together or none do. Route the members through the
+    # shared ``enforce_group_atomicity`` kernel transform keyed by the
+    # purpose-built ``group_id`` so the compound is stamped as an atomic unit at
+    # the replay/dry-run seam. All members are accepted here (they lowered), so
+    # the transform is byte-identical except for the shared ``group_id`` now on
+    # every member — the atomicity itself binds downstream when a member fails to
+    # apply. A single-op instruction is left untouched (no group).
+    if op is not None and extra_ops:
+        grouped = _lower_atomic_group(
+            instruction_id, accepted_members=(op, *extra_ops)
+        )
+        assert grouped is not None  # all members accepted ⇒ never collapses here
+        op = grouped[0]
+        extra_ops = list(grouped[1:])
 
     return USAmendmentInstruction(  # noqa: B035
         instruction_id=instruction_id,

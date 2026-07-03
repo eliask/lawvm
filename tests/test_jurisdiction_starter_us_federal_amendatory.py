@@ -23,6 +23,7 @@ from lawvm.core.semantic_types import StructuralAction, TextPatchKindEnum
 from lawvm.us_federal.amendatory import (
     CHAPTER_ANALYSIS_STRIKE_FINDING_RULE_ID,
     COMPOUND_STRIKE_INSERT_FINDING_RULE_ID,
+    RULE_COMPOUND_GROUP_ATOMIC,
     DEFERRED_AMEND_TO_READ_FINDING_RULE_ID,
     DESIGNATION_STRIKE_FINDING_RULE_ID,
     HEADING_STRIKE_FINDING_RULE_ID,
@@ -2022,11 +2023,15 @@ def test_relative_head_is_not_threaded_when_section_multi_classified():
     assert instr.finding.rule_id == TARGET_UNRESOLVED_FINDING_RULE_ID
 
 
-def test_strike_unit_insert_new_units_is_held_out_not_a_whole_node_replace():
+def test_strike_unit_insert_new_units_lowers_to_atomic_group_replace():
     # "striking subparagraph (I) and inserting the following new subparagraphs (I)
-    # and (J): <block>" is a NODE-LEVEL RESTRUCTURE. A whole-node REPLACE of the
-    # resolved address would drop the struck node's siblings (materializing only the
-    # new block); it is held out as the compound residual rather than corrupted.
+    # and (J): <block>" is a NODE-LEVEL RESTRUCTURE (#186 follow-up). It was
+    # previously held out as the compound residual; it now lowers to a whole-node
+    # REPLACE of the STRUCK sub-unit's OWN address (subparagraph (I)) — not the
+    # enclosing node — so the new block takes the struck unit's place without
+    # dropping its siblings. The member carries a purpose-built atomic ``group_id``
+    # (``us_compound_<instruction_id>``) stamped by the shared
+    # ``enforce_group_atomicity`` kernel transform, so it is an atomic legal act.
     body = (
         '<section identifier="/us/pl/116/900/s1"><num value="1">SEC. 1. </num>'
         '<content><ref href="/us/usc/t11/s101/10A">Section 101(10A) of title 11, '
@@ -2040,9 +2045,55 @@ def test_strike_unit_insert_new_units_is_held_out_not_a_whole_node_replace():
     )
     report = lower_plaw_amendatory(_synthetic_plaw(body))
     instr = report.instructions[0]
-    assert instr.operation is None
-    assert instr.finding is not None
-    assert instr.finding.rule_id == COMPOUND_STRIKE_INSERT_FINDING_RULE_ID
+    # Previously held out (finding + no op); now an accepted group-atomic REPLACE.
+    assert instr.finding is None
+    op = instr.operation
+    assert op is not None
+    assert op.action is StructuralAction.REPLACE
+    # The REPLACE targets the STRUCK sub-unit's own address, one level below the
+    # resolved node (subparagraph (I) under 11:101(10A)).
+    assert op.target.path[-1] == ("subparagraph", "I")
+    # The member carries the purpose-built atomic group id and the atomic-group tag.
+    assert op.group_id == f"us_compound_{op.op_id}"
+    assert RULE_COMPOUND_GROUP_ATOMIC in op.provenance_tags
+    # The new block (both (I) and (J)) becomes the replacement payload.
+    assert op.payload is not None and "(I)" in op.payload.text and "(J)" in op.payload.text
+
+
+def test_compound_group_collapses_atomically_when_a_member_cannot_lower():
+    # Group-atomicity kernel wiring (#186): a compound instruction is one atomic
+    # legal act — if ANY member op cannot be built the WHOLE group is held, with no
+    # half-applied compound. Directly exercise the parse-time adjudicator with a
+    # two-member group whose second member is a rejected (could-not-build) member:
+    # the kernel flips the accepted member to rejected, so ``_lower_atomic_group``
+    # returns ``None`` and the caller keeps the typed hold finding.
+    from lawvm.core.ir import LegalAddress, LegalOperation
+    from lawvm.core.semantic_types import StructuralAction as SA
+    from lawvm.us_federal.amendatory import _lower_atomic_group
+
+    good = LegalOperation(
+        op_id="i1",
+        sequence=1,
+        action=SA.REPEAL,
+        target=LegalAddress(path=(("title", "11"), ("section", "1"), ("paragraph", "a"))),
+    )
+    bad = LegalOperation(
+        op_id="i1#s1",
+        sequence=1,
+        action=SA.REPEAL,
+        target=LegalAddress(path=(("title", "11"), ("section", "1"), ("paragraph", "b"))),
+    )
+    # All-accepted ⇒ the group survives, every member carries the shared group id.
+    survived = _lower_atomic_group("i1", accepted_members=(good, bad))
+    assert survived is not None
+    assert {m.group_id for m in survived} == {"us_compound_i1"}
+    # One member rejected ⇒ the whole group collapses (atomic hold).
+    collapsed = _lower_atomic_group(
+        "i1",
+        accepted_members=(good,),
+        rejected_members=((bad, "member could not be lowered"),),
+    )
+    assert collapsed is None
 
 
 def test_title_only_chapeau_threads_title_to_relative_prose_leaf():
