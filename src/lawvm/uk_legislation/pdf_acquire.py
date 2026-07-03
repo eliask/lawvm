@@ -51,6 +51,18 @@ from lxml import etree
 _LEG_BASE = "https://www.legislation.gov.uk"
 _USER_AGENT = LAWVM_USER_AGENT
 
+# Tier-1 bounded acquisition batch (explicit small list, NOT the full 7,547).
+# The three C19 acts whose marginal-note segmentation was proven in #177, plus a
+# handful of further clean regnal-year Victorian public acts to exercise the
+# relaxed 4-part id parser end-to-end.  The corpus-scale crawl is deferred.
+TIER1_REGNAL_BATCH: tuple[str, ...] = (
+    "ukpga/Vict/45-46/61",  # Bills of Exchange Act 1882
+    "ukpga/Vict/53-54/39",  # Partnership Act 1890
+    "ukpga/Vict/38-39/90",  # Public Health Act 1875
+    "ukpga/Vict/56-57/71",  # Sale of Goods Act 1893
+    "ukpga/Vict/57-58/60",  # Merchant Shipping Act 1894
+)
+
 # Polite default: legislation.gov.uk is a public government site. Sequential,
 # one request at a time, with a real inter-request gap. 1.0s is deliberately
 # conservative for the validation SAMPLE; the eventual corpus crawler may tune
@@ -258,13 +270,70 @@ class PdfSampleReport:
 # ---------------------------------------------------------------------------
 
 
+# A regnal-year citation names the reign by a monarch abbreviation
+# (``Vict``, ``Geo5``, ``Edw7``, ``Will4``, ``Cha2``, ``Eliz2``, ``Ann``, …)
+# followed by a regnal-year component that is either a single year (``45``) or a
+# hyphenated span across a regnal boundary (``45-46``).  Pre-1963 UK Acts are
+# cited this way (e.g. Bills of Exchange Act 1882 = ``ukpga/Vict/45-46/61``)
+# rather than by calendar year.  These are structural shape checks (no
+# semantic-plane parsing), so plain string predicates suffice — no regex.
+
+
+def _is_regnal_monarch(seg: str) -> bool:
+    """A monarch abbreviation: leading uppercase letter, then alnum (e.g. ``Vict``,
+    ``Geo5``, ``Edw7``, ``Will4``)."""
+    return bool(seg) and seg[0].isupper() and seg.isalnum()
+
+
+def _is_regnal_years(seg: str) -> bool:
+    """A regnal-year component: ``45`` or a hyphenated span ``45-46`` (digits only,
+    at most one hyphen, non-empty on both sides)."""
+    if not seg:
+        return False
+    halves = seg.split("-")
+    if len(halves) > 2:
+        return False
+    return all(h.isdigit() for h in halves)
+
+
 def _parse_statute_id(statute_id: str) -> tuple[str, str, str]:
+    """Parse a UK statute id into URL-path components ``(act_type, year, number)``.
+
+    Accepts two forms, returning a 3-tuple whose middle element is the full
+    ``year``-position path (so ``enacted_stub_url`` can reconstruct the URL by a
+    simple ``{act_type}/{year}/{number}`` join in both cases):
+
+    - Modern calendar-year: ``ukpga/2020/17`` → ``("ukpga", "2020", "17")``.
+    - Regnal-year (pre-1963): ``ukpga/Vict/45-46/61`` →
+      ``("ukpga", "Vict/45-46", "61")``.  The two regnal segments (monarch
+      abbreviation + regnal-year span) collapse into the middle element; the
+      trailing chapter number is the ``number``.
+
+    Rejects anything else so a malformed id fails loudly rather than silently
+    building a wrong URL.
+    """
     parts = statute_id.strip("/").split("/")
-    if len(parts) != 3 or not all(parts):
+    if not all(parts):
         raise ValueError(
-            f"invalid UK statute id: {statute_id!r} (expected act_type/year/number)"
+            f"invalid UK statute id: {statute_id!r} "
+            "(empty path segment; expected act_type/year/number "
+            "or act_type/monarch/regnal-years/chapter)"
         )
-    return parts[0], parts[1], parts[2]
+    if len(parts) == 3:
+        return parts[0], parts[1], parts[2]
+    if len(parts) == 4:
+        act_type, monarch, regnal_years, chapter = parts
+        if _is_regnal_monarch(monarch) and _is_regnal_years(regnal_years):
+            return act_type, f"{monarch}/{regnal_years}", chapter
+        raise ValueError(
+            f"invalid UK statute id: {statute_id!r} "
+            "(4-part id is not a regnal citation: expected "
+            "act_type/monarch/regnal-years/chapter, e.g. ukpga/Vict/45-46/61)"
+        )
+    raise ValueError(
+        f"invalid UK statute id: {statute_id!r} "
+        "(expected act_type/year/number or act_type/monarch/regnal-years/chapter)"
+    )
 
 
 def enacted_stub_url(statute_id: str) -> str:
@@ -279,13 +348,20 @@ def acquire_pdf_for_statute(
     *,
     delay: float = _DEFAULT_DELAY,
     timer: list[float] | None = None,
+    fetch_stub_if_missing: bool = False,
     verbose: bool = False,
 ) -> PdfAcquireReport:
     """Acquire the PDF-only Act's PDF for *statute_id* into the PDF lane.
 
-    Reads the embedded PDF URL from the enacted stub (already in-archive),
-    fetches the PDF politely, verifies the ``%PDF-`` signature, and stores it
-    under :func:`pdf_lane_locator` with ``storage_class="pdf"``.
+    Reads the embedded PDF URL from the enacted stub, fetches the PDF politely,
+    verifies the ``%PDF-`` signature, and stores it under
+    :func:`pdf_lane_locator` with ``storage_class="pdf"``.
+
+    By default the enacted stub must already be in-archive (fetched by the XML
+    acquisition lane).  With ``fetch_stub_if_missing=True`` the stub is fetched
+    over the network when absent and stored in the XML lane, so a genuinely
+    cold statute id (e.g. a PDF-only regnal Act whose stub was never cached)
+    can be acquired end-to-end.  The stub fetch shares the same courteous timer.
     """
     report = PdfAcquireReport(statute_id=statute_id)
     if timer is None:
@@ -293,6 +369,17 @@ def acquire_pdf_for_statute(
 
     stub_url = enacted_stub_url(statute_id)
     stub = archive.get(stub_url)
+    if stub is None and fetch_stub_if_missing:
+        stub_data, stub_status = _http_get(stub_url, delay=delay, last_time=timer)
+        if stub_data is None:
+            report.error = (
+                f"stub_http_{stub_status}" if stub_status else "stub_transport_error"
+            )
+            if verbose:
+                print(f"  {statute_id}: ERROR {report.error}  {stub_url}")
+            return report
+        archive.store(stub_url, stub_data, storage_class="xml")
+        stub = stub_data
     if stub is None:
         report.error = "stub_not_in_archive"
         return report
@@ -339,19 +426,27 @@ def acquire_pdf_sample(
     archive: Any,
     *,
     delay: float = _DEFAULT_DELAY,
+    fetch_stub_if_missing: bool = False,
     verbose: bool = False,
 ) -> PdfSampleReport:
     """Acquire PDFs for a SAMPLE of statutes, sequentially and politely.
 
     This is the validation entry point for the first increment; it is NOT the
     corpus crawler.  One request at a time with a shared monotonic-timer delay.
+    Idempotent/resumable: PDFs (and, with ``fetch_stub_if_missing``, stubs)
+    already in-archive are skipped, so a re-run only fetches what is missing.
     """
     timer: list[float] = [0.0]
     sample = PdfSampleReport()
     for sid in statute_ids:
         sample.reports.append(
             acquire_pdf_for_statute(
-                sid, archive, delay=delay, timer=timer, verbose=verbose
+                sid,
+                archive,
+                delay=delay,
+                timer=timer,
+                fetch_stub_if_missing=fetch_stub_if_missing,
+                verbose=verbose,
             )
         )
     return sample

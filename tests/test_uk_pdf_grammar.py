@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import textwrap
 
+import pytest
+
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.uk_legislation import pdf_acquire, pdf_grammar
 
@@ -214,3 +216,89 @@ def test_enacted_stub_url() -> None:
         pdf_acquire.enacted_stub_url("ukpga/1983/38")
         == "https://www.legislation.gov.uk/ukpga/1983/38/enacted/data.xml"
     )
+
+
+# ---------------------------------------------------------------------------
+# _parse_statute_id — modern calendar-year AND 4-part regnal citations (#177)
+# ---------------------------------------------------------------------------
+
+
+def test_parse_statute_id_modern_calendar_year() -> None:
+    assert pdf_acquire._parse_statute_id("ukpga/2020/17") == ("ukpga", "2020", "17")
+    assert pdf_acquire._parse_statute_id("asp/2010/5") == ("asp", "2010", "5")
+    # leading/trailing slashes are stripped
+    assert pdf_acquire._parse_statute_id("/ukpga/1983/38/") == ("ukpga", "1983", "38")
+
+
+def test_parse_statute_id_regnal_citations() -> None:
+    # The three C19 acts whose segmentation was proven in #177.
+    assert pdf_acquire._parse_statute_id("ukpga/Vict/45-46/61") == (
+        "ukpga",
+        "Vict/45-46",
+        "61",
+    )  # Bills of Exchange Act 1882
+    assert pdf_acquire._parse_statute_id("ukpga/Vict/53-54/39") == (
+        "ukpga",
+        "Vict/53-54",
+        "39",
+    )  # Partnership Act 1890
+    assert pdf_acquire._parse_statute_id("ukpga/Vict/38-39/90") == (
+        "ukpga",
+        "Vict/38-39",
+        "90",
+    )  # Public Health Act 1875
+
+
+def test_parse_statute_id_regnal_single_year_and_other_monarchs() -> None:
+    # Single (non-spanning) regnal year.
+    assert pdf_acquire._parse_statute_id("ukpga/Geo5/1/28") == (
+        "ukpga",
+        "Geo5/1",
+        "28",
+    )
+    # Other monarch abbreviations with a numeric ordinal.
+    assert pdf_acquire._parse_statute_id("ukpga/Edw7/7/12") == (
+        "ukpga",
+        "Edw7/7",
+        "12",
+    )
+    assert pdf_acquire._parse_statute_id("ukpga/Will4/1-2/76") == (
+        "ukpga",
+        "Will4/1-2",
+        "76",
+    )
+
+
+def test_enacted_stub_url_regnal() -> None:
+    assert (
+        pdf_acquire.enacted_stub_url("ukpga/Vict/45-46/61")
+        == "https://www.legislation.gov.uk/ukpga/Vict/45-46/61/enacted/data.xml"
+    )
+
+
+def test_parse_statute_id_invalid_forms_raise() -> None:
+    # Too few parts.
+    with pytest.raises(ValueError):
+        pdf_acquire._parse_statute_id("ukpga/2020")
+    with pytest.raises(ValueError):
+        pdf_acquire._parse_statute_id("bad")
+    # Too many parts.
+    with pytest.raises(ValueError):
+        pdf_acquire._parse_statute_id("ukpga/Vict/45-46/61/extra")
+    # 4-part but not a regnal citation (a lowercase / numeric "monarch").
+    with pytest.raises(ValueError):
+        pdf_acquire._parse_statute_id("ukpga/2020/17/1")
+    with pytest.raises(ValueError):
+        pdf_acquire._parse_statute_id("ukpga/vict/45-46/61")
+    # Empty path segment.
+    with pytest.raises(ValueError):
+        pdf_acquire._parse_statute_id("ukpga//45-46/61")
+
+
+def test_tier1_regnal_batch_is_parseable() -> None:
+    # Every id in the bounded tier-1 batch must parse (and be a regnal citation).
+    for sid in pdf_acquire.TIER1_REGNAL_BATCH:
+        act_type, year, number = pdf_acquire._parse_statute_id(sid)
+        assert act_type == "ukpga"
+        assert "/" in year  # regnal middle carries monarch/regnal-years
+        assert number.isdigit()
