@@ -14,7 +14,7 @@ from collections import Counter
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Iterable, Mapping, cast
+from typing import Any, Iterable, Mapping, Sequence, cast
 
 from lxml import etree
 
@@ -523,6 +523,49 @@ def _element_source_key(node: etree._Element) -> str:
     return node.getroottree().getpath(node)
 
 
+# Localnames the per-witness descendant scans below pull out of one history
+# note. Collecting them in a single ``node.iter()`` pass replaces the six
+# separate ``.iter()`` walks the individual ``_first_descendant_text`` /
+# ``_descendant_texts`` / ``_descendant_attrs`` helpers would each perform over
+# the same subtree — the dominant per-note cost on the ~1.6k history notes a
+# consolidated NZ act carries per version.
+_HISTORY_NOTE_SCAN_LOCALNAMES = frozenset(
+    {
+        "amendment-date",
+        "amended-provision",
+        "amending-operation",
+        "amending-provision",
+        "amending-leg",
+    }
+)
+
+
+def _history_note_descendants_by_localname(
+    node: etree._Element,
+) -> dict[str, list[etree._Element]]:
+    """Bucket a note's descendants (excluding ``node``) by localname, once.
+
+    A single ``node.iter()`` pass yields elements in document order, so the
+    per-bucket order matches what each ``_first_descendant_text`` /
+    ``_descendant_texts`` / ``_descendant_attrs`` scan (which also walk
+    ``node.iter()`` skipping ``node`` itself) would see. Only the localnames the
+    witness reads are retained; every consumer derives the byte-identical value a
+    fresh per-field scan would.
+    """
+
+    buckets: dict[str, list[etree._Element]] = {}
+    for descendant in node.iter():
+        if descendant is node:
+            continue
+        tag = descendant.tag
+        if not isinstance(tag, str):
+            continue
+        local = _localname_of_tag(tag)
+        if local in _HISTORY_NOTE_SCAN_LOCALNAMES:
+            buckets.setdefault(local, []).append(descendant)
+    return buckets
+
+
 def _history_witness(node: etree._Element) -> NZHistoryWitness:
     text = _node_text(node)
     parsed = parse_public_act_citation(text)
@@ -530,9 +573,15 @@ def _history_witness(node: etree._Element) -> NZHistoryWitness:
     if parsed is not None:
         _title, year, number = parsed
         work_id = f"act_public_{year}_{number}"
-    amendment_date = _first_descendant_text(node, "amendment-date")
-    amended_provision = _first_descendant_text(node, "amended-provision")
-    operation = _first_descendant_text(node, "amending-operation")
+    buckets = _history_note_descendants_by_localname(node)
+    amendment_date_nodes = buckets.get("amendment-date", ())
+    amended_provision_nodes = buckets.get("amended-provision", ())
+    operation_nodes = buckets.get("amending-operation", ())
+    amending_provision_nodes = buckets.get("amending-provision", ())
+    amending_leg_nodes = buckets.get("amending-leg", ())
+    amendment_date = _node_text(amendment_date_nodes[0]) if amendment_date_nodes else ""
+    amended_provision = _node_text(amended_provision_nodes[0]) if amended_provision_nodes else ""
+    operation = _node_text(operation_nodes[0]) if operation_nodes else ""
     recovery_rule_id = ""
     # Legacy recovery: when the canonical ``<amending-operation>`` element is
     # absent (early-format history notes pre-XML-standardisation), the verb
@@ -557,7 +606,9 @@ def _history_witness(node: etree._Element) -> NZHistoryWitness:
     #   <amending-instruction>substituted</amending-instruction>, as from ...
     # The verb is in a non-standard <amending-instruction> element.
     if not operation:
-        recovered = _recover_legacy_operation_from_amended_provision_node(node)
+        recovered = _recover_legacy_operation_from_amended_provision_nodes(
+            amended_provision_nodes
+        )
         if recovered:
             operation = recovered
             recovery_rule_id = (
@@ -578,9 +629,17 @@ def _history_witness(node: etree._Element) -> NZHistoryWitness:
         operation=operation,
         amendment_date=amendment_date,
         amendment_date_iso=nz_date_text_to_iso(amendment_date),
-        amending_provisions=tuple(_descendant_texts(node, "amending-provision")),
-        amending_provision_hrefs=tuple(_descendant_attrs(node, "amending-provision", "href")),
-        amending_legislation=_first_descendant_text(node, "amending-leg"),
+        amending_provisions=tuple(
+            text
+            for element in amending_provision_nodes
+            if (text := _node_text(element))
+        ),
+        amending_provision_hrefs=tuple(
+            href
+            for element in amending_provision_nodes
+            if (href := _attr(element, "href"))
+        ),
+        amending_legislation=_node_text(amending_leg_nodes[0]) if amending_leg_nodes else "",
         amending_work_id=work_id,
         defined_term=_history_note_defined_term(node),
         recovery_rule_id=recovery_rule_id,
@@ -600,8 +659,8 @@ NZ_SOURCE_HISTORY_NOTE_LEGACY_AMENDING_INSTRUCTION_VERB_RECOVERY_RULE_ID = (
 )
 
 
-def _recover_legacy_operation_from_amended_provision_node(
-    node: etree._Element,
+def _recover_legacy_operation_from_amended_provision_nodes(
+    amended_provision_nodes: Sequence[etree._Element],
 ) -> str:
     """Legacy history-note verb recovery for the double-``<amended-provision>``
     shape (Shapes A and D in the recovery notebook, 2026-06-27).
@@ -644,7 +703,11 @@ def _recover_legacy_operation_from_amended_provision_node(
     single-predicate recovery family (one recogniser for the recurring
     shape, NOT a per-prose-sentence recognizer).
     """
-    provisions = list(_descendant_texts(node, "amended-provision"))
+    provisions = [
+        text
+        for element in amended_provision_nodes
+        if (text := _node_text(element))
+    ]
     if len(provisions) < 2:
         return ""
     for candidate in provisions[1:]:
