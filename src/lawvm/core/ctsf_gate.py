@@ -354,9 +354,7 @@ def ee_anchor_corpus_available() -> bool:
         if not _DEFAULT_DB.exists():
             return False
         archive = open_rt_archive(_DEFAULT_DB, readonly=True)
-        close = getattr(archive, "close", None)
-        if callable(close):
-            close()
+        archive.close()
         return True
     # An availability PROBE: any archive-open failure legitimately means "corpus
     # absent" (tests skip; the CLI reports the frozen baseline).
@@ -403,9 +401,7 @@ def score_ee_real_corpus(
             out[sid] = {fam: n for fam, n in sorted(families.items()) if n}
         return dict(sorted(out.items()))
     finally:
-        close = getattr(archive, "close", None)
-        if callable(close):
-            close()
+        archive.close()
 
 
 def real_anchor_corpus_available() -> bool:

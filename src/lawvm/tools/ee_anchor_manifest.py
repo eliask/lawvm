@@ -318,9 +318,7 @@ def build_manifest(grupi_ids: list[str], *, archive: Any = None) -> dict[str, An
         }
     finally:
         if close_after:
-            close = getattr(archive, "close", None)
-            if callable(close):
-                close()
+            archive.close()
     return {
         "schema": MANIFEST_SCHEMA,
         "jurisdiction": "estonia",
@@ -559,9 +557,7 @@ def attribute_statute(
         )
     finally:
         if close_after:
-            close = getattr(archive, "close", None)
-            if callable(close):
-                close()
+            archive.close()
 
 
 # ---------------------------------------------------------------------------
