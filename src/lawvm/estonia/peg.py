@@ -2133,6 +2133,26 @@ def _extract_text_replace_args(text: str) -> Tuple[Optional[str], Optional[str]]
         quoted = _extract_quoted_contents(text)
         if len(quoted) >= 2:
             return quoted[0].strip(), quoted[1].strip()
+    # ``lisatakse pärast sõna „X" tekstiosa „Y"`` — the insert-after/before form
+    # where the payload noun is in the NOMINATIVE (``tekstiosa``/``sõnad``), not the
+    # instrumental (``tekstiosaga``) the ``täiendatakse`` branch above covers. The
+    # inserted ``Y`` can legally nest an inner „…" quote pair (e.g. an embedded
+    # budget-line label), so extraction MUST be nesting-aware: the non-greedy
+    # fallback loop below stops at the first inner close quote and drops the
+    # remainder of the clause (grupi_id 1022254 §2: it lost the ``COFOG tunnus 09)
+    # summas … eelarve vahendid)`` tail). Route it through the balanced extractor,
+    # which counts open/close depth and returns the whole outer span intact.
+    # lawvm-regex: owning_parser — EE text-replace instruction recognizer (sibling of the täiendatakse guard above).
+    if re.search(
+        r'\blisatakse\b[^.;]{0,180}\b(?:p[aä]rast|peale|enne)\s+'
+        r'(?:sõn[au]|tekstiosa|lauseosa|arvu)\b[^.;]{0,180}'
+        r'\b(?:sõn(?:a|ad)|tekstiosa|lauseosa|arv)\b',
+        text,
+        re.IGNORECASE | re.DOTALL,
+    ):
+        quoted = _extract_quoted_contents(text)
+        if len(quoted) >= 2:
+            return quoted[0].strip(), quoted[1].strip()
     direct_delete_quotes = _extract_quoted_contents(text) if re.search(
         r"\bj[aä]etakse\s+v[aä]lja\s*(?:sõn(?:a|ad)|tekstiosa|lauseosa)",
         text,
@@ -2308,6 +2328,22 @@ def _extract_text_replace_pairs(text: str) -> List[Tuple[str, str]]:
         r'\bt[aä]iendatakse\b[^.;]{0,180}\b(?:p[aä]rast|peale|enne)\s+'
         r'(?:sõn[au]|tekstiosa|lauseosa|arvu)\b[^.;]{0,180}'
         r'\b(?:sõn(?:a|adega)|tekstiosaga|lauseosaga|arvuga)\b',
+        text,
+        re.IGNORECASE | re.DOTALL,
+    ):
+        old_text, new_text = _extract_text_replace_args(text)
+        if old_text and new_text:
+            return [(old_text, new_text)]
+    # ``lisatakse pärast sõna „X" tekstiosa „Y"`` — nominative-payload insert form
+    # (sibling of the ``täiendatakse`` branch above). Route through the nesting-aware
+    # ``_extract_text_replace_args`` so an inner „…" quote pair inside ``Y`` is not
+    # mistaken for the outer close (grupi_id 1022254 §2). Without this, the fallback
+    # loop below truncates the inserted clause at the first inner close quote.
+    # lawvm-regex: owning_parser — EE text-replace instruction recognizer (sibling of the täiendatakse guard above).
+    if re.search(
+        r'\blisatakse\b[^.;]{0,180}\b(?:p[aä]rast|peale|enne)\s+'
+        r'(?:sõn[au]|tekstiosa|lauseosa|arvu)\b[^.;]{0,180}'
+        r'\b(?:sõn(?:a|ad)|tekstiosa|lauseosa|arv)\b',
         text,
         re.IGNORECASE | re.DOTALL,
     ):

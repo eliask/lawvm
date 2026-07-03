@@ -3064,9 +3064,17 @@ def extract_intro_statute_fragment(text: str) -> str:
         text = text[year_match.end():]
     fragment = ""
     fragment_from_quoted_title = False
+    # The quoted statute title may itself NEST an inner „…" pair (a ministerial
+    # regulation whose own name embeds a quoted programme title, e.g. grupi_id
+    # 1048615: ``määrust nr 1 „2020. aastal toetatavate „Euroopa Merendus- ja
+    # Kalandusfondi rakenduskava 2014‒2020" …liigid"``). A flat ``[^„”“"]+`` title
+    # class stops at the first inner „, failing the whole match and orphaning the
+    # amendment from its target statute. Allow one balanced level of nesting so the
+    # outer title is captured whole.
     quoted_title_match = re.match(
         r"^[A-ZÜÕÖÄ][^\n]{0,240}?\b(?:seaduse|seaduses|seadust|seadustiku|koodeksi|määruse|määruses|määrust)\b"
-        r"(?:\s+nr\.?\s*[\w./-]+)?\s+[„\"“](?P<title>[^„”“\"]+)[”“\"]"
+        r"(?:\s+nr\.?\s*[\w./-]+)?\s+[„\"“]"
+        r"(?P<title>(?:[^„”“\"]|[„\"“][^„”“\"]*[”“\"])+)[”“\"]"
         r"\s+(?:§|paragrahv|\btehakse\b|\bmuudetakse\b|\btunnistatakse\b|\btäiendatakse\b|\bjäetakse\b)",
         text,
         re.IGNORECASE,
