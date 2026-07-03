@@ -386,6 +386,21 @@ def _scan_ee_blocking_emit_sites() -> set[str]:
                 and node.value.value.startswith("ee_")
             ):
                 const_literals[node.targets[0].id] = node.value.value
+        # #186 θ table: collect the ``Reject`` / ``NoopIdempotent`` call nodes
+        # that are the ``default=`` disposition of a ``TotalizationTable(...)``
+        # construction. Those are the strict fallback (``ee_replay_skipped_
+        # unspecified``), a SYNTHESIZED reason_code the conserved wrapper mints
+        # for an unrecognized skip — NOT a ``blocking=True`` adjudication emit —
+        # so they must be EXCLUDED from the blocking scan (only the declared
+        # ``rows=`` cells are routed through the blocking ``_append_ee_replay_
+        # adjudication``).
+        default_disposition_nodes: set[int] = set()
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            for kw in node.keywords:
+                if kw.arg == "default" and isinstance(kw.value, ast.Call):
+                    default_disposition_nodes.add(id(kw.value))
         # Walk every Call node. For direct CompileAdjudication emit sites
         # with blocking=True and a resolvable kind (literal or named const),
         # record the rule_id. For wrapping helper call sites whose name is in
@@ -399,6 +414,26 @@ def _scan_ee_blocking_emit_sites() -> set[str]:
                 name = fn.attr
             elif isinstance(fn, ast.Name):
                 name = fn.id
+            # #186 θ table: EE's off-domain lanes now source their blocking code
+            # from ``EE_TOTALIZATION_TABLE`` — ``apply_ee_ops`` looks up the cell
+            # and emits ``_append_ee_replay_adjudication(kind=disposition.code)``
+            # (which hardcodes ``blocking=True``). The rule_id literals therefore
+            # live in ``estonia/totalization_table.py`` as ``Reject("ee_*")`` /
+            # ``NoopIdempotent("ee_*")`` rows (and the strict default). Discover
+            # them there — the table IS the emit-code source for the routed lanes.
+            if name in ("Reject", "NoopIdempotent") and id(node) not in default_disposition_nodes:
+                if node.args and isinstance(node.args[0], ast.Constant) and isinstance(
+                    node.args[0].value, str
+                ) and node.args[0].value.startswith("ee_"):
+                    discovered.add(node.args[0].value)
+                for kw in node.keywords:
+                    if (
+                        kw.arg == "code"
+                        and isinstance(kw.value, ast.Constant)
+                        and isinstance(kw.value.value, str)
+                        and kw.value.value.startswith("ee_")
+                    ):
+                        discovered.add(kw.value.value)
             is_blocking_helper = name in _HARD_BLOCKING_HELPERS
             is_forwarding_helper = name in _FORWARDING_BLOCKING_HELPERS
             is_direct_ca = name == "CompileAdjudication"

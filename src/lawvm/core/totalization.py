@@ -83,6 +83,30 @@ class FailureClass(str, Enum):
       write (a byte-identical no-op; NO/SE ``*_noop`` — the I1-strong "accepted
       ⟺ landed a write" conservation cell).
 
+    The §2.3 note names the vocabulary as ``{target_absent, target_occupied,
+    dest_occupied, payload_missing, selector_no_match, parent_unresolved, …}``
+    — universal but explicitly *extensible* (the trailing ``…``). EE's off-domain
+    lanes (routed through the θ table in #186) exhibit precondition failures that
+    are not a supported action's precondition miss but an ACTION-ADMISSIBILITY
+    failure (the instruction never routes to a kernel op at all). These are the
+    additive EE members — purely additive; the SE/NO tables and their dispositions
+    are untouched:
+
+    * ``unparsed_operation`` — a preserved but unparsed source-operation clause
+      (EE ``ee_replay_unparsed_operation_skipped``; a META op the parser could
+      not lower).
+    * ``meta_non_body`` — a non-body META op preserved without mutating the body
+      (EE ``ee_replay_meta_non_body_skipped``).
+    * ``unsupported_action`` — the op's action is outside the frontend's routable
+      action set (EE ``ee_replay_unsupported_action``).
+    * ``statute_title_unsupported`` — a statute-title-address op whose action is
+      not a title REPLACE / carries no payload (EE
+      ``ee_replay_unsupported_statute_title_action``).
+    * ``statute_title_unchanged`` — a statute-title REPLACE whose new title is
+      empty or equals the live title (EE ``ee_replay_statute_title_noop``; a
+      content-identical no-op on the statute-title facet, distinct in code from
+      the body ``content_identical`` cell).
+
     The value is the boundary/adjudication string so a resolver reading a
     frontend adjudication code can round-trip to a ``FailureClass`` without a
     jurisdiction-local map.
@@ -95,6 +119,12 @@ class FailureClass(str, Enum):
     SELECTOR_NO_MATCH = "selector_no_match"
     PARENT_UNRESOLVED = "parent_unresolved"
     CONTENT_IDENTICAL = "content_identical"
+    # ── EE action-admissibility failure classes (#186, additive). ──────────────
+    UNPARSED_OPERATION = "unparsed_operation"
+    META_NON_BODY = "meta_non_body"
+    UNSUPPORTED_ACTION = "unsupported_action"
+    STATUTE_TITLE_UNSUPPORTED = "statute_title_unsupported"
+    STATUTE_TITLE_UNCHANGED = "statute_title_unchanged"
 
 
 @dataclass(frozen=True, slots=True)

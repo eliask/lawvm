@@ -66,6 +66,12 @@ from lawvm.core.semantic_types import (
     structural_action_from_str,
 )
 from lawvm.core.statute_facets import is_statute_title_address, replace_statute_title
+from lawvm.core.totalization import (
+    FailureClass,
+    NoopIdempotent,
+    Reject,
+)
+from lawvm.estonia.totalization_table import EE_TOTALIZATION_TABLE
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.core import tree_ops
 from lawvm.core.apply_seam import (
@@ -9943,17 +9949,27 @@ def apply_ee_ops(
                 if parser_action:
                     detail["parser_action"] = str(parser_action)
             if detail.get("source_family") == _EE_UNPARSED_OPERATION_CLAUSE_RULE:
+                # θ: (META, unparsed_operation) — table-sourced Reject (§2.3).
+                disposition = EE_TOTALIZATION_TABLE.lookup(
+                    StructuralAction.META, FailureClass.UNPARSED_OPERATION
+                )
+                assert isinstance(disposition, Reject)
                 _append_ee_replay_adjudication(
                     adjudications_out,
-                    kind="ee_replay_unparsed_operation_skipped",
+                    kind=disposition.code,
                     message="EE replay preserved an unparsed source operation without mutating the body.",
                     op=op,
                     detail=detail,
                 )
                 continue
+            # θ: (META, meta_non_body) — table-sourced Reject (§2.3).
+            disposition = EE_TOTALIZATION_TABLE.lookup(
+                StructuralAction.META, FailureClass.META_NON_BODY
+            )
+            assert isinstance(disposition, Reject)
             _append_ee_replay_adjudication(
                 adjudications_out,
-                kind="ee_replay_meta_non_body_skipped",
+                kind=disposition.code,
                 message="EE replay preserved a non-body meta operation without mutating the body.",
                 op=op,
                 detail=detail,
@@ -9961,9 +9977,15 @@ def apply_ee_ops(
             continue
         if is_statute_title_address(op.target):
             if action != "replace" or op.payload is None:
+                # θ: (META, statute_title_unsupported) — the statute-title op is
+                # not a title REPLACE / carries no payload; table-sourced Reject.
+                disposition = EE_TOTALIZATION_TABLE.lookup(
+                    StructuralAction.META, FailureClass.STATUTE_TITLE_UNSUPPORTED
+                )
+                assert isinstance(disposition, Reject)
                 _append_ee_replay_adjudication(
                     adjudications_out,
-                    kind="ee_replay_unsupported_statute_title_action",
+                    kind=disposition.code,
                     message="EE replay skipped unsupported statute title operation.",
                     op=op,
                     detail={"action": action, "target": str(op.target)},
@@ -9975,18 +9997,31 @@ def apply_ee_ops(
             if blame_map is not None:
                 blame_map["/heading"] = op
             if not new_title or new_title == old_title:
+                # θ: (REPLACE, statute_title_unchanged) — a title REPLACE that
+                # landed no title change (empty or content-identical). The
+                # NoopIdempotent conservation cell on the statute-title facet.
+                disposition = EE_TOTALIZATION_TABLE.lookup(
+                    StructuralAction.REPLACE, FailureClass.STATUTE_TITLE_UNCHANGED
+                )
+                assert isinstance(disposition, NoopIdempotent)
                 _append_ee_replay_adjudication(
                     adjudications_out,
-                    kind="ee_replay_statute_title_noop",
+                    kind=disposition.code,
                     message="EE replay emitted no-op for statute title replacement.",
                     op=op,
                     detail={"action": action, "target": str(op.target)},
                 )
             continue
         if action not in ("replace", "repeal", "insert", "renumber", "text_replace"):
+            # θ: (META, unsupported_action) — the op's action is outside EE's
+            # routable action set; table-sourced Reject (§2.3).
+            disposition = EE_TOTALIZATION_TABLE.lookup(
+                StructuralAction.META, FailureClass.UNSUPPORTED_ACTION
+            )
+            assert isinstance(disposition, Reject)
             _append_ee_replay_adjudication(
                 adjudications_out,
-                kind="ee_replay_unsupported_action",
+                kind=disposition.code,
                 message="EE replay skipped unsupported action.",
                 op=op,
                 detail={"action": action, "target": str(op.target)},
@@ -10177,9 +10212,17 @@ def apply_ee_ops(
                     )
                 )
         if not target_resolved:
+            # θ: (·, target_absent) — the op's target address does not resolve.
+            # EE's code is uniform across the resolving actions, so the canonical
+            # REPLACE cell is the source of the code (mirrors SE's routing);
+            # table-sourced Reject (§2.3).
+            disposition = EE_TOTALIZATION_TABLE.lookup(
+                StructuralAction.REPLACE, FailureClass.TARGET_ABSENT
+            )
+            assert isinstance(disposition, Reject)
             _append_ee_replay_adjudication(
                 adjudications_out,
-                kind="ee_replay_target_not_found",
+                kind=disposition.code,
                 message="EE replay skipped operation: target not found.",
                 op=op,
                 detail={"action": action, "target": str(op.target)},
@@ -10187,9 +10230,17 @@ def apply_ee_ops(
             continue
 
         if not changed:
+            # θ: (·, content_identical) — the op resolved and applied but landed
+            # no content write (the #185 I1-strong conservation cell). EE's no-op
+            # code is uniform across the resolving actions, so the canonical
+            # REPLACE cell is the source of the code; NoopIdempotent (§2.3).
+            disposition = EE_TOTALIZATION_TABLE.lookup(
+                StructuralAction.REPLACE, FailureClass.CONTENT_IDENTICAL
+            )
+            assert isinstance(disposition, NoopIdempotent)
             _append_ee_replay_adjudication(
                 adjudications_out,
-                kind="ee_replay_noop",
+                kind=disposition.code,
                 message="EE replay emitted no-op for operation.",
                 op=op,
                 detail={"action": action, "target": str(op.target)},

@@ -48,6 +48,9 @@ from lawvm.core.totalization import (
     Reject,
     TotalizationTable,
 )
+from lawvm.core.statute_facets import statute_title_address
+from lawvm.estonia.grafter import apply_ee_ops_conserved
+from lawvm.estonia.totalization_table import EE_TOTALIZATION_TABLE
 from lawvm.norway.grafter import apply_no_ops_conserved
 from lawvm.norway.totalization_table import NO_TOTALIZATION_TABLE
 from lawvm.replay_adjudication import CompileAdjudication
@@ -414,6 +417,198 @@ def test_no_default_is_strict_reject() -> None:
         StructuralAction.META, FailureClass.PARENT_UNRESOLVED
     )
     assert fallback is NO_TOTALIZATION_TABLE.default
+
+
+# ---------------------------------------------------------------------------
+# EE — the §2.3 silent-noop motivating case, now the strict θ table (#186).
+#
+# EE, like SE, NEVER recovers: every off-domain lane is a typed Reject or an
+# idempotent Noop. Each declared cell is driven through the REAL conserved apply
+# path (``apply_ee_ops_conserved``) and asserted to reject with its declared
+# code — the load-bearing routing (``estonia/grafter.py`` dispatches on
+# ``EE_TOTALIZATION_TABLE.lookup``) is guarded byte-identical by these cases.
+# ---------------------------------------------------------------------------
+
+_EE_ID = "ee/RT-I-2020-01"
+_EE_AMEND = "ee/RT-I-2020-02"
+_EE_UNPARSED_OPERATION_CLAUSE_RULE = "ee_unparsed_operation_clause"
+
+
+def _observe_ee(
+    statute: IRStatute, op: LegalOperation
+) -> tuple[str, list[CompileAdjudication]]:
+    """Run one op through EE's real conserved apply path; return
+    ("accepted"/reason_code, adjudications)."""
+    adjudications: list[CompileAdjudication] = []
+    result = apply_ee_ops_conserved(statute, [op], adjudications_out=adjudications)
+    if result.skipped_items:
+        return result.skipped_items[0].reason_code, adjudications
+    return "accepted", adjudications
+
+
+def _ee_meta_op(
+    *, op_id: str, source_family: str | None = None
+) -> LegalOperation:
+    """A META op (non-body) — optionally tagged with a source_family so it hits
+    the unparsed-operation-clause lane."""
+    attrs = {"source_family": source_family} if source_family else {}
+    payload = IRNode(kind=IRNodeKind.PARAGRAPH, text="Meta.", attrs=attrs)
+    return LegalOperation(
+        op_id=op_id,
+        sequence=1,
+        action=StructuralAction.META,
+        target=LegalAddress(path=(("note", "x"),)),
+        payload=payload,
+        source=OperationSource(statute_id=_EE_AMEND),
+    )
+
+
+def test_ee_unparsed_operation_rejects_as_declared() -> None:
+    """(META, unparsed_operation) → Reject(ee_replay_unparsed_operation_skipped)."""
+    cell = (StructuralAction.META, FailureClass.UNPARSED_OPERATION)
+    declared = EE_TOTALIZATION_TABLE.lookup(*cell)
+    assert isinstance(declared, Reject)
+    assert declared.code == "ee_replay_unparsed_operation_skipped"
+
+    statute = _statute(statute_id=_EE_ID, sections=(_section("1"),))
+    op = _ee_meta_op(
+        op_id="ee-unparsed",
+        source_family=_EE_UNPARSED_OPERATION_CLAUSE_RULE,
+    )
+    observed, _ = _observe_ee(statute, op)
+    assert observed == declared.code
+
+
+def test_ee_meta_non_body_rejects_as_declared() -> None:
+    """(META, meta_non_body) → Reject(ee_replay_meta_non_body_skipped)."""
+    cell = (StructuralAction.META, FailureClass.META_NON_BODY)
+    declared = EE_TOTALIZATION_TABLE.lookup(*cell)
+    assert isinstance(declared, Reject)
+    assert declared.code == "ee_replay_meta_non_body_skipped"
+
+    statute = _statute(statute_id=_EE_ID, sections=(_section("1"),))
+    op = _ee_meta_op(op_id="ee-meta-non-body")
+    observed, _ = _observe_ee(statute, op)
+    assert observed == declared.code
+
+
+def test_ee_unsupported_statute_title_action_rejects_as_declared() -> None:
+    """(META, statute_title_unsupported) → Reject(ee_replay_unsupported_statute_title_action)."""
+    cell = (StructuralAction.META, FailureClass.STATUTE_TITLE_UNSUPPORTED)
+    declared = EE_TOTALIZATION_TABLE.lookup(*cell)
+    assert isinstance(declared, Reject)
+    assert declared.code == "ee_replay_unsupported_statute_title_action"
+
+    statute = _statute(statute_id=_EE_ID, sections=(_section("1"),))
+    # A statute-title-address op whose action is REPEAL (not a title REPLACE):
+    # the grafter's ``action != "replace"`` branch fires the unsupported lane.
+    op = LegalOperation(
+        op_id="ee-title-unsupported",
+        sequence=1,
+        action=StructuralAction.REPEAL,
+        target=statute_title_address(),
+        source=OperationSource(statute_id=_EE_AMEND),
+    )
+    observed, _ = _observe_ee(statute, op)
+    assert observed == declared.code
+
+
+def test_ee_statute_title_noop_is_noop_as_declared() -> None:
+    """(REPLACE, statute_title_unchanged) → NoopIdempotent(ee_replay_statute_title_noop)."""
+    cell = (StructuralAction.REPLACE, FailureClass.STATUTE_TITLE_UNCHANGED)
+    declared = EE_TOTALIZATION_TABLE.lookup(*cell)
+    assert isinstance(declared, NoopIdempotent)
+    assert declared.code == "ee_replay_statute_title_noop"
+
+    statute = IRStatute(
+        statute_id=_EE_ID,
+        title="Unchanged title",
+        body=IRNode(kind=IRNodeKind.BODY, children=(_section("1"),)),
+    )
+    # A title REPLACE whose payload text equals the live title → no title change.
+    op = LegalOperation(
+        op_id="ee-title-noop",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=statute_title_address(),
+        payload=IRNode(kind=IRNodeKind.HEADING, text="Unchanged title"),
+        source=OperationSource(statute_id=_EE_AMEND),
+    )
+    observed, _ = _observe_ee(statute, op)
+    assert observed == declared.code
+
+
+def test_ee_unsupported_action_rejects_as_declared() -> None:
+    """(META, unsupported_action) → Reject(ee_replay_unsupported_action)."""
+    cell = (StructuralAction.META, FailureClass.UNSUPPORTED_ACTION)
+    declared = EE_TOTALIZATION_TABLE.lookup(*cell)
+    assert isinstance(declared, Reject)
+    assert declared.code == "ee_replay_unsupported_action"
+
+    statute = _statute(statute_id=_EE_ID, sections=(_section("1"),))
+    # HEADING_REPLACE is not in EE's routable action set
+    # (replace/repeal/insert/renumber/text_replace) and is not a META /
+    # statute-title op, so the grafter's unsupported-action lane fires.
+    op = LegalOperation(
+        op_id="ee-unsupported-action",
+        sequence=1,
+        action=StructuralAction.HEADING_REPLACE,
+        target=_section_addr("1"),
+        source=OperationSource(statute_id=_EE_AMEND),
+    )
+    observed, _ = _observe_ee(statute, op)
+    assert observed == declared.code
+
+
+def test_ee_target_absent_rejects_as_declared() -> None:
+    """(REPLACE, target_absent) → Reject(ee_replay_target_not_found)."""
+    cell = (StructuralAction.REPLACE, FailureClass.TARGET_ABSENT)
+    declared = EE_TOTALIZATION_TABLE.lookup(*cell)
+    assert isinstance(declared, Reject)
+    assert declared.code == "ee_replay_target_not_found"
+
+    statute = _statute(statute_id=_EE_ID, sections=(_section("1"),))
+    op = _op(
+        op_id="ee-replace-absent",
+        action=StructuralAction.REPLACE,
+        label="99",  # absent → target not found
+        payload=_section("99", "Uus."),
+        source_id=_EE_AMEND,
+    )
+    observed, _ = _observe_ee(statute, op)
+    assert observed == declared.code
+
+
+def test_ee_content_identical_is_noop_as_declared() -> None:
+    """(REPLACE, content_identical) → NoopIdempotent(ee_replay_noop). The #185
+    I1-strong conservation cell: a content-identical REPLACE lands no write and
+    is rejected as ee_replay_noop via the content-footprint applied signal."""
+    cell = (StructuralAction.REPLACE, FailureClass.CONTENT_IDENTICAL)
+    declared = EE_TOTALIZATION_TABLE.lookup(*cell)
+    assert isinstance(declared, NoopIdempotent)
+    assert declared.code == "ee_replay_noop"
+
+    statute = _statute(statute_id=_EE_ID, sections=(_section("1", "Muutmata."),))
+    op = _op(
+        op_id="ee-replace-noop",
+        action=StructuralAction.REPLACE,
+        label="1",
+        payload=_section("1", "Muutmata."),  # content-identical → no write
+        source_id=_EE_AMEND,
+    )
+    observed, _ = _observe_ee(statute, op)
+    assert observed == declared.code
+
+
+def test_ee_default_is_strict_reject() -> None:
+    """§2.3 default: EE's unlisted cells reject (the strict default)."""
+    assert isinstance(EE_TOTALIZATION_TABLE.default, Reject)
+    assert EE_TOTALIZATION_TABLE.default.code == "ee_replay_skipped_unspecified"
+    # An unlisted cell falls back to the strict default rather than raising.
+    fallback = EE_TOTALIZATION_TABLE.lookup(
+        StructuralAction.RENUMBER, FailureClass.DEST_OCCUPIED
+    )
+    assert fallback is EE_TOTALIZATION_TABLE.default
 
 
 # ---------------------------------------------------------------------------
