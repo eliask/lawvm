@@ -48,6 +48,10 @@ _DYNAMIC_OP_ID_PREFIXES: tuple[str, ...] = (
     "se_reverse_chain::",
     "se_official_act::",  # group_id prefix in LegalOperation construction
     "se_compare_",        # ComparisonNormalizationRule name field (rule_class, not rule_id)
+    # EXPIRY TemporalEvent event_id prefix (grafter.py f"se_expiry::{op.op_id}"),
+    # a per-op instance identifier for the "upphöra att gälla" timeline-rail event
+    # (#186), not a believed-spec hypothesis.
+    "se_expiry::",
 )
 
 # --- Function-name exports and string constants that are NOT rule ids --------------------
@@ -140,6 +144,8 @@ def _is_rule_literal(value: str) -> bool:
     if _is_dynamic_op_id_prefix(value):
         return False
     if "." in value:  # filenames / extensions are never rule ids
+        return False
+    if "=" in value:  # provenance-tag key=value discriminators (e.g. se_temporal_expiry=1), not rule ids
         return False
     return True
 

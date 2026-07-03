@@ -56,6 +56,10 @@ from typing import Any, List, Optional, cast
 from urllib.parse import quote, urljoin
 
 from lawvm.core import tree_ops
+import datetime as _dt
+from lawvm.core.effect_intent import Expiry
+from lawvm.core.effect_lowering import temporal_event_from_effect_intent
+from lawvm.core.temporal import TemporalEvent, TemporalScope
 from lawvm.core.apply_seam import (
     ApplyProfile,
     AppliedOp,
@@ -339,13 +343,29 @@ class SEOfficialElaboratedIntent:
 
 @dataclass(frozen=True)
 class SEOfficialEffectPlanItem:
-    """One planned canonical effect before lowering to `LegalOperation`."""
+    """One planned canonical effect before lowering to `LegalOperation`.
+
+    ``is_temporal_expiry`` / ``expiry_boundary_date`` carry the §2.1/§6.4
+    correctness distinction for ``kind == "repeal"`` items that were compiled
+    from a Sweden "upphöra att gälla" (cease-to-apply) clause: the provision is
+    modelled as a TEMPORAL EXPIRY on the timeline rail (a companion EXPIRY
+    ``TemporalEvent`` with an ``expires`` boundary + a ``temporary_expiry``
+    tombstone disposition), not a structural repeal.  The tree-level mechanics
+    stay a REPEAL (the section leaves the in-force surface exactly as the oracle
+    consolidation shows), but the modelled character — "valid until t", revivable,
+    expiry-not-repeal citation — is now first-classed rather than lost.
+    ``expiry_boundary_date`` is the prose-inclusive last in-force day (ISO
+    ``YYYY-MM-DD``) or ``""`` for an open-ended expiry keyed off the amending
+    act's own commencement.
+    """
 
     kind: str
     target_label: str = ""
     destination_label: str = ""
     payload_label: str = ""
     text_patch: TextPatchSpec | None = None
+    is_temporal_expiry: bool = False
+    expiry_boundary_date: str = ""
 
 
 @dataclass(frozen=True)
@@ -442,6 +462,180 @@ def _parse_swedish_date_text(text: str) -> str:
     if not month:
         return ""
     return f"{match.group('year')}-{month}-{int(match.group('day')):02d}"
+
+
+# --------------------------------------------------------------------------- #
+# Temporal-expiry boundary extraction for "upphöra att gälla" clauses (#186).
+#
+# §2.1/§6.4 of the amendment algebra: SE "upphör att gälla" (cease-to-apply)
+# is a TEMPORAL EXPIRY event on the timeline rail, not a structural REPEAL —
+# the provision was valid *until* a boundary and carries expiry (not repeal)
+# tombstone/citation semantics.  These helpers recover the boundary date from
+# the two Swedish surface forms so the companion EXPIRY ``TemporalEvent`` can
+# stamp an ``expires`` value under ExpiryChainMonotone:
+#   - "vid utgången av <month> <year>"  -> last calendar day of that month
+#   - "vid utgången av <year>"          -> 31 december <year>
+#   - "den <day> <month> <year>" / bare "<day> <month> <year>" -> that day
+# The boundary is prose-INCLUSIVE (the last in-force day), matching
+# ``effect_intent.Expiry.expiry_date``; lowering converts it to the kernel's
+# exclusive cutoff via ``expires_on_from_valid_until``.
+_SE_MONTH_LAST_DAY = {
+    "01": 31, "02": 28, "03": 31, "04": 30, "05": 31, "06": 30,
+    "07": 31, "08": 31, "09": 30, "10": 31, "11": 30, "12": 31,
+}
+_SE_EXPIRY_END_OF_MONTH_RE = re.compile(
+    r"vid\s+utgången\s+av\s+"
+    r"(?P<month>januari|februari|mars|april|maj|juni|juli|augusti|september|oktober|november|december)\s+"
+    r"(?P<year>\d{4})\b",
+    re.IGNORECASE,
+)
+_SE_EXPIRY_END_OF_YEAR_RE = re.compile(
+    r"vid\s+utgången\s+av\s+(?P<year>\d{4})\b",
+    re.IGNORECASE,
+)
+
+
+def _is_se_leap_year(year: int) -> bool:
+    return year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
+
+
+def extract_se_expiry_boundary_date(clause: str) -> str:
+    """Recover the prose-inclusive last in-force day from a Sweden expiry clause.
+
+    Returns an ISO ``YYYY-MM-DD`` string, or ``""`` when the clause carries no
+    determinable boundary (an open-ended "upphör att gälla" — the provision
+    simply ceases as of the amending act's own effective date, so the timeline
+    boundary is supplied by the act's commencement, not by an explicit date).
+    """
+    normalized = _normalize_space(clause)
+    month_match = _SE_EXPIRY_END_OF_MONTH_RE.search(normalized)
+    if month_match is not None:
+        month = _SV_MONTHS.get(month_match.group("month").lower())
+        if month:
+            year = int(month_match.group("year"))
+            last_day = _SE_MONTH_LAST_DAY[month]
+            if month == "02" and _is_se_leap_year(year):
+                last_day = 29
+            return f"{year:04d}-{month}-{last_day:02d}"
+    year_match = _SE_EXPIRY_END_OF_YEAR_RE.search(normalized)
+    if year_match is not None:
+        return f"{int(year_match.group('year')):04d}-12-31"
+    # Fall back to an explicit "den <day> <month> <year>" boundary if present.
+    return _parse_swedish_date_text(normalized)
+
+
+def _se_expires_exclusive_from_inclusive(inclusive_iso: str) -> str:
+    """Convert a prose-inclusive last-valid day to the kernel exclusive cutoff.
+
+    Mirrors ``statute_validity.expires_on_from_valid_until`` (``+1 day``) at the
+    string boundary the SE lowering works in, so the ``expires`` provenance tag
+    and the companion ``TemporalEvent.expires`` agree.  Returns ``""`` when the
+    input is empty or unparseable.
+    """
+    if not inclusive_iso:
+        return ""
+    try:
+        inclusive = _dt.date.fromisoformat(inclusive_iso)
+    except ValueError:
+        return ""
+    return (inclusive + _dt.timedelta(days=1)).isoformat()
+
+
+def se_op_is_temporal_expiry(op: LegalOperation) -> bool:
+    """True when ``op`` is a Sweden "upphöra att gälla" temporal-expiry repeal.
+
+    Reads the ``se_temporal_expiry=1`` provenance tag stamped at lowering time
+    (§2.1/§6.4).  A genuine (non-expiry) SE structural repeal returns ``False``.
+    """
+    return op.action is StructuralAction.REPEAL and "se_temporal_expiry=1" in op.provenance_tags
+
+
+def se_op_tombstone_disposition(op: LegalOperation) -> str:
+    """Return the tombstone disposition a landed SE repeal op produces.
+
+    First-classes the §6.4 ``TOMBSTONE(expired)`` vs ``TOMBSTONE(repealed)``
+    distinction, reusing the ``TombstoneRecord.disposition`` vocabulary
+    (commit 80d6b109): ``"temporary_expiry"`` for an "upphöra att gälla" op,
+    ``"repeal"`` for a genuine structural repeal.  Non-repeal ops return ``""``.
+    """
+    if op.action is not StructuralAction.REPEAL:
+        return ""
+    return "temporary_expiry" if se_op_is_temporal_expiry(op) else "repeal"
+
+
+def _se_op_expiry_boundary_inclusive(op: LegalOperation) -> str:
+    for tag in op.provenance_tags:
+        if tag.startswith("expiry_boundary_inclusive="):
+            return tag.split("=", 1)[1]
+    return ""
+
+
+def se_temporal_expiry_event(
+    op: LegalOperation, *, base_statute_id: str = ""
+) -> TemporalEvent | None:
+    """Build the timeline-rail EXPIRY ``TemporalEvent`` for an expiry-repeal op.
+
+    §2.1/§6.4: the "upphöra att gälla" op's temporal character lives on the
+    version rail, not the tree.  This projects the op into an additive
+    ``TemporalEvent(kind="expire")`` scoped to the repealed section, carrying the
+    ``expires`` boundary (exclusive) under ExpiryChainMonotone.  Returns ``None``
+    for a non-expiry op.  An open-ended expiry (no explicit boundary date) still
+    produces an event with an empty ``expires`` — the boundary is then the
+    amending act's own commencement, supplied by the version's effective date.
+    """
+    if not se_op_is_temporal_expiry(op):
+        return None
+    inclusive = _se_op_expiry_boundary_inclusive(op)
+    expiry_date = None
+    if inclusive:
+        try:
+            expiry_date = _dt.date.fromisoformat(inclusive)
+        except ValueError:
+            expiry_date = None
+    source = op.source
+    target_statute = base_statute_id or ""
+    event = temporal_event_from_effect_intent(
+        Expiry(expiry_date=expiry_date, raw_text=(op.raw_text or (source.raw_text if source else ""))),
+        event_id=f"se_expiry::{op.op_id}",
+        group_id=op.group_id or "",
+        source_ref=source.statute_id if source else "",
+        source_title=source.title if source else "",
+        source_issue_date=_se_optional_iso_date(source.enacted if source else ""),
+        source_effective_date=_se_optional_iso_date(source.effective if source else ""),
+        target_statute=target_statute,
+    )
+    # Re-scope from statute-wide to the exact repealed section address so the
+    # rail boundary lands on the provision, not the whole act.
+    return replace(
+        event,
+        scope=TemporalScope(target_statute=target_statute, exact_addresses=(op.target,)),
+    )
+
+
+def _se_optional_iso_date(value: str) -> _dt.date | None:
+    if not value:
+        return None
+    try:
+        return _dt.date.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def se_temporal_events_for_ops(
+    ops: "List[LegalOperation]", *, base_statute_id: str = ""
+) -> tuple[TemporalEvent, ...]:
+    """Project the EXPIRY temporal events for every expiry-repeal op in ``ops``.
+
+    The timeline-rail companion to the structural op list: one
+    ``TemporalEvent(kind="expire")`` per "upphöra att gälla" op, in op order.
+    Structural repeals and every other action contribute nothing.
+    """
+    events: list[TemporalEvent] = []
+    for op in ops:
+        event = se_temporal_expiry_event(op, base_statute_id=base_statute_id)
+        if event is not None:
+            events.append(event)
+    return tuple(events)
 
 
 def _split_paragraphs_preserve_lines(text: str) -> list[list[str]]:
@@ -2288,8 +2482,26 @@ def _build_se_official_effect_plan_items(intent: SEOfficialElaboratedIntent) -> 
     surface = intent.clause_surface
     payload_surface = intent.payload_surface
     items: list[SEOfficialEffectPlanItem] = []
+    # SE ``repealed_section_labels`` are extracted exclusively from the
+    # "upphöra att gälla" (cease-to-apply) terminal (``_SE_REPEAL_CLAUSE_RE``),
+    # which the amendment algebra names (§2.1) as a TEMPORAL EXPIRY, not a
+    # structural repeal.  Mark every such item as a temporal expiry and recover
+    # its boundary date once from the enacting clause so the companion EXPIRY
+    # TemporalEvent can stamp an ``expires`` under ExpiryChainMonotone.
+    expiry_boundary_date = (
+        extract_se_expiry_boundary_date(surface.enacting_clause)
+        if surface.repealed_section_labels
+        else ""
+    )
     for label in surface.repealed_section_labels:
-        items.append(SEOfficialEffectPlanItem(kind="repeal", target_label=label))
+        items.append(
+            SEOfficialEffectPlanItem(
+                kind="repeal",
+                target_label=label,
+                is_temporal_expiry=True,
+                expiry_boundary_date=expiry_boundary_date,
+            )
+        )
     for source_label, destination_label in surface.renumber_pairs:
         items.append(
             SEOfficialEffectPlanItem(
@@ -2682,17 +2894,35 @@ def _lower_se_official_effect_plan_item(
     payload_surface = intent.payload_surface
     if item.kind == "repeal":
         label = item.target_label
+        # §2.1/§6.4: an "upphöra att gälla" item is a TEMPORAL EXPIRY, tagged so
+        # the timeline-rail EXPIRY TemporalEvent and the ``temporary_expiry``
+        # tombstone disposition are recoverable downstream (see
+        # ``se_op_tombstone_disposition`` / ``se_temporal_expiry_event``).  The
+        # structural action stays REPEAL: the section leaves the in-force
+        # surface exactly as the consolidated oracle shows, and genuine repeal
+        # replay/receipt mechanics are unchanged.
+        provenance_tags: tuple[str, ...] = (
+            "sweden_official_act_v1",
+            f"base_sfs_id={surface.amended_act_sfs_id}",
+            f"repeal_section={label}",
+        )
+        if item.is_temporal_expiry:
+            expiry_tags: list[str] = [
+                "se_temporal_expiry=1",
+                "tombstone_disposition=temporary_expiry",
+            ]
+            expires_exclusive = _se_expires_exclusive_from_inclusive(item.expiry_boundary_date)
+            if expires_exclusive:
+                expiry_tags.append(f"expiry_boundary_inclusive={item.expiry_boundary_date}")
+                expiry_tags.append(f"expires={expires_exclusive}")
+            provenance_tags = provenance_tags + tuple(expiry_tags)
         op = LegalOperation(
             op_id=f"se_official_repeal_{surface.sfs_id}_{label}",
             sequence=sequence,
             action=StructuralAction.REPEAL,
             target=LegalAddress(path=(("section", label),)),
             source=source,
-            provenance_tags=(
-                "sweden_official_act_v1",
-                f"base_sfs_id={surface.amended_act_sfs_id}",
-                f"repeal_section={label}",
-            ),
+            provenance_tags=provenance_tags,
             group_id=f"se_official_act::{surface.sfs_id}",
         )
         return [op], sequence + 1

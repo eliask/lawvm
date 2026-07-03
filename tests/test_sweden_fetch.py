@@ -108,6 +108,11 @@ from lawvm.sweden.grafter import (
     SEOfficialEffectsPlan,
     SEOfficialEffectPlanItem,
     SEOfficialPayloadSurface,
+    extract_se_expiry_boundary_date,
+    se_op_is_temporal_expiry,
+    se_op_tombstone_disposition,
+    se_temporal_expiry_event,
+    se_temporal_events_for_ops,
 )
 from lawvm.sweden.grafter import (
     apply_se_ops,
@@ -3039,6 +3044,119 @@ def test_compile_se_official_act_ops_supports_old_style_repeal_spelling() -> Non
     assert len(ops) == 1
     assert ops[0].action is StructuralAction.REPEAL
     assert ops[0].target.leaf_label() == "15"
+
+
+def test_se_expiry_boundary_extraction_covers_end_of_month_year_and_explicit() -> None:
+    # "vid utgången av <month> <year>" -> last calendar day of that month.
+    assert (
+        extract_se_expiry_boundary_date("15 § skall upphöra att gälla vid utgången av februari 2003")
+        == "2003-02-28"
+    )
+    # Leap-year February.
+    assert (
+        extract_se_expiry_boundary_date("upphöra att gälla vid utgången av februari 2004")
+        == "2004-02-29"
+    )
+    # "vid utgången av <year>" -> 31 december.
+    assert extract_se_expiry_boundary_date("upphöra att gälla vid utgången av 2005") == "2005-12-31"
+    # Explicit "den <day> <month> <year>".
+    assert extract_se_expiry_boundary_date("upphör att gälla den 1 mars 2003") == "2003-03-01"
+    # Open-ended cease-to-apply -> no explicit boundary (keyed off commencement).
+    assert extract_se_expiry_boundary_date("16 och 22 §§ ska upphöra att gälla,") == ""
+
+
+def test_compile_se_official_act_ops_lowers_upphora_att_galla_as_temporal_expiry() -> None:
+    # §2.1/§6.4 (#186): a dated "upphöra att gälla" is a TEMPORAL EXPIRY, not a
+    # structural repeal. The tree action stays REPEAL (the section leaves the
+    # in-force surface, matching the oracle), but the op is first-classed as an
+    # expiry: TOMBSTONE(expired) not (repealed), and a companion EXPIRY
+    # TemporalEvent carries the ``expires`` boundary on the timeline rail.
+    act = {
+        "sfs_id": "2002:1163",
+        "title": "Förordning om ändring i förordningen (1991:1195) om det offentliga skolväsendet",
+        "act_type": "förordning",
+        "amended_act_sfs_id": "1991:1195",
+        "is_amending_act": True,
+        "published_date": "2002-12-19",
+        "issued_date": "2002-12-19",
+        "enacting_clause": "Regeringen föreskriver att 15 § förordningen (1991:1195) skall upphöra att gälla vid utgången av februari 2003.",
+        "effective_clause": "Denna förordning träder i kraft den 1 mars 2003.",
+        "affected_section_labels": [],
+        "provisions": [],
+        "inserted_headings": [],
+        "appendices": [],
+        "signatories": [],
+        "footnotes": [],
+    }
+
+    ops = compile_se_official_act_ops(act, source_id="2002:1163")
+    assert len(ops) == 1
+    op = ops[0]
+
+    # Tree action unchanged (oracle-agreement mechanics preserved).
+    assert op.action is StructuralAction.REPEAL
+    assert op.target.leaf_label() == "15"
+    # Modelled as a temporal expiry: TOMBSTONE(expired), not (repealed).
+    assert se_op_is_temporal_expiry(op) is True
+    assert se_op_tombstone_disposition(op) == "temporary_expiry"
+    assert "se_temporal_expiry=1" in op.provenance_tags
+    assert "expiry_boundary_inclusive=2003-02-28" in op.provenance_tags
+    # Prose-inclusive Feb 28 -> exclusive kernel cutoff Mar 1.
+    assert "expires=2003-03-01" in op.provenance_tags
+
+    # Companion EXPIRY TemporalEvent on the timeline rail, scoped to the section.
+    event = se_temporal_expiry_event(op, base_statute_id="1991:1195")
+    assert event is not None
+    assert event.kind == "expire"
+    assert event.expires == "2003-03-01"
+    assert event.scope.target_statute == "1991:1195"
+    assert [addr.leaf_label() for addr in event.scope.exact_addresses] == ["15"]
+
+    events = se_temporal_events_for_ops(ops, base_statute_id="1991:1195")
+    assert len(events) == 1
+    assert events[0].kind == "expire"
+
+
+def test_se_open_ended_upphora_att_galla_is_expiry_without_boundary_date() -> None:
+    # An "upphöra att gälla" with no explicit date is still a temporal expiry
+    # (TOMBSTONE(expired)); the boundary is the amending act's own commencement,
+    # so the EXPIRY event carries an empty ``expires`` string rather than a date.
+    act = {
+        "sfs_id": "2026:63",
+        "title": "Förordning om ändring i förordningen (2015:284) om något",
+        "act_type": "förordning",
+        "amended_act_sfs_id": "2015:284",
+        "is_amending_act": True,
+        "published_date": "2026-02-10",
+        "issued_date": "2026-02-05",
+        "enacting_clause": (
+            "Regeringen föreskriver i fråga om förordningen (2015:284) om något "
+            "dels att 16 och 22 §§ ska upphöra att gälla, "
+            "dels att 3 § ska ha följande lydelse."
+        ),
+        "effective_clause": "Denna förordning träder i kraft den 1 mars 2026.",
+        "affected_section_labels": ["16", "22"],
+        "provisions": [{"label": "3", "text": "Ny 3 §."}],
+        "inserted_headings": [],
+        "appendices": [],
+        "signatories": [],
+        "footnotes": [],
+    }
+
+    ops = compile_se_official_act_ops(act, source_id="2026:63")
+    repeal_ops = [op for op in ops if op.action is StructuralAction.REPEAL]
+    assert [op.target.leaf_label() for op in repeal_ops] == ["16", "22"]
+    for op in repeal_ops:
+        assert se_op_tombstone_disposition(op) == "temporary_expiry"
+        assert "expires=" not in "".join(op.provenance_tags)  # open-ended
+        event = se_temporal_expiry_event(op, base_statute_id="2015:284")
+        assert event is not None and event.kind == "expire" and event.expires == ""
+    # The REPLACE op (genuine content change, not an expiry) is not tagged.
+    replace_ops = [op for op in ops if op.action is StructuralAction.REPLACE]
+    assert replace_ops
+    for op in replace_ops:
+        assert se_op_is_temporal_expiry(op) is False
+        assert se_op_tombstone_disposition(op) == ""
 
 
 def test_compile_se_official_act_ops_infers_base_act_from_enacting_clause() -> None:
