@@ -28,7 +28,12 @@ if TYPE_CHECKING:
 
 from lawvm.estonia.compare import irnode_to_ee_comparison_text
 from lawvm.estonia.compare import normalize_ee_comparison_text
-from lawvm.estonia.fetch import extract_effective_date, fetch_rt_xml, open_rt_archive
+from lawvm.estonia.fetch import (
+    extract_effective_date,
+    fetch_rt_xml,
+    open_rt_archive,
+    open_rt_archive_immutable,
+)
 from lawvm.estonia.replay import replay_ee_to_pit
 from lawvm.estonia.residual_reporting import (
     build_ee_punctuation_whitespace_record,
@@ -48,9 +53,26 @@ _CORPUS_CSV = (
     / "current_replayable_corpus.csv"
 )
 
-# Module-level state for worker processes (set before spawning ProcessPoolExecutor).
+# Per-worker state, populated in each worker process by ``_init_worker`` (passed
+# as the ProcessPoolExecutor ``initializer``). It must NOT be set in the parent
+# and relied upon in workers: the pool start method on this host is ``forkserver``
+# (and may be ``spawn``), both of which RE-IMPORT this module in the worker —
+# resetting these module globals to their defaults — rather than inheriting the
+# parent's mutated values the way plain ``fork`` would. Passing the config through
+# ``initializer``/``initargs`` is the start-method-agnostic channel (#210).
 _WORKER_DB_PATH: str = ""
 _WORKER_META: dict[str, tuple[int, str]] = {}
+
+
+def _init_worker(db_path: str, meta: dict[str, tuple[int, str]]) -> None:
+    """ProcessPoolExecutor initializer: install per-worker config in this process.
+
+    Runs once per worker process, after the module has been (re-)imported, so the
+    values survive regardless of the pool start method (fork/forkserver/spawn).
+    """
+    global _WORKER_DB_PATH, _WORKER_META
+    _WORKER_DB_PATH = db_path
+    _WORKER_META = meta
 
 # Schemas considered "law" (Riigikogu acts)
 _LAW_SCHEMAS = frozenset(["tyviseadus", "muutmisseadus"])
@@ -446,7 +468,15 @@ def _score_one_pair_worker(item: tuple[str, str, str]) -> _BenchResult:
     """
     gid, base_id, oracle_id = item
     _, title = _WORKER_META.get(gid, (0, ""))
-    archive = open_rt_archive(Path(_WORKER_DB_PATH))
+    # Workers only READ statute blobs for replay — they never store. Open the
+    # Farchive with SQLite ``immutable=1`` (see open_rt_archive_immutable): this
+    # skips the ``PRAGMA journal_mode=WAL`` + writer-lock setup that a read-WRITE
+    # open performs (which surfaced ``unable to open database file`` under
+    # concurrency) AND the ``-wal``/``-shm`` mapping that a plain ``mode=ro``
+    # open still performs (which surfaced ``disk I/O error`` under concurrency on
+    # WSL2). Each worker gets an independent immutable snapshot of the shared
+    # ~12 GB archive with no shared write state (#210).
+    archive = open_rt_archive_immutable(Path(_WORKER_DB_PATH))
     try:
         return _score_one_pair(gid, base_id, oracle_id, title, archive)
     finally:
@@ -465,13 +495,29 @@ def _run_bench(
     if workers > 1:
         from concurrent.futures import ProcessPoolExecutor, as_completed
 
-        # Communicate config to worker processes via module globals.
-        global _WORKER_DB_PATH, _WORKER_META
-        _WORKER_DB_PATH = str(archive._db_path)
-        _WORKER_META = meta
+        # Config for workers. Passed via the pool ``initializer`` (NOT set on the
+        # parent's module globals) so it survives forkserver/spawn re-import.
+        db_path = str(archive._db_path)
+
+        # Release the driver's own archive connection BEFORE spawning workers.
+        # The parallel path scores every pair inside worker processes (each opens
+        # its own immutable snapshot) and never touches this connection again. If
+        # the driver opened the archive read-WRITE (the historical default for an
+        # existing path), leaving that connection live keeps the ``-wal``/``-shm``
+        # sidecar mapped, which is exactly what makes the concurrent worker reads
+        # fail with ``disk I/O error`` on WSL2. Closing it first lets every worker
+        # map the main database file cleanly (#210). Safe because the sequential
+        # fallback below is the only branch that still uses ``archive``.
+        close = getattr(archive, "close", None)
+        if callable(close):
+            close()
 
         results: list[Optional[_BenchResult]] = [None] * total
-        with ProcessPoolExecutor(max_workers=workers) as pool:
+        with ProcessPoolExecutor(
+            max_workers=workers,
+            initializer=_init_worker,
+            initargs=(db_path, meta),
+        ) as pool:
             future_to_idx = {
                 pool.submit(_score_one_pair_worker, (gid, base_id, oracle_id)): i
                 for i, (gid, base_id, oracle_id) in enumerate(pairs)
@@ -861,7 +907,15 @@ def main(args) -> None:
     corpus_csv_path = Path(args.ee_corpus) if getattr(args, "ee_corpus", None) else _CORPUS_CSV
     use_csv = corpus_csv_path.exists() and not getattr(args, "reindex", False)
 
-    archive = open_rt_archive(db_path)
+    # The bench driver is a pure reader: it loads pairs from the corpus CSV (or
+    # indexes the archive via ``_conn``) and, in the sequential path, only reads
+    # statute blobs. It never stores. Open read-only so the driver does not take
+    # a read-WRITE ``journal_mode=WAL`` connection — a live writer connection
+    # leaves the ``-wal``/``-shm`` sidecars mapped, which is what makes the
+    # concurrent immutable worker opens fail (``unable to open database file`` /
+    # ``disk I/O error``) on WSL2. Mirrors _run_single_statute's read-only open
+    # (#210).
+    archive = open_rt_archive(db_path, readonly=True)
     if use_csv:
         print(f"Loading corpus from CSV: {corpus_csv_path}")
         pairs, meta = _load_corpus_csv(corpus_csv_path, include_decrees=args.include_decrees)

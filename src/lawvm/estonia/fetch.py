@@ -251,6 +251,84 @@ def open_rt_archive(db_path: Optional[Path] = None, *, readonly: bool | None = N
     return Farchive(path, readonly=readonly)
 
 
+def open_rt_archive_immutable(db_path: Optional[Path] = None) -> Any:
+    """Open the RT archive as an ``immutable`` read-only SQLite snapshot.
+
+    Unlike ``open_rt_archive(readonly=True)`` — which opens SQLite ``mode=ro``
+    and therefore still consults the ``-wal``/``-shm`` sidecar files — this
+    opens the database with the ``immutable=1`` URI parameter. That tells SQLite
+    the file (and any WAL) cannot change under it, so it maps the main database
+    file directly and never touches ``-wal``/``-shm``.
+
+    This matters for concurrent parallel readers on WSL2: when many worker
+    processes open the same multi-gigabyte archive at once, ``mode=ro`` opens
+    race on the shared ``-shm`` mapping and surface ``sqlite3.OperationalError:
+    disk I/O error`` (and read-WRITE opens surface ``unable to open database
+    file`` from WAL/writer-lock setup). ``immutable=1`` sidesteps both by never
+    engaging the WAL machinery.
+
+    Correctness contract: the caller must guarantee no writer is committing to
+    the archive during the read (RT acts are immutable and the bench replay path
+    only reads statute blobs from a static corpus, so any WAL present at open
+    time has already been checkpointed into the main file). Use ONLY for
+    read-only consumers such as parallel bench workers — never for acquisition.
+
+    ``Farchive`` itself does not expose an immutable open mode and always
+    connects during ``__init__`` (its read-only branch uses ``mode=ro``, whose
+    connect is itself the call that fails under concurrency). We therefore build
+    the ``Farchive`` object WITHOUT running its constructor and initialise the
+    exact read-only-branch attribute set by hand, using an ``immutable=1``
+    connection. All blob-decompression / dict-cache / schema logic on the object
+    is reused unchanged; only the connection-establishment step is replaced.
+
+    Kept in lockstep with ``farchive._archive.Farchive.__init__`` read-only
+    branch — if that constructor's attribute set changes, this must follow.
+    """
+    import sqlite3
+
+    from farchive import Farchive
+    from farchive._archive import (  # type: ignore[import-not-found]
+        SCHEMA_VERSION,
+        CompressionPolicy,
+        detect_schema_version,
+    )
+
+    path = Path(db_path) if db_path is not None else _DEFAULT_RT_DB
+
+    # immutable=1: SQLite treats the DB (and any WAL) as unchanging and maps the
+    # main file directly, never opening ``-wal``/``-shm``. No writer must be
+    # committing concurrently (RT acts are immutable; bench replay is read-only).
+    url = path.resolve().as_uri() + "?immutable=1"
+    conn = sqlite3.connect(url, uri=True)
+    conn.row_factory = sqlite3.Row
+
+    version = detect_schema_version(conn)
+    if version != SCHEMA_VERSION:
+        conn.close()
+        raise RuntimeError(
+            f"Farchive DB version {version} is incompatible with current "
+            f"SCHEMA_VERSION={SCHEMA_VERSION}. Please run 'farchive migrate'."
+        )
+
+    archive = Farchive.__new__(Farchive)
+    archive._db_path = path
+    archive._policy = CompressionPolicy()
+    archive._readonly = True
+    archive._conn = conn
+    archive._events_enabled = (
+        conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='event'"
+        ).fetchone()
+        is not None
+    )
+    archive._dict_cache = {}
+    archive._has_dict_for_class = {}
+    archive._lock_path = path.with_name(path.name + ".writer.lock")
+    archive._lock_held = False
+    archive._supports_span_series_key = archive._has_column("locator_span", "series_key")
+    return archive
+
+
 # ---------------------------------------------------------------------------
 # Core fetch — curl-only, stored in Farchive
 # ---------------------------------------------------------------------------
