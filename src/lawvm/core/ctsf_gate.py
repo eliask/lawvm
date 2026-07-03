@@ -806,18 +806,23 @@ def run_gate(baseline_path: Path | None = None) -> int:
     return rc
 
 
-def format_report(result: GateResult) -> str:
+def format_report(
+    result: GateResult,
+    corpus_label: str = "the REAL #183 FI touch-relation anchor corpus",
+) -> str:
     """Human-readable rendering of the PRIMARY gate verdict.
 
     Labels the mode as PRIMARY so no reader mistakes it for telemetry: a FAIL flips
     the exit code red. The legacy scalar bench-regression guard is demoted to
     telemetry (an operator diagnostic, no longer the correctness authority).
+    ``corpus_label`` names which jurisdiction's corpus this verdict is over (defaults
+    to FI for back-compat; the EE fold passes its own label).
     """
     cur_total = sum(sum(f.values()) for f in result.current.values())
     base_total = sum(sum(f.values()) for f in result.baseline.values())
     lines = [
         "CTSF residual-set-diff gate (Phase 3) — PRIMARY GATE (load-bearing)",
-        "  over the REAL #183 FI touch-relation anchor corpus",
+        f"  over {corpus_label}",
         "  (legacy scalar bench gate DEMOTED to telemetry; this verdict is the "
         "correctness authority — a new billable FAILs red)",
         f"  verdict: {result.verdict}",
@@ -931,21 +936,28 @@ def _fold_ee_gate_into_rc(rc: int, *, json_mode: bool) -> int:
     """Gate the EE (#205) corpus and fold its verdict into the process exit code.
 
     Data-aware: an absent RT archive SKIPS the EE lane cleanly (returns ``rc``
-    unchanged). When present, score the EE corpus, print/log its verdict, and raise
-    ``rc`` to 1 iff the EE gate FAILs (a new EE billable). Keeps FI and EE
-    independent — either jurisdiction FAILing flips CI red.
+    unchanged). When present, score the EE corpus, log its verdict, and raise ``rc``
+    to 1 iff the EE gate FAILs (a new EE billable). Keeps FI and EE independent —
+    either jurisdiction FAILing flips CI red.
+
+    In HUMAN mode the EE verdict is printed as its own labelled section. In JSON mode
+    it is NOT printed as a second blob (that would break the single-object stdout
+    contract the FI JSON callers/tests rely on) — the verdict is still logged via
+    ``emit_verdict_signals`` and folded into the exit code; the machine-readable EE
+    result is available directly via :func:`run_ee_gate_report`.
     """
     if not ee_anchor_corpus_available():
         return rc
     ee_result = run_ee_gate_report()
     emit_verdict_signals(ee_result)
-    if json_mode:
-        payload = ee_result.to_dict()
-        payload["jurisdiction"] = REAL_ANCHOR_EE_JURISDICTION
-        print(json.dumps(payload, indent=2, ensure_ascii=False))
-    else:
+    if not json_mode:
         print("\n--- ESTONIA (#205) corpus ---")
-        print(format_report(ee_result))
+        print(
+            format_report(
+                ee_result,
+                corpus_label="the REAL #205 EE touch-relation anchor corpus",
+            )
+        )
     return 1 if ee_result.failed else rc
 
 
