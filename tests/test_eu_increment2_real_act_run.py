@@ -99,12 +99,18 @@ def test_indirect_annex_amendment_lowers_structural_target() -> None:
         _indirect_annex(), "32017R0489", base_celex=BASE_CELEX, effective="2017-03-21"
     )
     targets = {str(op.target): op for op in r.ops}
-    assert set(targets) == {"annex:II", "annex:III", "annex:"}
+    # Annex ops carry the ``supplements`` compartment root (§5.3 / §7 delta #6),
+    # so ``__str__`` gains the ``@supplements`` prefix (resolution unchanged).
+    assert set(targets) == {
+        "@supplements annex:II",
+        "@supplements annex:III",
+        "@supplements annex:",
+    }
     for op in r.ops:
         assert op.action == StructuralAction.REPLACE
         assert op.witness_rule_id == "EU_FMX4.ANNEX_AMENDED_AS_SET_OUT"
     # The inline <ANNEX> body of the amending act is captured as payload.
-    annex_ii_payload = targets["annex:II"].payload
+    annex_ii_payload = targets["@supplements annex:II"].payload
     assert annex_ii_payload is not None
     assert "List replacing" in annex_ii_payload.text
     # 4 instructions: 3 indirect-annex ops + the entry-into-force residual.
@@ -126,7 +132,8 @@ def test_indirect_annex_payload_gap_is_typed_when_no_own_annex() -> None:
     assert r.covered_count == 1
     op = r.ops[0]
     assert op.witness_rule_id == "EU_FMX4.ANNEX_AMENDED_AS_SET_OUT"
-    assert str(op.target) == "annex:II"
+    # Annex op carries the ``supplements`` compartment root (§5.3 / §7 delta #6).
+    assert str(op.target) == "@supplements annex:II"
     assert "annex_payload=separate_manifestation" in op.provenance_tags
     assert any(
         d.rule_id == "eu_fmx4_grammar_annex_as_set_out_payload_separate"

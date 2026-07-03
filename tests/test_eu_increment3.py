@@ -192,7 +192,10 @@ def test_separate_annex_resolver_materialises_payload() -> None:
     assert seen == [("32018R0870", "II")]
     op = r.ops[0]
     assert op.witness_rule_id == "EU_FMX4.ANNEX_AMENDED_AS_SET_OUT"
-    assert str(op.target) == "annex:II"
+    # Annex ops carry the ``supplements`` compartment root (§5.3 / §7 delta #6);
+    # ``__str__`` gains the ``@supplements`` prefix (resolution unchanged).
+    assert str(op.target) == "@supplements annex:II"
+    assert op.target.root_kind() == "supplements"
     assert op.payload is not None and "Entry X" in op.payload.text
     assert "annex_payload=separate_resolved" in op.provenance_tags
     # No payload-gap diagnostic: the gap is materialised, not recorded.

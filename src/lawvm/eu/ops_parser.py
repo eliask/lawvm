@@ -189,12 +189,20 @@ class EUOpsParser:
                 if not kind or not raw_label:
                     continue
                 path = tuple(context_path + [(kind, raw_label)])
+                # An annex named as the FIRST (unscoped) path step lives in the
+                # ``supplements`` compartment root (§5.3 / §7 delta #6) — the EU
+                # materializer dispatches it to the annex lane off ``root_kind()``.
+                # This stamps ``root="supplements"`` on exactly the addresses the
+                # retired ``path_steps[0][0] == "annex"`` sniff selected (an annex
+                # UNDER an Article/Chapter/Division context has a non-annex path[0]
+                # and stays body-rooted, byte-identical to before).
+                addr_root = "supplements" if path[0][0] == "annex" else None
                 ops.append(
                     LegalOperation(
                         op_id=f"eu-compat-{len(ops) + 1}-{index}",
                         sequence=len(ops) + 1,
                         action=action_kind,
-                        target=LegalAddress(path=path),
+                        target=LegalAddress(path=path, root=addr_root),
                         source=OperationSource(statute_id="unknown"),
                         provenance_tags=(f"ir_apply_class={self._apply_class(action_kind, path)}",),
                     )

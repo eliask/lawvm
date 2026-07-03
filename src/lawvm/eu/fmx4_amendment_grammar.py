@@ -629,7 +629,13 @@ def _lower_annex_root(
             op_id=f"{amending_celex}-annex-{annex_num}",
             sequence=1,
             action=StructuralAction.REPLACE,
-            target=LegalAddress(path=(("annex", annex_num),)),
+            # The EU annex lives in the ``supplements`` compartment root, not the
+            # statute ``body`` (§5.3 / §7 delta #6, mirroring the SE bilaga mint).
+            # Naming the root on the ADDRESS makes annex REPLACE/REPEAL/INSERT
+            # ordinary root-selected resolution: the EU materializer dispatches to
+            # the ``supplements`` lane off ``root_kind()`` instead of the retired
+            # inline ``path_steps[0][0] == "annex"`` sniff.
+            target=LegalAddress(path=(("annex", annex_num),), root="supplements"),
             payload=_payload_node(IRNodeKind.SCHEDULE, annex_num, block),
             source=src,
             witness_rule_id="EU_FMX4.ANNEX_ROOT_REPLACE",
@@ -895,7 +901,9 @@ def _lower_one_instruction(
             op_id=f"{amending_celex}-{seq}",
             sequence=seq,
             action=StructuralAction.REPLACE,
-            target=LegalAddress(path=path),
+            # ``root="supplements"`` — the annex compartment root (§5.3 / §7
+            # delta #6); see the ANNEX_ROOT_REPLACE mint above.
+            target=LegalAddress(path=path, root="supplements"),
             payload=_payload_node(IRNodeKind.SCHEDULE, annex_num, annex_payload),
             source=src,
             witness_rule_id="EU_FMX4.ANNEX_AMENDED_AS_SET_OUT",
@@ -923,7 +931,9 @@ def _lower_one_instruction(
             op_id=f"{amending_celex}-{seq}",
             sequence=seq,
             action=StructuralAction.REPLACE,
-            target=LegalAddress(path=path),
+            # ``root="supplements"`` — the annex compartment root (§5.3 / §7
+            # delta #6); see the ANNEX_ROOT_REPLACE mint above.
+            target=LegalAddress(path=path, root="supplements"),
             payload=_payload_node(IRNodeKind.SCHEDULE, m.group("num").upper(), block),
             source=src,
             witness_rule_id="EU_FMX4.WHOLE_ANNEX_REPLACE",

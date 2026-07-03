@@ -210,7 +210,10 @@ def test_apply_eu_ops_conserved_empty_target_label_skips_not_raises() -> None:
         op_id="eu-annex-empty-label",
         sequence=1,
         action=StructuralAction.REPLACE,
-        target=LegalAddress(path=(("annex", ""),)),  # sole-annex bare form
+        # sole-annex bare form; the annex compartment root (§5.3 / §7 delta #6)
+        # — the production mint (fmx4/ops_parser) now stamps ``root="supplements"``
+        # on annex targets, and the materializer selects the annex lane off it.
+        target=LegalAddress(path=(("annex", ""),), root="supplements"),
         payload=IRNode(kind=IRNodeKind.SECTION, label="", text="replacement annex"),
         source=OperationSource(statute_id="2026/1"),
     )
@@ -246,7 +249,8 @@ def test_apply_eu_ops_conserved_empty_label_repeal_skips_not_raises() -> None:
         op_id="eu-annex-empty-repeal",
         sequence=1,
         action=StructuralAction.REPEAL,
-        target=LegalAddress(path=(("annex", ""),)),
+        # annex compartment root (§5.3 / §7 delta #6) — sole-annex bare form.
+        target=LegalAddress(path=(("annex", ""),), root="supplements"),
         payload=None,
         source=OperationSource(statute_id="2026/1"),
     )
@@ -294,7 +298,10 @@ def _annex_replace_op(*, op_id: str, sequence: int, annex_label: str, text: str)
         op_id=op_id,
         sequence=sequence,
         action=StructuralAction.REPLACE,
-        target=LegalAddress(path=(("annex", annex_label),)),
+        # The EU annex lives in the ``supplements`` compartment root (§5.3 / §7
+        # delta #6); the materializer selects the annex resolution lane off
+        # ``root_kind()`` exactly as the production mint sites now stamp it.
+        target=LegalAddress(path=(("annex", annex_label),), root="supplements"),
         payload=IRNode(kind=_ANNEX_KIND, label=annex_label, text=text),
         source=OperationSource(statute_id="2026/1"),
     )
@@ -330,7 +337,8 @@ def test_annex_repeal_resolves_against_supplements_and_removes() -> None:
         op_id="eu-annex-III-repeal",
         sequence=1,
         action=StructuralAction.REPEAL,
-        target=LegalAddress(path=(("annex", "III"),)),
+        # annex compartment root (§5.3 / §7 delta #6).
+        target=LegalAddress(path=(("annex", "III"),), root="supplements"),
         payload=None,
         source=OperationSource(statute_id="2026/1"),
     )

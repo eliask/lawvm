@@ -1222,7 +1222,14 @@ def test_end_to_end_indirect_annex_amendment_resolves_and_applies() -> None:
     fixture = Path(__file__).parent / "eu" / "fixtures" / "amending_indirect_annex_excerpt.fmx4.xml"
     r = lower_amending_act(fixture.read_bytes(), "32017R0489", base_celex="32016R0044")
     ops = list(r.ops)
-    assert {str(op.target) for op in ops} == {"annex:II", "annex:III", "annex:"}
+    # Annex ops now carry the ``supplements`` compartment root (§5.3 / §7 delta
+    # #6), so their rendered address gains the ``@supplements`` prefix. The
+    # RESOLUTION/DISPOSITION is byte-identical — only ``__str__`` changed.
+    assert {str(op.target) for op in ops} == {
+        "@supplements annex:II",
+        "@supplements annex:III",
+        "@supplements annex:",
+    }
 
     result = apply_eu_ops_conserved(base, ops)
 
@@ -1232,8 +1239,8 @@ def test_end_to_end_indirect_annex_amendment_resolves_and_applies() -> None:
     }
     # The two named-annex ops applied; the sole-annex empty-label op is the
     # preserved typed skip (resolving it to the base's single annex is deferred).
-    assert applied_targets == {"annex:II", "annex:III"}
-    assert rejected == {"annex:": "eu_replay_target_not_found"}
+    assert applied_targets == {"@supplements annex:II", "@supplements annex:III"}
+    assert rejected == {"@supplements annex:": "eu_replay_target_not_found"}
     # Both named annexes now carry the replacement body in supplements.
     supp = {s.label: (s.text or "") for s in result.statute.supplements}
     assert "List replacing" in supp["II"]

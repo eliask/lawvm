@@ -70,7 +70,10 @@ def test_annex_root_amender_lowers_to_typed_op() -> None:
     op = r.ops[0]
     assert op.action == StructuralAction.REPLACE
     assert op.witness_rule_id == "EU_FMX4.ANNEX_ROOT_REPLACE"
-    assert str(op.target) == "annex:III"
+    # Annex ops carry the ``supplements`` compartment root (§5.3 / §7 delta #6);
+    # ``__str__`` gains the ``@supplements`` prefix (resolution unchanged).
+    assert str(op.target) == "@supplements annex:III"
+    assert op.target.root_kind() == "supplements"
     assert op.source is not None and op.source.effective == "2016-04-01"
 
 

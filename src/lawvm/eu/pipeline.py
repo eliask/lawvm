@@ -90,7 +90,11 @@ class EUPipelineDiagnostic:
 def _map_address(addr: LegalAddress) -> LegalAddress:
     """Translate ops-parser kinds in a LegalAddress to grafter IR kinds."""
     mapped = tuple((_EU_OPS_KIND_TO_IR.get(kind.lower(), kind.lower()), label) for kind, label in addr.path)
-    return LegalAddress(path=mapped, special=addr.special)
+    # The compartment ``root`` selector (§5.3 / §7 delta #6) is a property of
+    # WHICH state root the address lives under, not a kind to be remapped, so it
+    # threads through the kind translation untouched — ``None`` (body) stays
+    # ``None`` (byte-identical), ``"supplements"`` (annex) stays ``"supplements"``.
+    return LegalAddress(path=mapped, special=addr.special, root=addr.root)
 
 
 def _append_eu_replay_adjudication(
@@ -441,21 +445,32 @@ def apply_eu_ops(
             applied += 1
             _eu_op_applied = True
 
-        # ── Annex-in-supplements resolution scope. ───────────────────────────
-        # An annex-rooted target (``path_steps[0][0] == "annex"``) may resolve in
-        # EITHER lane: some frontends carry the annex INLINE in ``body`` (a
-        # top-level ``annex`` body child), but the EU grafter places annexes in
-        # ``IRStatute.supplements`` (a flat list of top-level annex IRNodes). Try
-        # ``body`` FIRST — byte-identical to the pre-fix behaviour, so any
-        # body-hosted annex keeps resolving exactly as before — then fall back to
-        # ``supplements`` (the blocker-#2 fix). Supplements are wrapped in a
-        # synthetic BODY-kind container so the same
-        # ``tree_ops.find``/``replace_at``/``remove_at`` primitives that drive
-        # body ops apply byte-identically, then ``.children`` is unwrapped back
-        # to the running supplements list. Non-annex targets take the unchanged
-        # ``body``-only path, so the conserved partition and every non-annex byte
-        # stay exactly as before.
-        annex_rooted = bool(path_steps) and path_steps[0][0] == "annex"
+        # ── Annex compartment-root resolution scope (§5.3 / §7 delta #6). ─────
+        # WHICH address root the op targets is a property of the ADDRESS
+        # (``op.target.root_kind()``), not a leaf-kind sniff on the path. A
+        # ``supplements``-rooted target (the EU annex compartment, stamped at the
+        # fmx4/ops_parser mint sites, mirroring the SE bilaga) resolves in the
+        # annex compartment; everything else resolves against the statute
+        # ``body``. This retires the former inline ``path_steps[0][0] == "annex"``
+        # sniff that re-derived the compartment from the outermost path kind — the
+        # only ``supplements``-rooted ops EU mints are exactly the whole-annex ops
+        # whose address had ``annex`` as the first path step, and every body op
+        # carries ``root=None``, so the op→lane partition is byte-identical.
+        #
+        # An annex-rooted target may still resolve in EITHER lane: some frontends
+        # carry the annex INLINE in ``body`` (a top-level ``annex`` body child),
+        # but the EU grafter places annexes in ``IRStatute.supplements`` (a flat
+        # list of top-level annex IRNodes). ``_resolve_annex_target`` tries
+        # ``body`` FIRST — byte-identical to the pre-compartment behaviour, so any
+        # body-hosted annex keeps resolving exactly as before — then falls back to
+        # ``supplements``. Supplements are wrapped in a synthetic BODY-kind
+        # container so the same ``tree_ops.find``/``replace_at``/``remove_at``
+        # primitives that drive body ops apply byte-identically, then
+        # ``.children`` is unwrapped back to the running supplements list.
+        # Non-annex (``root=None``) targets take the unchanged ``body``-only path,
+        # so the conserved partition and every non-annex byte stay exactly as
+        # before.
+        annex_rooted = op.target.root_kind() == "supplements"
 
         def _supplements_container() -> IRNode:
             return tree_ops.with_children(base.body, list(supplements))

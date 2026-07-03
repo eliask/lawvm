@@ -167,7 +167,10 @@ def test_annex_root_lowered_as_whole_annex_replace() -> None:
     op = r.ops[0]
     assert op.action == StructuralAction.REPLACE
     assert op.witness_rule_id == "EU_FMX4.ANNEX_ROOT_REPLACE"
-    assert str(op.target) == "annex:III"
+    # Annex ops carry the ``supplements`` compartment root (§5.3 / §7 delta #6);
+    # ``__str__`` gains the ``@supplements`` prefix (resolution unchanged).
+    assert str(op.target) == "@supplements annex:III"
+    assert op.target.root_kind() == "supplements"
     assert op.payload is not None
     assert "New listing" in op.payload.text
     assert op.source is not None and op.source.effective == "2016-04-01"
@@ -197,7 +200,8 @@ def test_indirect_annex_as_set_out_lowered_increment2() -> None:
     assert r.covered_count == 1
     op = r.ops[0]
     assert op.witness_rule_id == "EU_FMX4.ANNEX_AMENDED_AS_SET_OUT"
-    assert str(op.target) == "annex:II"
+    # Annex op carries the ``supplements`` compartment root (§5.3 / §7 delta #6).
+    assert str(op.target) == "@supplements annex:II"
     assert op.payload is not None and "New list" in op.payload.text
     assert "annex_payload=inline" in op.provenance_tags
 
