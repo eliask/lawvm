@@ -19,9 +19,11 @@ from lawvm.core.target_resolution import (
     TargetResolutionCandidate,
     TargetResolutionCoverage,
 )
-from lawvm.core.semantic_types import legacy_text_action_value
+from lawvm.core.semantic_types import StructuralAction, legacy_text_action_value
+from lawvm.core.totalization import FailureClass, Reject
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.core.quirks_disposition import QuirksDisposition
+from lawvm.uk_legislation.totalization_table import UK_TOTALIZATION_TABLE
 
 
 UK_REPLAY_SCHEDULE_ENTRY_REPEAL_GRANULARITY_BLOCKED_RULE_ID = (
@@ -283,9 +285,17 @@ def append_unsupported_whole_act_prepare_filter_adjudication(
     *,
     op: LegalOperation,
 ) -> CompileAdjudication:
+    # θ (§2.3): the whole-act unsupported-action reject code is sourced from the
+    # UK table's action-admissibility cell — ``(META, UNSUPPORTED_ACTION)`` — so
+    # the code has a single source (``uk_legislation/totalization_table.py``).
+    # Byte-identical: the cell declares ``Reject("uk_replay_unsupported_action")``.
+    disposition = UK_TOTALIZATION_TABLE.lookup(
+        StructuralAction.META, FailureClass.UNSUPPORTED_ACTION
+    )
+    assert isinstance(disposition, Reject)
     return _append_uk_replay_adjudication(
         adjudications_out,
-        kind="uk_replay_unsupported_action",
+        kind=disposition.code,
         message="UK replay prepare step skipped unsupported whole-act target before replay apply.",
         op=op,
         detail={

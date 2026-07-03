@@ -40,7 +40,7 @@ from lawvm.core.ir import (
     OperationSource,
     StructuralAction,
 )
-from lawvm.core.semantic_types import IRNodeKind
+from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.core.totalization import (
     FailureClass,
     NoopIdempotent,
@@ -56,6 +56,8 @@ from lawvm.norway.totalization_table import NO_TOTALIZATION_TABLE
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.sweden.grafter import apply_se_ops_conserved
 from lawvm.sweden.totalization_table import SE_TOTALIZATION_TABLE
+from lawvm.uk_legislation.replay_conserved import replay_uk_ops_conserved
+from lawvm.uk_legislation.totalization_table import UK_TOTALIZATION_TABLE
 
 
 # ---------------------------------------------------------------------------
@@ -609,6 +611,124 @@ def test_ee_default_is_strict_reject() -> None:
         StructuralAction.RENUMBER, FailureClass.DEST_OCCUPIED
     )
     assert fallback is EE_TOTALIZATION_TABLE.default
+
+
+# ---------------------------------------------------------------------------
+# UK — the seam-sourced I1 ✓seam frontend, now the strict θ table (#186).
+#
+# Unlike NO/SE/EE, the UK's conservation partition is SEAM-SOURCED, not
+# adjudication-keyed: a prepared op that landed no write is conserved under the
+# UNIFORM reason code ``uk_apply_no_write`` (the table DEFAULT), regardless of
+# which descriptive ``uk_replay_*`` adjudication narrated the miss; and the UK
+# RECOVERS aggressively (a missing-leaf REPLACE materializes as an INSERT), so
+# ``TARGET_ABSENT`` on a REPLACE is *accepted*, never a reject cell. The one
+# explicit reject cell is the whole-act action-admissibility filter. Each cell is
+# driven through the REAL conserved apply path (``replay_uk_ops_conserved`` — the
+# path production replay uses) and asserted to conserve with its declared code.
+# ---------------------------------------------------------------------------
+
+_UK_ID = "ukpga/2020/1"
+_UK_AMEND = "ukpga/2020/2"
+
+
+def _uk_section(label: str, text: str = "Original.") -> IRNode:
+    return IRNode(kind=IRNodeKind.SECTION, label=label, text=text)
+
+
+def _uk_statute(*, statute_id: str = _UK_ID) -> IRStatute:
+    return IRStatute(
+        statute_id=statute_id,
+        title="UK conformance base",
+        body=IRNode(kind=IRNodeKind.BODY, children=(_uk_section("1"),)),
+    )
+
+
+def _observe_uk(
+    statute: IRStatute, op: LegalOperation
+) -> tuple[str, list[CompileAdjudication]]:
+    """Run one op through the UK's real conserved apply path; return
+    ("accepted"/reason_code, adjudications). The reason_code is the SEAM-SOURCED
+    conserved ``RejectedItem.reason_code`` for an apply-skip, or the prepare
+    adjudication kind for a prepare-filtered op."""
+    adjudications: list[CompileAdjudication] = []
+    result = replay_uk_ops_conserved(statute, [op], adjudications_out=adjudications)
+    if result.skipped_items:
+        return result.skipped_items[0].reason_code, adjudications
+    return "accepted", adjudications
+
+
+def test_uk_whole_act_unsupported_action_rejects_as_declared() -> None:
+    """(META, unsupported_action) → Reject(uk_replay_unsupported_action).
+
+    A whole-act-facet op whose action is neither a whole-act REPEAL nor the
+    recognized whole-act text substitution is filtered at prepare time and
+    conserved under the declared code (``replay_prepare.py`` routes through the
+    table's action-admissibility cell)."""
+    cell = (StructuralAction.META, FailureClass.UNSUPPORTED_ACTION)
+    declared = UK_TOTALIZATION_TABLE.lookup(*cell)
+    assert isinstance(declared, Reject)
+    assert declared.code == "uk_replay_unsupported_action"
+
+    op = LegalOperation(
+        op_id="uk-whole-act-unsupported",
+        sequence=1,
+        action=StructuralAction.REPLACE,  # not a whole-act repeal / text sub
+        target=LegalAddress(path=(), special=FacetKind.WHOLE_ACT),
+        payload=_uk_section("1", "New."),
+        source=OperationSource(statute_id=_UK_AMEND),
+    )
+    observed, adjudications = _observe_uk(_uk_statute(), op)
+    assert observed == declared.code
+    # The prepare filter emits the same owned adjudication kind.
+    assert declared.code in {a.kind for a in adjudications}
+
+
+def test_uk_apply_no_write_default_is_seam_sourced() -> None:
+    """§2.3 strict default: a prepared op that lands no write (and is not
+    recovered) is conserved under the UNIFORM seam reason code — the table
+    DEFAULT — regardless of the descriptive adjudication that narrated it. Here a
+    REPEAL of an absent target lands no write and conserves as ``uk_apply_no_write``
+    while ``adjudications_out`` narrates it as ``uk_replay_target_not_found``."""
+    assert isinstance(UK_TOTALIZATION_TABLE.default, Reject)
+    assert UK_TOTALIZATION_TABLE.default.code == "uk_apply_no_write"
+
+    op = LegalOperation(
+        op_id="uk-repeal-absent",
+        sequence=1,
+        action=StructuralAction.REPEAL,
+        target=LegalAddress(path=(("section", "99"),)),  # absent → no write
+        source=OperationSource(statute_id=_UK_AMEND),
+    )
+    observed, adjudications = _observe_uk(_uk_statute(), op)
+    assert observed == UK_TOTALIZATION_TABLE.default.code
+    # The seam-sourced default is uniform across the descriptive misses: the
+    # narrating adjudication kind is distinct from the conserved reason code.
+    assert "uk_replay_target_not_found" in {a.kind for a in adjudications}
+
+
+def test_uk_default_lookup_falls_back() -> None:
+    """§2.3: any unlisted cell falls back to the strict (seam-sourced) default."""
+    fallback = UK_TOTALIZATION_TABLE.lookup(
+        StructuralAction.RENUMBER, FailureClass.DEST_OCCUPIED
+    )
+    assert fallback is UK_TOTALIZATION_TABLE.default
+
+
+def test_uk_recovers_missing_leaf_replace_not_a_reject_cell() -> None:
+    """The UK RECOVERS a missing-leaf REPLACE (materializes as INSERT), so
+    (REPLACE, target_absent) is ACCEPTED — NOT a reject cell. This pins the UK's
+    recovering character: it is why the table has no ``TARGET_ABSENT`` reject row
+    (contrast SE/EE, which reject it)."""
+    op = LegalOperation(
+        op_id="uk-replace-absent-recovered",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "99"),)),
+        payload=_uk_section("99", "New."),
+        source=OperationSource(statute_id=_UK_AMEND),
+    )
+    observed, _ = _observe_uk(_uk_statute(), op)
+    assert observed == "accepted"
 
 
 # ---------------------------------------------------------------------------

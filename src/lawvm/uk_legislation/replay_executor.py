@@ -21,7 +21,8 @@ from lawvm.core.mutation_events import MutationEvent
 from lawvm.core.phase_result import Finding
 from lawvm.core.write_receipt import WriteReceipt
 from lawvm.replay_adjudication import CompileAdjudication
-from lawvm.core.semantic_types import legacy_text_action_value
+from lawvm.core.semantic_types import StructuralAction, legacy_text_action_value
+from lawvm.core.totalization import FailureClass, Reject
 from lawvm.uk_legislation.execution_authorization import _uk_execution_authorization
 from lawvm.uk_legislation.uk_write_receipts import (
     UK_SECTION_RENUMBER_RELABEL_RULE_ID,
@@ -51,6 +52,7 @@ from lawvm.uk_legislation.replay_target_diagnostics import UKReplayTargetDiagnos
 from lawvm.uk_legislation.replay_target_lookup import UKReplayTargetLookupMixin
 from lawvm.uk_legislation.replay_text_action_apply import UKReplayTextActionApplyMixin
 from lawvm.uk_legislation.replay_text_apply import UKReplayTextApplyMixin
+from lawvm.uk_legislation.totalization_table import UK_TOTALIZATION_TABLE
 
 
 class UKReplayExecutor(
@@ -325,9 +327,19 @@ class UKReplayExecutor(
                 self._log(
                     f"  EXECUTOR: WARN whole_act target with unhandled action {op.action!r} — skipping {op.op_id}"
                 )
+                # θ (§2.3): the unsupported-action reject code is sourced from the
+                # UK table's (META, UNSUPPORTED_ACTION) action-admissibility cell,
+                # so the code has a single source. Byte-identical
+                # (``uk_replay_unsupported_action``). This defensive apply-time
+                # arm is normally pre-empted by the whole-act prepare filter
+                # (``replay_prepare.py``), which routes through the SAME cell.
+                disposition = UK_TOTALIZATION_TABLE.lookup(
+                    StructuralAction.META, FailureClass.UNSUPPORTED_ACTION
+                )
+                assert isinstance(disposition, Reject)
                 _append_uk_replay_adjudication(
                     self.adjudications_out,
-                    kind="uk_replay_unsupported_action",
+                    kind=disposition.code,
                     message="UK replay skipped unsupported whole-act action.",
                     op=op,
                     detail=uk_replay_blocking_action_target_detail(op, target),
@@ -397,9 +409,15 @@ class UKReplayExecutor(
             return
         elif legacy_text_action_value(op) == "unknown":
             self._log(f"  EXECUTOR: unknown action — skipping {op.op_id}")
+            # θ (§2.3): same (META, UNSUPPORTED_ACTION) action-admissibility cell
+            # — the code has a single source. Byte-identical.
+            disposition = UK_TOTALIZATION_TABLE.lookup(
+                StructuralAction.META, FailureClass.UNSUPPORTED_ACTION
+            )
+            assert isinstance(disposition, Reject)
             _append_uk_replay_adjudication(
                 self.adjudications_out,
-                kind="uk_replay_unsupported_action",
+                kind=disposition.code,
                 message="UK replay skipped unsupported action.",
                 op=op,
                 detail=uk_replay_blocking_action_target_detail(op, target),

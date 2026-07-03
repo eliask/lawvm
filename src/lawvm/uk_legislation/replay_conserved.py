@@ -46,12 +46,14 @@ from typing import Any, List, Optional
 from lawvm.core.filter_result import FilterResult, RejectedItem
 from lawvm.core.ir import IRStatute, LegalOperation
 from lawvm.core.mutation_events import MutationEvent
+from lawvm.core.totalization import Reject
 from lawvm.core.write_receipt import WriteReceipt
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.replay_executor import (
     _prepare_replay_uk_ops,
     replay_uk_ops,
 )
+from lawvm.uk_legislation.totalization_table import UK_TOTALIZATION_TABLE
 from lawvm.uk_legislation.uk_write_receipts import emit_uk_op_receipt
 
 
@@ -197,6 +199,15 @@ def replay_uk_ops_conserved(
         # action that the dispatch skipped). The descriptive adjudication (when
         # ``adjudications_out`` was passed) carries the detail; the conserved
         # rejected lane is the per-op witness regardless.
+        #
+        # θ (§2.3): the disposition is the UK table's SEAM-SOURCED strict default
+        # — ``UK_TOTALIZATION_TABLE.default`` — so the off-domain reason code has
+        # a single source (``uk_legislation/totalization_table.py``). The UK is
+        # the I1 ✓seam frontend: this cell is the DEFAULT precisely because the
+        # accepted/rejected partition is derived from the seam applied-signal, not
+        # enumerated per lane. Reading it through the table is byte-identical
+        # (``default.code == "uk_apply_no_write"``).
+        #
         # Reason-code namespace note: this is a conserved-wrapper
         # ``RejectedItem.reason_code``, NOT a ``CompileAdjudication`` kind. It is
         # deliberately NOT in the ``uk_replay_*`` namespace so it does not
@@ -205,11 +216,13 @@ def replay_uk_ops_conserved(
         # ``uk_replay_*`` literal in the replay modules (the apply-skip's
         # descriptive adjudication, when ``adjudications_out`` is passed, carries
         # the owned ``uk_replay_target_not_found`` / ``uk_replay_*`` kind).
+        no_write_disposition = UK_TOTALIZATION_TABLE.default
+        assert isinstance(no_write_disposition, Reject)
         rejected.append(
             RejectedItem(
                 item=op,
                 reason="UK apply landed no write for this op (target not found, no-op, or unsupported action).",
-                reason_code="uk_apply_no_write",
+                reason_code=no_write_disposition.code,
                 blocking=False,
             )
         )
