@@ -2,6 +2,7 @@
   "_doc": "Monotone naming-hygiene ratchet baseline (Gate 46a, Pro §14). Locks the #46/#47 rename gains. THREE ratchets, all one-way: (1) certified_symbols — the SET of `certif`-stem code identifiers; a NEW member fails CI (use `*Coverage` or consciously extend the set). (2) bare_status_counts — per-file count of bare-`status` SURFACE sites (a `\"status\":` dict key or an annotated `status` field/param). HEURISTIC: a surface proxy, NOT a public/internal classifier; it over-includes internal sites so it never fails on a pre-existing internal status. The lock is `no NEW bare status surface`. (3) public_schemas — the SET of `lawvm.<name>.vN` schema-id strings; a NEW id fails (conscious registration). The full plane/seam + source-root declaration check (Pro §14 lints 3+4) is DEFERRED; see DEFERRED_SPEC in scripts/inventory_naming_hygiene.py. Regenerate with `uv run python scripts/inventory_naming_hygiene.py --update-baseline`. See tests/test_naming_hygiene_ratchet.py and notes/ARCHITECTURE_LEAK_LEDGER.md.",
   "bare_status_counts": {
     "src/lawvm/finland/finlex_api.py": 2,
+    "src/lawvm/tools/ee_anchor_manifest.py": 1,
     "src/lawvm/tools/ee_consolidation_candidates.py": 1,
     "src/lawvm/tools/fi_anchor_manifest.py": 2,
     "src/lawvm/tools/fi_aux_pit_probe.py": 1,
@@ -82,7 +83,7 @@
     "sparse_slot_candidate_certificate",
     "sparse_slot_candidate_certificates"
   ],
-  "public_schema_count": 165,
+  "public_schema_count": 166,
   "public_schemas": [
     "lawvm.address_id.v1",
     "lawvm.address_node.v1",
@@ -123,6 +124,7 @@
     "lawvm.disposition_matrix.v0",
     "lawvm.dsse.v1",
     "lawvm.dump.v1",
+    "lawvm.ee_anchor_manifest.v1",
     "lawvm.eu_acquire_corpus_run.v0",
     "lawvm.eu_enumeration_snapshot.v0",
     "lawvm.eu_reference_report.v1",
@@ -250,5 +252,5 @@
     "lawvm.work.v1",
     "lawvm.work_inventory_row.v0"
   ],
-  "total_bare_status": 11
+  "total_bare_status": 12
 }
