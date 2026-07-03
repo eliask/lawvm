@@ -9,7 +9,17 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
-from typing import Iterable
+from typing import Callable, Iterable, Optional
+
+
+#: Witness reason-code stamped on a member that is flipped accepted→rejected by
+#: the group-atomicity rule (Fable UNIVERSAL_ALGEBRA §5.5, §7 delta #7). This is a
+#: :class:`RejectedItem.reason_code` in the ``core.`` namespace, NOT a
+#: jurisdiction ``CompileAdjudication`` kind (so it does not collide with any
+#: per-frontend ``*_replay_*`` adjudication-kind ownership registry): a group is
+#: an ATOMIC legal act, so a single rejected member rejects the WHOLE group with
+#: no half-applied compound instruction.
+GROUP_ATOMIC_MEMBER_REJECTED_CODE: str = "core.group_atomic_member_rejected"
 
 
 #: The closed vocabulary of §6.3 pending classes (Fable UNIVERSAL_ALGEBRA §6.3,
@@ -109,4 +119,118 @@ def filter_result_from_parts[T](
         accepted_items=tuple(accepted_items),
         rejected_items=tuple(rejected_items),
         pending_items=tuple(pending_items),
+    )
+
+
+def enforce_group_atomicity[T](
+    result: FilterResult[T],
+    group_id_of: Callable[[T], Optional[str]],
+    *,
+    member_label: Callable[[T], str] = repr,
+) -> FilterResult[T]:
+    """Apply the §5.5 group-atomicity rule over an already-partitioned result.
+
+    A ``group_id`` names an ATOMIC compound legal act (Fable UNIVERSAL_ALGEBRA
+    §5.5 / §7 delta #7): all members apply together or none do — there is no
+    half-applied compound instruction (US "striking X and inserting <block>" as
+    one legal act; FI multi-op johtolause items). This function composes with the
+    per-op θ dispositions (§2.3) that already produced ``result``: after the
+    accepted / rejected / pending partition is computed, for every ``group_id``
+    that has AT LEAST ONE member NOT accepted (a rejected OR pending member — a
+    pending member means the whole act cannot yet land), EVERY member of that
+    group is moved to the rejected lane, carrying a
+    :data:`GROUP_ATOMIC_MEMBER_REJECTED_CODE` witness that names the group and the
+    failing member.
+
+    Conservation (invariant I1). The transform is a permutation of cells that is
+    TOTAL and DISJOINT-preserving: it only ever moves an item accepted→rejected or
+    pending→rejected, never drops or duplicates one, and an item already in the
+    rejected lane keeps its own (more specific) witness. The output multiset of
+    items equals the input multiset.
+
+    Byte-identical for the common case. ``group_id_of`` returning ``None`` (or an
+    empty string) for an item excludes it from every group, so group-less ops are
+    untouched. A group whose members are ALL accepted is untouched. A
+    single-member group with an accepted member is untouched. Only a group with a
+    genuinely failing member is flipped — nothing else moves.
+
+    :param group_id_of: extracts an item's group key; ``None``/empty ⇒ ungrouped.
+    :param member_label: renders a member for the witness reason (default ``repr``).
+    """
+
+    def _key(item: T) -> Optional[str]:
+        gid = group_id_of(item)
+        if gid is None:
+            return None
+        gid = str(gid)
+        return gid or None
+
+    # First pass: which groups have a non-accepted member? Rejected and pending
+    # members both count as "the compound act cannot land in full".
+    failing_groups: dict[str, T] = {}
+
+    def _note_failure(item: T) -> None:
+        gid = _key(item)
+        if gid is not None and gid not in failing_groups:
+            failing_groups[gid] = item
+
+    for rejected in result.rejected_items:
+        _note_failure(rejected.item)
+    for pending in result.pending_items:
+        _note_failure(pending.item)
+
+    if not failing_groups:
+        # No grouped failure anywhere — byte-identical passthrough (the common
+        # case, including every group-less corpus op).
+        return result
+
+    kept_accepted: list[T] = []
+    new_rejected: list[RejectedItem[T]] = []
+    for accepted in result.accepted_items:
+        gid = _key(accepted)
+        if gid is not None and gid in failing_groups:
+            failing = failing_groups[gid]
+            new_rejected.append(
+                RejectedItem(
+                    item=accepted,
+                    reason=(
+                        f"Group {gid!r} is an atomic legal act but member "
+                        f"{member_label(failing)} did not apply; the whole group "
+                        "is rejected (no half-applied compound instruction)."
+                    ),
+                    reason_code=GROUP_ATOMIC_MEMBER_REJECTED_CODE,
+                    blocking=True,
+                )
+            )
+        else:
+            kept_accepted.append(accepted)
+
+    # Pending members of a failing group become rejected (the group cannot land);
+    # pending members of a NON-failing group stay pending untouched.
+    kept_pending: list[PendingItem[T]] = []
+    for pending in result.pending_items:
+        gid = _key(pending.item)
+        if gid is not None and gid in failing_groups:
+            failing = failing_groups[gid]
+            new_rejected.append(
+                RejectedItem(
+                    item=pending.item,
+                    reason=(
+                        f"Group {gid!r} is an atomic legal act but member "
+                        f"{member_label(failing)} did not apply; the whole group "
+                        "is rejected (no half-applied compound instruction)."
+                    ),
+                    reason_code=GROUP_ATOMIC_MEMBER_REJECTED_CODE,
+                    blocking=True,
+                )
+            )
+        else:
+            kept_pending.append(pending)
+
+    return FilterResult(
+        accepted_items=tuple(kept_accepted),
+        # Original rejected items keep their own specific witness; the flipped
+        # members are appended after, so the rejected lane stays a faithful log.
+        rejected_items=tuple(result.rejected_items) + tuple(new_rejected),
+        pending_items=tuple(kept_pending),
     )

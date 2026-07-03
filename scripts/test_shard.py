@@ -618,6 +618,9 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_dates_recognizer.py",
         "test_filter_result.py",
         "test_filter_result_pending_cell.py",
+        # #186 §5.5 / §7 delta #7: group_id atomicity — a rejected member rejects
+        # the whole group with a per-member witness, partition stays total+disjoint.
+        "test_filter_result_group_atomicity.py",
         "test_fi_intent_compat.py",
         "test_fi_optype_strenum.py",
         "test_ir_*.py",
