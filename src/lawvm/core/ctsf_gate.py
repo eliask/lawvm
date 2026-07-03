@@ -1,4 +1,4 @@
-"""CTSF residual-set-diff GATE — task #186 (CTSF Phase 3), PARALLEL / REPORT MODE.
+"""CTSF residual-set-diff GATE — task #186/#198 (CTSF Phase 3), PRIMARY GATE.
 
 The step that makes the honest metric load-bearing (``FABLE_CORRECTNESS_METRIC.md``
 §5 / ``pro_on_fable_notes.txt`` Phase 5): a gate that consumes
@@ -18,18 +18,40 @@ gate verdict:
   a capability-gap shift). The scalar moving is telemetry, not a red gate.
 * **PASS** iff the current typed-residual set equals the baseline exactly.
 
-STAGED / ADDITIVE DISCIPLINE (Phase 3, the deliberate migration): this gate runs
-in **report mode** — its verdict is computed, reported, and TESTED, but it does NOT
-flip CI red and it does NOT touch the legacy scalar bench gate's pass/fail
-semantics. The legacy scalar remains the sole CI gate for now; this is the parallel
-surface that will BECOME the primary gate in the follow-up flip. Computing this
-gate leaves default bench output byte-identical (it runs over CTSF/STATE_INDEX
-objects and a frozen in-code corpus only; no bench/replay/scoring path is touched).
+THE FLIP (task #198, this increment): the gate is now PRIMARY / LOAD-BEARING. Its
+callable entry (:func:`run_gate`) and CLI (:func:`main`) return NONZERO when the
+residual-set diff shows a NEW billable (``replay_bug``/``unknown``) residual vs the
+frozen 0-billable ``#183`` FI baseline; a clean run (WARN or PASS) exits 0. The
+honest CTSF residual verdict is now the correctness authority; the legacy scalar
+bench-regression guard (``lawvm.tools.bench_regression_guard``, an operator-run
+comparison over saved bench runs — never an automatic ci.sh stage) is demoted to
+TELEMETRY: it is still computable/reportable but is no longer the correctness
+authority. Full retirement of the scalar operator tool is deferred (it is a manual
+diagnostic surface, not an automatic gate, so it does not co-gate CI and needs no
+one-shot removal here); see :data:`SCALAR_GATE_STATUS`.
+
+DATA-AWARE PRIMACY (the hard constraint the flip must honor): scoring the real
+``#183`` corpus reads the Finlex archive per anchor (slow). The gate therefore GATES
+where the corpus is PRESENT (the ``@requires_corpus`` data-present tests are the
+authoritative fail-red surface, and :func:`run_gate` fails red under them) and SKIPS
+cleanly where the corpus is ABSENT (data-less CI never fails because of this gate).
+A fast unit-level surface (baseline-diff logic + synthetic billable injection over
+the frozen synthetic corpus) runs in the DEFAULT shard on every ci.sh invocation, so
+the gate's fail-red LOGIC is always exercised without paying the full-corpus cost.
 
 Determinism: the gate is a PURE function of ``(frozen anchors, replay projection,
 frozen baseline)``. The corpus is an explicit, frozen in-code set of anchor pairs
 (``frozen_gate_corpus``); there is no wall-clock, randomness, or filesystem/network
 read in the verdict path. Same corpus + same baseline ⇒ same verdict, byte-stable.
+
+WARN LANE (escalation policy, made observable): a move that is ONLY in typed
+non-billable families (``oracle_editorial_pathology`` / ``temporal_mismatch`` /
+``state_index`` / ``cnf_unsupported``) — or a RESOLVED residual (a count that fell) —
+is a WARN: it is reported (printed by the CLI, logged at WARNING via
+:data:`_LOG`, and carried on :class:`GateResult`), but it does NOT flip the exit
+code. Only a NEW billable is a FAIL. WARN is thus never silent — an oracle-editorial
+churn or a state-index reclassification is surfaced as telemetry, not swallowed and
+not red.
 
 REAL #183 CORPUS (Phase 3 flip-prep): the gate's *real* corpus is no longer the 4
 synthetic anchor pairs — it is the frozen FI ``#183`` touch-relation anchor set
@@ -59,18 +81,26 @@ regenerate, exactly the #137 silent-baseline-drift guard). Tests that score the 
 corpus SKIP cleanly when the Finlex archive is absent, so the gate's unit surface
 (diff logic, synthetic corpus, round-trip) stays corpus-free and CI-green.
 
-REPORT MODE (still): this gate runs in report mode — its verdict is computed,
-reported, and TESTED, but it does NOT flip CI red and does NOT touch the legacy
-scalar bench gate. The legacy scalar remains the sole CI gate; the flip to primary
-is the documented next step (burn-in → fail-red wiring → WARN escalation).
+ORACLE-CHURN BASELINE-REFRESH DISCIPLINE (enforced): a baseline refresh is a
+preregistered predict-then-compare event. The committed baseline
+(``ctsf_gate_residual_baseline.json``) must equal the current real-corpus residual
+set — the ``@requires_corpus`` freshness test
+(``test_committed_baseline_matches_real_corpus``) FAILS the moment a corpus/data
+refresh moves residuals, so the set cannot drift silently: a legitimate move must be
+confirmed and the baseline DELIBERATELY regenerated
+(``uv run python -m lawvm.core.ctsf_gate --update-baseline``). This is the #137
+silent-baseline-drift guard, now guarding the primary gate.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Literal, Optional
+
+_LOG = logging.getLogger(__name__)
 
 from lawvm.core.ctsf_residual_report import (
     RESIDUAL_VERDICT_FAMILIES,
@@ -85,6 +115,18 @@ from lawvm.semantic.model import SemanticStructureFacet, SemanticStructureNode
 GATE_BASELINE_PATH = Path("tests/data/ctsf_gate_residual_baseline.json")
 
 GATE_VERSION = "v0"
+
+# The gate is now PRIMARY / load-bearing (task #198): a NEW billable residual vs the
+# frozen baseline flips the exit code red. (Was "parallel/report" in Phase 3.)
+GATE_MODE = "PRIMARY"
+
+# The legacy scalar bench-regression guard (``lawvm.tools.bench_regression_guard``) is
+# an operator-run comparison over saved bench runs — NOT an automatic ci.sh stage. As
+# of the flip it is demoted to telemetry: still computable/reportable, no longer the
+# correctness authority (the CTSF residual verdict is). Full retirement is deferred
+# because it is a manual diagnostic surface, not an automatic gate, so it does not
+# co-gate CI and needs no removal in this increment.
+SCALAR_GATE_STATUS = "telemetry_retirement_deferred"
 
 # The two billable-to-replay families whose APPEARANCE (a new one vs baseline) is a
 # hard FAIL. Everything else is typed, evidence-backed, and non-billable to replay —
@@ -349,8 +391,8 @@ class GateResult:
     ``verdict`` is FAIL iff ``new_billable`` is non-empty (a new ``replay_bug`` or
     ``unknown`` residual appeared — the ``has_replay_bug_or_unknown`` predicate over
     the diff); WARN iff the set MOVED but only in typed non-billable families; PASS
-    iff the set equals the baseline exactly. In Phase-3 report mode the verdict is
-    reported, not enforced.
+    iff the set equals the baseline exactly. In the PRIMARY gate a FAIL flips the exit
+    code red (:func:`run_gate` / :func:`main`); WARN/PASS exit 0.
     """
 
     verdict: GateVerdict
@@ -510,9 +552,10 @@ def _repo_root() -> Path:
 
 
 # ---------------------------------------------------------------------------
-# The report-mode surface — computes both the legacy-scalar CONTEXT note and the
-# CTSF gate verdict, and REPORTS them. Wired into the CLI (making this module and
-# ctsf_residual_report production-reachable / LIVE) but NOT flipping any exit code.
+# The primary-gate surface — scores the real #183 corpus, diffs it against the
+# frozen baseline, and (in the callable/CLI entries) flips the exit code red on a
+# new billable residual. Data-aware: gates where the corpus is present, skips clean
+# where absent.
 # ---------------------------------------------------------------------------
 
 
@@ -520,27 +563,69 @@ def run_gate_report(baseline_path: Path | None = None) -> GateResult:
     """Score the REAL #183 corpus and diff it against the frozen baseline.
 
     Reads the Finlex corpus (the real corpus is scored via replay). Deterministic
-    given the frozen corpus bytes. In report mode the returned verdict is reported,
-    never enforced.
+    given the frozen corpus bytes. Returns the :class:`GateResult`; the fail-red
+    enforcement lives in :func:`run_gate` / :func:`main`.
     """
     current = score_real_corpus()
     baseline = load_baseline(baseline_path)
     return residual_set_diff_gate(current, baseline)
 
 
-def format_report(result: GateResult) -> str:
-    """Human-readable REPORT-MODE rendering of the parallel gate verdict.
+def emit_verdict_signals(result: GateResult) -> None:
+    """Make the verdict OBSERVABLE (never silent): log FAIL at ERROR, WARN at WARNING.
 
-    Explicitly labels the mode as PARALLEL / REPORT so no reader mistakes it for the
-    active CI gate: the legacy scalar bench gate remains the sole gate; this verdict
-    is telemetry until the deliberate flip.
+    A WARN — a move only in typed non-billable families (or a resolved residual) — is
+    surfaced as telemetry rather than swallowed; a FAIL (a new billable residual) is
+    logged at ERROR alongside flipping the exit code red.
+    """
+    if result.verdict == "FAIL":
+        _LOG.error(
+            "CTSF gate FAIL: new billable (replay_bug/unknown) residual(s) vs "
+            "baseline: %s",
+            ", ".join(result.new_billable),
+        )
+    elif result.verdict == "WARN":
+        _LOG.warning(
+            "CTSF gate WARN: typed non-billable residual move(s) (telemetry, not a "
+            "regression): moves=%s resolved=%s",
+            ", ".join(result.typed_moves) or "-",
+            ", ".join(result.resolved) or "-",
+        )
+
+
+def run_gate(baseline_path: Path | None = None) -> int:
+    """PRIMARY callable gate entry → exit code.
+
+    Data-aware: when the Finlex archive backing the real #183 corpus is PRESENT, score
+    it, diff against the frozen baseline, emit the verdict signals, and return NONZERO
+    (1) iff a NEW billable (``replay_bug``/``unknown``) residual appeared — WARN and
+    PASS return 0. When the archive is ABSENT the real corpus cannot be scored (it is
+    derived via replay), so the gate SKIPS cleanly: it reports the frozen baseline
+    diffed against itself (always PASS) and returns 0, so data-less CI is never failed
+    by this gate. The authoritative fail-red surface is the data-present path.
+    """
+    if not real_anchor_corpus_available():
+        # Corpus absent → cannot score the real corpus → skip cleanly (return 0).
+        return 0
+    result = run_gate_report(baseline_path)
+    emit_verdict_signals(result)
+    return 1 if result.failed else 0
+
+
+def format_report(result: GateResult) -> str:
+    """Human-readable rendering of the PRIMARY gate verdict.
+
+    Labels the mode as PRIMARY so no reader mistakes it for telemetry: a FAIL flips
+    the exit code red. The legacy scalar bench-regression guard is demoted to
+    telemetry (an operator diagnostic, no longer the correctness authority).
     """
     cur_total = sum(sum(f.values()) for f in result.current.values())
     base_total = sum(sum(f.values()) for f in result.baseline.values())
     lines = [
-        "CTSF residual-set-diff gate (Phase 3) — PARALLEL / REPORT MODE",
+        "CTSF residual-set-diff gate (Phase 3) — PRIMARY GATE (load-bearing)",
         "  over the REAL #183 FI touch-relation anchor corpus",
-        "  (legacy scalar bench gate UNCHANGED; this verdict is not yet enforced)",
+        "  (legacy scalar bench gate DEMOTED to telemetry; this verdict is the "
+        "correctness authority — a new billable FAILs red)",
         f"  verdict: {result.verdict}",
         f"  corpus residuals: {cur_total}   baseline residuals: {base_total}",
     ]
@@ -557,11 +642,17 @@ def format_report(result: GateResult) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI entrypoint: report the parallel gate verdict (report mode, exit 0).
+    """CLI entrypoint: the PRIMARY gate — exit NONZERO on a new billable residual.
 
-    ``--update-baseline`` rewrites the frozen baseline from the current corpus.
-    Otherwise it prints the parallel verdict and ALWAYS returns 0 — Phase-3 report
-    mode never flips CI red on the CTSF verdict.
+    ``--update-baseline`` rewrites the frozen baseline from the current corpus (a
+    preregistered predict-then-compare event; always exits 0). Otherwise:
+
+    * corpus PRESENT → score the real #183 corpus, diff against the frozen baseline,
+      print/log the verdict, and return NONZERO (1) iff a NEW billable
+      (``replay_bug``/``unknown``) residual appeared (FAIL). WARN/PASS return 0.
+    * corpus ABSENT → the real corpus cannot be scored (derived via replay), so the
+      gate SKIPS cleanly: report the frozen baseline as the pinned state and return 0.
+      Data-less CI is never failed by this gate.
     """
     import argparse
 
@@ -591,31 +682,34 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if not real_anchor_corpus_available():
-        # Report mode + corpus-free context: the real corpus cannot be scored (it
-        # is derived via replay). Report the frozen baseline as the pinned state and
-        # exit 0 — never flip CI red. The gate is exercised against real data where
-        # the corpus is present (the tests skip otherwise).
+        # Corpus-free context: the real corpus cannot be scored (it is derived via
+        # replay). Report the frozen baseline as the pinned state and exit 0 — the
+        # PRIMARY gate SKIPS cleanly when the archive is absent, so data-less CI is
+        # never failed. The fail-red enforcement runs where the corpus is present.
         baseline = load_baseline()
         frozen = residual_set_diff_gate(baseline, baseline)
         if args.json:
             payload = frozen.to_dict()
-            payload["note"] = "corpus_absent: reporting frozen baseline only"
+            payload["note"] = "corpus_absent: skipped clean, reporting frozen baseline"
             print(json.dumps(payload, indent=2, ensure_ascii=False))
         else:
             print(format_report(frozen))
             print(
-                "  NOTE: Finlex corpus absent — reporting the frozen baseline as the "
-                "pinned state (the real corpus is scored where the corpus is present)."
+                "  NOTE: Finlex corpus absent — PRIMARY gate SKIPPED clean; reporting "
+                "the frozen baseline as the pinned state (fail-red runs where the "
+                "corpus is present)."
             )
         return 0
 
     result = run_gate_report()
+    emit_verdict_signals(result)
     if args.json:
         print(json.dumps(result.to_dict(), indent=2, ensure_ascii=False))
     else:
         print(format_report(result))
-    # REPORT MODE: the CTSF verdict is reported, never enforced. Always exit 0.
-    return 0
+    # PRIMARY GATE: a new billable residual (FAIL) flips the exit code red; WARN/PASS
+    # exit 0.
+    return 1 if result.failed else 0
 
 
 if __name__ == "__main__":  # pragma: no cover

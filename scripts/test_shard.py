@@ -978,11 +978,14 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # newly-migrated label-redundancy rules (+ negative gate test), the
         # parallel residual-set report, and the bench byte-identity guard.
         "test_ctsf_phase2.py",
-        # #186 CTSF Phase 3: the residual-set-diff GATE (parallel, report mode) —
-        # FAIL on a new replay_bug/unknown residual, WARN on a typed
-        # oracle/editorial/state-index/temporal move, PASS on an unchanged set;
-        # frozen-baseline round-trip + committed-artifact freshness; report-mode
-        # CLI always exits 0 (legacy scalar bench gate unchanged).
+        # #186/#198 CTSF Phase 3: the residual-set-diff GATE — now PRIMARY /
+        # load-bearing. FAIL (exit nonzero) on a new replay_bug/unknown residual,
+        # WARN on a typed oracle/editorial/state-index/temporal move, PASS on an
+        # unchanged set; frozen-baseline round-trip + committed-artifact freshness;
+        # data-aware — the callable/CLI gate fails red where the corpus is present
+        # and skips clean where absent (data-less CI never failed). The
+        # @requires_corpus tests are the authoritative data-present fail-red surface;
+        # the unit surface (baseline diff + synthetic injection) always runs here.
         "test_ctsf_gate.py",
         "test_diagnose_phase.py",
         "test_diff.py",

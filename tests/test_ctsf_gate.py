@@ -1,6 +1,6 @@
-"""Tests for CTSF Phase 3 (task #186): the residual-set-diff GATE.
+"""Tests for CTSF Phase 3 (task #186/#198): the residual-set-diff GATE — now PRIMARY.
 
-Covers the gate as a PARALLEL / REPORT-mode surface:
+Covers the gate as the PRIMARY / load-bearing correctness surface:
 
 * the diff FAILs on a synthetic NEW ``replay_bug``/``unknown`` residual (the
   ``has_replay_bug_or_unknown`` predicate over the diff);
@@ -10,7 +10,9 @@ Covers the gate as a PARALLEL / REPORT-mode surface:
 * determinism: same corpus ⇒ same verdict, byte-stable residual set;
 * the frozen baseline round-trips (write → load → equal), and the COMMITTED
   baseline matches the frozen corpus (the on-disk artifact is not stale);
-* report mode: the CLI ``main`` returns 0 regardless of verdict (never flips CI).
+* FAIL-RED wiring: the callable gate (``run_gate``) and the CLI (``main``) return
+  NONZERO on a new billable residual (data-present) and SKIP clean (return 0) when
+  the corpus is absent — data-less CI is never failed by this gate.
 """
 
 from __future__ import annotations
@@ -24,6 +26,8 @@ from lawvm.core.ctsf_gate import (
     GATE_BASELINE_PATH,
     REAL_ANCHOR_CORPUS_SIDS,
     REAL_ANCHOR_JURISDICTION,
+    GATE_MODE,
+    SCALAR_GATE_STATUS,
     GateResult,
     _repo_root,
     format_report,
@@ -33,6 +37,7 @@ from lawvm.core.ctsf_gate import (
     real_anchor_corpus_available,
     residual_set,
     residual_set_diff_gate,
+    run_gate,
     run_gate_report,
     score_corpus,
     score_real_corpus,
@@ -318,33 +323,123 @@ def test_typed_move_on_real_baseline_warns():
 
 
 # ---------------------------------------------------------------------------
-# Report mode — never flips CI red
+# PRIMARY gate — fail-red wiring + data-aware skip
 # ---------------------------------------------------------------------------
 
 
-def test_cli_report_mode_always_returns_zero(capsys):
+def test_gate_is_primary_and_scalar_is_demoted():
+    """The flip is recorded in-code: the gate MODE is PRIMARY and the legacy scalar
+    is demoted to telemetry (retirement deferred, documented)."""
+    assert GATE_MODE == "PRIMARY"
+    assert SCALAR_GATE_STATUS == "telemetry_retirement_deferred"
+
+
+def test_run_gate_data_absent_skips_clean(monkeypatch):
+    """When the corpus is absent the PRIMARY callable gate SKIPS clean (returns 0) —
+    data-less CI is never failed by this gate."""
+    import lawvm.core.ctsf_gate as gate
+
+    monkeypatch.setattr(gate, "real_anchor_corpus_available", lambda: False)
+    assert gate.run_gate() == 0
+
+
+def test_cli_data_absent_skips_clean(monkeypatch, capsys):
+    """The CLI mirrors the callable: corpus absent → exit 0, reporting the frozen
+    baseline as the pinned state (never flips CI red data-less)."""
+    import lawvm.core.ctsf_gate as gate
+
+    monkeypatch.setattr(gate, "real_anchor_corpus_available", lambda: False)
     rc = ctsf_gate_main([])
     assert rc == 0
     out = capsys.readouterr().out
-    assert "PARALLEL / REPORT MODE" in out
-    assert "verdict:" in out
+    assert "PRIMARY GATE" in out
+    assert "SKIPPED clean" in out
 
 
-def test_cli_json_mode_returns_zero(capsys):
+def test_cli_json_mode_data_absent_returns_zero(monkeypatch, capsys):
+    import lawvm.core.ctsf_gate as gate
+
+    monkeypatch.setattr(gate, "real_anchor_corpus_available", lambda: False)
     rc = ctsf_gate_main(["--json"])
     assert rc == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["verdict"] in ("PASS", "WARN", "FAIL")
     assert "current" in payload and "baseline" in payload
+    assert "corpus_absent" in payload.get("note", "")
 
 
-def test_format_report_labels_parallel_mode():
+def test_format_report_labels_primary_mode():
     # Corpus-free: build a GateResult directly so the label check needs no archive.
     result = residual_set_diff_gate({"s": {}}, {"s": {}})
     text = format_report(result)
-    assert "PARALLEL / REPORT MODE" in text
-    assert "legacy scalar bench gate UNCHANGED" in text
+    assert "PRIMARY GATE" in text
+    assert "DEMOTED to telemetry" in text
     assert "REAL #183" in text
+
+
+@requires_corpus
+def test_run_gate_passes_clean_baseline_returns_zero():
+    """Data-present + clean 0-billable baseline ⇒ the PRIMARY callable gate returns
+    0 (the honest steady state passes)."""
+    assert run_gate() == 0
+
+
+@requires_corpus
+def test_cli_primary_gate_passes_clean_returns_zero(capsys):
+    """Data-present clean run: the CLI PRIMARY gate exits 0 on the current 0-billable
+    baseline."""
+    rc = ctsf_gate_main([])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "PRIMARY GATE" in out
+    assert "verdict: PASS" in out
+
+
+@requires_corpus
+def test_cli_primary_gate_fails_red_on_injected_billable(monkeypatch, capsys):
+    """Data-present: an INJECTED new billable residual on top of the real corpus flips
+    the CLI exit code red (return 1) — the honest metric is load-bearing."""
+    import lawvm.core.ctsf_gate as gate
+
+    real = score_real_corpus()
+
+    def _regressed():
+        return {**real, "synthetic/regressed": {"replay_bug": 1}}
+
+    monkeypatch.setattr(gate, "score_real_corpus", _regressed)
+    rc = ctsf_gate_main([])
+    assert rc == 1
+    out = capsys.readouterr().out
+    assert "verdict: FAIL" in out
+
+
+@requires_corpus
+def test_run_gate_fails_red_on_injected_billable(monkeypatch):
+    """Data-present: the callable gate returns NONZERO on an injected new billable."""
+    import lawvm.core.ctsf_gate as gate
+
+    real = score_real_corpus()
+    for fam in FAIL_FAMILIES:
+        monkeypatch.setattr(
+            gate,
+            "score_real_corpus",
+            lambda fam=fam: {**real, "synthetic/regressed": {fam: 1}},
+        )
+        assert gate.run_gate() == 1, fam
+
+
+@requires_corpus
+def test_run_gate_warn_does_not_fail_red(monkeypatch):
+    """Data-present: a typed non-billable move WARNs — the gate stays green (0)."""
+    import lawvm.core.ctsf_gate as gate
+
+    real = score_real_corpus()
+    monkeypatch.setattr(
+        gate,
+        "score_real_corpus",
+        lambda: {**real, "synthetic/typed": {"temporal_mismatch": 1}},
+    )
+    assert gate.run_gate() == 0
 
 
 def test_residual_set_over_reports_matches_score_corpus():
