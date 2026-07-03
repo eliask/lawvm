@@ -35,6 +35,9 @@ _NON_RULE_LITERALS = frozenset(
         # __all__ function-name exports in replayability_frontier.py (not rule ids):
         "ee_replayability_frontier_for_corpus",
         "ee_replayability_states_to_report",
+        # __all__ function-name export in label_algebra.py (#186 LabelAlgebra) — the
+        # public EE label parse function, not a witness rule_id.
+        "ee_parse_label",
         # Confirmed non-rule literals (a coverage tag, a ContextVar name, an
         # f-string label fragment) — NOT witness rule_ids. Pre-existing in the
         # source; added here when the parity-integration audit surfaced them.
