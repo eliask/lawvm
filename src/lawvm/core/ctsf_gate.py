@@ -339,6 +339,59 @@ REAL_ANCHOR_EE_CORPUS_SIDS: tuple[str, ...] = (
 GATE_EE_BASELINE_PATH = Path("tests/data/ctsf_gate_ee_residual_baseline.json")
 
 
+# ---------------------------------------------------------------------------
+# The REAL #183 touch-relation corpus — UNITED KINGDOM (task #205, THIRD jurisdiction).
+#
+# A UK anchor is the genuine content-addressed replay WINDOW published per act:
+# ``enacted`` (the statute as originally enacted — the replay base) → ``current`` (the
+# single revised/consolidated in-force oracle — the as_of). UK does NOT publish an
+# enumerable effective-date-addressed chain of consolidated versions (verified: 0
+# dated PIT locators in the Farchive; the multiple observations of a ``/data.xml``
+# locator are wall-clock CRAWL timestamps, not legal effective dates), so — unlike
+# EE's multi-version terviktekst chain — each UK act is a 2-node replay chain
+# (enacted, current). For each act the ``uk_anchor_manifest`` attribution engine
+# replays enacted→current and emits typed ``TouchObservation`` verdicts that project
+# 1:1 onto the same CTSF residual families (via the shared ``_VERDICT_TO_FAMILY``).
+# The gate diffs THAT set against the frozen UK baseline.
+#
+# UK's per-key surface is eId PRESENCE (canonicalized + normalized via
+# ``normalize_uk_replay_compare_eids``) — UK's own commensurable compare-eId surface,
+# NOT byte-exact per-eId text (documented in uk_anchor_manifest: UK text is only an
+# averaged ratio in uk-bench, never a per-key binary). This preserves the same-
+# dimension-touch principle: a penalized eId (absent from replay) that replay TOUCHED
+# (added/removed in the window) and left diverged is a candidate replay bug; one
+# replay never touched is oracle-side.
+#
+# This corpus is curated 0-BILLABLE (no replay_bug/unknown) — the honest steady state,
+# mirroring FI/EE. UK acts whose enacted→current replay surfaces GENUINE billable
+# residuals (a replay-touched eId the oracle carries that replay drops) are
+# DELIBERATELY EXCLUDED from the baseline: those are real defects to fix, not to freeze
+# — leaving them convicting is the point of the metric. See the deliverable report /
+# notes_internal for the itemized excluded-bug list.
+# ---------------------------------------------------------------------------
+
+REAL_ANCHOR_UK_JURISDICTION = "united_kingdom"
+
+# The frozen, content-pinned UK statute-id corpus (sorted, explicit — membership is
+# part of the frozen input). Each is a real act with a genuine amendment chain that
+# replays enacted→current 0-billable; annotated with the residual family it
+# contributes at freeze time so the coverage is auditable.
+REAL_ANCHOR_UK_CORPUS_SIDS: tuple[str, ...] = (
+    "asp/2010/3",     # oracle_editorial_pathology(11) — Scottish act, WARN lane
+    "nia/2000/4",     # oracle_editorial_pathology(12) — NI act, cross-type coverage
+    "ukpga/1971/38",  # oracle_editorial_pathology(49)
+    "ukpga/1990/10",  # oracle_editorial_pathology(59)
+    "ukpga/2000/12",  # oracle_editorial_pathology(6)
+    "ukpga/2010/10",  # oracle_editorial_pathology(13)
+    "ukpga/2010/17",  # scored clean (perfect enacted→current replay, 0 obs)
+    "ukpga/2012/14",  # oracle_editorial_pathology(65)
+    "ukpga/2020/1",   # scored clean (perfect enacted→current replay, 0 obs)
+)
+
+# The committed UK baseline artifact (frozen, sibling of the FI/EE ones).
+GATE_UK_BASELINE_PATH = Path("tests/data/ctsf_gate_uk_residual_baseline.json")
+
+
 def ee_anchor_corpus_available() -> bool:
     """True iff the Riigi Teataja archive backing the EE real corpus is present.
 
@@ -728,6 +781,141 @@ def run_ee_gate_report(baseline_path: Path | None = None) -> GateResult:
     return residual_set_diff_gate(current, baseline)
 
 
+# ---------------------------------------------------------------------------
+# United Kingdom corpus (task #205) — the third jurisdiction, same shape as EE.
+# ---------------------------------------------------------------------------
+
+
+def uk_anchor_corpus_available() -> bool:
+    """True iff the legislation.gov.uk Farchive backing the UK real corpus is present.
+
+    Scoring the UK #205 corpus re-derives the touch relation per act via UK
+    enacted→current replay, which reads the UK Farchive. When it is absent (a
+    corpus-free CI checkout) the UK real-corpus tests SKIP; the gate's unit surface
+    stays corpus-free and always runs.
+    """
+    try:
+        from lawvm.tools.uk_anchor_manifest import _default_db
+
+        return _default_db().exists()
+    # An availability PROBE: any archive-open failure legitimately means "corpus
+    # absent" (tests skip; the CLI reports the frozen baseline).
+    # lawvm-failloud: corpus-availability probe; absence is the answer, not an error
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def score_uk_real_corpus(
+    sids: Iterable[str] | None = None,
+) -> dict[str, dict[str, int]]:
+    """Score the UK #205 touch-relation corpus into its typed-residual set.
+
+    For each act, run the ``uk_anchor_manifest`` attribution engine over its
+    enacted→current replay window and project each ``TouchObservation`` into its CTSF
+    residual family (the shared ``_VERDICT_TO_FAMILY``). Returns the same diffable
+    ``{sid: {family: count}}`` shape as :func:`score_real_corpus`, only non-zero
+    families retained, a clean-but-scored act present with an empty family map.
+    Deterministic in sid order.
+
+    Reads the UK Farchive (per-act UK replay). Deterministic given the frozen corpus
+    bytes; NOT the wall-clock-free path — same as the FI/EE real corpora.
+    """
+    from farchive import Farchive
+
+    from lawvm.tools.uk_anchor_manifest import (
+        _VERDICT_TO_FAMILY as _UK_VERDICT_TO_FAMILY,
+        _default_db as _uk_default_db,
+        attribute_statute as uk_attribute_statute,
+    )
+
+    corpus_sids = tuple(sids) if sids is not None else REAL_ANCHOR_UK_CORPUS_SIDS
+    # Open ONE archive handle for the whole corpus so each act's replay reuses it.
+    archive = Farchive(str(_uk_default_db()))
+    try:
+        out: dict[str, dict[str, int]] = {}
+        for sid in corpus_sids:
+            attr = uk_attribute_statute(sid, archive=archive)
+            families: dict[str, int] = {}
+            for obs in attr.observations:
+                family = _UK_VERDICT_TO_FAMILY[obs.verdict]
+                families[family] = families.get(family, 0) + 1
+            out[sid] = {fam: n for fam, n in sorted(families.items()) if n}
+        return dict(sorted(out.items()))
+    finally:
+        archive.close()
+
+
+def _uk_baseline_payload(residuals: dict[str, dict[str, int]]) -> dict[str, Any]:
+    total = sum(
+        count for families in residuals.values() for count in families.values()
+    )
+    return {
+        "_doc": (
+            "CTSF residual-set-diff gate baseline — UNITED KINGDOM (#183/#205). Frozen "
+            "typed-residual set of the REAL UK touch-relation anchor corpus "
+            "(REAL_ANCHOR_UK_CORPUS_SIDS), keyed {sid: {family: count}} with only "
+            "non-zero families retained. A UK anchor is the enacted→current replay "
+            "window (UK has no dated PIT chain — verified 0 dated PIT locators). The "
+            "gate FAILs iff a NEW replay_bug/unknown residual appears vs this set; "
+            "WARNs on a typed oracle/editorial/temporal move. This corpus is curated "
+            "0-BILLABLE (the honest steady state); UK acts whose enacted→current "
+            "replay surfaces genuine billable residuals are deliberately excluded "
+            "(they are defects to fix, not to freeze). Regenerate with `uv run python "
+            "-m lawvm.core.ctsf_gate --update-uk-baseline` (needs the UK Farchive) "
+            "after a legitimate, reviewed corpus/projection change — a preregistered "
+            "predict-then-compare event, never a silent baseline move."
+        ),
+        "gate_version": GATE_VERSION,
+        "jurisdiction": REAL_ANCHOR_UK_JURISDICTION,
+        "corpus_sids": list(REAL_ANCHOR_UK_CORPUS_SIDS),
+        "families": list(RESIDUAL_VERDICT_FAMILIES),
+        "fail_families": list(FAIL_FAMILIES),
+        "total_residuals": total,
+        "residuals": residuals,
+    }
+
+
+def load_uk_baseline(path: Path | None = None) -> dict[str, dict[str, int]]:
+    """Load the frozen UK typed-residual baseline ({sid: {family: count}})."""
+    p = path if path is not None else _repo_root() / GATE_UK_BASELINE_PATH
+    data = json.loads(p.read_text(encoding="utf-8"))
+    residuals = data.get("residuals", {})
+    return {
+        sid: {fam: int(cnt) for fam, cnt in families.items()}
+        for sid, families in sorted(residuals.items())
+    }
+
+
+def write_uk_baseline(
+    residuals: dict[str, dict[str, int]] | None = None, path: Path | None = None
+) -> Path:
+    """Write the frozen UK typed-residual baseline. Regeneration entrypoint.
+
+    Defaults to snapshotting the REAL UK corpus (``score_uk_real_corpus()``). Reads
+    the UK Farchive; pass ``residuals`` to write a precomputed set (corpus-free).
+    """
+    p = path if path is not None else _repo_root() / GATE_UK_BASELINE_PATH
+    payload = _uk_baseline_payload(
+        residuals if residuals is not None else score_uk_real_corpus()
+    )
+    p.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
+    return p
+
+
+def run_uk_gate_report(baseline_path: Path | None = None) -> GateResult:
+    """Score the REAL UK corpus and diff it against the frozen UK baseline.
+
+    Reads the UK Farchive (the UK corpus is scored via replay). Deterministic given
+    the frozen corpus bytes. Returns the :class:`GateResult`; the fail-red enforcement
+    lives in :func:`run_gate` / :func:`main` (which gate ALL three corpora).
+    """
+    current = score_uk_real_corpus()
+    baseline = load_uk_baseline(baseline_path)
+    return residual_set_diff_gate(current, baseline)
+
+
 def _repo_root() -> Path:
     # src/lawvm/core/ctsf_gate.py → parents[3] == repo root.
     return Path(__file__).resolve().parents[3]
@@ -778,15 +966,16 @@ def emit_verdict_signals(result: GateResult) -> None:
 def run_gate(baseline_path: Path | None = None) -> int:
     """PRIMARY callable gate entry → exit code.
 
-    Data-aware, MULTI-JURISDICTION: gates BOTH the FI #183 corpus and the EE #205
-    corpus. For each jurisdiction whose archive is PRESENT, score its real corpus,
-    diff against the frozen baseline, emit the verdict signals, and fail red (1) iff a
-    NEW billable (``replay_bug``/``unknown``) residual appeared. A jurisdiction whose
-    archive is ABSENT SKIPS cleanly (its corpus is derived via replay), so data-less
-    CI is never failed. The exit code is NONZERO iff ANY present jurisdiction FAILs.
+    Data-aware, MULTI-JURISDICTION: gates the FI #183 corpus, the EE #205 corpus, and
+    the UK #205 corpus. For each jurisdiction whose archive is PRESENT, score its real
+    corpus, diff against the frozen baseline, emit the verdict signals, and fail red
+    (1) iff a NEW billable (``replay_bug``/``unknown``) residual appeared. A
+    jurisdiction whose archive is ABSENT SKIPS cleanly (its corpus is derived via
+    replay), so data-less CI is never failed. The exit code is NONZERO iff ANY present
+    jurisdiction FAILs.
 
     ``baseline_path`` overrides the FI baseline only (kept for back-compat with the FI
-    callers/tests); the EE baseline is always the committed sibling artifact.
+    callers/tests); the EE / UK baselines are always the committed sibling artifacts.
     """
     rc = 0
     if real_anchor_corpus_available():
@@ -798,6 +987,11 @@ def run_gate(baseline_path: Path | None = None) -> int:
         ee_result = run_ee_gate_report()
         emit_verdict_signals(ee_result)
         if ee_result.failed:
+            rc = 1
+    if uk_anchor_corpus_available():
+        uk_result = run_uk_gate_report()
+        emit_verdict_signals(uk_result)
+        if uk_result.failed:
             rc = 1
     return rc
 
@@ -864,11 +1058,29 @@ def main(argv: list[str] | None = None) -> int:
         "Riigi Teataja corpus.",
     )
     parser.add_argument(
+        "--update-uk-baseline",
+        action="store_true",
+        help="Rewrite the frozen UK (#205) CTSF gate residual baseline from the "
+        "legislation.gov.uk corpus.",
+    )
+    parser.add_argument(
         "--json",
         action="store_true",
         help="Emit the gate result as JSON instead of the human report.",
     )
     args = parser.parse_args(argv)
+
+    if args.update_uk_baseline:
+        if not uk_anchor_corpus_available():
+            print(
+                "Cannot regenerate the UK #205 baseline: the legislation.gov.uk "
+                "Farchive is absent. Set LAWVM_CANONICAL_DATA_ROOT to a checkout with "
+                "the UK corpus and retry."
+            )
+            return 0
+        out = write_uk_baseline()
+        print(f"Wrote CTSF gate UK residual baseline: {out}")
+        return 0
 
     if args.update_ee_baseline:
         if not ee_anchor_corpus_available():
@@ -913,8 +1125,9 @@ def main(argv: list[str] | None = None) -> int:
                 "the frozen baseline as the pinned state (fail-red runs where the "
                 "corpus is present)."
             )
-        # Even with FI absent, the EE corpus may be present — gate it independently.
-        return _fold_ee_gate_into_rc(0, json_mode=args.json)
+        # Even with FI absent, the EE / UK corpora may be present — gate independently.
+        rc = _fold_ee_gate_into_rc(0, json_mode=args.json)
+        return _fold_uk_gate_into_rc(rc, json_mode=args.json)
 
     result = run_gate_report()
     emit_verdict_signals(result)
@@ -923,9 +1136,10 @@ def main(argv: list[str] | None = None) -> int:
     else:
         print(format_report(result))
     # PRIMARY GATE: a new billable residual (FAIL) flips the exit code red; WARN/PASS
-    # exit 0. Fold the EE jurisdiction's verdict into the same exit code.
+    # exit 0. Fold the EE + UK jurisdictions' verdicts into the same exit code.
     rc = 1 if result.failed else 0
-    return _fold_ee_gate_into_rc(rc, json_mode=args.json)
+    rc = _fold_ee_gate_into_rc(rc, json_mode=args.json)
+    return _fold_uk_gate_into_rc(rc, json_mode=args.json)
 
 
 def _fold_ee_gate_into_rc(rc: int, *, json_mode: bool) -> int:
@@ -955,6 +1169,35 @@ def _fold_ee_gate_into_rc(rc: int, *, json_mode: bool) -> int:
             )
         )
     return 1 if ee_result.failed else rc
+
+
+def _fold_uk_gate_into_rc(rc: int, *, json_mode: bool) -> int:
+    """Gate the UK (#205) corpus and fold its verdict into the process exit code.
+
+    Data-aware: an absent UK Farchive SKIPS the UK lane cleanly (returns ``rc``
+    unchanged). When present, score the UK corpus, log its verdict, and raise ``rc``
+    to 1 iff the UK gate FAILs (a new UK billable). Keeps FI/EE/UK independent — any
+    jurisdiction FAILing flips CI red.
+
+    In HUMAN mode the UK verdict is printed as its own labelled section. In JSON mode
+    it is NOT printed as a second blob (that would break the single-object stdout
+    contract the FI JSON callers/tests rely on) — the verdict is still logged via
+    ``emit_verdict_signals`` and folded into the exit code; the machine-readable UK
+    result is available directly via :func:`run_uk_gate_report`.
+    """
+    if not uk_anchor_corpus_available():
+        return rc
+    uk_result = run_uk_gate_report()
+    emit_verdict_signals(uk_result)
+    if not json_mode:
+        print("\n--- UNITED KINGDOM (#205) corpus ---")
+        print(
+            format_report(
+                uk_result,
+                corpus_label="the REAL #205 UK touch-relation anchor corpus",
+            )
+        )
+    return 1 if uk_result.failed else rc
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -1014,6 +1014,11 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # 0-billable EE baseline, FAIL/WARN/PASS diff logic, round-trip, and
         # @requires_ee_corpus data-present fail-red over the Riigi Teataja archive.
         "test_ctsf_gate_ee.py",
+        # UK (#205) CTSF gate corpus — the third-jurisdiction analogue: frozen
+        # 0-billable UK baseline over the enacted→current replay window, FAIL/WARN/PASS
+        # diff logic, round-trip, and @requires_uk_corpus data-present fail-red over
+        # the legislation.gov.uk archive.
+        "test_ctsf_gate_uk.py",
         "test_diagnose_phase.py",
         "test_diff.py",
         "test_dump.py",

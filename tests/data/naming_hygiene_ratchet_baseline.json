@@ -6,6 +6,7 @@
     "src/lawvm/tools/ee_consolidation_candidates.py": 1,
     "src/lawvm/tools/fi_anchor_manifest.py": 2,
     "src/lawvm/tools/fi_aux_pit_probe.py": 1,
+    "src/lawvm/tools/uk_anchor_manifest.py": 2,
     "src/lawvm/tools/uk_semantic_claims.py": 2,
     "src/lawvm/us_federal/act_name_registry.py": 1,
     "src/lawvm/us_federal/import_table3.py": 1,
@@ -83,7 +84,7 @@
     "sparse_slot_candidate_certificate",
     "sparse_slot_candidate_certificates"
   ],
-  "public_schema_count": 166,
+  "public_schema_count": 167,
   "public_schemas": [
     "lawvm.address_id.v1",
     "lawvm.address_node.v1",
@@ -229,6 +230,7 @@
     "lawvm.token_tape.v1",
     "lawvm.uk_acquire_plan_report.v1",
     "lawvm.uk_acquire_report.v1",
+    "lawvm.uk_anchor_manifest.v1",
     "lawvm.uk_bench_diagnostics_report.v1",
     "lawvm.uk_candidates_frontier_report.v1",
     "lawvm.uk_cross_statute_graph.v1",
@@ -252,5 +254,5 @@
     "lawvm.work.v1",
     "lawvm.work_inventory_row.v0"
   ],
-  "total_bare_status": 12
+  "total_bare_status": 14
 }

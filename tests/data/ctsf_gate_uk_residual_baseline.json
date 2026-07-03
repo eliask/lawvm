@@ -1,0 +1,54 @@
+{
+  "_doc": "CTSF residual-set-diff gate baseline — UNITED KINGDOM (#183/#205). Frozen typed-residual set of the REAL UK touch-relation anchor corpus (REAL_ANCHOR_UK_CORPUS_SIDS), keyed {sid: {family: count}} with only non-zero families retained. A UK anchor is the enacted→current replay window (UK has no dated PIT chain — verified 0 dated PIT locators). The gate FAILs iff a NEW replay_bug/unknown residual appears vs this set; WARNs on a typed oracle/editorial/temporal move. This corpus is curated 0-BILLABLE (the honest steady state); UK acts whose enacted→current replay surfaces genuine billable residuals are deliberately excluded (they are defects to fix, not to freeze). Regenerate with `uv run python -m lawvm.core.ctsf_gate --update-uk-baseline` (needs the UK Farchive) after a legitimate, reviewed corpus/projection change — a preregistered predict-then-compare event, never a silent baseline move.",
+  "gate_version": "v0",
+  "jurisdiction": "united_kingdom",
+  "corpus_sids": [
+    "asp/2010/3",
+    "nia/2000/4",
+    "ukpga/1971/38",
+    "ukpga/1990/10",
+    "ukpga/2000/12",
+    "ukpga/2010/10",
+    "ukpga/2010/17",
+    "ukpga/2012/14",
+    "ukpga/2020/1"
+  ],
+  "families": [
+    "replay_bug",
+    "oracle_editorial_pathology",
+    "temporal_mismatch",
+    "state_index",
+    "cnf_unsupported",
+    "unknown"
+  ],
+  "fail_families": [
+    "replay_bug",
+    "unknown"
+  ],
+  "total_residuals": 215,
+  "residuals": {
+    "asp/2010/3": {
+      "oracle_editorial_pathology": 11
+    },
+    "nia/2000/4": {
+      "oracle_editorial_pathology": 12
+    },
+    "ukpga/1971/38": {
+      "oracle_editorial_pathology": 49
+    },
+    "ukpga/1990/10": {
+      "oracle_editorial_pathology": 59
+    },
+    "ukpga/2000/12": {
+      "oracle_editorial_pathology": 6
+    },
+    "ukpga/2010/10": {
+      "oracle_editorial_pathology": 13
+    },
+    "ukpga/2010/17": {},
+    "ukpga/2012/14": {
+      "oracle_editorial_pathology": 65
+    },
+    "ukpga/2020/1": {}
+  }
+}
