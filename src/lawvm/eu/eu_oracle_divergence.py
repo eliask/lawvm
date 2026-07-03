@@ -15,10 +15,13 @@ returns it as evidence. The caller decides; the kernel does not fit-to-oracle.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from lawvm.core.ir import IRNode, IRStatute
 from lawvm.core.semantic_types import IRNodeKind
+
+if TYPE_CHECKING:
+    from lawvm.core.bench_contract import BenchUnitResult
 
 DivergenceKind = Literal[
     "agreement",
@@ -300,3 +303,94 @@ class CorpusDivergenceAccount:
             "conserved": self.article_total
             == sum(self.class_counts.values()),
         }
+
+
+# ---------------------------------------------------------------------------
+# Unified cross-jurisdiction bench contract adapter (EU joins the gated set)
+# ---------------------------------------------------------------------------
+#
+# The unified bench contract (``lawvm.core.bench_contract.BenchUnitResult``) fixes
+# the SHAPE of every jurisdiction's per-unit bench result — two error axes
+# (``structural_err`` / ``text_err``, both ``[0, 1]``, 0 = perfect, worst-of is the
+# headline), a typed ``residue_buckets`` account that must reconcile with the
+# structural axis, and a ``BenchStatus``. FI / UK / EE / NZ / US / SE each register
+# a comparator that maps their native oracle-comparison struct onto this contract;
+# EU was the last frontend not registered. This adapter closes that gap.
+#
+# EU's native oracle-comparison struct is the per-article :class:`OracleComparison`
+# (replay vs the sector-0 consolidation). The two axes fall straight out of the
+# per-article ``DivergenceKind`` ontology, and — crucially — respect EU's honesty
+# regime (the consolidation is editorial, "no legal value"; the comparator NEVER
+# repairs the replay toward it):
+#
+#   * STRUCTURAL axis — an article present on exactly ONE side is a structural
+#     divergence: ``present_in_replay_absent_in_oracle`` (a replay surplus /
+#     ``deterministic_gap``) and ``present_in_oracle_absent_in_replay`` (the
+#     editorial-consolidation surplus the native replay has not reconstructed /
+#     ``manual_frontier``). ``structural_err`` = (those two) / (all compared
+#     articles). Its residue buckets are those same two families, so a positive
+#     structural error ALWAYS has a matching typed residue (and vice-versa) —
+#     the contract's residue-reconciliation invariant holds by construction.
+#   * TEXT axis — over the CO-PRESENT articles (present on both sides), the
+#     fraction whose text diverges (``text_divergence``). ``text_err`` = text_diffs
+#     / (agreements + text_diffs). It is ``None`` (not attempted, NOT a false 0)
+#     when there are no co-present articles.
+#
+# ``oracle_suspect`` (a caller-asserted known editorial artifact) is NOT synthesised
+# by the comparator, so an :class:`OracleComparison` never carries it; the
+# ``ArticleDivergence`` ontology has no such kind, and it therefore does not enter
+# either denominator here. A comparison with zero compared articles is ``NO_TRUTH``
+# (nothing to score against — not a failure, mirroring the EE empty-oracle rule).
+
+
+def eu_bench_unit_result(comparison: "OracleComparison") -> "BenchUnitResult":
+    """Map an EU :class:`OracleComparison` onto a contract ``BenchUnitResult``.
+
+    Deterministic and network-free: it consumes an already-built per-article
+    comparison (the native replay vs the sector-0 consolidation), exactly as the
+    sibling adapters consume their own native result structs. See the module note
+    above for the axis derivation and the honesty regime it respects.
+    """
+    from lawvm.core.bench_contract import BenchStatus, BenchUnitResult
+
+    unit_id = comparison.base_celex or "eu"
+    kinds = comparison.divergences_by_kind()
+    compared = comparison.article_count
+    if compared == 0:
+        # No comparable articles (e.g. an empty oracle body): unscorable, but not
+        # a failure — a NO_TRUTH non-scored exclusion (mirrors EE empty-oracle).
+        return BenchUnitResult(unit_id=unit_id, bench_unit_status=BenchStatus.NO_TRUTH)
+
+    replay_only = kinds.get("present_in_replay_absent_in_oracle", 0)
+    oracle_only = kinds.get("present_in_oracle_absent_in_replay", 0)
+    agreements = kinds.get("agreement", 0)
+    text_diffs = kinds.get("text_divergence", 0)
+
+    # STRUCTURAL axis: one-sided articles over all compared articles.
+    structural_err = (replay_only + oracle_only) / compared
+    residue: dict[str, int] = {}
+    if replay_only:
+        residue["deterministic_gap"] = replay_only  # replay surplus (lawvm side)
+    if oracle_only:
+        residue["manual_frontier"] = oracle_only  # editorial-consolidation surplus
+
+    # TEXT axis: over co-present articles only; None when there are none.
+    co_present = agreements + text_diffs
+    text_err: float | None = (text_diffs / co_present) if co_present > 0 else None
+
+    return BenchUnitResult(
+        unit_id=unit_id,
+        bench_unit_status=BenchStatus.SCORED,
+        structural_err=structural_err,
+        text_err=text_err,
+        residue_buckets=residue,
+    )
+
+
+def _register_eu_bench_comparator() -> None:
+    from lawvm.core.bench_comparator_registry import register_bench_comparator
+
+    register_bench_comparator("eu", eu_bench_unit_result)
+
+
+_register_eu_bench_comparator()
