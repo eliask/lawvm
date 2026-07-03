@@ -26,9 +26,10 @@ honest CTSF residual verdict is now the correctness authority; the legacy scalar
 bench-regression guard (``lawvm.tools.bench_regression_guard``, an operator-run
 comparison over saved bench runs — never an automatic ci.sh stage) is demoted to
 TELEMETRY: it is still computable/reportable but is no longer the correctness
-authority. Full retirement of the scalar operator tool is deferred (it is a manual
-diagnostic surface, not an automatic gate, so it does not co-gate CI and needs no
-one-shot removal here); see :data:`SCALAR_GATE_STATUS`.
+authority. The retirement assessment (task #198 follow-up) found there is NO automatic
+scalar GATE to retire — the guard is an operator-run CLI diagnostic, not a ci.sh stage
+— and the tool is deliberately KEPT because its perf/timing/RSS comparison lanes are
+not subsumed by CTSF; see :data:`SCALAR_GATE_STATUS`.
 
 DATA-AWARE PRIMACY (the hard constraint the flip must honor): scoring the real
 ``#183`` corpus reads the Finlex archive per anchor (slow). The gate therefore GATES
@@ -123,10 +124,28 @@ GATE_MODE = "PRIMARY"
 # The legacy scalar bench-regression guard (``lawvm.tools.bench_regression_guard``) is
 # an operator-run comparison over saved bench runs — NOT an automatic ci.sh stage. As
 # of the flip it is demoted to telemetry: still computable/reportable, no longer the
-# correctness authority (the CTSF residual verdict is). Full retirement is deferred
-# because it is a manual diagnostic surface, not an automatic gate, so it does not
-# co-gate CI and needs no removal in this increment.
-SCALAR_GATE_STATUS = "telemetry_retirement_deferred"
+# correctness authority (the CTSF residual verdict is).
+#
+# GATE-RETIREMENT ASSESSMENT (task #198 follow-up, completed): the scalar guard has NO
+# automatic GATE role to retire. It is invoked only by the operator-facing
+# ``lawvm bench-regression-guard`` CLI subcommand (its ``main`` does
+# ``raise SystemExit(run_guard(...))`` — an exit code returned to a human operator) and
+# by its own unit tests over synthetic ``tmp_path`` fixtures. It is not wired into
+# ``scripts/ci.sh``, any Makefile/tox/pre-commit/CI-workflow, or any test that fails red
+# on committed real bench data. So there is no fail-red CI stage to remove: CTSF (now
+# PRIMARY, covering FI/EE/UK real anchor corpora) already IS the sole automatic
+# correctness authority.
+#
+# The operator tool is KEPT (not retired) because it is still load-bearing as a
+# performance/telemetry diagnostic that CTSF does NOT subsume: CTSF is a correctness
+# residual-SET diff with no timing/memory lane, whereas the guard offers
+# ``--max-duration-regressions`` (wall-clock), ``--max-rss-regressions`` (process
+# high-water RSS), and ``--max-phase-regressions``/``--phase`` (per-phase timing)
+# comparisons over two arbitrary saved runs across FI/EE/UK. It is also a documented CLI
+# contract (``JURISDICTION_CLI_TOOLING_CONTRACT.md``, ``UK_REPLAY_LIVING_SPEC.md``).
+# Retirement is therefore not a matter of removing dead gating — there is none — and
+# deleting the tool would drop live diagnostic capability with no replacement.
+SCALAR_GATE_STATUS = "telemetry_no_gate_to_retire_tool_kept_as_diagnostic"
 
 # The two billable-to-replay families whose APPEARANCE (a new one vs baseline) is a
 # hard FAIL. Everything else is typed, evidence-backed, and non-billable to replay —

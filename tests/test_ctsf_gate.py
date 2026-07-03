@@ -329,9 +329,12 @@ def test_typed_move_on_real_baseline_warns():
 
 def test_gate_is_primary_and_scalar_is_demoted():
     """The flip is recorded in-code: the gate MODE is PRIMARY and the legacy scalar
-    is demoted to telemetry (retirement deferred, documented)."""
+    guard is demoted to telemetry. The retirement assessment (task #198 follow-up)
+    concluded there is NO automatic scalar GATE to retire — the guard is an
+    operator-run CLI diagnostic, not a ci.sh stage — and the tool is deliberately
+    kept because its perf/timing/RSS comparison lanes are not subsumed by CTSF."""
     assert GATE_MODE == "PRIMARY"
-    assert SCALAR_GATE_STATUS == "telemetry_retirement_deferred"
+    assert SCALAR_GATE_STATUS == "telemetry_no_gate_to_retire_tool_kept_as_diagnostic"
 
 
 def test_run_gate_data_absent_skips_clean(monkeypatch):
