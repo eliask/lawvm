@@ -1433,6 +1433,62 @@ def _cached_cleaned_node_similarity_text(
     return text
 
 
+def _cached_section_similarity_cleaned(
+    lhs: str,
+    rhs: str,
+    cache: dict[tuple[str, str], float] | None,
+) -> float:
+    """Memoized :func:`section_similarity_cleaned` over already-cleaned strings.
+
+    The chain-replay scores the SAME cleaned-text pair enormously often: across
+    the 103-version curve the replayed tree barely changes between versions, so
+    each version re-scores nearly the same (replayed_text, oracle_text) pairs the
+    prior versions already scored (measured ~98.5% duplicate Levenshtein.ratio
+    calls on act_public_1957_87). The Levenshtein ratio is a pure function of the
+    two cleaned strings, so caching it on ``(lhs, rhs)`` returns the byte-identical
+    value a fresh call would compute. ``cache is None`` restores the exact
+    unmemoized path.
+    """
+
+    if cache is None:
+        return section_similarity_cleaned(lhs, rhs)
+    key = (lhs, rhs)
+    cached = cache.get(key)
+    if cached is not None:
+        return cached
+    score = section_similarity_cleaned(lhs, rhs)
+    cache[key] = score
+    return score
+
+
+def _cached_best_section_similarity_cleaned(
+    cleaned_replay: list[str],
+    cleaned_oracle: list[str],
+    cache: dict[tuple[str, str], float] | None,
+) -> float:
+    """Memoized analogue of :func:`best_section_similarity_cleaned`.
+
+    ``best_section_similarity_cleaned`` returns ``max(section_similarity_cleaned)``
+    over the cleaned cross product; its internal ``score_cutoff`` pruning is purely
+    a speedup that yields the byte-identical max. Reconstructing that max from
+    per-pair ratios pulled through the shared ``(lhs, rhs)`` memo is therefore
+    byte-identical, and it reuses ratios already computed for the raw track (and
+    for prior versions). ``cache is None`` falls back to the pruned kernel.
+    """
+
+    if cache is None:
+        return best_section_similarity_cleaned(cleaned_replay, cleaned_oracle)
+    best = -1.0
+    for lhs in cleaned_replay:
+        for rhs in cleaned_oracle:
+            score = _cached_section_similarity_cleaned(lhs, rhs, cache)
+            if score > best:
+                best = score
+                if best >= 1.0:
+                    return 1.0
+    return best
+
+
 def _similarity_point(
     replayed: NZSourceDocument,
     oracle: NZSourceDocument,
@@ -1442,6 +1498,7 @@ def _similarity_point(
     repeals_applied: int,
     repeals_skipped: int,
     cleaned_text_cache: dict[_CleanedNodeSimilarityKey, str] | None = None,
+    ratio_cache: dict[tuple[str, str], float] | None = None,
 ) -> NZChainSimilarityPoint:
     replayed_index = _node_text_index(replayed)
     oracle_index = _node_text_index(oracle)
@@ -1462,8 +1519,8 @@ def _similarity_point(
             # Missing/extra path: scores 0 in the FI-style combined metric.
             union_scores.append(0.0)
             continue
-        score = section_similarity_cleaned(
-            cleaned_text_by_node[replayed_node], cleaned_text_by_node[oracle_node]
+        score = _cached_section_similarity_cleaned(
+            cleaned_text_by_node[replayed_node], cleaned_text_by_node[oracle_node], ratio_cache
         )
         union_scores.append(score)
         shared_scores.append(score)
@@ -1490,9 +1547,10 @@ def _similarity_point(
         # product is the chain-replay O(N^2) hotspot; ``best_section_similarity``
         # returns a value byte-identical to the plain ``max(section_similarity ...)``
         # above but prunes pairs that provably cannot beat the running best.
-        best = best_section_similarity_cleaned(
-            (cleaned_text_by_node[r] for r in replayed_nodes),
-            (cleaned_text_by_node[o] for o in oracle_nodes),
+        best = _cached_best_section_similarity_cleaned(
+            [cleaned_text_by_node[r] for r in replayed_nodes],
+            [cleaned_text_by_node[o] for o in oracle_nodes],
+            ratio_cache,
         )
         stable_union_scores.append(best)
     combined_stable = (
@@ -1875,6 +1933,12 @@ def build_chain_replay(
     all_skips: list[NZChainSkip] = []
     divergences: list[NZChainDivergence] = []
     cleaned_similarity_text_cache: dict[_CleanedNodeSimilarityKey, str] = {}
+    # Run-scoped memo of Levenshtein ratios over cleaned-text pairs. The
+    # similarity curve re-scores the same (replayed_text, oracle_text) pairs at
+    # nearly every version (the replayed tree barely changes step-to-step), so
+    # this collapses the ~O(versions*nodes) redundant ratio calls to one per
+    # distinct pair. The cached value is byte-identical to a fresh call.
+    similarity_ratio_cache: dict[tuple[str, str], float] = {}
     # Per-family applied target paths (for the per-family oracle agreement check).
     applied_paths_by_family: dict[str, set[tuple[str, ...]]] = {
         family: set() for family in CHAIN_FAMILY_ORDER
@@ -1938,6 +2002,7 @@ def build_chain_replay(
                 repeals_applied=ops_applied,
                 repeals_skipped=len(all_skips),
                 cleaned_text_cache=cleaned_similarity_text_cache,
+                ratio_cache=similarity_ratio_cache,
             )
         )
 
