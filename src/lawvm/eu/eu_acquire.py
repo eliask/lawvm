@@ -51,6 +51,7 @@ from __future__ import annotations
 import hashlib
 import json
 import xml.etree.ElementTree as ET
+import zipfile
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -155,6 +156,26 @@ class CelexAcquisitionFailure:
     """'abort' in strict mode, 'record' in quirks mode."""
 
 
+@dataclass(frozen=True, slots=True)
+class CelexAcquisitionNote:
+    """Typed non-failure accounting note for one CELEX acquisition step.
+
+    Distinct from :class:`CelexAcquisitionFailure`: a note records something
+    that was *handled* (a witness was still stored) but carries residual detail
+    that must not be silently dropped — e.g. a ZIP-wrapped manifestation whose
+    primary Formex XML was extracted and stored, with any additional archive
+    members (annexes / binary attachments) recorded for total-accounting.
+    """
+
+    rule_id: str
+    """Stable rule identifier, e.g. 'EU_ACQ.ITEM_ZIP_EXTRACTED'."""
+    celex: str
+    expression_language: str | None
+    fmt: str | None
+    locator: str
+    detail: str
+
+
 @dataclass
 class CelexIngestRun:
     """Provenance and counts for one CELEX acquisition run."""
@@ -169,6 +190,7 @@ class CelexIngestRun:
     failed: int = 0
     stored_locators: list[str] = field(default_factory=list)
     failures: list[CelexAcquisitionFailure] = field(default_factory=list)
+    notes: list[CelexAcquisitionNote] = field(default_factory=list)
     metadata: CelexAcquisitionMetadata | None = None
     universe: CorpusTotalityUniverse | None = None
 
@@ -360,6 +382,17 @@ def _store_ingest_run(farchive: Any, run: CelexIngestRun) -> None:
                 "detail": f.detail,
             }
             for f in run.failures
+        ],
+        "notes": [
+            {
+                "rule_id": n.rule_id,
+                "celex": n.celex,
+                "expression_language": n.expression_language,
+                "format": n.fmt,
+                "locator": n.locator,
+                "detail": n.detail,
+            }
+            for n in run.notes
         ],
     }
     ingest_locator = _ingest_run_locator(
@@ -593,6 +626,43 @@ def _record_failure(
     run.failed += 1
 
 
+def _record_zip_extracted_note(
+    run: CelexIngestRun,
+    *,
+    celex: str,
+    language: str | None,
+    fmt: str | None,
+    locator: str,
+    item_url: str,
+    extracted: cellar.ExtractedFormexZip,
+) -> None:
+    """Account a ZIP-wrapped manifestation whose primary Formex XML was stored.
+
+    Records the primary member stored and the OTHER members present (annexes,
+    toc/doc wrappers, binary attachments). The additional members are NOT stored
+    as separate witnesses in this increment; the note keeps them accounted (the
+    split-manifestation/annex-member case is a known EU acquisition-completeness
+    item), never silently dropped.
+    """
+    other = extracted.other_members
+    detail = (
+        f"unwrapped zip -> stored primary member {extracted.primary_member!r} "
+        f"(root {extracted.primary_root_tag}); "
+        f"{len(other)} other member(s) present, not stored as separate "
+        f"witnesses: {list(other)} url={item_url}"
+    )
+    run.notes.append(
+        CelexAcquisitionNote(
+            rule_id="EU_ACQ.ITEM_ZIP_EXTRACTED",
+            celex=celex,
+            expression_language=language,
+            fmt=fmt,
+            locator=locator,
+            detail=detail,
+        )
+    )
+
+
 def _acquire_into(
     run: CelexIngestRun,
     *,
@@ -721,6 +791,70 @@ def _acquire_into(
             detail=f"{exc.__class__.__name__}: {exc} url={item_url}",
         )
         return
+
+    # Some Cellar FMX4 manifestation items arrive as a ZIP archive of Formex
+    # members (the OJ L-series packaging: primary ACT + toc/doc wrappers +
+    # optional ANNEX members + binary attachments) rather than a bare XML
+    # document. Detect the zip and unwrap it to the primary Formex XML BEFORE
+    # the XML witness check, so these acts enter the corpus instead of being
+    # typed-rejected as ITEM_NOT_XML (a real acquisition-completeness gain).
+    if cellar.looks_like_zip(item_bytes):
+        try:
+            extracted = cellar.extract_primary_formex_from_zip(
+                item_bytes, archive_hint=item_url
+            )
+        except zipfile.BadZipFile as exc:
+            _record_failure(
+                run,
+                rule_id="EU_ACQ.ITEM_NOT_XML",
+                phase="verify",
+                family="source_pathology",
+                celex=celex,
+                language=language,
+                fmt=fmt,
+                locator=item_locator,
+                reason=(
+                    "Cellar manifestation item has ZIP magic but is not a "
+                    "readable archive; rejecting (no silent store)"
+                ),
+                detail=f"BadZipFile: {exc} url={item_url}",
+            )
+            return
+        if extracted is None:
+            # A zip with no parseable-XML member — no primary Formex document to
+            # store. Typed rejection preserves the no-silent-store discipline.
+            _record_failure(
+                run,
+                rule_id="EU_ACQ.ITEM_ZIP_NO_XML",
+                phase="verify",
+                family="source_pathology",
+                celex=celex,
+                language=language,
+                fmt=fmt,
+                locator=item_locator,
+                reason=(
+                    "Cellar manifestation item is a ZIP with no parseable Formex "
+                    "XML member; rejecting (no silent store)"
+                ),
+                detail=f"zip members had no XML root url={item_url}",
+            )
+            return
+        # Replace the raw entropic zip bytes with the primary Formex XML member;
+        # store the CONTENTS, not the archive. Additional members (annexes,
+        # toc/doc wrappers, binary attachments) are recorded but not yet stored
+        # as separate witnesses — the split-manifestation/annex-member case is a
+        # known EU acquisition-completeness item, accounted here (not silently
+        # dropped) via a typed EU_ACQ.ITEM_ZIP_EXTRACTED note.
+        item_bytes = extracted.primary_xml
+        _record_zip_extracted_note(
+            run,
+            celex=celex,
+            language=language,
+            fmt=fmt,
+            locator=item_locator,
+            item_url=item_url,
+            extracted=extracted,
+        )
 
     ok, why = verify_xml_witness(item_bytes)
     if not ok:

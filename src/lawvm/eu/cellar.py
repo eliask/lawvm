@@ -584,6 +584,99 @@ def summarize_payload_bytes(data: bytes, content_type: str = "", path_hint: str 
     return summary
 
 
+# ---------------------------------------------------------------------------
+# ZIP-wrapped manifestation extraction
+# ---------------------------------------------------------------------------
+
+# Formex ZIP local-file-header magic. Cellar returns some FMX4 manifestation
+# items as a ZIP archive of Formex members (the OJ L-series packaging) rather
+# than a bare XML document, so the manifestation-item path must unwrap them.
+ZIP_MAGIC = b"PK\x03\x04"
+
+# Root tag of the primary Formex act document member inside a manifestation zip.
+# The zip typically bundles: a ``*.toc.fmx.xml`` (root PUBLICATION, a table of
+# contents), a ``*.doc.fmx.xml`` (root DOC, a wrapper/manifest), the primary
+# ``*.NNNN01.fmx.xml`` (root ACT — the act we want), plus zero-or-more ANNEX
+# members (root ANNEX) and binary image attachments (``*.tif``).
+_FORMEX_PRIMARY_ROOT_TAG = "ACT"
+
+
+def looks_like_zip(data: bytes) -> bool:
+    """True iff ``data`` is a ZIP archive (by magic or a valid central dir)."""
+    return data[:4] == ZIP_MAGIC or zipfile.is_zipfile(BytesIO(data))
+
+
+@dataclass(frozen=True)
+class ExtractedFormexZip:
+    """The primary Formex XML extracted from a manifestation zip, plus census.
+
+    ``primary_member`` is the zip member name the ``primary_xml`` came from.
+    ``other_members`` is every OTHER member in the zip (annexes, toc/doc
+    wrappers, binary attachments) — recorded so a multi-member zip is *accounted*
+    (nothing silently dropped), not just the stored primary.
+    """
+
+    primary_xml: bytes
+    primary_member: str
+    primary_root_tag: str
+    other_members: tuple[str, ...]
+
+
+def extract_primary_formex_from_zip(
+    data: bytes, *, archive_hint: str = ""
+) -> ExtractedFormexZip | None:
+    """Extract the primary Formex XML document from a manifestation zip.
+
+    Prefers the member whose XML root tag is ``ACT`` (the primary act document);
+    falls back to any member that parses as XML (so a zip carrying only an
+    ANNEX/DOC still yields a stored witness rather than a silent drop). Returns
+    ``None`` when the zip has NO parseable-XML member (the caller then records a
+    typed no-XML rejection — no-silent-store discipline).
+
+    Uses :func:`safe_zip_read` so a member declaring a huge uncompressed size is
+    rejected via ``ArchiveMemberTooLarge`` before it is materialised.
+    """
+    with zipfile.ZipFile(BytesIO(data)) as zf:
+        names = zf.namelist()
+        # Only ``.xml`` members can be Formex documents; ``.tif`` etc. are binary
+        # attachments. Read each candidate and inspect its XML root tag.
+        xml_candidates: list[tuple[str, bytes, str]] = []
+        for name in names:
+            if not name.lower().endswith(".xml"):
+                continue
+            member_bytes = safe_zip_read(zf, name, archive_path=archive_hint)
+            root_tag = _xml_root_local_tag(member_bytes)
+            if root_tag is not None:
+                xml_candidates.append((name, member_bytes, root_tag))
+        if not xml_candidates:
+            return None
+        # Primary = the ACT-rooted member; otherwise the first parseable XML.
+        primary = next(
+            (c for c in xml_candidates if c[2] == _FORMEX_PRIMARY_ROOT_TAG),
+            xml_candidates[0],
+        )
+        primary_name, primary_bytes, primary_tag = primary
+        other = tuple(n for n in names if n != primary_name)
+        return ExtractedFormexZip(
+            primary_xml=primary_bytes,
+            primary_member=primary_name,
+            primary_root_tag=primary_tag,
+            other_members=other,
+        )
+
+
+def _xml_root_local_tag(data: bytes) -> str | None:
+    """Return the local (namespace-stripped) XML root tag, or None if not XML."""
+    try:
+        root = ET.fromstring(data)
+    except ET.ParseError:
+        return None
+    tag = root.tag
+    if isinstance(tag, str) and "}" in tag:
+        return tag.rsplit("}", 1)[-1]
+    return str(tag)
+
+
 def _normalize_text(text: str) -> str:
     return " ".join(text.split())
 

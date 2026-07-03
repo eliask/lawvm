@@ -436,6 +436,26 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="ISO 'YYYY-MM-DD' snapshot date (default: today, UTC).",
     )
+    parser.add_argument(
+        "--report",
+        default=None,
+        metavar="PATH",
+        help=(
+            "Write the full structured account JSON (indented, embedding the "
+            "gaps/failed_celexes lists) to this file. Default: a timestamped "
+            "file under .tmp/eu-corpus-reports/. stdout carries only the human "
+            "header + a one-line pointer to this file."
+        ),
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help=(
+            "Also emit the full account as a single machine-readable JSON line "
+            "on stdout (legacy back-compat for a stdout-parsing consumer). Off "
+            "by default so ingest never prints an unbounded one-liner."
+        ),
+    )
     return parser
 
 
@@ -448,8 +468,42 @@ def _resolve_farchive_path(raw: str) -> Path:
     return dest_path
 
 
-def _print_summary(run: CorpusAcquireRun, *, out: Any) -> None:
-    """Print the structured owned-account summary (JSON + a human header)."""
+def _default_report_path(run: CorpusAcquireRun, fetched_at: datetime) -> Path:
+    """Default report path under ``.tmp/eu-corpus-reports/`` (timestamped)."""
+    stamp = fetched_at.strftime("%Y%m%dT%H%M%SZ")
+    snap = run.snapshot_id or "snapshot"
+    return Path(".tmp") / "eu-corpus-reports" / f"corpus_account_{snap}_{stamp}.json"
+
+
+def _write_report(run: CorpusAcquireRun, report_path: Path) -> Path:
+    """Write the full indented account JSON to ``report_path``; return the path.
+
+    The full account (embedding the gaps/failed_celexes lists) must live
+    SOMEWHERE for total-accounting; this file is that home so stdout need not
+    carry an unbounded blob.
+    """
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(
+        json.dumps(run.to_summary_dict(), ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return report_path
+
+
+def _print_summary(
+    run: CorpusAcquireRun,
+    *,
+    out: Any,
+    report_path: Path | None = None,
+    emit_json: bool = False,
+) -> None:
+    """Print the bounded owned-account summary (human header + report pointer).
+
+    The full structured account is written to ``report_path`` (indented). stdout
+    carries the human-readable header and a one-line pointer + the typed gap
+    COUNT — never the unbounded gaps/failed_celexes lists. ``emit_json`` opts
+    back into the legacy single-line stdout JSON for a stdout-parsing consumer.
+    """
     print("=== EU corpus acquisition summary ===", file=out)
     summary = run.to_summary_dict()
     accounted = (
@@ -474,7 +528,11 @@ def _print_summary(run: CorpusAcquireRun, *, out: Any) -> None:
         f"(enumerated={run.enumerated_count})",
         file=out,
     )
-    print(json.dumps(summary, ensure_ascii=False), file=out)
+    if report_path is not None:
+        print(f"full account written to: {report_path}", file=out)
+    if emit_json:
+        # Legacy stdout-parsing back-compat: the full account as one JSON line.
+        print(json.dumps(summary, ensure_ascii=False), file=out)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -551,7 +609,15 @@ def main(argv: list[str] | None = None) -> int:
     finally:
         farchive.close()
 
-    _print_summary(run, out=sys.stdout)
+    report_path = (
+        Path(args.report)
+        if args.report
+        else _default_report_path(run, fetched_at)
+    )
+    _write_report(run, report_path)
+    _print_summary(
+        run, out=sys.stdout, report_path=report_path, emit_json=args.json
+    )
     return 0
 
 

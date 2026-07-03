@@ -17,10 +17,16 @@ from datetime import datetime, timezone
 
 import pytest
 
+import io
+import json
+
 from lawvm.eu import eu_acquire
 from lawvm.eu.acquire_corpus import (
+    CorpusAcquireRun,
     CorpusGap,
     _parse_languages,
+    _print_summary,
+    _write_report,
     main,
     run_corpus_acquisition,
 )
@@ -410,6 +416,71 @@ def test_corpus_gap_is_typed_dict() -> None:
     d = gap.to_dict()
     assert d["celex"] == "32016R0679"
     assert d["rule_id"] == "EU_ACQ.ITEM_FETCH_FAILED"
+
+
+# --------------------------------------------------------------------------- #
+# Bounded summary output                                                       #
+# --------------------------------------------------------------------------- #
+
+
+def _run_with_gaps(n_gaps: int) -> CorpusAcquireRun:
+    gaps = [
+        CorpusGap(
+            celex=f"32016R{i:04d}",
+            language="eng",
+            rule_id="EU_ACQ.ITEM_FETCH_FAILED",
+            reason="502",
+            detail="HTTP 502 " + "x" * 200,  # long detail — would bloat a one-liner
+        )
+        for i in range(n_gaps)
+    ]
+    return CorpusAcquireRun(
+        snapshot_id="snap1",
+        snapshot_locator="loc1",
+        enumerated_count=10,
+        acquirable_count=8,
+        languages=("eng",),
+        fmt="fmx4",
+        with_closure=False,
+        dry_run=False,
+        acquisition_sampled=False,
+        sample_limit=None,
+        acquired_per_language={"eng": 5},
+        gaps=gaps,
+    )
+
+
+def test_summary_stdout_is_bounded_and_report_holds_full_account(tmp_path) -> None:
+    run = _run_with_gaps(50)
+    report = tmp_path / "account.json"
+    _write_report(run, report)
+    out = io.StringIO()
+    _print_summary(run, out=out, report_path=report, emit_json=False)
+    text = out.getvalue()
+    # stdout carries the human header + the gap COUNT + a pointer, never the
+    # unbounded gaps list (no full JSON dump / no per-gap detail on stdout).
+    assert "=== EU corpus acquisition summary ===" in text
+    assert "gaps(typed)=50" in text
+    assert str(report) in text
+    assert "HTTP 502" not in text  # the long per-gap detail is NOT on stdout
+    assert '"gaps"' not in text  # no full account JSON blob on stdout
+    # The full account (embedding the gaps list) lives in the report file.
+    account = json.loads(report.read_text())
+    assert account["gap_count"] == 50
+    assert len(account["gaps"]) == 50
+    assert account["gaps"][0]["rule_id"] == "EU_ACQ.ITEM_FETCH_FAILED"
+
+
+def test_summary_json_flag_restores_stdout_oneliner() -> None:
+    run = _run_with_gaps(3)
+    out = io.StringIO()
+    _print_summary(run, out=out, report_path=None, emit_json=True)
+    text = out.getvalue()
+    # Legacy back-compat: the last stdout line is the full machine-readable JSON.
+    last = text.strip().splitlines()[-1]
+    account = json.loads(last)
+    assert account["schema"] == "lawvm.eu_acquire_corpus_run.v0"
+    assert account["gap_count"] == 3
 
 
 # --------------------------------------------------------------------------- #

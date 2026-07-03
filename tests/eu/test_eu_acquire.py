@@ -7,12 +7,15 @@ FIN/fmx4 manifestation item; a synthetic Formex item stands in for the witness.
 from __future__ import annotations
 
 import hashlib
+import zipfile
 from datetime import datetime, timezone
+from io import BytesIO
 from pathlib import Path
 
 import pytest
 from farchive import Farchive
 
+from lawvm.eu import cellar
 from lawvm.eu.eu_acquire import (
     CelexAcquisitionFailure,
     CelexAcquisitionMetadata,
@@ -88,6 +91,54 @@ def _fake_fetch_notice(*_a, **_k):
 
 def _fake_fetch_item(*_a, **_k):
     return FORMEX_XML, {"sha256": hashlib.sha256(FORMEX_XML).hexdigest()}
+
+
+# A synthetic Formex ACT member (root ACT) — the primary act document a real
+# OJ L-series manifestation zip carries as ``L_YYYYNNNNEN.000101.fmx.xml``.
+FORMEX_ACT_XML = b"""<?xml version="1.0" encoding="UTF-8"?>
+<ACT><TITLE><TI>Synthetic primary act</TI></TITLE>
+<ENACTING.TERMS><ARTICLE><TI.ART>Article 1</TI.ART></ARTICLE></ENACTING.TERMS>
+</ACT>
+"""
+FORMEX_TOC_XML = b'<?xml version="1.0"?><PUBLICATION><NO.DOC>toc</NO.DOC></PUBLICATION>'
+FORMEX_DOC_XML = b'<?xml version="1.0"?><DOC><CONTENTS>doc wrapper</CONTENTS></DOC>'
+FORMEX_ANNEX_XML = b'<?xml version="1.0"?><ANNEX><TITLE><TI>Annex I</TI></TITLE></ANNEX>'
+BINARY_TIF = b"II*\x00\x08\x00\x00\x00binary-tiff-bytes-not-xml"
+
+
+def _build_zip(members: dict[str, bytes]) -> bytes:
+    """Build an in-memory ZIP (mirrors a Cellar FMX4 manifestation archive)."""
+    buf = BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for name, data in members.items():
+            zf.writestr(name, data)
+    return buf.getvalue()
+
+
+# Single-member zip: just the primary ACT.
+ZIP_SINGLE_ACT = _build_zip({"L_202601336EN.000101.fmx.xml": FORMEX_ACT_XML})
+
+# Multi-member zip mirroring the real 32026R1383 layout: primary ACT + toc/doc
+# wrappers + annexes + binary .tif attachments.
+ZIP_MULTI_MEMBER = _build_zip(
+    {
+        "L_202601383EN.000101.fmx.xml": FORMEX_ACT_XML,
+        "L_202601383EN.000501.fmx.xml": FORMEX_ANNEX_XML,
+        "L_202601383EN.001001.fmx.tif": BINARY_TIF,
+        "L_202601383EN.doc.fmx.xml": FORMEX_DOC_XML,
+        "L_202601383EN.toc.fmx.xml": FORMEX_TOC_XML,
+    }
+)
+
+# A zip with NO parseable-XML member (only binary attachments).
+ZIP_NO_XML = _build_zip({"L_202601383EN.001001.fmx.tif": BINARY_TIF})
+
+
+def _fake_fetch_zip_item(payload: bytes):
+    def _fetch(*_a, **_k):
+        return payload, {"sha256": hashlib.sha256(payload).hexdigest()}
+
+    return _fetch
 
 
 def _archive(tmp_path: Path) -> Farchive:
@@ -380,6 +431,114 @@ def test_html_notice_rejected_no_store(tmp_path: Path) -> None:
     assert archive.resolve(notice_loc) is None
     assert run.failed == 1
     assert run.failures[0].rule_id == "EU_ACQ.NOTICE_NOT_XML"
+    archive.close()
+
+
+# --------------------------------------------------------------------------- #
+# ZIP-wrapped manifestation extraction                                        #
+# --------------------------------------------------------------------------- #
+
+
+def test_zip_helper_extracts_primary_act_from_single_member() -> None:
+    extracted = cellar.extract_primary_formex_from_zip(ZIP_SINGLE_ACT)
+    assert extracted is not None
+    assert extracted.primary_xml == FORMEX_ACT_XML
+    assert extracted.primary_root_tag == "ACT"
+    assert extracted.other_members == ()
+
+
+def test_zip_helper_prefers_act_over_annex_in_multi_member() -> None:
+    extracted = cellar.extract_primary_formex_from_zip(ZIP_MULTI_MEMBER)
+    assert extracted is not None
+    # The ACT member is stored even though ANNEX/DOC/TOC members are present.
+    assert extracted.primary_root_tag == "ACT"
+    assert extracted.primary_xml == FORMEX_ACT_XML
+    assert extracted.primary_member.endswith(".000101.fmx.xml")
+    # Every other member (annexes, doc/toc wrappers, binary .tif) is accounted.
+    assert set(extracted.other_members) == {
+        "L_202601383EN.000501.fmx.xml",
+        "L_202601383EN.001001.fmx.tif",
+        "L_202601383EN.doc.fmx.xml",
+        "L_202601383EN.toc.fmx.xml",
+    }
+
+
+def test_zip_helper_returns_none_for_no_xml_zip() -> None:
+    assert cellar.extract_primary_formex_from_zip(ZIP_NO_XML) is None
+
+
+def test_looks_like_zip_detects_magic_and_rejects_xml() -> None:
+    assert cellar.looks_like_zip(ZIP_SINGLE_ACT)
+    assert cellar.looks_like_zip(b"PK\x03\x04rest-of-a-truncated-zip")
+    assert not cellar.looks_like_zip(FORMEX_XML)
+
+
+def test_acquire_unwraps_single_member_zip_and_stores_act(tmp_path: Path) -> None:
+    archive = _archive(tmp_path)
+    item_loc = celex_locator(GDPR, CONSOLIDATION, LANG, "fmx4")
+    run = acquire_celex(
+        GDPR,
+        fetched_at=FETCHED_AT,
+        language=LANG,
+        consolidation=CONSOLIDATION,
+        farchive=archive,
+        _fetch_notice=_fake_fetch_notice,
+        _fetch_item=_fake_fetch_zip_item(ZIP_SINGLE_ACT),
+    )
+    # The ACT contents were stored (not the raw zip bytes); passes verify.
+    assert run.failed == 0
+    assert archive.get(item_loc) == FORMEX_ACT_XML
+    assert run.metadata is not None
+    assert run.metadata.source_sha256 == hashlib.sha256(FORMEX_ACT_XML).hexdigest()
+    # A typed extraction note accounts the unwrap.
+    assert len(run.notes) == 1
+    note = run.notes[0]
+    assert note.rule_id == "EU_ACQ.ITEM_ZIP_EXTRACTED"
+    assert note.locator == item_loc
+    archive.close()
+
+
+def test_acquire_multi_member_zip_stores_act_and_accounts_others(
+    tmp_path: Path,
+) -> None:
+    archive = _archive(tmp_path)
+    item_loc = celex_locator(GDPR, CONSOLIDATION, LANG, "fmx4")
+    run = acquire_celex(
+        GDPR,
+        fetched_at=FETCHED_AT,
+        language=LANG,
+        consolidation=CONSOLIDATION,
+        farchive=archive,
+        _fetch_notice=_fake_fetch_notice,
+        _fetch_item=_fake_fetch_zip_item(ZIP_MULTI_MEMBER),
+    )
+    assert run.failed == 0
+    assert archive.get(item_loc) == FORMEX_ACT_XML
+    # The additional members are recorded in the note (not silently dropped).
+    assert len(run.notes) == 1
+    detail = run.notes[0].detail
+    assert "000501.fmx.xml" in detail  # annex member
+    assert "001001.fmx.tif" in detail  # binary attachment
+    archive.close()
+
+
+def test_acquire_no_xml_zip_typed_rejected_no_store(tmp_path: Path) -> None:
+    archive = _archive(tmp_path)
+    item_loc = celex_locator(GDPR, CONSOLIDATION, LANG, "fmx4")
+    run = acquire_celex(
+        GDPR,
+        fetched_at=FETCHED_AT,
+        language=LANG,
+        consolidation=CONSOLIDATION,
+        farchive=archive,
+        _fetch_notice=_fake_fetch_notice,
+        _fetch_item=_fake_fetch_zip_item(ZIP_NO_XML),
+    )
+    # No parseable XML in the zip → typed rejection, nothing stored (no silent store).
+    assert archive.resolve(item_loc) is None
+    assert run.failed == 1
+    assert run.failures[0].rule_id == "EU_ACQ.ITEM_ZIP_NO_XML"
+    assert run.notes == []
     archive.close()
 
 
