@@ -107,6 +107,24 @@ class FailureClass(str, Enum):
       content-identical no-op on the statute-title facet, distinct in code from
       the body ``content_identical`` cell).
 
+    The EU frontend (routed through its θ table in #186) exhibits two further
+    action-admissibility lanes whose codes are distinct from the classes above,
+    so they take their own additive members — purely additive; the SE/NO/EE/UK
+    tables and their dispositions are untouched:
+
+    * ``unknown_action`` — the op's action is UNKNOWN / unrecognized (it did not
+      lower to any routable structural action), distinct from
+      ``unsupported_action`` (a recognized action outside the routable set). EU
+      surfaces this as ``eu_replay_unknown_action`` — a separate emit code from
+      ``eu_replay_unsupported_action`` (text_replace/text_repeal/renumber), so it
+      needs its own cell.
+    * ``parent_scope_unresolved`` — an INSERT whose SCOPED parent path did not
+      resolve while unscoped lookalike parent candidates exist (a scope miss,
+      distinct from ``parent_unresolved`` where no parent candidate resolves at
+      all). EU surfaces this as ``eu_replay_insert_parent_scope_unresolved`` — a
+      separate emit code from ``eu_replay_parent_not_found``, so it needs its own
+      cell alongside ``parent_unresolved``.
+
     The value is the boundary/adjudication string so a resolver reading a
     frontend adjudication code can round-trip to a ``FailureClass`` without a
     jurisdiction-local map.
@@ -125,6 +143,9 @@ class FailureClass(str, Enum):
     UNSUPPORTED_ACTION = "unsupported_action"
     STATUTE_TITLE_UNSUPPORTED = "statute_title_unsupported"
     STATUTE_TITLE_UNCHANGED = "statute_title_unchanged"
+    # ── EU action-admissibility failure classes (#186, additive). ──────────────
+    UNKNOWN_ACTION = "unknown_action"
+    PARENT_SCOPE_UNRESOLVED = "parent_scope_unresolved"
 
 
 @dataclass(frozen=True, slots=True)

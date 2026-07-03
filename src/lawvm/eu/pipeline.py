@@ -25,7 +25,9 @@ from lawvm.core.ir_helpers import structural_subtree_hash
 from lawvm.core.mutation_boundary import TreePath, TreePaths, diff_ir_paths_identity_pruned
 from lawvm.core.temporal import TemporalEvent
 from lawvm.core.timeline import Timelines, compile_timelines, materialize_pit
+from lawvm.core.totalization import FailureClass, Reject
 from lawvm.core import tree_ops
+from lawvm.eu.totalization_table import EU_TOTALIZATION_TABLE
 from lawvm.core.phase_result import Finding
 from lawvm.core.replay_lints import build_text_duplication_findings
 from lawvm.core.write_receipt import WriteReceipt, receipt_address_string
@@ -487,9 +489,14 @@ def apply_eu_ops(
 
         if action == StructuralAction.REPLACE.value:
             if op.payload is None:
+                # θ: (REPLACE, payload_missing) — table-sourced Reject (§2.3).
+                disposition = EU_TOTALIZATION_TABLE.lookup(
+                    StructuralAction.REPLACE, FailureClass.PAYLOAD_MISSING
+                )
+                assert isinstance(disposition, Reject)
                 _append_eu_replay_adjudication(
                     adjudications_out,
-                    kind="eu_replay_text_payload_missing",
+                    kind=disposition.code,
                     message="EU replay skipped replace: payload missing.",
                     op=op,
                     detail={"action": "replace", "target": str(target)},
@@ -508,9 +515,14 @@ def apply_eu_ops(
             # ops still apply. Resolving a bare ``annex:`` to the base's single
             # annex is deferred grammar work; here the seam must not crash.
             if not path_steps or not path_steps[-1][1]:
+                # θ: (REPLACE, target_absent) — table-sourced Reject (§2.3).
+                disposition = EU_TOTALIZATION_TABLE.lookup(
+                    StructuralAction.REPLACE, FailureClass.TARGET_ABSENT
+                )
+                assert isinstance(disposition, Reject)
                 _append_eu_replay_adjudication(
                     adjudications_out,
-                    kind="eu_replay_target_not_found",
+                    kind=disposition.code,
                     message="EU replay skipped replace: target not found.",
                     op=op,
                     detail={
@@ -536,9 +548,14 @@ def apply_eu_ops(
                     scope_label=path_steps[0][1] if len(path_steps) > 1 else None,
                 )
             if found is None:
+                # θ: (REPLACE, target_absent) — table-sourced Reject (§2.3).
+                disposition = EU_TOTALIZATION_TABLE.lookup(
+                    StructuralAction.REPLACE, FailureClass.TARGET_ABSENT
+                )
+                assert isinstance(disposition, Reject)
                 _append_eu_replay_adjudication(
                     adjudications_out,
-                    kind="eu_replay_target_not_found",
+                    kind=disposition.code,
                     message="EU replay skipped replace: target not found.",
                     op=op,
                     detail={"action": "replace", "target": str(target)},
@@ -559,9 +576,14 @@ def apply_eu_ops(
             # label, which unguarded would escape the conserved fold and discard
             # the whole op set. Route through the existing typed skip lane.
             if not path_steps or not path_steps[-1][1]:
+                # θ: (REPEAL, target_absent) — table-sourced Reject (§2.3).
+                disposition = EU_TOTALIZATION_TABLE.lookup(
+                    StructuralAction.REPEAL, FailureClass.TARGET_ABSENT
+                )
+                assert isinstance(disposition, Reject)
                 _append_eu_replay_adjudication(
                     adjudications_out,
-                    kind="eu_replay_target_not_found",
+                    kind=disposition.code,
                     message="EU replay skipped repeal: target not found.",
                     op=op,
                     detail={
@@ -584,9 +606,14 @@ def apply_eu_ops(
                     scope_label=path_steps[0][1] if len(path_steps) > 1 else None,
                 )
             if found is None:
+                # θ: (REPEAL, target_absent) — table-sourced Reject (§2.3).
+                disposition = EU_TOTALIZATION_TABLE.lookup(
+                    StructuralAction.REPEAL, FailureClass.TARGET_ABSENT
+                )
+                assert isinstance(disposition, Reject)
                 _append_eu_replay_adjudication(
                     adjudications_out,
-                    kind="eu_replay_target_not_found",
+                    kind=disposition.code,
                     message="EU replay skipped repeal: target not found.",
                     op=op,
                     detail={"action": "repeal", "target": str(target)},
@@ -601,9 +628,14 @@ def apply_eu_ops(
 
         elif action == StructuralAction.INSERT.value:
             if op.payload is None:
+                # θ: (INSERT, payload_missing) — table-sourced Reject (§2.3).
+                disposition = EU_TOTALIZATION_TABLE.lookup(
+                    StructuralAction.INSERT, FailureClass.PAYLOAD_MISSING
+                )
+                assert isinstance(disposition, Reject)
                 _append_eu_replay_adjudication(
                     adjudications_out,
-                    kind="eu_replay_text_payload_missing",
+                    kind=disposition.code,
                     message="EU replay skipped insert: payload missing.",
                     op=op,
                     detail={"action": "insert", "target": str(target)},
@@ -619,9 +651,16 @@ def apply_eu_ops(
                 if tree_ops.resolve(body, parent_path) is None:
                     unscoped_parent_candidates = tree_ops.find_all(body, parent_kind, parent_label)
                     if unscoped_parent_candidates and len(parent_path) > 1:
+                        # θ: (INSERT, parent_scope_unresolved) — table-sourced
+                        # Reject (§2.3); the scope miss, distinct code from the
+                        # plain parent miss below.
+                        disposition = EU_TOTALIZATION_TABLE.lookup(
+                            StructuralAction.INSERT, FailureClass.PARENT_SCOPE_UNRESOLVED
+                        )
+                        assert isinstance(disposition, Reject)
                         _append_eu_replay_adjudication(
                             adjudications_out,
-                            kind="eu_replay_insert_parent_scope_unresolved",
+                            kind=disposition.code,
                             message=(
                                 "EU replay skipped insert: scoped parent path not found; "
                                 "unscoped lookalike parent candidates were ignored."
@@ -641,9 +680,14 @@ def apply_eu_ops(
                         )
                         skipped += 1
                         return MaterializeResult(new_state=body, applied=False)
+                    # θ: (INSERT, parent_unresolved) — table-sourced Reject (§2.3).
+                    disposition = EU_TOTALIZATION_TABLE.lookup(
+                        StructuralAction.INSERT, FailureClass.PARENT_UNRESOLVED
+                    )
+                    assert isinstance(disposition, Reject)
                     _append_eu_replay_adjudication(
                         adjudications_out,
-                        kind="eu_replay_parent_not_found",
+                        kind=disposition.code,
                         message="EU replay skipped insert: parent target not found.",
                         op=op,
                         detail={
@@ -678,9 +722,15 @@ def apply_eu_ops(
             )
             if renumber_to:
                 skip_detail["renumber_to"] = renumber_to
+            # θ: (META, unsupported_action) — a recognized action outside EU's
+            # routable set; table-sourced Reject (§2.3).
+            disposition = EU_TOTALIZATION_TABLE.lookup(
+                StructuralAction.META, FailureClass.UNSUPPORTED_ACTION
+            )
+            assert isinstance(disposition, Reject)
             _append_eu_replay_adjudication(
                 adjudications_out,
-                kind="eu_replay_unsupported_action",
+                kind=disposition.code,
                 message="EU replay skipped unsupported action.",
                 op=op,
                 detail=skip_detail,
@@ -689,9 +739,15 @@ def apply_eu_ops(
             return MaterializeResult(new_state=body, applied=False)
 
         elif action == "unknown":
+            # θ: (META, unknown_action) — an unrecognized action; table-sourced
+            # Reject (§2.3).
+            disposition = EU_TOTALIZATION_TABLE.lookup(
+                StructuralAction.META, FailureClass.UNKNOWN_ACTION
+            )
+            assert isinstance(disposition, Reject)
             _append_eu_replay_adjudication(
                 adjudications_out,
-                kind="eu_replay_unknown_action",
+                kind=disposition.code,
                 message="EU replay skipped unknown action.",
                 op=op,
                 detail={"target": str(target)},
@@ -700,9 +756,15 @@ def apply_eu_ops(
             return MaterializeResult(new_state=body, applied=False)
 
         else:
+            # θ: (META, unknown_action) — an unrecognized action; table-sourced
+            # Reject (§2.3).
+            disposition = EU_TOTALIZATION_TABLE.lookup(
+                StructuralAction.META, FailureClass.UNKNOWN_ACTION
+            )
+            assert isinstance(disposition, Reject)
             _append_eu_replay_adjudication(
                 adjudications_out,
-                kind="eu_replay_unknown_action",
+                kind=disposition.code,
                 message="EU replay skipped unknown action.",
                 op=op,
                 detail={"action": str(action), "target": str(target)},
@@ -978,7 +1040,13 @@ def apply_eu_ops_conserved(
         if op.op_id in skipped_op_ids:
             matching = [a for a in adjudications if a.op_id == op.op_id and a.kind in _EU_SKIP_ADJUDICATION_KINDS]
             reason = matching[0].message if matching else "EU replay op skipped without a typed reason."
-            reason_code = matching[0].kind if matching else "eu_replay_skipped_unspecified"
+            # θ strict default (§2.3): the synthesized reason_code for a skip with
+            # no recognized reason is the table's default disposition code. This
+            # arm is defensive (an op_id in ``skipped_op_ids`` always has a
+            # matching skip adjudication), so it is byte-identical to the prior
+            # ``eu_replay_skipped_unspecified`` literal.
+            assert isinstance(EU_TOTALIZATION_TABLE.default, Reject)
+            reason_code = matching[0].kind if matching else EU_TOTALIZATION_TABLE.default.code
             rejected.append(
                 RejectedItem(
                     item=op,

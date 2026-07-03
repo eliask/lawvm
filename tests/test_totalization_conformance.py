@@ -51,6 +51,8 @@ from lawvm.core.totalization import (
 from lawvm.core.statute_facets import statute_title_address
 from lawvm.estonia.grafter import apply_ee_ops_conserved
 from lawvm.estonia.totalization_table import EE_TOTALIZATION_TABLE
+from lawvm.eu.pipeline import apply_eu_ops_conserved
+from lawvm.eu.totalization_table import EU_TOTALIZATION_TABLE
 from lawvm.norway.grafter import apply_no_ops_conserved
 from lawvm.norway.totalization_table import NO_TOTALIZATION_TABLE
 from lawvm.replay_adjudication import CompileAdjudication
@@ -729,6 +731,231 @@ def test_uk_recovers_missing_leaf_replace_not_a_reject_cell() -> None:
     )
     observed, _ = _observe_uk(_uk_statute(), op)
     assert observed == "accepted"
+
+
+# ---------------------------------------------------------------------------
+# EU — the ✓enum I1 conserved-apply frontend, now the strict θ table (#186).
+#
+# The EU's off-domain stance is UNIFORM reject-skip: every off-domain lane is a
+# typed Reject (§2.3 "EU is reject-skip for target_absent"). The EU NEVER recovers
+# (a missing-leaf REPLACE is skipped, not rewritten to INSERT) and has no distinct
+# no-op disposition, so the table is a pure ``Reject`` shape with the strict
+# ``Reject`` default. Each declared cell is driven through the REAL conserved apply
+# path (``apply_eu_ops_conserved`` — the path production replay uses) and asserted
+# to reject with its declared code; the load-bearing routing (``eu/pipeline.py``
+# dispatches on ``EU_TOTALIZATION_TABLE.lookup``) is guarded byte-identical here.
+# ---------------------------------------------------------------------------
+
+_EU_ID = "eu/32020R0001"
+_EU_AMEND = "eu/32020R0002"
+
+
+def _eu_node(kind: IRNodeKind, label: str | None = None, text: str = "", children: tuple[IRNode, ...] = ()) -> IRNode:
+    return IRNode(kind=kind, label=label, text=text, children=children)
+
+
+def _eu_statute(*, body: IRNode) -> IRStatute:
+    return IRStatute(statute_id=_EU_ID, title="EU conformance base", body=body)
+
+
+def _eu_single_section_statute() -> IRStatute:
+    return _eu_statute(
+        body=_eu_node(IRNodeKind.BODY, children=(_eu_node(IRNodeKind.SECTION, "1", "Original."),))
+    )
+
+
+def _observe_eu(
+    statute: IRStatute, op: LegalOperation
+) -> tuple[str, list[CompileAdjudication]]:
+    """Run one op through the EU's real conserved apply path; return
+    ("accepted"/reason_code, adjudications)."""
+    adjudications: list[CompileAdjudication] = []
+    result = apply_eu_ops_conserved(statute, [op], adjudications_out=adjudications)
+    if result.skipped_items:
+        return result.skipped_items[0].reason_code, adjudications
+    return "accepted", adjudications
+
+
+def _eu_op(
+    *,
+    op_id: str,
+    action: StructuralAction,
+    target: LegalAddress,
+    payload: IRNode | None = None,
+    destination: LegalAddress | None = None,
+) -> LegalOperation:
+    return LegalOperation(
+        op_id=op_id,
+        sequence=1,
+        action=action,
+        target=target,
+        payload=payload,
+        destination=destination,
+        source=OperationSource(statute_id=_EU_AMEND),
+    )
+
+
+def test_eu_replace_payload_missing_rejects_as_declared() -> None:
+    """(REPLACE, payload_missing) → Reject(eu_replay_text_payload_missing)."""
+    cell = (StructuralAction.REPLACE, FailureClass.PAYLOAD_MISSING)
+    declared = EU_TOTALIZATION_TABLE.lookup(*cell)
+    assert isinstance(declared, Reject)
+    assert declared.code == "eu_replay_text_payload_missing"
+
+    op = _eu_op(
+        op_id="eu-replace-nopayload",
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "1"),)),
+        payload=None,
+    )
+    observed, _ = _observe_eu(_eu_single_section_statute(), op)
+    assert observed == declared.code
+
+
+def test_eu_replace_target_absent_rejects_as_declared() -> None:
+    """(REPLACE, target_absent) → Reject(eu_replay_target_not_found). The EU is
+    reject-skip for target_absent (it does NOT recover a missing-leaf REPLACE)."""
+    cell = (StructuralAction.REPLACE, FailureClass.TARGET_ABSENT)
+    declared = EU_TOTALIZATION_TABLE.lookup(*cell)
+    assert isinstance(declared, Reject)
+    assert declared.code == "eu_replay_target_not_found"
+
+    op = _eu_op(
+        op_id="eu-replace-absent",
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "99"),)),  # absent → target not found
+        payload=_eu_node(IRNodeKind.SECTION, "99", "New."),
+    )
+    observed, _ = _observe_eu(_eu_single_section_statute(), op)
+    assert observed == declared.code
+
+
+def test_eu_repeal_target_absent_rejects_as_declared() -> None:
+    """(REPEAL, target_absent) → Reject(eu_replay_target_not_found)."""
+    cell = (StructuralAction.REPEAL, FailureClass.TARGET_ABSENT)
+    declared = EU_TOTALIZATION_TABLE.lookup(*cell)
+    assert isinstance(declared, Reject)
+    assert declared.code == "eu_replay_target_not_found"
+
+    op = _eu_op(
+        op_id="eu-repeal-absent",
+        action=StructuralAction.REPEAL,
+        target=LegalAddress(path=(("section", "99"),)),  # absent → target not found
+    )
+    observed, _ = _observe_eu(_eu_single_section_statute(), op)
+    assert observed == declared.code
+
+
+def test_eu_insert_payload_missing_rejects_as_declared() -> None:
+    """(INSERT, payload_missing) → Reject(eu_replay_text_payload_missing)."""
+    cell = (StructuralAction.INSERT, FailureClass.PAYLOAD_MISSING)
+    declared = EU_TOTALIZATION_TABLE.lookup(*cell)
+    assert isinstance(declared, Reject)
+    assert declared.code == "eu_replay_text_payload_missing"
+
+    op = _eu_op(
+        op_id="eu-insert-nopayload",
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "2"),)),
+        payload=None,
+    )
+    observed, _ = _observe_eu(_eu_single_section_statute(), op)
+    assert observed == declared.code
+
+
+def test_eu_insert_parent_unresolved_rejects_as_declared() -> None:
+    """(INSERT, parent_unresolved) → Reject(eu_replay_parent_not_found). A scoped
+    parent chain (len > 1) that resolves to no candidate at all."""
+    cell = (StructuralAction.INSERT, FailureClass.PARENT_UNRESOLVED)
+    declared = EU_TOTALIZATION_TABLE.lookup(*cell)
+    assert isinstance(declared, Reject)
+    assert declared.code == "eu_replay_parent_not_found"
+
+    op = _eu_op(
+        op_id="eu-insert-parent-absent",
+        action=StructuralAction.INSERT,
+        # parent chain section:7/item:a → section:7 does not exist at all.
+        target=LegalAddress(path=(("section", "7"), ("item", "a"))),
+        payload=_eu_node(IRNodeKind.ITEM, "a", "x"),
+    )
+    observed, _ = _observe_eu(_eu_single_section_statute(), op)
+    assert observed == declared.code
+
+
+def test_eu_insert_parent_scope_unresolved_rejects_as_declared() -> None:
+    """(INSERT, parent_scope_unresolved) → Reject(eu_replay_insert_parent_scope_unresolved).
+
+    A scoped parent path that does NOT resolve while an UNSCOPED lookalike parent
+    candidate exists elsewhere — a scope miss, distinct code from the plain parent
+    miss above."""
+    cell = (StructuralAction.INSERT, FailureClass.PARENT_SCOPE_UNRESOLVED)
+    declared = EU_TOTALIZATION_TABLE.lookup(*cell)
+    assert isinstance(declared, Reject)
+    assert declared.code == "eu_replay_insert_parent_scope_unresolved"
+
+    # body: section:1 (no paragraph child); section:2 with paragraph:P. The
+    # scoped parent section:1/paragraph:P is absent, but paragraph:P exists
+    # UNSCOPED under section:2 → the scope-unresolved lane fires.
+    para = _eu_node(IRNodeKind.PARAGRAPH, "P", "text")
+    s1 = _eu_node(IRNodeKind.SECTION, "1", "s1")
+    s2 = _eu_node(IRNodeKind.SECTION, "2", "s2", children=(para,))
+    statute = _eu_statute(body=_eu_node(IRNodeKind.BODY, children=(s1, s2)))
+    op = _eu_op(
+        op_id="eu-insert-scope-unresolved",
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "1"), ("paragraph", "P"), ("item", "a"))),
+        payload=_eu_node(IRNodeKind.ITEM, "a", "x"),
+    )
+    observed, _ = _observe_eu(statute, op)
+    assert observed == declared.code
+
+
+def test_eu_unsupported_action_rejects_as_declared() -> None:
+    """(META, unsupported_action) → Reject(eu_replay_unsupported_action). A
+    recognized action outside EU's routable set (text_replace/text_repeal/
+    renumber); here a RENUMBER."""
+    cell = (StructuralAction.META, FailureClass.UNSUPPORTED_ACTION)
+    declared = EU_TOTALIZATION_TABLE.lookup(*cell)
+    assert isinstance(declared, Reject)
+    assert declared.code == "eu_replay_unsupported_action"
+
+    op = _eu_op(
+        op_id="eu-renumber-unsupported",
+        action=StructuralAction.RENUMBER,
+        target=LegalAddress(path=(("section", "1"),)),
+        destination=LegalAddress(path=(("section", "2"),)),
+    )
+    observed, _ = _observe_eu(_eu_single_section_statute(), op)
+    assert observed == declared.code
+
+
+def test_eu_unknown_action_rejects_as_declared() -> None:
+    """(META, unknown_action) → Reject(eu_replay_unknown_action). An
+    unrecognized action (here a MOVE — not matched by any EU apply branch)."""
+    cell = (StructuralAction.META, FailureClass.UNKNOWN_ACTION)
+    declared = EU_TOTALIZATION_TABLE.lookup(*cell)
+    assert isinstance(declared, Reject)
+    assert declared.code == "eu_replay_unknown_action"
+
+    op = _eu_op(
+        op_id="eu-move-unknown",
+        action=StructuralAction.MOVE,
+        target=LegalAddress(path=(("section", "1"),)),
+        destination=LegalAddress(path=(("section", "2"),)),
+    )
+    observed, _ = _observe_eu(_eu_single_section_statute(), op)
+    assert observed == declared.code
+
+
+def test_eu_default_is_strict_reject() -> None:
+    """§2.3 default: EU's unlisted cells reject (the strict default)."""
+    assert isinstance(EU_TOTALIZATION_TABLE.default, Reject)
+    assert EU_TOTALIZATION_TABLE.default.code == "eu_replay_skipped_unspecified"
+    # An unlisted cell falls back to the strict default rather than raising.
+    fallback = EU_TOTALIZATION_TABLE.lookup(
+        StructuralAction.RENUMBER, FailureClass.DEST_OCCUPIED
+    )
+    assert fallback is EU_TOTALIZATION_TABLE.default
 
 
 # ---------------------------------------------------------------------------
