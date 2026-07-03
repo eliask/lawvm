@@ -939,7 +939,7 @@ def _canonical_archive_available() -> bool:
     not _canonical_archive_available(),
     reason="canonical us_federal.farchive not linked (LAWVM_CANONICAL_DATA_ROOT unset)",
 )
-def test_real_title11_pl118_42_window_507d_stays_oracle_suspect_courtesy_space() -> None:
+def test_real_title11_pl118_42_window_507d_insert_after_anchor_materializes_in_agreement() -> None:
     from lawvm.us_federal.sources import (
         open_us_federal_farchive,
         plaw_locator,
@@ -963,26 +963,36 @@ def test_real_title11_pl118_42_window_507d_stays_oracle_suspect_courtesy_space()
     assert report.oracle_changed_sections == ("11:109", "11:507", "11:1182")
     # We lower exactly one in-Title-11 op: the 507(d) insert-after-anchor.
     assert report.claimed_sections == ("11:507",)
-    # The enacted instruction inserts "excluding subparagraph (F)" directly after
-    # the anchor "(a)(8)" — the faithful materialization carries NO space
-    # ("(a)(8)excluding"). The published Code adds an OLRC courtesy space
-    # ("(a)(8) excluding"). We do NOT invent the space: the residual is
-    # oracle_suspect (F1 case ii), demoted from lawvm_wrong by the editorial
-    # insert-after-anchor space projection. The materialized text is preserved
-    # faithfully (no repair-to-oracle).
+    # RESOLVED DIVERGENCE (formerly test_..._stays_oracle_suspect_courtesy_space):
+    # the enacted instruction inserts "excluding subparagraph (F)" after the anchor
+    # "(a)(8)" in the running body "...(a)(7), (a)(8), or (a)(9)...". Earlier lowering
+    # spliced the phrase directly onto the ")" with NO separator ("(a)(8)excluding"),
+    # so the section could only reach the published Code's "(a)(8) excluding" through
+    # the editorial insert-after-anchor space projection (an oracle_suspect residual).
+    # The amendatory boundary rule was subsequently corrected (`_join_insert_after`:
+    # a ")"/"," that ENDS the anchor token followed by a fresh word IS a genuine
+    # word-junction taking one separating space — data-backed by 38:4303's
+    # "Public Health Service," + "System members" -> "Public Health Service, System
+    # members"). The separating space is now recognized as the ENACTED result, not an
+    # invented OLRC courtesy space, so §507(d) materializes byte-equal to the oracle
+    # with no comparison projection. The whole 9,779-byte section agrees; this is a
+    # genuine (not forced) full-section match, and the "stays oracle_suspect" framing
+    # is retired. No repair-to-oracle: the space is produced by faithful lowering.
     rows = {row.section_key: row for row in report.rows}
     row = rows["11:507"]
-    assert row.row_status == "residual"
-    assert row.disposition == DISPOSITION_ORACLE_SUSPECT
-    assert "(a)(8)excluding subparagraph (F)" in row.materialized_text
+    assert row.row_status == "agree"
+    assert row.disposition == ""
+    assert "(a)(8) excluding subparagraph (F)" in row.materialized_text
     assert "(a)(8) excluding subparagraph (F)" in row.oracle_text
+    # Byte-identical materialization, not merely a projected agreement.
+    assert row.materialized_text == row.oracle_text
     # Sections 109 and 1182 are NOT missing-source gaps: the F2 temporal layer
     # reclassifies them as sunset reversions (the SBRA debt-limit increase
     # sunset on June 21, 2024). The note-based channel (b) fires here even without
     # prior editions being loaded, so missing_source is empty.
     ns = report.north_star()
     assert ns["oracle_changed_section_count"] == 3
-    assert ns["sections_materialized_in_agreement"] == 0
+    assert ns["sections_materialized_in_agreement"] == 1
     assert set(ns["missing_source_sections"]) == set()
     assert set(ns["sunset_reversion_sections"]) == {"11:109", "11:1182"}
     rev_by_section = {c.section: c for c in report.sunset_reversions}
@@ -1235,8 +1245,19 @@ def test_real_title7_3222a_markerless_node_stays_a_typed_residual_not_a_sibling_
     # paragraph enumerators are NOT printed in the body (the structure is carried by
     # indent depth alone). An op targeting (a)(3) therefore cannot locate a clean node
     # — and we must NOT fuzzy-match onto a sibling paragraph. The section stays a typed
-    # ``subsection_target_node_not_located`` residual with no (wrong) materialization,
-    # exactly the Prime-Directive-safe refusal.
+    # source-footing-gap residual with no (wrong) materialization, exactly the
+    # Prime-Directive-safe refusal.
+    #
+    # RESIDUAL RE-TYPING (was ``subsection_target_node_not_located`` /
+    # ``lawvm_wrong``): the refusal is unchanged — still a residual, still empty
+    # materialization, still NO sibling match — but the residual is now typed more
+    # honestly. The op's target ``(a)(3)`` has an ancestor subsection ``(a)`` that the
+    # parsed before-section never renders (the enumerators are elided by the
+    # hanging-indent style), so ``_source_tree_gap_rule_for_address`` diagnoses a
+    # ``target_ancestor_absent_in_source_tree`` gap. That is a SOURCE-side footing gap,
+    # not a lowering bug (we lowered the op correctly to (a)(3)); the disposition is
+    # therefore the honest ``missing_source`` rather than ``lawvm_wrong``. The guard
+    # this test exists for — no fuzzy sibling match, no wrong materialization — holds.
     from lawvm.us_federal.bench import derive_window_law_locators
     from lawvm.us_federal.sources import open_us_federal_farchive
     from lawvm.us_federal.dry_run import build_us_dry_run_from_archive
@@ -1261,8 +1282,8 @@ def test_real_title7_3222a_markerless_node_stays_a_typed_residual_not_a_sibling_
     assert "7:3222a" in rows
     row = rows["7:3222a"]
     assert row.row_status == "residual"
-    assert row.rule_id == US_DRY_RUN_RESIDUAL_SUBSECTION_NODE_NOT_LOCATED_RULE_ID
-    assert row.disposition == DISPOSITION_LAWVM_WRONG
+    assert row.rule_id == US_DRY_RUN_RESIDUAL_TARGET_ANCESTOR_ABSENT_IN_SOURCE_TREE_RULE_ID
+    assert row.disposition == DISPOSITION_MISSING_SOURCE
     # No wrong materialization: we did not splice "4" onto a guessed sibling node.
     assert row.materialized_text == ""
 
