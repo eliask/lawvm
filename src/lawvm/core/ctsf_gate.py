@@ -30,6 +30,39 @@ Determinism: the gate is a PURE function of ``(frozen anchors, replay projection
 frozen baseline)``. The corpus is an explicit, frozen in-code set of anchor pairs
 (``frozen_gate_corpus``); there is no wall-clock, randomness, or filesystem/network
 read in the verdict path. Same corpus + same baseline ⇒ same verdict, byte-stable.
+
+REAL #183 CORPUS (Phase 3 flip-prep): the gate's *real* corpus is no longer the 4
+synthetic anchor pairs — it is the frozen FI ``#183`` touch-relation anchor set
+(``REAL_ANCHOR_CORPUS_SIDS``, an explicit content-pinned list of statute ids). For
+each statute the ``fi_anchor_manifest`` attribution engine
+(``attribute_statute``) scores every published-consolidation anchor over the
+statute's life and emits typed ``TouchObservation`` verdicts; those verdicts map
+1:1 onto the CTSF residual families via the engine's own ``_VERDICT_TO_FAMILY``
+(``candidate_replay_bug_persistent_post_touch → replay_bug``, ``untyped → unknown``,
+``oracle_suspect_* → oracle_editorial_pathology``,
+``temporal_mismatch_commensurability → temporal_mismatch``). The gate diffs THAT
+typed-residual set against the frozen baseline — so the honest metric now measures
+the real published corpus, and any NEW ``replay_bug``/``unknown`` the touch relation
+localizes is a hard FAIL.
+
+Freezing the real corpus (reproducibility discipline): the corpus is content-pinned
+two ways. (1) The statute-id list is an explicit sorted tuple in code — no live
+enumeration, so the *membership* of the corpus is frozen. (2) The committed baseline
+(``ctsf_gate_residual_baseline.json``) is the frozen snapshot of the typed-residual
+set that list produces; the gate diffs against it. Scoring the real corpus DOES read
+the Finlex corpus archive (it re-derives the touch relation per anchor via replay),
+so it is NOT the wall-clock-free pure path the synthetic corpus is — but it *is*
+deterministic (same corpus bytes ⇒ same observations ⇒ same residual set, verified),
+and a corpus refresh that moves the residual set is caught as a preregistered
+predict-then-compare event (the committed-baseline freshness test tells you to
+regenerate, exactly the #137 silent-baseline-drift guard). Tests that score the real
+corpus SKIP cleanly when the Finlex archive is absent, so the gate's unit surface
+(diff logic, synthetic corpus, round-trip) stays corpus-free and CI-green.
+
+REPORT MODE (still): this gate runs in report mode — its verdict is computed,
+reported, and TESTED, but it does NOT flip CI red and does NOT touch the legacy
+scalar bench gate. The legacy scalar remains the sole CI gate; the flip to primary
+is the documented next step (burn-in → fail-red wiring → WARN escalation).
 """
 
 from __future__ import annotations
@@ -178,6 +211,101 @@ def _cnf_table_oracle() -> SemanticStructureNode:
 
 
 # ---------------------------------------------------------------------------
+# The REAL #183 touch-relation corpus — the gate's production corpus.
+#
+# An explicit, content-pinned list of FI statute ids. For each, the #183
+# ``fi_anchor_manifest`` attribution engine scores every published-consolidation
+# anchor over the statute's life and emits typed ``TouchObservation`` verdicts,
+# which project 1:1 onto the CTSF residual families. This is the honest corpus the
+# gate measures — real published consolidations, not synthetic pairs.
+#
+# The list is FROZEN in code (membership is content-pinned; no live enumeration) and
+# curated to exercise every residual family the gate reasons over, INCLUDING the two
+# billable FAIL families the honest metric exists to expose: the touch relation
+# localizes a real ``replay_bug`` (persistent-post-touch divergence) and ``unknown``
+# (untyped divergence) on ``1969/10``. Those are acknowledged in the frozen baseline
+# as the current state — the gate FAILs on NEW ones vs it, never hides the standing
+# ones. Selection is documented (which family each carries) so a reader can audit the
+# coverage; a data refresh that moves the set is a preregistered event.
+# ---------------------------------------------------------------------------
+
+
+# Jurisdiction of the real corpus. Only FI has a #183 touch-relation attribution
+# engine (``fi_anchor_manifest``); EE/UK have no anchor-manifest / plan_snapshots
+# path yet, so they are documented as the next-jurisdiction step, not silently
+# dropped. See notes_internal/CTSF_PHASE3_REALANCHORS_2026_07_03.md.
+REAL_ANCHOR_JURISDICTION = "finland"
+
+# The frozen, content-pinned statute-id corpus. Sorted, explicit — the corpus
+# membership is part of the "frozen anchors" input the design mandates. Each entry
+# is annotated with the residual family(ies) it contributes at freeze time so the
+# coverage is auditable (counts live in the committed baseline, not here).
+REAL_ANCHOR_CORPUS_SIDS: tuple[str, ...] = (
+    "1966/258",   # oracle_editorial_pathology + temporal_mismatch (2 anchors, 22 obs)
+    "1969/10",    # replay_bug(1) + unknown(2) + oracle_editorial_pathology(8) — the
+    #               headline: real billable residuals the touch relation localizes
+    "1978/734",   # temporal_mismatch (commensurability-suspect anchors)
+    "1987/380",   # oracle_editorial_pathology + temporal_mismatch
+    "1990/845",   # temporal_mismatch
+    "1999/731",   # scored, clean (no observation) — carries a clean real sid
+    "2000/812",   # oracle_editorial_pathology + temporal_mismatch (10 anchors)
+    "2002/1248",  # temporal_mismatch
+    "2011/1287",  # scored, clean — a second clean real sid
+)
+
+
+def real_anchor_corpus_available() -> bool:
+    """True iff the Finlex corpus archive backing the real corpus is present.
+
+    Scoring the real #183 corpus re-derives the touch relation per anchor via
+    replay, which reads the Finlex archive. When it is absent (a corpus-free CI
+    checkout) the real-corpus tests SKIP; the gate's unit surface (diff logic,
+    synthetic corpus, baseline round-trip) is corpus-free and always runs.
+    """
+    try:
+        from lawvm.finland.corpus import _archive_from_source, get_corpus
+
+        return _archive_from_source(get_corpus()) is not None
+    # An availability PROBE: any corpus-load failure legitimately means "corpus
+    # absent" (tests skip; the CLI reports the frozen baseline) — a deliberate
+    # boolean signal, not a swallowed failure.
+    # lawvm-failloud: corpus-availability probe; absence is the answer, not an error
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def score_real_corpus(
+    sids: Iterable[str] | None = None,
+) -> dict[str, dict[str, int]]:
+    """Score the real #183 touch-relation corpus into its typed-residual set.
+
+    For each statute id, run the ``fi_anchor_manifest`` attribution engine over its
+    published-consolidation anchors and project each emitted ``TouchObservation``
+    into its CTSF residual family (the engine's own ``_VERDICT_TO_FAMILY``). Returns
+    the same diffable ``{sid: {family: count}}`` shape as :func:`score_corpus`, with
+    only non-zero families retained and a clean-but-scored statute present with an
+    empty family map (so the diff still sees the sid). Deterministic in sid order.
+
+    Reads the Finlex corpus archive (per-anchor replay). Deterministic given the
+    frozen corpus bytes; NOT the wall-clock-free path — see the module docstring.
+    """
+    from lawvm.tools.fi_anchor_manifest import _VERDICT_TO_FAMILY, attribute_statute
+
+    corpus_sids = tuple(sids) if sids is not None else REAL_ANCHOR_CORPUS_SIDS
+    out: dict[str, dict[str, int]] = {}
+    for sid in corpus_sids:
+        attr = attribute_statute(sid)
+        families: dict[str, int] = {}
+        for obs in attr.observations:
+            family = _VERDICT_TO_FAMILY[obs.verdict]
+            families[family] = families.get(family, 0) + 1
+        # Retain only non-zero families (mirrors residual_set); a scored-but-clean
+        # statute lands with an empty map so the diff still carries the sid.
+        out[sid] = {fam: n for fam, n in sorted(families.items()) if n}
+    return dict(sorted(out.items()))
+
+
+# ---------------------------------------------------------------------------
 # The typed residual set — the diffable object. A per-(sid, family) count multiset
 # over the corpus; the frozen baseline is a snapshot of it.
 # ---------------------------------------------------------------------------
@@ -322,15 +450,22 @@ def _baseline_payload(residuals: dict[str, dict[str, int]]) -> dict[str, Any]:
     )
     return {
         "_doc": (
-            "CTSF Phase-3 residual-set-diff gate baseline (#186). Frozen typed-"
-            "residual set of the in-code frozen_gate_corpus, keyed {sid: {family: "
-            "count}} with only non-zero families retained. The gate FAILs iff a NEW "
-            "replay_bug/unknown residual appears vs this set; WARNs on a typed "
-            "oracle/editorial/state-index/temporal move. Regenerate with `uv run "
-            "python -m lawvm.core.ctsf_gate --update-baseline` after a legitimate, "
-            "reviewed change to the frozen corpus or the projection."
+            "CTSF Phase-3 residual-set-diff gate baseline (#186/#183). Frozen typed-"
+            "residual set of the REAL #183 FI touch-relation anchor corpus "
+            "(REAL_ANCHOR_CORPUS_SIDS), keyed {sid: {family: count}} with only "
+            "non-zero families retained. The gate FAILs iff a NEW replay_bug/unknown "
+            "residual appears vs this set; WARNs on a typed oracle/editorial/state-"
+            "index/temporal move. The standing replay_bug/unknown residuals here are "
+            "REAL defects the honest metric exposes (acknowledged current state, the "
+            "starting line — the gate catches NEW ones, it does not zero these out). "
+            "Regenerate with `uv run python -m lawvm.core.ctsf_gate "
+            "--update-baseline` (needs the Finlex corpus) after a legitimate, "
+            "reviewed corpus/projection change — a preregistered predict-then-compare "
+            "event, never a silent baseline move."
         ),
         "gate_version": GATE_VERSION,
+        "jurisdiction": REAL_ANCHOR_JURISDICTION,
+        "corpus_sids": list(REAL_ANCHOR_CORPUS_SIDS),
         "families": list(RESIDUAL_VERDICT_FAMILIES),
         "fail_families": list(FAIL_FAMILIES),
         "total_residuals": total,
@@ -353,10 +488,15 @@ def load_baseline(path: Path | None = None) -> dict[str, dict[str, int]]:
 def write_baseline(
     residuals: dict[str, dict[str, int]] | None = None, path: Path | None = None
 ) -> Path:
-    """Write the frozen typed-residual baseline. Regeneration entrypoint."""
+    """Write the frozen typed-residual baseline. Regeneration entrypoint.
+
+    Defaults to snapshotting the REAL #183 corpus (``score_real_corpus()``) — the
+    honest production baseline. Reads the Finlex corpus; pass ``residuals`` to write
+    a precomputed set (e.g. in a corpus-free context).
+    """
     p = path if path is not None else _repo_root() / GATE_BASELINE_PATH
     payload = _baseline_payload(
-        residuals if residuals is not None else score_corpus()
+        residuals if residuals is not None else score_real_corpus()
     )
     p.write_text(
         json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
@@ -377,8 +517,13 @@ def _repo_root() -> Path:
 
 
 def run_gate_report(baseline_path: Path | None = None) -> GateResult:
-    """Score the frozen corpus and diff it against the frozen baseline. Pure."""
-    current = score_corpus()
+    """Score the REAL #183 corpus and diff it against the frozen baseline.
+
+    Reads the Finlex corpus (the real corpus is scored via replay). Deterministic
+    given the frozen corpus bytes. In report mode the returned verdict is reported,
+    never enforced.
+    """
+    current = score_real_corpus()
     baseline = load_baseline(baseline_path)
     return residual_set_diff_gate(current, baseline)
 
@@ -390,12 +535,14 @@ def format_report(result: GateResult) -> str:
     active CI gate: the legacy scalar bench gate remains the sole gate; this verdict
     is telemetry until the deliberate flip.
     """
+    cur_total = sum(sum(f.values()) for f in result.current.values())
+    base_total = sum(sum(f.values()) for f in result.baseline.values())
     lines = [
         "CTSF residual-set-diff gate (Phase 3) — PARALLEL / REPORT MODE",
+        "  over the REAL #183 FI touch-relation anchor corpus",
         "  (legacy scalar bench gate UNCHANGED; this verdict is not yet enforced)",
         f"  verdict: {result.verdict}",
-        f"  corpus residuals: {sum(sum(f.values()) for f in result.current.values())}"
-        f"  baseline residuals: {sum(sum(f.values()) for f in result.baseline.values())}",
+        f"  corpus residuals: {cur_total}   baseline residuals: {base_total}",
     ]
     if result.new_billable:
         lines.append("  NEW billable (replay_bug/unknown) residuals:")
@@ -432,8 +579,34 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.update_baseline:
+        if not real_anchor_corpus_available():
+            print(
+                "Cannot regenerate the real #183 baseline: the Finlex corpus archive "
+                "is absent. Set LAWVM_CANONICAL_DATA_ROOT to a checkout with the FI "
+                "corpus and retry."
+            )
+            return 0
         out = write_baseline()
         print(f"Wrote CTSF gate residual baseline: {out}")
+        return 0
+
+    if not real_anchor_corpus_available():
+        # Report mode + corpus-free context: the real corpus cannot be scored (it
+        # is derived via replay). Report the frozen baseline as the pinned state and
+        # exit 0 — never flip CI red. The gate is exercised against real data where
+        # the corpus is present (the tests skip otherwise).
+        baseline = load_baseline()
+        frozen = residual_set_diff_gate(baseline, baseline)
+        if args.json:
+            payload = frozen.to_dict()
+            payload["note"] = "corpus_absent: reporting frozen baseline only"
+            print(json.dumps(payload, indent=2, ensure_ascii=False))
+        else:
+            print(format_report(frozen))
+            print(
+                "  NOTE: Finlex corpus absent — reporting the frozen baseline as the "
+                "pinned state (the real corpus is scored where the corpus is present)."
+            )
         return 0
 
     result = run_gate_report()

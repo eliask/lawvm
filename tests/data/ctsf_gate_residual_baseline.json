@@ -1,6 +1,18 @@
 {
-  "_doc": "CTSF Phase-3 residual-set-diff gate baseline (#186). Frozen typed-residual set of the in-code frozen_gate_corpus, keyed {sid: {family: count}} with only non-zero families retained. The gate FAILs iff a NEW replay_bug/unknown residual appears vs this set; WARNs on a typed oracle/editorial/state-index/temporal move. Regenerate with `uv run python -m lawvm.core.ctsf_gate --update-baseline` after a legitimate, reviewed change to the frozen corpus or the projection.",
+  "_doc": "CTSF Phase-3 residual-set-diff gate baseline (#186/#183). Frozen typed-residual set of the REAL #183 FI touch-relation anchor corpus (REAL_ANCHOR_CORPUS_SIDS), keyed {sid: {family: count}} with only non-zero families retained. The gate FAILs iff a NEW replay_bug/unknown residual appears vs this set; WARNs on a typed oracle/editorial/state-index/temporal move. The standing replay_bug/unknown residuals here are REAL defects the honest metric exposes (acknowledged current state, the starting line — the gate catches NEW ones, it does not zero these out). Regenerate with `uv run python -m lawvm.core.ctsf_gate --update-baseline` (needs the Finlex corpus) after a legitimate, reviewed corpus/projection change — a preregistered predict-then-compare event, never a silent baseline move.",
   "gate_version": "v0",
+  "jurisdiction": "finland",
+  "corpus_sids": [
+    "1966/258",
+    "1969/10",
+    "1978/734",
+    "1987/380",
+    "1990/845",
+    "1999/731",
+    "2000/812",
+    "2002/1248",
+    "2011/1287"
+  ],
   "families": [
     "replay_bug",
     "oracle_editorial_pathology",
@@ -13,15 +25,35 @@
     "replay_bug",
     "unknown"
   ],
-  "total_residuals": 2,
+  "total_residuals": 85,
   "residuals": {
-    "ctsf_gate/cnf_table": {
-      "cnf_unsupported": 1
+    "1966/258": {
+      "oracle_editorial_pathology": 11,
+      "temporal_mismatch": 11
     },
-    "ctsf_gate/dot_leaders": {},
-    "ctsf_gate/momentti_ordinal": {},
-    "ctsf_gate/state_index_future_effective": {
-      "state_index": 1
-    }
+    "1969/10": {
+      "oracle_editorial_pathology": 8,
+      "replay_bug": 1,
+      "unknown": 2
+    },
+    "1978/734": {
+      "temporal_mismatch": 22
+    },
+    "1987/380": {
+      "oracle_editorial_pathology": 4,
+      "temporal_mismatch": 2
+    },
+    "1990/845": {
+      "temporal_mismatch": 2
+    },
+    "1999/731": {},
+    "2000/812": {
+      "oracle_editorial_pathology": 8,
+      "temporal_mismatch": 10
+    },
+    "2002/1248": {
+      "temporal_mismatch": 4
+    },
+    "2011/1287": {}
   }
 }

@@ -17,21 +17,37 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from lawvm.core.ctsf_gate import (
     FAIL_FAMILIES,
     GATE_BASELINE_PATH,
+    REAL_ANCHOR_CORPUS_SIDS,
+    REAL_ANCHOR_JURISDICTION,
     GateResult,
+    _repo_root,
     format_report,
     frozen_gate_corpus,
     load_baseline,
     main as ctsf_gate_main,
+    real_anchor_corpus_available,
     residual_set,
     residual_set_diff_gate,
     run_gate_report,
     score_corpus,
+    score_real_corpus,
     write_baseline,
 )
 from lawvm.core.ctsf_residual_report import RESIDUAL_VERDICT_FAMILIES
+
+# The real #183 corpus is scored via replay over the Finlex archive; skip the
+# real-corpus tests cleanly when the corpus is absent (a corpus-free CI checkout).
+# The gate's UNIT surface (diff logic, synthetic corpus, baseline round-trip) is
+# corpus-free and always runs.
+requires_corpus = pytest.mark.skipif(
+    not real_anchor_corpus_available(),
+    reason="Finlex corpus archive absent; real #183 anchor corpus cannot be scored",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -169,32 +185,121 @@ def test_gate_is_deterministic():
 
 
 def test_baseline_round_trips(tmp_path):
+    """write → load round-trips a residual set byte-for-byte (corpus-free: uses an
+    explicit synthetic residual set so the round-trip needs no Finlex archive)."""
+    residuals = {
+        "s/1": {"replay_bug": 1, "temporal_mismatch": 3},
+        "s/2": {},
+        "s/3": {"oracle_editorial_pathology": 2},
+    }
     path = tmp_path / "baseline.json"
-    write_baseline(path=path)
+    write_baseline(residuals=residuals, path=path)
     loaded = load_baseline(path)
-    assert loaded == score_corpus()
+    assert loaded == residuals
 
 
-def test_committed_baseline_matches_corpus():
-    """The on-disk committed baseline is not stale: it equals the frozen corpus's
-    current residual set. If this fails, regenerate:
-        uv run python -m lawvm.core.ctsf_gate --update-baseline"""
+def test_baseline_path_is_under_tests_data():
+    assert GATE_BASELINE_PATH.parts[:2] == ("tests", "data")
+
+
+# ---------------------------------------------------------------------------
+# The REAL #183 touch-relation corpus — the gate's production corpus
+# ---------------------------------------------------------------------------
+
+
+def test_real_corpus_sids_are_frozen_and_sorted():
+    """The corpus membership is content-pinned: an explicit, sorted, non-empty
+    tuple (no live enumeration)."""
+    assert isinstance(REAL_ANCHOR_CORPUS_SIDS, tuple)
+    assert REAL_ANCHOR_CORPUS_SIDS
+    assert list(REAL_ANCHOR_CORPUS_SIDS) == sorted(REAL_ANCHOR_CORPUS_SIDS)
+    assert len(set(REAL_ANCHOR_CORPUS_SIDS)) == len(REAL_ANCHOR_CORPUS_SIDS)
+
+
+def test_committed_baseline_declares_real_corpus():
+    """The committed baseline records the jurisdiction + frozen corpus sids, so the
+    on-disk artifact self-describes what it is a snapshot of."""
+    data = json.loads(
+        (_repo_root() / GATE_BASELINE_PATH).read_text(encoding="utf-8")
+    )
+    assert data["jurisdiction"] == REAL_ANCHOR_JURISDICTION
+    assert tuple(data["corpus_sids"]) == REAL_ANCHOR_CORPUS_SIDS
+
+
+def test_committed_baseline_acknowledges_standing_billable_residuals():
+    """The honest baseline does NOT hide the real replay_bug/unknown residuals the
+    touch relation exposes — they are the acknowledged current state (the gate FAILs
+    on NEW ones vs them, it does not zero these out)."""
     committed = load_baseline()
-    assert committed == score_corpus(), (
-        "Committed CTSF gate baseline is stale vs the frozen corpus. Regenerate "
-        "with `uv run python -m lawvm.core.ctsf_gate --update-baseline`."
+    billable_total = sum(
+        families.get(fam, 0)
+        for families in committed.values()
+        for fam in FAIL_FAMILIES
+    )
+    # The real corpus DOES surface standing billable residuals (1969/10): the whole
+    # point of the honest metric. If the corpus is re-curated these can change, but
+    # the baseline must always faithfully carry whatever is real, never suppress it.
+    assert billable_total >= 1, (
+        "The committed baseline reports zero billable residuals — the real corpus "
+        "is expected to surface at least the standing 1969/10 replay_bug/unknown. "
+        "If the corpus changed legitimately, this is a preregistered event; confirm "
+        "the drop is real, not a suppression."
     )
 
 
-def test_committed_baseline_gate_passes():
-    """Running the gate against the committed baseline PASSES — the clean state."""
+@requires_corpus
+def test_real_corpus_scores_deterministically():
+    """Same frozen corpus bytes ⇒ same typed-residual set (byte-stable)."""
+    a = score_real_corpus()
+    b = score_real_corpus()
+    assert a == b
+    assert json.dumps(a, sort_keys=False) == json.dumps(b, sort_keys=False)
+
+
+@requires_corpus
+def test_committed_baseline_matches_real_corpus():
+    """The on-disk committed baseline is not stale: it equals the REAL corpus's
+    current residual set. If this fails, the corpus/projection moved — a
+    preregistered predict-then-compare event. Regenerate (needs the Finlex corpus):
+        uv run python -m lawvm.core.ctsf_gate --update-baseline"""
+    committed = load_baseline()
+    assert committed == score_real_corpus(), (
+        "Committed CTSF gate baseline is stale vs the real #183 corpus. This is a "
+        "preregistered event — confirm the move is legitimate, then regenerate with "
+        "`uv run python -m lawvm.core.ctsf_gate --update-baseline`."
+    )
+
+
+@requires_corpus
+def test_real_corpus_gate_passes_against_committed_baseline():
+    """The real corpus scored against its own committed baseline PASSES (the diff is
+    empty) — the honest steady state in report mode."""
     result = run_gate_report()
     assert isinstance(result, GateResult)
     assert result.verdict == "PASS"
 
 
-def test_baseline_path_is_under_tests_data():
-    assert GATE_BASELINE_PATH.parts[:2] == ("tests", "data")
+@requires_corpus
+def test_new_billable_on_real_baseline_fails():
+    """A synthetic NEW replay_bug/unknown injected on top of the REAL corpus's set
+    FAILs the gate — the honest metric catches a new billable regression over real
+    data (the two lanes it exists to guard)."""
+    baseline = score_real_corpus()
+    for fam in FAIL_FAMILIES:
+        current = {**baseline, "synthetic/regressed": {fam: 1}}
+        result = residual_set_diff_gate(current, baseline)
+        assert result.verdict == "FAIL", fam
+        assert any(fam in line for line in result.new_billable)
+
+
+@requires_corpus
+def test_typed_move_on_real_baseline_warns():
+    """A NEW typed non-billable residual over the real corpus WARNs, never FAILs."""
+    baseline = score_real_corpus()
+    for fam in ("oracle_editorial_pathology", "temporal_mismatch", "state_index"):
+        current = {**baseline, "synthetic/typed": {fam: 1}}
+        result = residual_set_diff_gate(current, baseline)
+        assert result.verdict == "WARN", fam
 
 
 # ---------------------------------------------------------------------------
@@ -219,10 +324,12 @@ def test_cli_json_mode_returns_zero(capsys):
 
 
 def test_format_report_labels_parallel_mode():
-    result = run_gate_report()
+    # Corpus-free: build a GateResult directly so the label check needs no archive.
+    result = residual_set_diff_gate({"s": {}}, {"s": {}})
     text = format_report(result)
     assert "PARALLEL / REPORT MODE" in text
     assert "legacy scalar bench gate UNCHANGED" in text
+    assert "REAL #183" in text
 
 
 def test_residual_set_over_reports_matches_score_corpus():
