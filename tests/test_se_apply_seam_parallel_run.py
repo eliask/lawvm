@@ -73,7 +73,11 @@ def _section_addr(label: str) -> LegalAddress:
 
 
 def _appendix_addr(label: str) -> LegalAddress:
-    return LegalAddress(path=(("appendix", label),))
+    # The bilaga/appendix lives in the ``supplements`` compartment root (§5.3 /
+    # §7 delta #6): the SE materializer selects the supplements resolution lane
+    # off the address ``root``, mirroring the production mint site
+    # (``_lower_se_official_effect_plan_item`` stamps ``root="supplements"``).
+    return LegalAddress(path=(("appendix", label),), root="supplements")
 
 
 def _replace(op_id: str, sequence: int, label: str) -> LegalOperation:

@@ -3373,7 +3373,13 @@ def test_apply_se_ops_records_replay_failures_as_adjudications() -> None:
             op_id="appendix-replace-missing",
             sequence=6,
             action=StructuralAction.REPLACE,
-            target=LegalAddress(path=(("appendix", "A"),)),
+            # The bilaga/appendix lives in the ``supplements`` compartment root
+            # (§5.3 / §7 delta #6): the SE materializer selects the supplements
+            # resolution lane off the address ``root``, exactly as the production
+            # mint site (``_lower_se_official_effect_plan_item``) now stamps
+            # ``root="supplements"``. Without it the op would resolve against the
+            # statute ``body`` compartment (unsupported target kind).
+            target=LegalAddress(path=(("appendix", "A"),), root="supplements"),
             payload=IRNode(kind=IRNodeKind.APPENDIX, label="A", text="Bilaga A."),
             source=OperationSource(statute_id="2026:999"),
         ),

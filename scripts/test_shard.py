@@ -627,6 +627,10 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # #186 §5.4: optional ordinal disambiguator on LegalAddress path elements
         # (duplicate-label resolution) + resolve_with_ordinals contract.
         "test_legal_address_ordinal.py",
+        # #186 §5.3 / §7 delta #6: optional address-ROOT compartment selector on
+        # LegalAddress (body vs supplements/bilaga) — body byte-identity + the
+        # supplements-root resolution lane.
+        "test_legal_address_compartment_root.py",
         "test_fi_meta_parse.py",
         "test_fi_metadata_temporal.py",
         "test_fi_parser_facade.py",

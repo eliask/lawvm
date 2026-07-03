@@ -759,6 +759,11 @@ def legal_address_wire(address: Optional[LegalAddress]) -> Optional[dict[str, ob
     }
     if address.special:
         payload["special"] = str(address.special)
+    # The compartment root (SE bilaga / annex) is emitted ONLY when set, so a
+    # body (``root=None``) address projects the byte-identical pre-compartment
+    # wire shape (§5.3 / §7 delta #6).
+    if address.root is not None:
+        payload["root"] = address.root
     return payload
 
 

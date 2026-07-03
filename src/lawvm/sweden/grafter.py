@@ -3047,7 +3047,12 @@ def _lower_se_official_effect_plan_item(
             op_id=f"se_official_insert_appendix_{surface.sfs_id}_{label}",
             sequence=sequence,
             action=StructuralAction.INSERT,
-            target=LegalAddress(path=(("appendix", label),)),
+            # The bilaga/appendix lives in the ``supplements`` compartment root,
+            # not the statute ``body`` (§5.3 / §7 delta #6). Naming the root on
+            # the ADDRESS makes annex INSERT/REPLACE/REPEAL ordinary resolution:
+            # the SE materializer dispatches to ``supplements`` off ``root_kind``,
+            # not a bespoke ``leaf_kind == "appendix"`` grafter sniff.
+            target=LegalAddress(path=(("appendix", label),), root="supplements"),
             payload=_parse_se_official_appendix_payload(appendix),
             source=_se_op_source_with_clause(source, appendix.text or ""),
             provenance_tags=(
@@ -4087,6 +4092,89 @@ def apply_se_ops(
         # adjudication (no per-op snapshot needed here — the seam holds the
         # before/after pair).
 
+        def _mark_applied() -> None:
+            nonlocal applied_op_count, _se_op_applied
+            applied_op_count += 1
+            _se_op_applied = True
+
+        def _dispatch_supplements() -> None:
+            """Resolve + apply one ``supplements``-rooted op (SE bilaga/appendix).
+
+            Verbatim lift of the former inline ``leaf_kind == "appendix"`` branch
+            (§5.3 / §7 delta #6): the compartment is now selected off the address
+            ``root`` (``_dispatch`` routes here when ``root_kind() ==
+            "supplements"``), so this is the ``supplements``-root resolution lane —
+            REPEAL/REPLACE/INSERT-in-annex applied uniformly against the
+            ``supplements`` list. The label match (``_label_norm``), the sorted
+            insert (``_insert_se_appendix_sorted``), and every adjudication kind
+            are byte-identical to the retired branch."""
+            nonlocal supplements
+
+            appendix_label = _label_norm(op.target.leaf_label())
+            existing_index = next(
+                (
+                    idx
+                    for idx, supplement in enumerate(supplements)
+                    if supplement.kind is IRNodeKind.APPENDIX and _label_norm(supplement.label or "") == appendix_label
+                ),
+                None,
+            )
+            if op.action is StructuralAction.REPEAL:
+                if existing_index is None:
+                    _append_se_replay_adjudication(
+                        adjudications_out,
+                        kind="se_replay_target_not_found",
+                        message="Sweden appendix repeal replay skipped: target not found.",
+                        op=op,
+                        detail={"action": op.action, "target": appendix_label},
+                    )
+                    return
+                supplements.pop(existing_index)
+                _mark_applied()
+                return
+            if op.payload is None or op.payload.kind is not IRNodeKind.APPENDIX:
+                _append_se_replay_adjudication(
+                    adjudications_out,
+                    kind="se_replay_payload_missing",
+                    message="Sweden appendix replay skipped: payload missing or wrong kind.",
+                    op=op,
+                    detail={"action": op.action, "target": appendix_label},
+                )
+                return
+            if op.action is StructuralAction.REPLACE:
+                if existing_index is None:
+                    _append_se_replay_adjudication(
+                        adjudications_out,
+                        kind="se_replay_target_not_found",
+                        message="Sweden appendix replace replay skipped: target not found.",
+                        op=op,
+                        detail={"action": op.action, "target": appendix_label},
+                    )
+                    return
+                supplements[existing_index] = op.payload
+                _mark_applied()
+                return
+            if op.action is StructuralAction.INSERT:
+                if existing_index is not None:
+                    _append_se_replay_adjudication(
+                        adjudications_out,
+                        kind="se_replay_unsupported_action",
+                        message="Sweden appendix insert replay skipped: appendix already exists.",
+                        op=op,
+                        detail={"action": op.action, "target": appendix_label},
+                    )
+                    return
+                supplements = _insert_se_appendix_sorted(supplements, op.payload)
+                _mark_applied()
+                return
+            _append_se_replay_adjudication(
+                adjudications_out,
+                kind="se_replay_unsupported_action",
+                message="Sweden appendix replay skipped: unsupported action.",
+                op=op,
+                detail={"action": op.action, "target": appendix_label},
+            )
+
         def _dispatch() -> None:
             """Run one op's tree dispatch (mutating the closure ``body`` /
             ``supplements``). Verbatim lift of the prior inline per-op fold body;
@@ -4097,11 +4185,22 @@ def apply_se_ops(
             purely control-flow; the mutation semantics are byte-identical."""
             nonlocal body, supplements, applied_op_count, _se_op_applied
 
-            def _mark_applied() -> None:
-                nonlocal applied_op_count, _se_op_applied
-                applied_op_count += 1
-                _se_op_applied = True
-
+            # ── Compartment-root dispatch (§5.3 / §7 delta #6). ──────────────
+            # WHICH address root the op targets is a property of the ADDRESS
+            # (``op.target.root_kind()``), not a leaf-kind sniff. A
+            # ``supplements``-rooted op resolves against the ``supplements``
+            # compartment (SE bilaga); everything else resolves against the
+            # statute ``body``. This retires the former inline
+            # ``leaf_kind == "appendix"`` grafter branch that re-derived the
+            # compartment from the target's kind string — annex REPLACE/INSERT/
+            # REPEAL is now ordinary root-selected resolution. Byte-identical:
+            # the only ``supplements``-rooted ops SE mints are the appendix ops
+            # (``root="supplements"`` at the mint site), and the only
+            # body-rooted ops carry ``root=None``, so the op→lane partition is
+            # exactly as before.
+            if op.target.root_kind() == "supplements":
+                _dispatch_supplements()
+                return
             leaf_kind = op.target.leaf_kind()
             if leaf_kind == "section":
                 if op.target.special is FacetKind.HEADING:
@@ -4382,72 +4481,6 @@ def apply_se_ops(
                     detail={"action": op.action, "target": section_label},
                 )
                 return
-            if leaf_kind == "appendix":
-                appendix_label = _label_norm(op.target.leaf_label())
-                existing_index = next(
-                    (
-                        idx
-                        for idx, supplement in enumerate(supplements)
-                        if supplement.kind is IRNodeKind.APPENDIX and _label_norm(supplement.label or "") == appendix_label
-                    ),
-                    None,
-                )
-                if op.action is StructuralAction.REPEAL:
-                    if existing_index is None:
-                        _append_se_replay_adjudication(
-                            adjudications_out,
-                            kind="se_replay_target_not_found",
-                            message="Sweden appendix repeal replay skipped: target not found.",
-                            op=op,
-                            detail={"action": op.action, "target": appendix_label},
-                        )
-                        return
-                    supplements.pop(existing_index)
-                    _mark_applied()
-                    return
-                if op.payload is None or op.payload.kind is not IRNodeKind.APPENDIX:
-                    _append_se_replay_adjudication(
-                        adjudications_out,
-                        kind="se_replay_payload_missing",
-                        message="Sweden appendix replay skipped: payload missing or wrong kind.",
-                        op=op,
-                        detail={"action": op.action, "target": appendix_label},
-                    )
-                    return
-                if op.action is StructuralAction.REPLACE:
-                    if existing_index is None:
-                        _append_se_replay_adjudication(
-                            adjudications_out,
-                            kind="se_replay_target_not_found",
-                            message="Sweden appendix replace replay skipped: target not found.",
-                            op=op,
-                            detail={"action": op.action, "target": appendix_label},
-                        )
-                        return
-                    supplements[existing_index] = op.payload
-                    _mark_applied()
-                    return
-                if op.action is StructuralAction.INSERT:
-                    if existing_index is not None:
-                        _append_se_replay_adjudication(
-                            adjudications_out,
-                            kind="se_replay_unsupported_action",
-                            message="Sweden appendix insert replay skipped: appendix already exists.",
-                            op=op,
-                            detail={"action": op.action, "target": appendix_label},
-                        )
-                        return
-                    supplements = _insert_se_appendix_sorted(supplements, op.payload)
-                    _mark_applied()
-                    return
-                _append_se_replay_adjudication(
-                    adjudications_out,
-                    kind="se_replay_unsupported_action",
-                    message="Sweden appendix replay skipped: unsupported action.",
-                    op=op,
-                    detail={"action": op.action, "target": appendix_label},
-                )
-                return
             _append_se_replay_adjudication(
                 adjudications_out,
                 kind="se_replay_unsupported_target_kind",
@@ -4545,14 +4578,18 @@ def apply_se_ops(
         # the false-positive content-identical body no-ops, which now emit
         # ``se_replay_noop`` and land REJECTED in the conserved partition.
         #
-        # APPENDIX ops are the one lane the body-diff cannot see: they mutate the
-        # ``supplements`` list, not ``body`` (SE's per-op receipt path has the same
-        # blind spot — it returns ``None`` for appendix writes). For those the
-        # seam's explicit ``applied`` flag is authoritative, so an appendix op is
-        # NEVER reclassified by the body diff.
+        # SUPPLEMENTS (appendix/bilaga) ops are the one compartment the body-diff
+        # cannot see: they mutate the ``supplements`` list, not ``body`` (SE's
+        # per-op receipt path has the same blind spot — it returns ``None`` for
+        # appendix writes). The compartment is now selected off the address
+        # ``root`` (§5.3 / §7 delta #6), so this guard tests ``root_kind() !=
+        # "supplements"`` — byte-identical to the retired ``leaf_kind !=
+        # "appendix"`` sniff (the only supplements-rooted ops are the appendix
+        # ops). For those the seam's explicit ``applied`` flag is authoritative,
+        # so a supplements op is NEVER reclassified by the body diff.
         if (
             applied_result.applied
-            and op.target.leaf_kind() != "appendix"
+            and op.target.root_kind() != "supplements"
             and not diff_ir_paths_identity_pruned(pre_op_body, body)
         ):
             # θ: content_identical — the op resolved and applied but landed no

@@ -41,11 +41,30 @@ class LegalAddress:
     ordinal-free address equals and serializes exactly as before. The field
     participates in equality/hash, so two addresses that differ only in an
     ordinal are distinct. See FABLE_UNIVERSAL_ALGEBRA §5.4.
+
+    ``root`` is the OPTIONAL address-root COMPARTMENT selector (§1 "the address
+    space has multiple roots (body, supplements/annexes/bilagor, schedules)";
+    §4.2 item 6 "Compartments … genuine address-space structure"; §5.3 / §7
+    delta #6 the SE-bilaga leak). The universal legal state ``Σ`` has multiple
+    address roots — a statute ``body`` plus a tuple of ``supplements`` (SE
+    bilaga / EU annexes / UK schedules) — and WHICH root an op targets is a
+    property of the ADDRESS, not something to be re-derived from a leaf-kind
+    sniff in each frontend's grafter. ``root=None`` (the default) names the
+    statute ``body`` — the current, ubiquitous case — so an ordinary body
+    address is byte-identical to the pre-compartment ``LegalAddress`` (equality,
+    hash, ``__str__``, and the effect-graph wire projection all ignore a ``None``
+    root). A non-``None`` ``root`` (e.g. ``"supplements"``) names a first-class
+    compartment root, so the resolver dispatches to ``IRStatute.supplements``
+    UNIFORMLY (REPLACE/INSERT/REPEAL-in-annex is ordinary resolution) instead of
+    a bespoke grafter branch. Like ``ordinals`` it participates in equality/hash
+    so a body address and an otherwise-identical supplements address are
+    distinct. See FABLE_UNIVERSAL_ALGEBRA §5.3 / §7 delta #6.
     """
 
     path: Tuple[Tuple[str, str], ...]
     special: Optional[FacetKind] = None
     ordinals: Tuple[Tuple[int, int], ...] = ()
+    root: Optional[str] = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "path", tuple(self.path))
@@ -71,6 +90,15 @@ class LegalAddress:
                     f"LegalAddress ordinal index {index} appears more than once: {self.ordinals!r}"
                 )
             seen_indices.add(index)
+        # The compartment root selector is either the ``None`` body default or a
+        # non-empty root-kind string (fail loud on a blank string, which would
+        # silently masquerade as a distinct-from-body root — §1.10). Core stores
+        # the root kind but never enumerates jurisdiction root vocabularies here
+        # (§2.3 core does not interpret frontend-local values): any non-empty
+        # string is a well-formed compartment name; the resolver profile decides
+        # which roots exist.
+        if self.root is not None and not self.root:
+            raise ValueError("LegalAddress root, when set, must be a non-empty compartment name")
 
     def ordinal_at(self, index: int) -> Optional[int]:
         """Return the 1-indexed ordinal disambiguator for path element ``index``.
@@ -85,6 +113,16 @@ class LegalAddress:
                 return ordinal
         return None
 
+    def root_kind(self) -> Optional[str]:
+        """Return the compartment root selector (``None`` for the statute body).
+
+        A non-``None`` value names a first-class address-root compartment (SE
+        bilaga / EU annex / UK schedule) that the resolver dispatches to instead
+        of ``body``. See ``root`` and FABLE_UNIVERSAL_ALGEBRA §5.3.
+        """
+
+        return self.root
+
     def depth(self) -> int:
         return len(self.path)
 
@@ -98,7 +136,10 @@ class LegalAddress:
         parent_ordinals = tuple(
             (index, ordinal) for index, ordinal in self.ordinals if index < parent_depth
         )
-        return LegalAddress(path=self.path[:-1], ordinals=parent_ordinals)
+        # The compartment root is a property of the whole address (which of the
+        # state's roots it lives under), so the parent stays in the same
+        # compartment. ``None`` (body) is preserved as ``None`` → byte-identical.
+        return LegalAddress(path=self.path[:-1], ordinals=parent_ordinals, root=self.root)
 
     def has_prefix(self, prefix: "LegalAddress") -> bool:
         """Return True when ``prefix`` matches this address path and facet."""
@@ -128,6 +169,10 @@ class LegalAddress:
         parts = "/".join(f"{k}:{lbl}" for k, lbl in self.path)
         if self.special:
             parts += f"/{self.special}"
+        # A compartment root prefixes the rendered address (``@supplements ...``)
+        # ONLY when set; a body (``root=None``) address renders exactly as before.
+        if self.root is not None:
+            parts = f"@{self.root} {parts}"
         return parts
 
 

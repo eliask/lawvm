@@ -109,27 +109,32 @@ def test_no_single_arg_bare_label_convenience_constructor() -> None:
     """``LegalAddress`` must not gain a level-defaulting bare-label constructor.
 
     The construction surface is ``path`` (an explicit ``(kind, label)``
-    sequence), the optional ``special`` facet, and the optional ``ordinals``
+    sequence), the optional ``special`` facet, the optional ``ordinals``
     duplicate-label disambiguator (#186 §5.4 — a sparse ``(path_index,
     ordinal)`` selector that presupposes an explicit ``path`` and never supplies
-    a default level). If a future convenience constructor accepted a bare label
-    and supplied a default level, LS-14 would be silently violated. Pin that the
-    public construction signature still REQUIRES the explicit ``path`` (no
-    bare-label positional alias) and exposes no unexpected level-bearing
-    parameter.
+    a default level), and the optional ``root`` compartment selector (#186 §5.3 /
+    §7 delta #6 — names which address ROOT the path lives under: ``None`` = the
+    statute body, ``"supplements"`` = the bilaga/annex compartment; it selects a
+    root, not a level, and presupposes an explicit ``path``). If a future
+    convenience constructor accepted a bare label and supplied a default level,
+    LS-14 would be silently violated. Pin that the public construction signature
+    still REQUIRES the explicit ``path`` (no bare-label positional alias) and
+    exposes no unexpected level-bearing parameter.
     """
     params = inspect.signature(LegalAddress).parameters
-    assert set(params) == {"path", "special", "ordinals"}, (
+    assert set(params) == {"path", "special", "ordinals", "root"}, (
         "LegalAddress construction signature changed; a new bare-label / "
         "level-defaulting constructor would violate LS-14 (explicit level). "
         f"Parameters now: {sorted(params)}"
     )
     # ``path`` remains a required positional (no default): the level is never
-    # implied. ``special`` / ``ordinals`` are the only optional riders and
-    # neither carries a label/level.
+    # implied. ``special`` / ``ordinals`` / ``root`` are the only optional riders
+    # and none carries a label/level (``root`` names a compartment root, not a
+    # level, and defaults to the body ``None``).
     assert params["path"].default is inspect.Parameter.empty
     assert params["special"].default is None
     assert params["ordinals"].default == ()
+    assert params["root"].default is None
 
 
 # --------------------------------------------------------------------------- #
