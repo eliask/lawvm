@@ -391,6 +391,13 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # this test binds each declared cell to FI's ACTUAL runtime code at the
         # source level (the faithful-spec guard).
         "test_totalization_conformance_fi.py",
+        # #186 §4.2 item 4 / §7 delta #4: FI_LABEL_ALGEBRA, the DECLARED,
+        # conformance-tested mirror of Finland's Arabic + lettered ``14 a §``
+        # section-label calculus. Each op is bound to FI's ACTUAL label code
+        # (_section_sort_key / _norm_num_token / next_letter_label), plus
+        # neutral-type order-law + parse round-trip unit tests. Parallel-first:
+        # grafter insert-path routing deferred to the load-bearing follow-up.
+        "test_label_algebra_fi.py",
         "test_fi_item_number_display.py",
         "test_fi_tail_prose_absorb.py",
         "test_fi_penal_sentencing_wrapup_fold.py",

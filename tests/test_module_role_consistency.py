@@ -86,6 +86,19 @@ DEAD_ALLOWLIST: dict[str, str] = {
         "but has no production importer yet — the SE/NO frontier-before-routing "
         "shape. Wiring, if ever wanted, is the load-bearing follow-up."
     ),
+    "lawvm.finland.label_algebra": (
+        "#186 §4.2 item 4 LabelAlgebra extended to Finland as a DECLARED spec. "
+        "FI_LABEL_ALGEBRA mirrors Finland's Arabic + lettered ``14 a §`` "
+        "section-label calculus (parse / order / successor / collision) built from "
+        "FI's ACTUAL primitives (_section_sort_key / _norm_num_token / "
+        "next_letter_label) and conformance-tested (test_label_algebra_fi.py binds "
+        "each op to that real code). Parallel-first per #186: unlike EE — whose "
+        "grafter routes sibling ordering through EE_LABEL_ALGEBRA (load-bearing) — "
+        "FI's grafter still positions inserts via core insert_sorted / "
+        "default_label_sort_key, so the declared algebra has no production importer "
+        "yet. Routing the grafter through it is the load-bearing follow-up (the EE "
+        "shape), deferred here."
+    ),
 }
 
 

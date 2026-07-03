@@ -7,8 +7,8 @@
   },
   "replay_counts": {
     "exercised": 170,
-    "cold": 257,
-    "in_scope": 427
+    "cold": 258,
+    "in_scope": 428
   },
   "dead": [
     "lawvm.core.claim_assumption_binding",
@@ -553,6 +553,7 @@
     "lawvm.finland.johtolause_supplements": true,
     "lawvm.finland.kumotaan": true,
     "lawvm.finland.kumotaan_replay": true,
+    "lawvm.finland.label_algebra": false,
     "lawvm.finland.labels": true,
     "lawvm.finland.legal_surface": false,
     "lawvm.finland.legal_surface.annotation_compare": false,
