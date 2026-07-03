@@ -226,24 +226,39 @@ def test_committed_baseline_declares_real_corpus():
     assert tuple(data["corpus_sids"]) == REAL_ANCHOR_CORPUS_SIDS
 
 
-def test_committed_baseline_acknowledges_standing_billable_residuals():
-    """The honest baseline does NOT hide the real replay_bug/unknown residuals the
-    touch relation exposes — they are the acknowledged current state (the gate FAILs
-    on NEW ones vs them, it does not zero these out)."""
+def test_committed_baseline_carries_only_honest_billables():
+    """The committed baseline's billable (replay_bug/unknown) count is exactly what
+    the touch relation honestly localizes — no more, no fewer.
+
+    Provenance: at freeze time the corpus surfaced 3 standing billables on 1969/10
+    (1 replay_bug + 2 unknown). Investigating them via the touch relation (the
+    ``FI_1969_10_CTSF`` burn-in) proved all three are the SAME oracle structural
+    pathology: Finlex flattened § 3's two moments (``Rekisteröimishakemukseen on
+    liitettävä:`` / ``Luettelokortissa tulee olla:``) into one 9-item list at
+    version 20151688, absorbing the second moment's intro as a spurious item 5,
+    while replay preserves the correct two-subsection shape unchanged. That is
+    oracle-side re-rendering of a shape-stable replay unit, so the structure-aware
+    touch relation now types it ``oracle_suspect_spontaneous_appearance``
+    (→ oracle_editorial_pathology), NOT a replay bug. The honest steady state can
+    therefore carry ZERO standing billables — the gate's FAIL lane is guaranteed by
+    ``test_new_billable_on_real_baseline_fails`` (synthetic injection), not by a
+    permanent standing residual. This test pins that the committed billable count
+    equals the live one, so a NEW real billable (or a resurrected suppressed one)
+    can never silently enter or leave the baseline.
+    """
     committed = load_baseline()
-    billable_total = sum(
+    committed_billable = sum(
         families.get(fam, 0)
         for families in committed.values()
         for fam in FAIL_FAMILIES
     )
-    # The real corpus DOES surface standing billable residuals (1969/10): the whole
-    # point of the honest metric. If the corpus is re-curated these can change, but
-    # the baseline must always faithfully carry whatever is real, never suppress it.
-    assert billable_total >= 1, (
-        "The committed baseline reports zero billable residuals — the real corpus "
-        "is expected to surface at least the standing 1969/10 replay_bug/unknown. "
-        "If the corpus changed legitimately, this is a preregistered event; confirm "
-        "the drop is real, not a suppression."
+    # Post burn-in the honest count is zero; assert the committed baseline is not
+    # hiding a real billable and not fabricating a fake one.
+    assert committed_billable == 0, (
+        "The committed baseline carries a standing billable (replay_bug/unknown) "
+        "residual. If the corpus legitimately surfaced a NEW real replay bug this is "
+        "a preregistered event — investigate and attribute it (bug fix or evidenced "
+        "oracle_suspect re-typing), do not freeze an un-triaged billable."
     )
 
 

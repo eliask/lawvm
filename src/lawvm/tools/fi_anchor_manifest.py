@@ -44,7 +44,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Literal, Optional, cast
 
 from lawvm.core.agreement_residual import (
@@ -373,6 +373,17 @@ class AnchorObservation:
     replay_text: dict[str, str]  # section_key → grammar-normalized replay wording
     oracle_suspect: Optional[str]  # per-anchor commensurability witness, if any
     status: str
+    # section_key → replay's STRUCTURE signature (nesting shape of the unit tree,
+    # label-independent of wording). Distinguishes a text-only amendment (word
+    # substitution, structure stable) from a re-nesting one, so the touch relation
+    # can tell "replay re-shaped this unit" from "replay only re-worded it". Empty
+    # for legacy/unscored anchors (falls back to text-touch — the prior behavior).
+    replay_structure: dict[str, str] = field(default_factory=dict)
+    # The subset of ``penalized_keys`` whose divergence is STRUCTURE-ONLY
+    # (``semantic_diff.kind == "structure_only"``: the wording matches but the
+    # unit nesting differs). A structure-only divergence over a replay unit whose
+    # own shape never moved is oracle-side re-rendering, not a replay bug.
+    structural_only_penalized_keys: frozenset[str] = field(default_factory=frozenset)
 
 
 def _replay_section_text(replay_master: Any) -> dict[str, str]:
@@ -389,6 +400,48 @@ def _replay_section_text(replay_master: Any) -> dict[str, str]:
     for key, node in extract_ir_sections(replay_ir).items():
         try:
             out[str(key)] = _clean(irnode_to_text(node))
+        except Exception:  # noqa: BLE001
+            out[str(key)] = ""
+    return out
+
+
+def _ir_structure_signature(node: Any) -> str:
+    """A wording-independent nesting signature of one replay unit subtree.
+
+    Encodes the ordered (depth, kind, label) of every descendant node — the
+    SHAPE of the unit (how many subsections/items, at what nesting, with what
+    ordinals), with NO wording. Two renderings with identical shape but different
+    wording share a signature; a re-nesting (a subsection split/merge, an item
+    added/removed, an ordinal shift) changes it. This lets the touch relation
+    separate a text-only amendment (word substitution) from a structural one.
+    """
+    parts: list[str] = []
+
+    def _walk(n: Any, depth: int) -> None:
+        kind = getattr(n, "kind", None)
+        kind_name = getattr(kind, "name", None) or str(kind)
+        label = getattr(n, "label", None)
+        parts.append(f"{depth}:{kind_name}:{label}")
+        for child in getattr(n, "children", None) or ():
+            _walk(child, depth + 1)
+
+    _walk(node, 0)
+    return "|".join(parts)
+
+
+def _replay_section_structure(replay_master: Any) -> dict[str, str]:
+    """Per-section replay STRUCTURE signature, for the structural touch relation."""
+    from lawvm.tools.bench import _comparison_ir
+    from lawvm.tools.section_keys import extract_ir_sections
+
+    try:
+        replay_ir = _comparison_ir(replay_master)
+    except Exception:  # noqa: BLE001
+        return {}
+    out: dict[str, str] = {}
+    for key, node in extract_ir_sections(replay_ir).items():
+        try:
+            out[str(key)] = _ir_structure_signature(node)
         except Exception:  # noqa: BLE001
             out[str(key)] = ""
     return out
@@ -479,6 +532,7 @@ def score_anchor(
         if v.get("semantic_diff", {}).get("kind") != "editorial_only"
     }
     penalized: set[str] = set()
+    structural_only: set[str] = set()
     for sec_key, sd, events in _sections_with_diffs({"sections": non_editorial}):
         if _section_diff_is_bench_neutralized(sd, events):
             continue
@@ -487,6 +541,12 @@ def score_anchor(
         if non_editorial.get(sec_key, {}).get("seg_displacement_match"):
             continue
         penalized.add(sec_key)
+        # A structure-only divergence carries no wording delta (label/text == 0):
+        # replay and oracle agree on every word, disagree only on nesting.
+        if sd.get("kind") == "structure_only" or (
+            sd.get("structural", 0) and not sd.get("text", 0) and not sd.get("label", 0)
+        ):
+            structural_only.add(sec_key)
 
     n_non_editorial = len(non_editorial)
     struct_sim = 1.0 if not n_non_editorial else 1.0 - len(penalized) / n_non_editorial
@@ -507,6 +567,8 @@ def score_anchor(
         replay_text=replay_text,
         oracle_suspect=suspect,
         status="OK",
+        replay_structure=_replay_section_structure(replay_master),
+        structural_only_penalized_keys=frozenset(structural_only),
     )
 
 
@@ -528,6 +590,45 @@ def touch_set(prev: AnchorObservation, cur: AnchorObservation) -> frozenset[str]
     touched: set[str] = set()
     for k in keys:
         if prev.replay_text.get(k) != cur.replay_text.get(k):
+            touched.add(k)
+    return frozenset(touched)
+
+
+def structure_touch_set(
+    prev: AnchorObservation, cur: AnchorObservation
+) -> frozenset[str]:
+    """Section keys whose REPLAY STRUCTURE changed across the window.
+
+    A key is *structurally touched* iff replay re-shaped the unit (a subsection
+    split/merge, an item added/removed, an ordinal shift) — i.e. its structure
+    signature differs between anchors — OR the key appears/disappears. A pure
+    word substitution (structure signature stable) is NOT a structural touch.
+
+    This is the discriminator the attribution calculus needs: a divergence that
+    is purely STRUCTURAL (``structure_only``, the oracle re-nested a unit) over a
+    replay unit whose shape never moved cannot be a replay re-nesting bug — the
+    amendment only re-worded the unit, replay kept the correct shape, and the
+    oracle spontaneously re-rendered the structure. Attributing that to replay
+    because an unrelated word changed in the same window is a false positive of
+    the wording-level touch relation. When no anchor carries a structure
+    signature (legacy path), this falls back to :func:`touch_set` (prior
+    behavior), so scored-but-signature-free corpora are unaffected.
+    """
+    have_sig = bool(prev.replay_structure) or bool(cur.replay_structure)
+    if not have_sig:
+        return touch_set(prev, cur)
+    keys = set(prev.replay_structure) | set(cur.replay_structure)
+    # Presence/absence still uses the wording map (the source of truth for "the
+    # unit exists in replay"): an added/removed unit is always a structural touch.
+    present_keys = set(prev.replay_text) | set(cur.replay_text)
+    touched: set[str] = set()
+    for k in keys | present_keys:
+        prev_present = k in prev.replay_text
+        cur_present = k in cur.replay_text
+        if prev_present != cur_present:
+            touched.add(k)
+            continue
+        if prev.replay_structure.get(k) != cur.replay_structure.get(k):
             touched.add(k)
     return frozenset(touched)
 
@@ -585,6 +686,17 @@ def attribute_divergences(
       renders it differently → oracle_suspect (standing). This mirrors the
       spontaneous-appearance logic for the no-prior case.
     - anchor is per-anchor commensurability-suspect → temporal_mismatch.
+
+    STRUCTURE-vs-WORDING touch (the discriminator). The "touch" that convicts a
+    replay bug is a touch in the SAME DIMENSION as the divergence. A divergence
+    that is STRUCTURE-ONLY (``structural_only_penalized_keys``: every word agrees,
+    only the nesting differs) is only replay-attributable if REPLAY re-shaped the
+    unit in the window (:func:`structure_touch_set`). A pure word substitution
+    that leaves replay's shape intact is not a structural touch, so a structure-
+    only divergence over a shape-stable replay unit is oracle-side re-rendering
+    (spontaneous appearance / standing), NOT a candidate bug — even though the
+    wording-level ``touch_set`` sees the incidental word change. Wording
+    divergences keep the wording-level touch relation unchanged.
     """
     scored = [a for a in anchors if a.struct_sim >= 0.0]
     # Per-key union of every replay-touch across the whole life: a key that
@@ -592,8 +704,10 @@ def attribute_divergences(
     # unit is stable, so a persisting divergence is oracle-side (FABLE §3.3 /
     # §5.3: source-anchored strata where the oracle can only corroborate).
     ever_touched: set[str] = set()
+    ever_structurally_touched: set[str] = set()
     for i in range(1, len(scored)):
         ever_touched |= touch_set(scored[i - 1], scored[i])
+        ever_structurally_touched |= structure_touch_set(scored[i - 1], scored[i])
     observations: list[TouchObservation] = []
     for i, cur in enumerate(scored):
         prev = scored[i - 1] if i > 0 else None
@@ -601,6 +715,12 @@ def attribute_divergences(
         window = f"{(prev.as_of if prev else '-')}..{cur.as_of}"
         touched_in = touch_set(prev, cur) if prev is not None else frozenset()
         touched_out = touch_set(cur, nxt) if nxt is not None else frozenset()
+        struct_touched_in = (
+            structure_touch_set(prev, cur) if prev is not None else frozenset()
+        )
+        struct_touched_out = (
+            structure_touch_set(cur, nxt) if nxt is not None else frozenset()
+        )
         for key in sorted(cur.penalized_keys):
             # Commensurability convicts the anchor first (cheapest, doc-level).
             if cur.oracle_suspect:
@@ -617,7 +737,17 @@ def attribute_divergences(
                 continue
             matched_prev = prev is not None and key not in prev.penalized_keys
             matched_next = nxt is not None and key not in nxt.penalized_keys
-            touched_now = key in touched_in
+            # For a STRUCTURE-ONLY divergence the relevant touch is a structural
+            # re-shaping of the unit, not an incidental word change: replay only
+            # carries a re-nesting bug if replay itself re-nested the unit here.
+            structure_only = key in cur.structural_only_penalized_keys
+            touched_now = key in (struct_touched_in if structure_only else touched_in)
+            touched_out_now = key in (
+                struct_touched_out if structure_only else touched_out
+            )
+            ever_touched_key = key in (
+                ever_structurally_touched if structure_only else ever_touched
+            )
             # Spontaneous APPEARANCE: matched before, nothing touched it, now diverges.
             if matched_prev and not touched_now:
                 observations.append(
@@ -635,7 +765,7 @@ def attribute_divergences(
                 )
                 continue
             # Spontaneous HEALING: diverges now, nothing touches it next, matches next.
-            if matched_next and key not in touched_out:
+            if matched_next and not touched_out_now:
                 observations.append(
                     TouchObservation(
                         sid=sid,
@@ -646,6 +776,29 @@ def attribute_divergences(
                         evidence=(
                             f"diverges at {cur.as_of}; no replay touch in next window; "
                             f"matches at {nxt.as_of} ⇒ anchor {cur.version_tag} was wrong at unit"
+                        ),
+                    )
+                )
+                continue
+            # Persistent STRUCTURE-ONLY divergence that replay did NOT re-shape in
+            # this window: replay's unit shape is stable across the window (only
+            # wording may have moved) yet the oracle renders the nesting
+            # differently. No structural touch localizes a replay re-nesting bug,
+            # so this is oracle-side re-rendering that persists ⇒ oracle_suspect.
+            # (Appearance/healing already handled the matched-neighbor transitions;
+            # this catches the mid-run anchors where the oracle stays re-rendered.)
+            if structure_only and not touched_now:
+                observations.append(
+                    TouchObservation(
+                        sid=sid,
+                        section_key=key,
+                        verdict="oracle_suspect_spontaneous_appearance",
+                        window=window,
+                        touching_amendments=(),
+                        evidence=(
+                            f"structure-only divergence at {cur.as_of}; replay did "
+                            f"not re-shape the unit in window (shape stable, wording "
+                            f"only) ⇒ oracle renders the nesting differently"
                         ),
                     )
                 )
@@ -670,8 +823,10 @@ def attribute_divergences(
             # Standing untouched divergence: replay never once changed this unit
             # across its whole life, yet it diverges (and no adjacent window
             # healed/introduced it). The unit is source-anchored-stable; the
-            # oracle simply renders it differently ⇒ oracle-side, not a bug.
-            if key not in ever_touched:
+            # oracle simply renders it differently ⇒ oracle-side, not a bug. For a
+            # structure-only divergence "changed" means "re-shaped" (structural
+            # touch): replay may re-word a shape-stable unit and still be right.
+            if not ever_touched_key:
                 observations.append(
                     TouchObservation(
                         sid=sid,

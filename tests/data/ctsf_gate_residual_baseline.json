@@ -32,9 +32,7 @@
       "temporal_mismatch": 11
     },
     "1969/10": {
-      "oracle_editorial_pathology": 8,
-      "replay_bug": 1,
-      "unknown": 2
+      "oracle_editorial_pathology": 11
     },
     "1978/734": {
       "temporal_mismatch": 22

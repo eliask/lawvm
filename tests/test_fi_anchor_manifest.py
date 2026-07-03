@@ -17,6 +17,7 @@ from lawvm.tools.fi_anchor_manifest import (
     attribute_divergences,
     diff_manifest,
     observation_to_residual,
+    structure_touch_set,
     touch_set,
 )
 
@@ -29,6 +30,8 @@ def _obs(
     replay_text: dict[str, str] | None = None,
     oracle_suspect: str | None = None,
     struct_sim: float = 1.0,
+    replay_structure: dict[str, str] | None = None,
+    structural_only: set[str] | None = None,
 ) -> AnchorObservation:
     penalized = penalized or set()
     replay_text = replay_text or {}
@@ -43,6 +46,8 @@ def _obs(
         replay_text=dict(replay_text),
         oracle_suspect=oracle_suspect,
         status="OK",
+        replay_structure=dict(replay_structure or {}),
+        structural_only_penalized_keys=frozenset(structural_only or set()),
     )
 
 
@@ -128,6 +133,99 @@ def test_persistent_post_touch_divergence_is_candidate_bug() -> None:
     bug = next(o for o in obs if o.section_key == "1" and o.window.startswith("2000"))
     assert bug.verdict == "candidate_replay_bug_persistent_post_touch"
     # the bug is localized to the touching amendment
+    assert bug.touching_amendments == ("amend-v2",)
+
+
+def test_structure_touch_set_ignores_wording_only_change() -> None:
+    # Two anchors: key "1" keeps the SAME structure signature but its wording
+    # changes (a word substitution); key "2" is re-shaped. The wording touch_set
+    # flags both; the STRUCTURE touch set flags only the re-shaped unit.
+    prev = _obs(
+        "v1",
+        "2000-01-01",
+        replay_text={"1": "kunnallisvaaleissa", "2": "flat"},
+        replay_structure={"1": "0:SEC:1|1:SUB:1", "2": "0:SEC:2|1:SUB:1"},
+    )
+    cur = _obs(
+        "v2",
+        "2001-01-01",
+        replay_text={"1": "kuntavaaleissa", "2": "flat"},
+        replay_structure={"1": "0:SEC:1|1:SUB:1", "2": "0:SEC:2|1:SUB:1|1:SUB:2"},
+    )
+    assert touch_set(prev, cur) == frozenset({"1"})  # only wording moved on "1"
+    assert structure_touch_set(prev, cur) == frozenset({"2"})  # only "2" re-shaped
+
+
+def test_structure_only_divergence_with_wording_touch_is_oracle_side() -> None:
+    # The 1969/10 § 3 pathology in miniature: replay re-words a unit (kunnallis→
+    # kunta) WITHOUT re-shaping it, but the oracle simultaneously flattens the
+    # nesting → a STRUCTURE-ONLY divergence appears. The wording touch_set sees the
+    # incidental word change, but because replay did not re-shape the unit the
+    # structure-aware relation must convict the ORACLE, not replay. Pre-fix this
+    # was mis-typed candidate_replay_bug.
+    sig = "0:SEC:3|1:SUB:1|1:SUB:2"  # replay's stable two-subsection shape
+    a = _obs(
+        "v1",
+        "2000-01-01",
+        replay_text={"3": "before-word"},
+        replay_structure={"3": sig},
+    )
+    b = _obs(
+        "v2",
+        "2001-01-01",
+        penalized={"3"},
+        structural_only={"3"},  # every word agrees; only the nesting differs
+        replay_text={"3": "after-word"},  # wording touched (incidental)
+        replay_structure={"3": sig},  # but replay's SHAPE is unchanged
+    )
+    c = _obs(
+        "v3",
+        "2002-01-01",
+        penalized={"3"},
+        structural_only={"3"},
+        replay_text={"3": "after-word"},
+        replay_structure={"3": sig},
+    )
+    obs = attribute_divergences("1969/10", [a, b, c])
+    verdicts = {(o.section_key, o.window): o.verdict for o in obs}
+    # No verdict on "3" is a replay bug or untyped; every one convicts the oracle.
+    for (key, _window), verdict in verdicts.items():
+        if key == "3":
+            assert verdict.startswith("oracle_suspect"), (key, verdict)
+    assert not any(o.verdict == "candidate_replay_bug_persistent_post_touch" for o in obs)
+    assert not any(o.verdict == "untyped" for o in obs)
+
+
+def test_structural_reshaping_by_replay_stays_candidate_bug() -> None:
+    # Guard the other side: a STRUCTURE-ONLY divergence where REPLAY actually
+    # re-shaped the unit in the window (its structure signature changed) IS a
+    # candidate replay bug — the structure-aware relaxation must not swallow a real
+    # re-nesting regression.
+    a = _obs(
+        "v1",
+        "2000-01-01",
+        replay_text={"3": "same-words"},
+        replay_structure={"3": "0:SEC:3|1:SUB:1|1:SUB:2"},
+    )
+    b = _obs(
+        "v2",
+        "2001-01-01",
+        penalized={"3"},
+        structural_only={"3"},
+        replay_text={"3": "same-words"},  # wording identical
+        replay_structure={"3": "0:SEC:3|1:SUB:1"},  # replay collapsed a subsection
+    )
+    c = _obs(
+        "v3",
+        "2002-01-01",
+        penalized={"3"},
+        structural_only={"3"},
+        replay_text={"3": "same-words"},
+        replay_structure={"3": "0:SEC:3|1:SUB:1"},
+    )
+    obs = attribute_divergences("100", [a, b, c])
+    bug = next(o for o in obs if o.section_key == "3" and o.window.startswith("2000"))
+    assert bug.verdict == "candidate_replay_bug_persistent_post_touch"
     assert bug.touching_amendments == ("amend-v2",)
 
 
