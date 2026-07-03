@@ -822,10 +822,17 @@ def _defpara_owned_children(defpara: etree._Element) -> list[etree._Element]:
 
 
 def _legal_text(node: etree._Element, *, cache: dict[tuple[etree._Element, bool], str] | None = None) -> str:
-    texts: list[str] = []
     if isinstance(node.tag, str) and _localname_of_tag(node.tag) == "def-para":
         # Bound a packed multi-definition ``def-para`` to its first definition so
         # an adjacent definition mispacked under the same element is not absorbed.
+        #
+        # ``_collect_legal_text`` now returns each child's ALREADY-normalized flow
+        # text; ``child.tail`` is a raw piece we normalize here. Because the
+        # historical form joined every piece with a single space before the final
+        # ``_normalize_text``, no two pieces were ever token-merged, so composing
+        # by joining the per-piece normalized forms with single spaces (filtering
+        # empties) is byte-identical to ``_normalize_text(" ".join(raw_pieces))``.
+        pieces: list[str] = []
         for child in _defpara_owned_children(node):
             if not isinstance(child.tag, str):
                 continue
@@ -833,24 +840,15 @@ def _legal_text(node: etree._Element, *, cache: dict[tuple[etree._Element, bool]
                 continue
             text = _collect_legal_text(child, is_root=False, cache=cache)
             if text:
-                texts.append(text)
+                pieces.append(text)
             if child.tail:
-                texts.append(child.tail)
-        return _normalize_text(" ".join(texts))
-    if cache is not None:
-        cached = cache.get((node, True))
-        if cached is not None:
-            return cached
-        if not (node.text or "").strip():
-            cached = cache.get((node, False))
-            if cached is not None:
-                text = _normalize_text(cached)
-                cache[(node, True)] = text
-                return text
-    text = _normalize_text(_collect_legal_text(node, is_root=True, cache=cache))
-    if cache is not None:
-        cache[(node, True)] = text
-    return text
+                tail = _normalize_text(child.tail)
+                if tail:
+                    pieces.append(tail)
+        return " ".join(pieces)
+    # ``_collect_legal_text(is_root=True)`` already returns normalized text, so
+    # ``_legal_text`` no longer re-normalizes the full raw subtree concatenation.
+    return _collect_legal_text(node, is_root=True, cache=cache)
 
 
 # Lettered-paragraph leaf kinds whose text may continue into a trailing
@@ -983,6 +981,19 @@ def _collect_legal_text(
 
     ``_TEXT_EXCLUDE_TAGS`` subtrees (notes/history) contribute nothing — neither
     their text nor their ``tail`` — preserving the prior exclusion behaviour.
+
+    Whitespace normalization is composed UPWARD: this function returns the node's
+    ALREADY-normalized flow text (``" ".join(s.split())`` of the full raw
+    concatenation), built by joining the per-piece normalized forms rather than
+    re-scanning the whole raw subtree at every structural ancestor. This is
+    byte-identical because the historical extractor separated every piece
+    (``node.text``, each child's collected text, each ``child.tail``) with a single
+    space via ``" ".join(texts)`` BEFORE the final ``_normalize_text``. A single
+    joining space between pieces means no two pieces' boundary tokens ever merged,
+    so ``_normalize_text(" ".join(raw_pieces))`` equals
+    ``" ".join(_normalize_text(p) for p in raw_pieces if _normalize_text(p))``.
+    Each raw piece is normalized once (at its own level), so total work is
+    O(text) rather than O(text × structural depth).
     """
 
     if not isinstance(node.tag, str):
@@ -990,22 +1001,31 @@ def _collect_legal_text(
     if _localname_of_tag(node.tag) in _TEXT_EXCLUDE_TAGS:
         return ""
     if len(node) == 0:
-        return "" if is_root else (node.text or "")
+        # Leaf: a structural root leaf drops its own leading text (historical
+        # behaviour); a non-root leaf contributes its raw text, normalized here so
+        # the parent composes from normalized pieces.
+        return "" if is_root else _normalize_text(node.text or "")
     key = (node, is_root)
     if cache is not None:
         cached = cache.get(key)
         if cached is not None:
             return cached
         if is_root and not (node.text or "").strip():
+            # With blank leading text the only difference between the root and
+            # non-root forms is that dropped-but-blank ``node.text``, which
+            # normalizes away — the normalized results are identical.
             cached = cache.get((node, False))
             if cached is not None:
+                cache[key] = cached
                 return cached
-    texts: list[str] = []
+    pieces: list[str] = []
     # The structural root contributes only its descendant flow text, not its own
     # leading ``text`` (which for a structural element is empty/whitespace); this
     # matches the historical extraction so non-inline nodes are unchanged.
     if not is_root and node.text:
-        texts.append(node.text)
+        piece = _normalize_text(node.text)
+        if piece:
+            pieces.append(piece)
     for child in node:
         if not isinstance(child.tag, str):
             # Comment/PI nodes contribute nothing (text or tail), matching the
@@ -1016,15 +1036,17 @@ def _collect_legal_text(
             # keep the historical "notes/history contribute nothing" behaviour.
             continue
         child_text = (
-            child.text or ""
+            _normalize_text(child.text or "")
             if len(child) == 0
             else _collect_legal_text(child, is_root=False, cache=cache)
         )
         if child_text:
-            texts.append(child_text)
+            pieces.append(child_text)
         if child.tail:
-            texts.append(child.tail)
-    text = " ".join(texts)
+            tail = _normalize_text(child.tail)
+            if tail:
+                pieces.append(tail)
+    text = " ".join(pieces)
     if cache is not None:
         cache[key] = text
     return text

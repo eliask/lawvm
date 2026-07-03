@@ -134,17 +134,24 @@ def test_legal_text_reuses_child_mode_cache_for_whitespace_structural_root(
     cache: dict[tuple[etree._Element, bool], str] = {}
 
     parent_text = source_tree._legal_text(root, cache=cache)
+    # Whitespace normalization is now composed upward, so the cached child-mode
+    # value is ALREADY normalized (not the raw concatenation). A later root-mode
+    # ``_legal_text`` of the same blank-leading-text node reuses that cached value
+    # verbatim — with no fresh subtree walk and no re-normalization of the whole
+    # subtree. Assert that reuse by monkeypatching ``_normalize_text`` to fail: a
+    # pure cache hit must not touch it.
     child_mode_text = cache[(subprov, False)]
 
-    def fail_collect(*args: object, **kwargs: object) -> str:
-        raise AssertionError("child-mode cache should avoid a fresh collect")
+    def fail_normalize(*args: object, **kwargs: object) -> str:
+        raise AssertionError("cached child-mode reuse should avoid a fresh normalize")
 
-    monkeypatch.setattr(source_tree, "_collect_legal_text", fail_collect)
+    monkeypatch.setattr(source_tree, "_normalize_text", fail_normalize)
     child_text = source_tree._legal_text(subprov, cache=cache)
 
     assert parent_text == "1 1 Body text ."
     assert child_text == "1 Body text ."
-    assert child_text == source_tree._normalize_text(child_mode_text)
+    # The cached child-mode value is already normalized (idempotent under norm).
+    assert child_text == child_mode_text
     assert (label, False) not in cache
 
 
