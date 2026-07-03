@@ -380,21 +380,32 @@ def score_ee_real_corpus(
     Reads the RT Farchive (per-anchor EE replay). Deterministic given the frozen
     corpus bytes; NOT the wall-clock-free path — same as the FI real corpus.
     """
+    from lawvm.estonia.fetch import open_rt_archive
     from lawvm.tools.ee_anchor_manifest import (
         _VERDICT_TO_FAMILY as _EE_VERDICT_TO_FAMILY,
         attribute_statute as ee_attribute_statute,
     )
+    from lawvm.tools.ee_bench import _DEFAULT_DB
 
     corpus_sids = tuple(sids) if sids is not None else REAL_ANCHOR_EE_CORPUS_SIDS
-    out: dict[str, dict[str, int]] = {}
-    for sid in corpus_sids:
-        attr = ee_attribute_statute(sid)
-        families: dict[str, int] = {}
-        for obs in attr.observations:
-            family = _EE_VERDICT_TO_FAMILY[obs.verdict]
-            families[family] = families.get(family, 0) + 1
-        out[sid] = {fam: n for fam, n in sorted(families.items()) if n}
-    return dict(sorted(out.items()))
+    # Open ONE archive handle for the whole corpus so the ee_anchor_manifest
+    # archive-wide index is built once (not re-scanned per statute) — a corpus sweep
+    # is then a single archive pass + per-statute replay.
+    archive = open_rt_archive(_DEFAULT_DB, readonly=True)
+    try:
+        out: dict[str, dict[str, int]] = {}
+        for sid in corpus_sids:
+            attr = ee_attribute_statute(sid, archive=archive)
+            families: dict[str, int] = {}
+            for obs in attr.observations:
+                family = _EE_VERDICT_TO_FAMILY[obs.verdict]
+                families[family] = families.get(family, 0) + 1
+            out[sid] = {fam: n for fam, n in sorted(families.items()) if n}
+        return dict(sorted(out.items()))
+    finally:
+        close = getattr(archive, "close", None)
+        if callable(close):
+            close()
 
 
 def real_anchor_corpus_available() -> bool:

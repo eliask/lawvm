@@ -121,45 +121,77 @@ def _rt_akt_locators(archive: Any) -> list[str]:
     return [row[0] for row in rows]
 
 
-def enumerate_ee_anchors(grupi_id: str, *, archive: Any) -> list[EEAnchorRef]:
-    """Enumerate the body-carrying terviktekst chain of *grupi_id*, as-of sorted.
+# One archive pass builds the whole grupi_id → anchor-chain index; a per-statute
+# enumeration is O(archive) otherwise (a 46k-locator scan each), so scoring a
+# multi-statute corpus would re-scan the whole archive N times. The index is cached
+# by the archive object's id so a corpus sweep pays the scan ONCE. (Deterministic:
+# the archive bytes are frozen for the run; keyed on id(archive) which is stable for
+# a live handle. A fresh handle rebuilds — correct, never stale.)
+_ANCHOR_INDEX_CACHE: dict[int, dict[str, list[EEAnchorRef]]] = {}
 
-    Scans the RT archive for every terviktekst (``tekstiliik == terviktekst``)
-    whose ``terviktekstiGrupiID`` is *grupi_id*, recording its ``kehtivuseAlgus``
-    effective date and whether it carries a statute body. The returned list is
-    sorted by (as_of, akt_viide) — chronological, the order the touch relation
-    requires. This is the EE analogue of ``plan_snapshots``: the published
-    consolidation chain of one statute family.
-    """
-    anchors: list[EEAnchorRef] = []
+
+def _build_anchor_index(archive: Any) -> dict[str, list[EEAnchorRef]]:
+    """Scan the archive ONCE → {grupi_id: [EEAnchorRef, ...]} (as-of sorted)."""
+    index: dict[str, list[EEAnchorRef]] = {}
     for locator in _rt_akt_locators(archive):
         aid = locator.split("/akt/")[-1].replace(".xml", "")
         data = archive.get(locator)
         if not data or len(data) < 100:
             continue
         prefix = data[:20000]
+        # Raw-byte metadata triage over the RT archive to SELECT which acts are a
+        # grupi_id's body-carrying tervikteksts (the anchor set); the selected bytes
+        # are parsed properly downstream via parse_ee_statute. Mirrors
+        # ee_bench._index_corpus's identical enumeration scan.
+        # lawvm-regex: prefilter — grupi_id membership triage on raw archive bytes.
         m_g = re.search(rb"<[^>]*terviktekstiGrupiID[^>]*>([^<]+)<", prefix)
         gid = m_g.group(1).decode().strip() if m_g else None
-        if gid != grupi_id:
+        if not gid:
             continue
+        # lawvm-regex: prefilter — terviktekst-vs-amendment discriminator on raw bytes.
         m_t = re.search(rb"<[^>]*tekstiliik[^>]*>([^<]+)<", prefix)
         tekstiliik = m_t.group(1).decode().strip() if m_t else ""
         if tekstiliik != "terviktekst":
             continue
         has_body = any(marker in data for marker in _EE_BODY_MARKERS)
+        # lawvm-regex: prefilter — effective-start (as_of) extraction for anchor order.
         m_algus = re.search(rb"<[^>]*kehtivuseAlgus[^>]*>([^<]+)<", prefix)
         as_of = (
             m_algus.group(1).decode().strip()[:10]
             if m_algus
             else _EE_UNPLACEABLE_ALGUS
         )
-        anchors.append(
+        index.setdefault(gid, []).append(
             EEAnchorRef(
-                grupi_id=grupi_id, akt_viide=aid, as_of=as_of, has_body=has_body
+                grupi_id=gid, akt_viide=aid, as_of=as_of, has_body=has_body
             )
         )
-    anchors.sort(key=lambda a: (a.as_of, a.akt_viide))
-    return anchors
+    for gid in index:
+        index[gid].sort(key=lambda a: (a.as_of, a.akt_viide))
+    return index
+
+
+def anchor_index(archive: Any) -> dict[str, list[EEAnchorRef]]:
+    """The cached {grupi_id: anchor-chain} index for *archive* (built once)."""
+    key = id(archive)
+    cached = _ANCHOR_INDEX_CACHE.get(key)
+    if cached is None:
+        cached = _build_anchor_index(archive)
+        _ANCHOR_INDEX_CACHE[key] = cached
+    return cached
+
+
+def enumerate_ee_anchors(grupi_id: str, *, archive: Any) -> list[EEAnchorRef]:
+    """Enumerate the body-carrying terviktekst chain of *grupi_id*, as-of sorted.
+
+    Returns every terviktekst (``tekstiliik == terviktekst``) whose
+    ``terviktekstiGrupiID`` is *grupi_id*, sorted by (as_of, akt_viide) —
+    chronological, the order the touch relation requires. This is the EE analogue of
+    ``plan_snapshots``: the published consolidation chain of one statute family.
+    Backed by the archive-wide :func:`anchor_index` (one scan amortized over a
+    corpus sweep).
+    """
+    return list(anchor_index(archive).get(grupi_id, []))
 
 
 # ---------------------------------------------------------------------------

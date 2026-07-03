@@ -1010,6 +1010,10 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # @requires_corpus tests are the authoritative data-present fail-red surface;
         # the unit surface (baseline diff + synthetic injection) always runs here.
         "test_ctsf_gate.py",
+        # EE (#205) CTSF gate corpus — the second-jurisdiction analogue: frozen
+        # 0-billable EE baseline, FAIL/WARN/PASS diff logic, round-trip, and
+        # @requires_ee_corpus data-present fail-red over the Riigi Teataja archive.
+        "test_ctsf_gate_ee.py",
         "test_diagnose_phase.py",
         "test_diff.py",
         "test_dump.py",
