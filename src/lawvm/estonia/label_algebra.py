@@ -56,13 +56,18 @@ PLANE. This frontend module imports the neutral seam type from
 
 from __future__ import annotations
 
-from typing import Optional, Sequence
+from typing import Optional, Sequence, Tuple
 
 from lawvm.core.label_algebra import LabelAlgebra, LabelComponent, ParsedLabel
 from lawvm.core.tree_ops import default_label_sort_key, normalized_label_key
 from lawvm.estonia.peg import _normalize_num
 
-__all__ = ["EE_LABEL_ALGEBRA", "build_ee_label_algebra", "ee_parse_label"]
+__all__ = [
+    "EE_LABEL_ALGEBRA",
+    "build_ee_label_algebra",
+    "ee_parse_label",
+    "ee_label_sort_key",
+]
 
 
 def _ee_stem_and_components(
@@ -172,3 +177,33 @@ def build_ee_label_algebra() -> LabelAlgebra:
 
 #: EE's concrete label algebra (module-level singleton; the frontend datum).
 EE_LABEL_ALGEBRA: LabelAlgebra = build_ee_label_algebra()
+
+
+def ee_label_sort_key(label: Optional[str]) -> Tuple[int, str, int]:
+    """EE's authoritative sibling-order key, dispatched THROUGH the algebra (#186).
+
+    Returns ``EE_LABEL_ALGEBRA.parse(label).sort_key`` — the algebra's ``order``
+    operation packaged as the ``label -> key`` callable the grafter's
+    positioning sites (``tree_ops.insert_sorted`` / the sibling-merge sorts)
+    require. Routing those sites here makes the ``LabelAlgebra`` seam LOAD-BEARING
+    for EE's insertion ordering (§2.1 O2: "the insertion POSITION comes from the
+    label algebra's ordering") instead of them calling ``default_label_sort_key``
+    directly.
+
+    Signature MATCHES ``tree_ops.default_label_sort_key`` (``Optional[str] ->
+    (int, str, int)``) so it is a drop-in ``sort_key_fn`` for ``insert_sorted``.
+    A ``None`` label routes through the algebra's ``None``-normalization exactly
+    as the primitive does (both yield the ``(-1, '', 0)`` sentinel key).
+
+    BYTE-IDENTICAL to ``tree_ops.default_label_sort_key`` on the labels the
+    grafter sorts: the algebra's parse is BUILT from EE's own
+    ``default_label_sort_key`` (it applies ``_normalize_num`` first, which is a
+    no-op on the already-normalized ``N`` / ``N_M`` / ``Na`` tree labels — and on
+    range / whitespace / section-symbol surfaces alike, since
+    ``default_label_sort_key`` itself re-normalizes via ``_norm``). The
+    conformance test (``tests/test_label_algebra.py``) pins this equality, so a
+    drift fails there. The EE parse always yields ``default_label_sort_key``'s
+    ``(int, str, int)`` shape, so the return type is that concrete triple.
+    """
+    number, letter_suffix, sub_number = EE_LABEL_ALGEBRA.parse(label or "").sort_key
+    return (number, letter_suffix, sub_number)

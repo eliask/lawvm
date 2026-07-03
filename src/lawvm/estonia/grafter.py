@@ -72,7 +72,7 @@ from lawvm.core.totalization import (
     Reject,
 )
 from lawvm.estonia.totalization_table import EE_TOTALIZATION_TABLE
-from lawvm.estonia.label_algebra import EE_LABEL_ALGEBRA
+from lawvm.estonia.label_algebra import EE_LABEL_ALGEBRA, ee_label_sort_key
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.core import tree_ops
 from lawvm.core.apply_seam import (
@@ -319,16 +319,22 @@ def _node_has_html_table_items(node: IRNode) -> bool:
 
 # #186 §4.2 item 4 / §7 delta #4: EE's concrete label algebra (superscript
 # ``§10¹`` / lettered ``14a`` stem-family calculus) as a first-class, neutral
-# ``core.label_algebra.LabelAlgebra`` seam object. DECLARED-FIRST /
-# parallel-first (the θ / CTSF discipline): the algebra is a conformance-tested
-# MIRROR of EE's real relabel/collision code (``tests/test_label_algebra.py``),
-# NOT yet routed into the grafter's relabel path — the existing per-site
-# relabel/collision code below (``_ee_relabel_duplicate_division_suffix_before_insert``,
-# the ``default_label_sort_key`` inserts, ``_predecessor_rank``) stays the source
-# of truth this increment. This module-level binding references the datum so the
-# EE label algebra is LIVE (reachable over the import graph from the production
-# grafter), the same wiring the θ table uses; routing is the load-bearing
-# follow-up.
+# ``core.label_algebra.LabelAlgebra`` seam object. LOAD-BEARING: the grafter's
+# sibling-ORDERING sites — every ``tree_ops.insert_sorted`` positioning and the
+# sibling-merge sorts below — now dispatch their ``label -> key`` through
+# ``ee_label_sort_key`` (the algebra's ``order`` operation, §2.1 O2 "the
+# insertion POSITION comes from the label algebra's ordering"), so the algebra
+# is the single source of truth for EE insert ordering rather than a parallel
+# mirror. Byte-identical: ``ee_label_sort_key`` is BUILT from
+# ``default_label_sort_key`` and the conformance test (``tests/test_label_algebra.py``)
+# pins the equality.
+#
+# STILL DIRECT (further follow-ups, orthogonal to fresh-label admissibility /
+# ordering the algebra expresses): the old-format duplicate-division-suffix
+# REPAIR ``_ee_relabel_duplicate_division_suffix_before_insert`` (base-cleanup
+# recovery), and the ``_predecessor_rank`` parent-PATH resolution heuristic
+# (which ranks predecessors to pick an insert's parent chapter/division, a
+# different algorithm from the algebra's ``successor_set`` fresh-label mint).
 EE_LABEL_ALGEBRA_DECLARED = EE_LABEL_ALGEBRA
 
 
@@ -7280,7 +7286,7 @@ def _ee_apply_op(
                 without_source,
                 dest_parent or [],
                 moved_node,
-                sort_key_fn=tree_ops.default_label_sort_key,
+                sort_key_fn=ee_label_sort_key,
             )
         if dest_full is not None:
             return tree_ops.replace_at(without_source, dest_full, moved_node)
@@ -7288,7 +7294,7 @@ def _ee_apply_op(
             without_source,
             dest_parent or [],
             moved_node,
-            sort_key_fn=tree_ops.default_label_sort_key,
+            sort_key_fn=ee_label_sort_key,
         )
 
     # ── Heading rename (chapter or section) ─────────────────────────────────
@@ -7787,7 +7793,7 @@ def _ee_apply_op(
                         body,
                         parent_path,
                         new_node,
-                        sort_key_fn=tree_ops.default_label_sort_key,
+                        sort_key_fn=ee_label_sort_key,
                     )
             if full_path is None and path and path[-1][0] == "item":
                 recovered_body = _ee_replace_inline_item_in_singleton_subsection(
@@ -8380,7 +8386,7 @@ def _ee_apply_op(
                                 updated_body,
                                 parent_path,
                                 sibling,
-                                sort_key_fn=tree_ops.default_label_sort_key,
+                                sort_key_fn=ee_label_sort_key,
                             )
                 if target_node.kind == IRNodeKind.ITEM:
                     updated_body = _ee_remove_omitted_inserted_item_labels_from_replace_range(
@@ -8412,7 +8418,7 @@ def _ee_apply_op(
                         body,
                         parent_path,
                         new_node,
-                        sort_key_fn=tree_ops.default_label_sort_key,
+                        sort_key_fn=ee_label_sort_key,
                     )
                 return body
             elif kind == "chapter":
@@ -8460,7 +8466,7 @@ def _ee_apply_op(
                         body,
                         parent_path,
                         new_node,
-                        sort_key_fn=tree_ops.default_label_sort_key,
+                        sort_key_fn=ee_label_sort_key,
                     )
                 return body
             # For whole-division inserts (e.g. "3. peatükki täiendatakse 2. jaoga"),
@@ -8537,7 +8543,7 @@ def _ee_apply_op(
                         body,
                         parent_path,
                         new_node,
-                        sort_key_fn=tree_ops.default_label_sort_key,
+                        sort_key_fn=ee_label_sort_key,
                     )
                 return body
             # For section-level inserts, parse payload into structured form.
@@ -8872,7 +8878,7 @@ def _ee_apply_op(
                             shifted_parent = _shift_numbered_subsections(parent_node, label)
                             body = tree_ops.replace_at(body, parent_path, shifted_parent)
                             return tree_ops.insert_sorted(
-                                body, parent_path, new_node, sort_key_fn=tree_ops.default_label_sort_key
+                                body, parent_path, new_node, sort_key_fn=ee_label_sort_key
                             )
                         if new_node.children:
                             merged_children = list(target_node.children)
@@ -8884,7 +8890,7 @@ def _ee_apply_op(
                                     merged_children.append(child)
                             merged_children.sort(
                                 key=lambda child: (
-                                    tree_ops.default_label_sort_key(child.label),
+                                    ee_label_sort_key(child.label),
                                     child.kind,
                                 )
                             )
@@ -8938,7 +8944,7 @@ def _ee_apply_op(
                         if existing_items:
                             ordered = sorted(
                                 existing_items + [new_node],
-                                key=lambda child: tree_ops.default_label_sort_key(child.label),
+                                key=lambda child: ee_label_sort_key(child.label),
                             )
                             insert_idx = next(
                                 (
@@ -8972,7 +8978,7 @@ def _ee_apply_op(
                     body,
                     parent_path,
                     new_node,
-                    sort_key_fn=tree_ops.default_label_sort_key,
+                    sort_key_fn=ee_label_sort_key,
                 )
                 if kind == "item":
                     updated_parent = tree_ops.resolve(updated_body, parent_path)
