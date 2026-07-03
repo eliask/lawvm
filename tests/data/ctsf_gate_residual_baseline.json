@@ -1,0 +1,27 @@
+{
+  "_doc": "CTSF Phase-3 residual-set-diff gate baseline (#186). Frozen typed-residual set of the in-code frozen_gate_corpus, keyed {sid: {family: count}} with only non-zero families retained. The gate FAILs iff a NEW replay_bug/unknown residual appears vs this set; WARNs on a typed oracle/editorial/state-index/temporal move. Regenerate with `uv run python -m lawvm.core.ctsf_gate --update-baseline` after a legitimate, reviewed change to the frozen corpus or the projection.",
+  "gate_version": "v0",
+  "families": [
+    "replay_bug",
+    "oracle_editorial_pathology",
+    "temporal_mismatch",
+    "state_index",
+    "cnf_unsupported",
+    "unknown"
+  ],
+  "fail_families": [
+    "replay_bug",
+    "unknown"
+  ],
+  "total_residuals": 2,
+  "residuals": {
+    "ctsf_gate/cnf_table": {
+      "cnf_unsupported": 1
+    },
+    "ctsf_gate/dot_leaders": {},
+    "ctsf_gate/momentti_ordinal": {},
+    "ctsf_gate/state_index_future_effective": {
+      "state_index": 1
+    }
+  }
+}

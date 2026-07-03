@@ -1,6 +1,6 @@
 {
   "_doc": "Typed-carrier phase-boundary ratchet baseline (FW-09). Per-file total untyped-carrier signatures in PUBLIC functions of core/finland; may only fall. XP-01 plane-noncollapse has no baseline (must be 0 always). Regenerate: uv run python tests/test_typed_carrier_boundary_ratchet.py --update-baseline",
-  "total_untyped_carriers": 377,
+  "total_untyped_carriers": 378,
   "untyped_carrier_counts": {
     "src/lawvm/core/actor_mention.py": 1,
     "src/lawvm/core/adjudication_evidence.py": 2,
@@ -16,6 +16,7 @@
     "src/lawvm/core/compile_metadata.py": 1,
     "src/lawvm/core/compile_result.py": 5,
     "src/lawvm/core/ctsf.py": 2,
+    "src/lawvm/core/ctsf_gate.py": 1,
     "src/lawvm/core/ctsf_residual_report.py": 1,
     "src/lawvm/core/ctsf_state_index.py": 2,
     "src/lawvm/core/diagnostic_records.py": 1,

@@ -49,12 +49,13 @@ DEAD_ALLOWLIST: dict[str, str] = {
         "coverage; production CLI wiring is intentionally deferred until the "
         "holdout corpus list and runtime budget are settled."
     ),
-    "lawvm.core.ctsf_residual_report": (
-        "CTSF Phase 2 (#197) parallel residual-set report — the READ-ONLY shape a "
-        "Phase-3 residual-set-diff gate will consume. Synthetic coverage exists "
-        "(test_ctsf_phase2.py); production/bench wiring is INTENTIONALLY deferred "
-        "to Phase 3 to keep this increment additive and byte-identical."
-    ),
+    # #186 CTSF Phase 3: ``ctsf_residual_report`` is no longer here — the new
+    # ``core.ctsf_gate`` residual-set-diff gate statically imports it, and the gate
+    # is wired into the ``lawvm ctsf-gate`` CLI subcommand, so both modules are now
+    # production-reachable (LIVE) from the ``lawvm`` entrypoint. The allowlist entry
+    # was removed (a legitimate one-way ratchet shrink: frontier wired to
+    # production). ``ctsf_gate`` itself is LIVE from birth (CLI-reachable), never
+    # dead, so it needs no allowlist entry.
     "lawvm.uk_legislation.pdf_layout_uk": (
         "UK PDF (#177) C19 marginal-note x-coordinate segmentation — reached only "
         "via pdf_grammar's dynamic pdfplumber path; synthetic coverage exists "

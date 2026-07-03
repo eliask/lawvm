@@ -10804,6 +10804,35 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         help="emit JSON",
     )
 
+    # --- ctsf-gate ---
+    # CTSF Phase 3 (#186): the residual-set-diff gate, run in PARALLEL / REPORT
+    # mode. Reports the CTSF typed-residual verdict of the frozen gate corpus vs the
+    # frozen baseline; ADDITIVE — the legacy scalar bench gate is unchanged and this
+    # verdict is not yet enforced. Wiring it here makes ctsf_gate + ctsf_residual_
+    # report production-reachable (LIVE).
+    ctsf_gate_p = sub.add_parser(
+        "ctsf-gate",
+        help="report the CTSF residual-set-diff gate verdict (parallel, report mode)",
+        description=(
+            "CTSF Phase 3 residual-set-diff gate: score the frozen anchor corpus, "
+            "diff its typed-residual set against the frozen baseline, and REPORT the "
+            "verdict (FAIL on a new replay_bug/unknown residual; WARN on a typed "
+            "oracle/editorial/state-index/temporal move; PASS otherwise). PARALLEL "
+            "/ REPORT MODE: the legacy scalar bench gate is unchanged and this "
+            "verdict is not yet enforced (always exits 0)."
+        ),
+    )
+    ctsf_gate_p.add_argument(
+        "--update-baseline",
+        action="store_true",
+        help="rewrite the frozen CTSF gate residual baseline from the corpus",
+    )
+    ctsf_gate_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit the gate result as JSON",
+    )
+
     # --- parse-johto ---
     parse_johto_p = sub.add_parser(
         "parse-johto",
@@ -14381,6 +14410,19 @@ def _main_impl() -> None:
         from lawvm.tools.bench_report import main as bench_report_main
 
         bench_report_main(args)
+
+    elif args.command == "ctsf-gate":
+        # CTSF Phase 3 (#186): parallel residual-set-diff gate, REPORT MODE. The
+        # legacy scalar bench gate is unchanged; this verdict is reported, never
+        # enforced (ctsf_gate.main always returns 0 outside --update-baseline).
+        from lawvm.core.ctsf_gate import main as ctsf_gate_main
+
+        gate_argv: list[str] = []
+        if getattr(args, "update_baseline", False):
+            gate_argv.append("--update-baseline")
+        if getattr(args, "json", False):
+            gate_argv.append("--json")
+        raise SystemExit(ctsf_gate_main(gate_argv))
 
     elif args.command == "rebuild-indexes":
         from lawvm.tools.rebuild_indexes import main as rebuild_indexes_main

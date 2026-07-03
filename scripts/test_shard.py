@@ -977,6 +977,12 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # newly-migrated label-redundancy rules (+ negative gate test), the
         # parallel residual-set report, and the bench byte-identity guard.
         "test_ctsf_phase2.py",
+        # #186 CTSF Phase 3: the residual-set-diff GATE (parallel, report mode) —
+        # FAIL on a new replay_bug/unknown residual, WARN on a typed
+        # oracle/editorial/state-index/temporal move, PASS on an unchanged set;
+        # frozen-baseline round-trip + committed-artifact freshness; report-mode
+        # CLI always exits 0 (legacy scalar bench gate unchanged).
+        "test_ctsf_gate.py",
         "test_diagnose_phase.py",
         "test_diff.py",
         "test_dump.py",
