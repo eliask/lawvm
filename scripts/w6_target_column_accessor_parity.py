@@ -106,7 +106,7 @@ def _harvest_ops(statute_ids: list[str], pins: dict[str, str]) -> tuple[list[Any
         captured.extend(ops)
         return real_compile(state, ops, *args, **kwargs)
 
-    process_pipeline.compile_amendment_ops = _capturing_compile
+    process_pipeline.compile_amendment_ops = _capturing_compile  # ty: ignore[invalid-assignment]
     replay_errors: dict[str, str] = {}
     try:
         for sid in statute_ids:
