@@ -38,6 +38,8 @@ from lawvm.eu.eu_consolidation_oracle import (
     ConsolidationAcquisitionFailure,
     build_consolidation_oracle,
     consolidated_celex,
+    enumerate_consolidation_series,
+    fetch_consolidation_bytes,
     parse_consolidation_date,
 )
 from lawvm.eu.eu_ordering import order_eu_ops
@@ -314,3 +316,129 @@ def test_live_consolidation_acquire_smoke() -> None:
     assert cmp.base_celex == BASE_CELEX
     assert cmp.article_count >= 1
     assert 0.0 <= cmp.agreement_fraction <= 1.0
+
+
+# ---------------------------------------------------------------------------
+# Consolidation-series enumeration + the offline consolidated byte lane (#221).
+# These are the two pieces the eu_anchor_manifest _doc said were "not in the
+# archive": Cellar exposes a DATED sector-0 consolidation series per base, and
+# the dated consolidated CELEX's tree notice resolves a graftable FMX4 item.
+# Both are exercised OFFLINE here via test seams (no network in CI).
+# ---------------------------------------------------------------------------
+
+import json as _json  # noqa: E402
+
+
+def _sparql_series_json(conscelexes: list[str]) -> bytes:
+    """A synthetic Cellar SPARQL results doc for the consolidation-series query."""
+    return _json.dumps(
+        {
+            "head": {"vars": ["conscelex"]},
+            "results": {
+                "bindings": [
+                    {"conscelex": {"type": "literal", "value": c}}
+                    for c in conscelexes
+                ]
+            },
+        }
+    ).encode("utf-8")
+
+
+def test_enumerate_consolidation_series_sorted_and_base_filtered() -> None:
+    """The series is sorted, de-duplicated, and drops rows whose numeric root is
+    not THIS base (a co-consolidated sibling bundled in the same result)."""
+    rows = [
+        "02008R0692-20140101",
+        "02008R0692-20080731",
+        "02007R0715-20080731",  # sibling base — must be filtered out
+        "02008R0692-20140101",  # duplicate
+        "not-a-consolidated-celex",  # malformed — dropped
+    ]
+
+    def _fetch(_q: str, _ep: str, _t: int) -> bytes:
+        return _sparql_series_json(rows)
+
+    series = enumerate_consolidation_series("32008R0692", _fetch=_fetch)
+    assert series == ("02008R0692-20080731", "02008R0692-20140101")
+
+
+def test_enumerate_consolidation_series_empty_is_honest_empty() -> None:
+    """A base with zero published consolidations returns () (no oracle exists —
+    the conservation-invariant lane is the correct fallback), not an error."""
+
+    def _fetch(_q: str, _ep: str, _t: int) -> bytes:
+        return _sparql_series_json([])
+
+    assert enumerate_consolidation_series("39999R9999", _fetch=_fetch) == ()
+
+
+def test_enumerate_consolidation_series_fails_loud_on_cellar_500() -> None:
+    """A CELLAR JDBC-500 body raises, never a silent empty series."""
+    from lawvm.eu.eu_amendment_graph import AmendmentGraphError
+
+    def _fetch(_q: str, _ep: str, _t: int) -> bytes:
+        return b"Unable to acquire JDBC Connection"
+
+    with pytest.raises(AmendmentGraphError):
+        enumerate_consolidation_series("32008R0692", _fetch=_fetch)
+
+
+# A synthetic DATED consolidated tree notice exposing one ENG fmx4 manifestation
+# whose single item carries a resolvable /DOC_N URL (mirrors the real shape).
+_CONS_NOTICE_XML = b"""<?xml version="1.0" encoding="UTF-8"?>
+<NOTICE type="tree">
+  <EXPRESSION>
+    <EXPRESSION_USES_LANGUAGE><IDENTIFIER>ENG</IDENTIFIER></EXPRESSION_USES_LANGUAGE>
+    <URI><VALUE>http://x/expr</VALUE></URI>
+    <EXPRESSION_MANIFESTED_BY_MANIFESTATION>
+      <URI><VALUE>http://x/man.fmx4</VALUE></URI>
+    </EXPRESSION_MANIFESTED_BY_MANIFESTATION>
+  </EXPRESSION>
+  <MANIFESTATION manifestation-type="fmx4">
+    <URI><VALUE>http://x/man.fmx4</VALUE></URI>
+    <MANIFESTATION_HAS_ITEM>
+      <URI><VALUE>http://x/cellar/uuid.0006.01/DOC_1</VALUE></URI>
+    </MANIFESTATION_HAS_ITEM>
+  </MANIFESTATION>
+</NOTICE>
+"""
+
+# A consolidated Formex act (root CONS.ACT, one article) — graftable bytes.
+_CONS_ACT_XML = b"""<?xml version="1.0" encoding="UTF-8"?>
+<CONS.ACT><TITLE><TI>Consolidated proof act</TI></TITLE>
+<ENACTING.TERMS><ARTICLE><TI.ART>Article 1</TI.ART></ARTICLE></ENACTING.TERMS>
+</CONS.ACT>
+"""
+
+
+def test_fetch_consolidation_bytes_resolves_and_unwraps() -> None:
+    """The offline consolidated byte lane fetches the dated notice, selects the
+    DOC-item URL, and returns bare Formex bytes (here a non-zip item)."""
+
+    def _notice(cons_celex: str, lang: str, _t: int) -> tuple[bytes, dict]:
+        assert cons_celex == "02008R0692-20140101"  # dated form, not bare base
+        assert lang == "eng"
+        return _CONS_NOTICE_XML, {}
+
+    def _item(url: str, _t: int) -> tuple[bytes, dict]:
+        assert url.endswith("/DOC_1")
+        return _CONS_ACT_XML, {}
+
+    raw = fetch_consolidation_bytes(
+        "32008R0692", "2014-01-01", _fetch_notice=_notice, _fetch_item=_item
+    )
+    assert raw == _CONS_ACT_XML
+
+
+def test_fetch_consolidation_bytes_no_item_is_typed_failure() -> None:
+    """A notice with no resolvable fmx4 item raises a typed acquisition failure
+    (never an empty-oracle masquerade)."""
+    empty_notice = b'<?xml version="1.0"?><NOTICE type="tree"></NOTICE>'
+
+    def _notice(_c: str, _l: str, _t: int) -> tuple[bytes, dict]:
+        return empty_notice, {}
+
+    with pytest.raises(ConsolidationAcquisitionFailure):
+        fetch_consolidation_bytes(
+            "32008R0692", "2014-01-01", _fetch_notice=_notice
+        )

@@ -593,12 +593,20 @@ def summarize_payload_bytes(data: bytes, content_type: str = "", path_hint: str 
 # than a bare XML document, so the manifestation-item path must unwrap them.
 ZIP_MAGIC = b"PK\x03\x04"
 
-# Root tag of the primary Formex act document member inside a manifestation zip.
-# The zip typically bundles: a ``*.toc.fmx.xml`` (root PUBLICATION, a table of
-# contents), a ``*.doc.fmx.xml`` (root DOC, a wrapper/manifest), the primary
+# Root tag(s) of the primary Formex act document member inside a manifestation
+# zip. The zip typically bundles: a ``*.toc.fmx.xml`` (root PUBLICATION, a table
+# of contents), a ``*.doc.fmx.xml`` (root DOC, a wrapper/manifest), the primary
 # ``*.NNNN01.fmx.xml`` (root ACT — the act we want), plus zero-or-more ANNEX
 # members (root ANNEX) and binary image attachments (``*.tif``).
-_FORMEX_PRIMARY_ROOT_TAG = "ACT"
+#
+# A SECTOR-0 CONSOLIDATION manifestation zip has the SAME shape but roots the
+# primary member at ``CONS.ACT`` (its body carries a ``CONS.DOC`` with the same
+# ENACTING.TERMS/ARTICLE structure — see ``grafter.parse_fmx4`` which grafts
+# both). So the primary-member census must recognise ``CONS.ACT`` too, or a
+# consolidated zip yields the ``DOC`` wrapper (which the grafter rejects,
+# ``Expected ACT/CONS.DOC root``) instead of the act. Verified live against
+# ``02022R2309-20240115`` (member ``CL...0001.xml`` roots at ``CONS.ACT``).
+_FORMEX_PRIMARY_ROOT_TAGS = ("ACT", "CONS.ACT")
 
 
 def looks_like_zip(data: bytes) -> bool:
@@ -650,9 +658,10 @@ def extract_primary_formex_from_zip(
                 xml_candidates.append((name, member_bytes, root_tag))
         if not xml_candidates:
             return None
-        # Primary = the ACT-rooted member; otherwise the first parseable XML.
+        # Primary = the ACT/CONS.ACT-rooted member; otherwise the first
+        # parseable XML (so an ANNEX/DOC-only zip still yields a stored witness).
         primary = next(
-            (c for c in xml_candidates if c[2] == _FORMEX_PRIMARY_ROOT_TAG),
+            (c for c in xml_candidates if c[2] in _FORMEX_PRIMARY_ROOT_TAGS),
             xml_candidates[0],
         )
         primary_name, primary_bytes, primary_tag = primary

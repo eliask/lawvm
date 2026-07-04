@@ -39,10 +39,22 @@ __all__ = [
     "consolidated_celex",
     "parse_consolidation_date",
     "build_consolidation_oracle",
+    "enumerate_consolidation_series",
+    "fetch_consolidation_bytes",
 ]
 
 #: A consolidated CELEX: sector 0, year, descriptor letter, number, ``-`` date.
 _CONSOLIDATED_RE = re.compile(r"^0\d{4}[A-Z]\d+-(?P<date>\d{8})$")
+
+#: The CDM predicate a consolidated act uses to name the base act it consolidates
+#: — resolved EMPIRICALLY against the live Cellar endpoint (the design flagged the
+#: consolidation predicate as unverified; ``resource_legal_consolidates_resource_legal``
+#: returns 0 rows, ``act_consolidated_consolidates_resource_legal`` is the one that
+#: binds, e.g. ``02022R2309-*`` → ``32022R2309``). Its outgoing form (consolidated →
+#: base) is queried with the base as OBJECT so direction is unambiguous.
+_CDM = "http://publications.europa.eu/ontology/cdm#"
+_PRED_CONSOLIDATES = f"{_CDM}act_consolidated_consolidates_resource_legal"
+_PRED_CELEX = f"{_CDM}resource_legal_id_celex"
 
 
 class ConsolidationAcquisitionFailure(RuntimeError):
@@ -138,6 +150,159 @@ def build_consolidation_oracle(
     return compare_replay_to_consolidation(
         replayed, consolidated, as_of=as_of, base_celex=base_celex
     )
+
+
+def enumerate_consolidation_series(
+    base_celex: str,
+    *,
+    endpoint: str | None = None,
+    timeout_s: int = 60,
+    _fetch: Optional[Callable[[str, str, int], bytes]] = None,
+) -> tuple[str, ...]:
+    """Enumerate the SORTED dated sector-0 consolidated CELEXes of ``base_celex``.
+
+    Queries the live Cellar SPARQL endpoint for every act that
+    ``act_consolidated_consolidates`` the base, returning the consolidated
+    CELEXes (``0YYYY<L><N>-YYYYMMDD``) whose base is ``base_celex`` — the
+    published consolidation snapshots EUR-Lex actually produced (NOT one per
+    amender: EUR-Lex chooses its own snapshot dates). The returned dates are the
+    honest, addressable PITs an oracle-touch score can run against; a base with
+    zero published consolidations returns ``()`` (no oracle exists — the
+    conservation-invariant lane is the correct fallback).
+
+    Reuses the amendment-graph module's fail-loud SPARQL parse discipline (a
+    non-JSON / CELLAR-500 body raises, never a silent empty series).
+
+    Note: this is the LIVE enumeration lane (mirrors ``eu_amendment_graph`` which
+    is also live-only). The consolidated bytes themselves are acquired by
+    :func:`fetch_consolidation_bytes` and stored under the dated locator.
+    """
+    from lawvm.eu.eu_amendment_graph import (
+        SPARQL_ENDPOINT,
+        AmendmentGraphError,
+        _live_fetch_sparql,
+        sparql_results_url,  # noqa: F401 — kept import parity with the sibling
+    )
+    import json as _json
+
+    ep = endpoint or SPARQL_ENDPOINT
+    query = f"""PREFIX cdm: <{_CDM}>
+SELECT ?conscelex WHERE {{
+  ?base <{_PRED_CELEX}> ?bc . FILTER(STR(?bc) = "{base_celex}")
+  ?cons <{_PRED_CONSOLIDATES}> ?base .
+  ?cons <{_PRED_CELEX}> ?conscelex .
+}} ORDER BY ?conscelex"""
+    fetch = _fetch or _live_fetch_sparql
+    data = fetch(query, ep, timeout_s)
+    if not data:
+        raise AmendmentGraphError("empty SPARQL consolidation-series response")
+    head = data.lstrip(b"\xef\xbb\xbf \t\r\n")[:64].lower()
+    if head.startswith((b"<!doctype html", b"<html", b"<?xml")) or b"jdbc" in head:
+        raise AmendmentGraphError(
+            "SPARQL consolidation-series response is not JSON (HTML/CELLAR-500); "
+            f"first bytes: {data[:64]!r}"
+        )
+    doc = _json.loads(data)
+    bindings = doc.get("results", {}).get("bindings", [])
+    out: set[str] = set()
+    for row in bindings:
+        cell = row.get("conscelex", {})
+        val = cell.get("value", "") if isinstance(cell, dict) else ""
+        # Keep only well-formed dated consolidations of THIS base (guard against a
+        # co-consolidated sibling act sharing a bundled notice, e.g. 02007R0715-*
+        # appearing alongside 02008R0692-* — its date suffix must parse AND its
+        # numeric root must equal the base's).
+        m = _CONSOLIDATED_RE.match(val)  # lawvm-regex: witness_only shape-validates an already-acquired consolidated CELEX id from a SPARQL result cell (source-plane id census), not a post-parse semantic recognizer over statute text
+        if m and val[1:].split("-", 1)[0] == base_celex[1:]:
+            out.add(val)
+    return tuple(sorted(out))
+
+
+def fetch_consolidation_bytes(
+    base_celex: str,
+    as_of: str,
+    *,
+    language: str = "eng",
+    timeout_s: int = 120,
+    _fetch_notice: Optional[Callable[[str, str, int], tuple[bytes, dict]]] = None,
+    _fetch_item: Optional[Callable[[str, int], tuple[bytes, dict]]] = None,
+) -> bytes:
+    """Acquire the primary Formex bytes of the sector-0 consolidation at ``as_of``.
+
+    The offline byte lane the ``_doc`` said was "not in the archive": it fetches
+    the DATED consolidated CELEX's own tree notice (``02022R2309-20240115`` — the
+    bare base CELEX 404s; the consolidation is addressed by the dated form),
+    selects the ``(language, fmx4)`` manifestation item that carries a real
+    ``/DOC_N`` item URL (via the production ``_select_item_from_notice`` walker,
+    which skips the item-less sibling manifestations a consolidated notice
+    bundles), fetches it, and unwraps the ZIP to its primary ``CONS.ACT`` member.
+
+    Returns the primary Formex XML bytes (graftable by ``parse_eu_regulation_ir``
+    — its ``CONS.ACT``/``CONS.DOC`` branch grafts the consolidated shape). Raises
+    :class:`ConsolidationAcquisitionFailure` on any transport / no-item / no-XML
+    failure — NEVER an empty-oracle masquerade (the EU honesty regime).
+
+    This is the ``fetch_consolidation`` callable :func:`build_consolidation_oracle`
+    expects, curried on ``(base_celex, as_of)`` and returning bytes for its
+    consolidated CELEX.
+    """
+    from urllib.error import HTTPError, URLError
+
+    from lawvm.eu import cellar
+    from lawvm.eu.eu_acquire import _select_item_from_notice
+
+    cons_celex = consolidated_celex(base_celex, as_of)
+    fetch_notice = _fetch_notice or _default_fetch_cons_notice
+    fetch_item = _fetch_item or (lambda url, t: cellar._request_url(url, timeout_s=t))
+
+    try:
+        notice_bytes, _ = fetch_notice(cons_celex, language, timeout_s)
+    except (HTTPError, URLError, TimeoutError, OSError) as exc:
+        raise ConsolidationAcquisitionFailure(
+            f"consolidation {cons_celex} tree-notice fetch failed: "
+            f"{type(exc).__name__}: {exc}"
+        ) from exc
+
+    item_url, _man_uri = _select_item_from_notice(notice_bytes, language, "fmx4")
+    if not item_url:
+        raise ConsolidationAcquisitionFailure(
+            f"consolidation {cons_celex} exposes no {language} fmx4 manifestation "
+            "item with a resolvable DOC url (not an empty oracle — a recorded gap)"
+        )
+    try:
+        item_bytes, _ = fetch_item(item_url, timeout_s)
+    except (HTTPError, URLError, TimeoutError, OSError) as exc:
+        raise ConsolidationAcquisitionFailure(
+            f"consolidation {cons_celex} item fetch failed ({item_url}): "
+            f"{type(exc).__name__}: {exc}"
+        ) from exc
+
+    if cellar.looks_like_zip(item_bytes):
+        extracted = cellar.extract_primary_formex_from_zip(
+            item_bytes, archive_hint=item_url
+        )
+        if extracted is None:
+            raise ConsolidationAcquisitionFailure(
+                f"consolidation {cons_celex} item is a ZIP with no parseable "
+                f"Formex member ({item_url})"
+            )
+        return extracted.primary_xml
+    return item_bytes
+
+
+def _default_fetch_cons_notice(
+    cons_celex: str, language: str, timeout_s: int
+) -> tuple[bytes, dict]:
+    """Fetch the DATED consolidated CELEX's tree notice (live Cellar)."""
+    from lawvm.eu import cellar
+
+    notice = cellar.NoticeRequest(
+        celex=cons_celex,
+        notice_format="xml",
+        notice_type="tree",
+        decode_language=language,
+    )
+    return cellar._request_notice(notice, timeout_s=timeout_s)
 
 
 def _default_parse_fmx4_bytes(raw: bytes, celex: str) -> IRStatute:

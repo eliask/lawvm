@@ -133,6 +133,18 @@ ZIP_MULTI_MEMBER = _build_zip(
 # A zip with NO parseable-XML member (only binary attachments).
 ZIP_NO_XML = _build_zip({"L_202601383EN.001001.fmx.tif": BINARY_TIF})
 
+# A SECTOR-0 CONSOLIDATION manifestation zip mirroring the real
+# ``02022R2309-20240115`` layout: a primary CONS.ACT member plus a ``DOC``
+# wrapper member. The DOC-wrapper is the one the grafter REJECTS
+# (``Expected ACT/CONS.DOC root``), so the extractor MUST pick the CONS.ACT
+# member — the exact consolidated-oracle acquisition path.
+ZIP_CONS_ACT_WITH_DOC = _build_zip(
+    {
+        "CL2022R2309EN0040010.0001.doc.xml": FORMEX_DOC_XML,
+        "CL2022R2309EN0040010.0001.xml": FORMEX_XML,
+    }
+)
+
 
 def _fake_fetch_zip_item(payload: bytes):
     def _fetch(*_a, **_k):
@@ -461,6 +473,19 @@ def test_zip_helper_prefers_act_over_annex_in_multi_member() -> None:
         "L_202601383EN.doc.fmx.xml",
         "L_202601383EN.toc.fmx.xml",
     }
+
+
+def test_zip_helper_prefers_cons_act_over_doc_wrapper() -> None:
+    """A sector-0 consolidation zip roots its primary member at CONS.ACT (not
+    ACT); the extractor must pick it over the DOC wrapper, or a consolidated
+    manifestation yields the wrapper the grafter rejects. Regression for the
+    consolidated-oracle acquisition lane (real: 02022R2309-20240115)."""
+    extracted = cellar.extract_primary_formex_from_zip(ZIP_CONS_ACT_WITH_DOC)
+    assert extracted is not None
+    assert extracted.primary_root_tag == "CONS.ACT"
+    assert extracted.primary_xml == FORMEX_XML
+    assert extracted.primary_member == "CL2022R2309EN0040010.0001.xml"
+    assert extracted.other_members == ("CL2022R2309EN0040010.0001.doc.xml",)
 
 
 def test_zip_helper_returns_none_for_no_xml_zip() -> None:
