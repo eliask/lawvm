@@ -10,6 +10,7 @@ from typing import Any, NamedTuple, Optional, Sequence
 from lawvm.core.ir import LegalAddress
 from lawvm.core.mutation_boundary import TreePath
 from lawvm.core.regex_safety import compile_classifier_regex
+from lawvm.uk_legislation.canonicalize import UK_SUPPLEMENTS_ROOT
 from lawvm.uk_legislation.effects import UKEffectRecord
 from lawvm.uk_legislation.lowering_records import (
     _append_uk_effect_lowering_observation,
@@ -2659,7 +2660,9 @@ def _uk_table_cell_mentions_target_ancestor_container(
     paragraph = labels.get("paragraph", "")
     subparagraph = labels.get("subparagraph", "")
     if schedule and (paragraph or subparagraph):
-        ancestor_candidates.append(LegalAddress(path=(("schedule", schedule),)))
+        ancestor_candidates.append(
+            LegalAddress(path=(("schedule", schedule),), root=UK_SUPPLEMENTS_ROOT)
+        )
     if section and (subsection or paragraph or subparagraph):
         ancestor_candidates.append(LegalAddress(path=(("section", section),)))
     if section and subsection and (paragraph or subparagraph):

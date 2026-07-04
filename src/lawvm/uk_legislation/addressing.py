@@ -12,7 +12,7 @@ from typing import Any, NamedTuple, Optional
 from lawvm.core.ir import LegalAddress, LegalOperation
 from lawvm.core.mutation_boundary import TreePathStep
 from lawvm.core.semantic_types import FacetKind, IRNodeKind, StructuralAction
-from lawvm.uk_legislation.canonicalize import uk_addr_container
+from lawvm.uk_legislation.canonicalize import UK_SUPPLEMENTS_ROOT, uk_addr_container
 from lawvm.uk_legislation.uk_grafter import _clean_num
 
 
@@ -67,7 +67,12 @@ def _make_address(
             path.append(("subsection", subsection))
         if item:
             path.append(("paragraph", item))
-    return LegalAddress(path=tuple(path), special=special)
+    # Stamp the schedules-compartment root selector at the construction site so a
+    # ``_make_address(container="schedule", …)`` address is schedule-rooted by the
+    # typed ``root`` (§5.3 / §7 delta #6), not only by its ``("schedule", …)`` path
+    # head. Body addresses keep ``root=None``.
+    root = UK_SUPPLEMENTS_ROOT if container == "schedule" else None
+    return LegalAddress(path=tuple(path), special=special, root=root)
 
 
 def _addr_container(addr: LegalAddress) -> str:
