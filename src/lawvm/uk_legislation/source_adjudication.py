@@ -2216,12 +2216,32 @@ def _looks_like_source_carried_multi_subunit_text_rewrite(text: str) -> bool:
     return bool(substitute_match and substitute_match.start() - pair_match.end() <= 240)
 
 
+def _strip_serialized_root_prefix(target_path: str) -> str:
+    """Drop a serialized ``@<root> `` compartment prefix from an address string.
+
+    ``str(LegalAddress)`` renders a non-body compartment address as
+    ``@supplements schedule:7/paragraph:36`` (§5.3 / §7 delta #6). The kind/depth
+    parsers below split on ``/`` then ``:`` and would otherwise read the first
+    element's kind as ``@supplements schedule``; peeling the prefix keeps the kind
+    set (``schedule``) exactly as it was pre-compartment-root.
+    """
+
+    text = str(target_path or "")
+    if text.startswith("@"):
+        _prefix, sep, remainder = text[1:].partition(" ")
+        if sep:
+            return remainder
+    return text
+
+
 def _target_depth(target_path: str) -> int:
-    return sum(1 for part in target_path.split("/") if ":" in part)
+    text = _strip_serialized_root_prefix(target_path)
+    return sum(1 for part in text.split("/") if ":" in part)
 
 
 def _target_kinds(target_path: str) -> tuple[str, ...]:
-    return tuple(part.split(":", 1)[0].lower() for part in target_path.split("/") if ":" in part)
+    text = _strip_serialized_root_prefix(target_path)
+    return tuple(part.split(":", 1)[0].lower() for part in text.split("/") if ":" in part)
 
 
 def _required_instruction_depth(text: str) -> int:
