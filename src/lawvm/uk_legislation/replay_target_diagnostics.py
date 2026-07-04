@@ -854,7 +854,7 @@ class UKReplayTargetDiagnosticsMixin:
     ) -> bool:
         if not self._implicit_first_subparagraph_parent_text_gap(target):
             return False
-        parent_target = LegalAddress(path=tuple(target.path[:-1]), special=None)
+        parent_target = LegalAddress(path=tuple(target.path[:-1]), special=None, root=target.root)
         parent_node, _, _ = self._find_node_by_target(parent_target)
         if parent_node is None:
             return False

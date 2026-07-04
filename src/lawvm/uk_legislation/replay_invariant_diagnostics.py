@@ -240,7 +240,7 @@ class UKReplayInvariantDiagnosticsMixin:
     ) -> list[_InvariantTargetRoot]:
         if len(op.target.path) <= 1:
             return []
-        parent_address = LegalAddress(path=op.target.path[:-1], special=None)
+        parent_address = LegalAddress(path=op.target.path[:-1], special=None, root=op.target.root)
         node, schedule_root = self._find_invariant_scope_node(parent_address)
         if node is None:
             return []

@@ -111,7 +111,7 @@ def _structural_sibling_insert_from_source(
         if len(target.path) < 2 or not target_leaf_kind:
             return None
         target_mode = "inserted_child"
-        child_parent = LegalAddress(path=target.path[:-1])
+        child_parent = LegalAddress(path=target.path[:-1], root=target.root)
     child_kind = _child_kind_for_structural_sibling_insert(
         target=child_parent,
         source_kind=match.group("source_kind"),

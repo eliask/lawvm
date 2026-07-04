@@ -226,7 +226,7 @@ def try_lower_table_column_insert(
             "allow_implicit_subsection_one_table": True,
             "table_marker_parent_target": str(parent_target),
         }
-        parent_target = LegalAddress(path=parent_target.path[:-1], special=parent_target.special)
+        parent_target = LegalAddress(path=parent_target.path[:-1], special=parent_target.special, root=parent_target.root)
 
     source_column_payload = _uk_single_table_column_payload(extracted_el)
     if parent_target is None or source_column_payload is None:
@@ -408,7 +408,7 @@ def try_lower_table_row_insert(
             "allow_implicit_subsection_one_table": True,
             "table_marker_parent_target": str(parent_target),
         }
-        parent_target = LegalAddress(path=parent_target.path[:-1], special=parent_target.special)
+        parent_target = LegalAddress(path=parent_target.path[:-1], special=parent_target.special, root=parent_target.root)
     if parent_target is None:
         _append_uk_effect_lowering_rejection(
             lowering_rejections_out,
@@ -1073,7 +1073,7 @@ def try_lower_repeal_table_effect(
             or "unique_repeal_table_extent_row_structural_repeal"
         )
         if reason_code == "mixed_structural_and_word_repeal_split":
-            parent_target = LegalAddress(path=target.path[:-1], special=None)
+            parent_target = LegalAddress(path=target.path[:-1], special=None, root=target.root)
             _append_uk_effect_lowering_observation(
                 lowering_rejections_out,
                 rule_id="uk_effect_repeal_table_mixed_structural_word_repeal_split",
@@ -1710,7 +1710,7 @@ def prepare_table_cell_text_patch_context(
             "allow_implicit_subsection_one_table": True,
             "table_marker_parent_target": str(parent_target),
         }
-        parent_target = LegalAddress(path=parent_target.path[:-1], special=parent_target.special)
+        parent_target = LegalAddress(path=parent_target.path[:-1], special=parent_target.special, root=parent_target.root)
     if parent_target is None:
         _append_uk_effect_lowering_rejection(
             lowering_rejections_out,

@@ -363,7 +363,7 @@ class UKReplayRenumberApplyMixin:
         destination_node, _destination_parent, _destination_idx = replay._find_node_by_target(destination)
         if destination_node is not None:
             return False
-        grandparent_target = LegalAddress(path=source_target.path[:-2])
+        grandparent_target = LegalAddress(path=source_target.path[:-2], root=source_target.root)
         grandparent_node, _grandparent_parent, _grandparent_idx = replay._find_node_by_target(
             grandparent_target
         )

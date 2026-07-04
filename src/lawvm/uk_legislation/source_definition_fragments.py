@@ -267,7 +267,7 @@ def _pseudo_definition_base_target(target: LegalAddress) -> Optional[LegalAddres
     )
     if pseudo_index < 0:
         return None
-    base_target = LegalAddress(path=target.path[:pseudo_index], special=None)
+    base_target = LegalAddress(path=target.path[:pseudo_index], special=None, root=target.root)
     if not base_target.path:
         return None
     return base_target
@@ -305,7 +305,7 @@ def _pseudo_definition_child_target_parts(
     term = " ".join(parts[:-1]).strip()
     if not term:
         return None
-    base_target = LegalAddress(path=target.path[:pseudo_index], special=None)
+    base_target = LegalAddress(path=target.path[:pseudo_index], special=None, root=target.root)
     if not base_target.path:
         return None
     return _PseudoDefinitionChildTargetParts(

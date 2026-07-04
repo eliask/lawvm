@@ -730,7 +730,7 @@ def extract_uk_structural_payload_ir(
 
     actual_el = _select_whole_schedule_element(extracted_el, target)
     if actual_el is None and action == "insert" and _addr_container(target) == "schedule" and len(target.path) > 1:
-        schedule_root_target = LegalAddress(path=target.path[:1], special=None)
+        schedule_root_target = LegalAddress(path=target.path[:1], special=None, root=target.root)
         actual_el = _select_whole_schedule_element(extracted_el, schedule_root_target)
     if content_ir is None and actual_el is None and action == "insert":
         actual_el = _find_schedule_p1group_wrapper_payload_element(

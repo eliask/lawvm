@@ -1789,7 +1789,7 @@ def _uk_repeal_table_mixed_clause_explicitly_names_target_with_parent(
     """Return true when a mixed row names the parent context plus target leaf."""
     if len(target.path) < 2:
         return False
-    parent_target = LegalAddress(path=target.path[:-1], special=None)
+    parent_target = LegalAddress(path=target.path[:-1], special=None, root=target.root)
     return _uk_table_cell_mentions_target(
         extent_clause,
         target=parent_target,
@@ -2004,7 +2004,7 @@ def _uk_table_driven_repeal_table_parent_child_text_repeal_split(
                             affected_year=str(effect.affected_year or ""),
                         )
                     ):
-                        parent_target = LegalAddress(path=target.path[:-1], special=None)
+                        parent_target = LegalAddress(path=target.path[:-1], special=None, root=target.root)
                         structural_target = target
                         text_selectors.append(target_self_word_selector)
                     elif _uk_table_cell_mentions_target(

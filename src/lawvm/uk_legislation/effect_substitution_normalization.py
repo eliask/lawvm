@@ -89,7 +89,7 @@ def _letter_suffix_anchor_address(target: LegalAddress) -> Optional[LegalAddress
     anchor_label = _letter_suffix_anchor_label(leaf_label)
     if not anchor_label:
         return None
-    return LegalAddress(path=(*target.path[:-1], (leaf_kind, anchor_label)))
+    return LegalAddress(path=(*target.path[:-1], (leaf_kind, anchor_label)), root=target.root)
 
 
 def _block_substitution_tail_insert_detail(

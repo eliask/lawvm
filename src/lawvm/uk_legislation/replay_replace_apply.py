@@ -181,7 +181,7 @@ class UKReplayReplaceApplyMixin:
                 ),
             )
             return True
-        parent_target = LegalAddress(path=target.path[:-1], special=None)
+        parent_target = LegalAddress(path=target.path[:-1], special=None, root=target.root)
         parent_node, _, _ = self._find_node_by_target(parent_target)
         if parent_node is None:
             _append_uk_replay_adjudication(
@@ -454,7 +454,7 @@ class UKReplayReplaceApplyMixin:
                 # the missing target leaf exactly, materialize it under the
                 # parent instead of silently dropping the replace.
                 leaf_kind = str(_addr_leaf_kind(op.target) or "").lower()
-                parent_target = LegalAddress(path=target.path[:-1], special=None)
+                parent_target = LegalAddress(path=target.path[:-1], special=None, root=target.root)
                 parent_node, _, _ = self._find_node_by_target(parent_target)
                 inserted = False
                 # Capture the recovery write-parent tree path BEFORE the insert
