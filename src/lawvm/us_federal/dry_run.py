@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from dataclasses import replace as _dc_replace
 from datetime import date
 from functools import lru_cache
 from enum import StrEnum
@@ -64,12 +65,14 @@ from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.us_federal.amendatory import (
     RULE_STRIKE_INSERT_TAIL,
     RULE_STRIKE_INSERT_THROUGH_TAIL,
+    US_EACH_PLACE_STRIKE_EXCEPTION_DIMENSION,
     USAmendatoryReport,
     lower_plaw_amendatory,
 )
 from lawvm.us_federal.us_ordering import order_us_ops
 from lawvm.us_federal.sources import (
     UsArchiveReader,
+    extract_usc_edition_currency,
     read_plaw_locator,
     read_usc_annual,
 )
@@ -214,12 +217,28 @@ US_DRY_RUN_REFUSED_DEFERRED_OP_NOT_YET_EFFECTIVE_RULE_ID = (
 US_DRY_RUN_REFUSED_INSERT_CATCHLINE_MISMATCH_RULE_ID = (
     "us_dry_run_refused_insert_payload_catchline_section_mismatch"
 )
+# A container-scope (whole-title / whole-chapter) each-place text patch whose
+# structured exception list is unusable: the lowerer poisoned it (``unparsed``)
+# or a per-section exception unit could not be located in the running text.
+# Applying the strike anyway could delete text the enacted exceptions protect,
+# so the op (or its per-section application) is refused as typed instead.
+US_DRY_RUN_REFUSED_EACH_PLACE_EXCEPTIONS_UNUSABLE_RULE_ID = (
+    "us_dry_run_refused_each_place_strike_exceptions_unusable"
+)
 
 # Residual dispositions (AGENTS.md §0/§9). The oracle is a witness; a residual
 # carries which side the gap is on, never a silent repair-to-oracle.
 DISPOSITION_LAWVM_WRONG = "lawvm_wrong"
 DISPOSITION_ORACLE_SUSPECT = "oracle_suspect"
 DISPOSITION_MISSING_SOURCE = "missing_source"
+# A CLAIMED section whose composed text mismatches the oracle while at least one
+# on-target op was DEFERRED on temporal grounds (not yet effective / pending a
+# condition at the after-edition cutoff) and the oracle changed the section: the
+# OLRC pre-incorporated the future-effective text (F3), so the comparison is
+# temporally incommensurable — the mismatch is driven by ops we CORRECTLY did
+# not apply, not by a wrong materialization. Mirrors the unclaimed-section
+# ``deferred_op`` typing in ``deferred_op_section_keys``; never a repair-to-oracle.
+DISPOSITION_DEFERRED_OP = "deferred_op"
 # A changed section the amendment layer would call missing_source, but whose real
 # mechanism is the expiry of a temporary provision reverting to the prior
 # permanent form (F2). Carries a temporal witness; never repaired to the oracle.
@@ -610,6 +629,91 @@ def _section_key_from_address(address: LegalAddress) -> tuple[str, str] | None:
     if not title or not section:
         return None
     return title, section
+
+
+def _each_place_exception_entries(operation: LegalOperation) -> frozenset[str] | None:
+    """Return the op's typed each-place-strike exception entries, or None.
+
+    ``None`` means the op carries NO exception predicate (every other op in the
+    corpus — the fast path). An op lowered by the whole-title each-place strike
+    re-scope always carries the predicate (possibly empty = unconditional).
+    """
+    for predicate in operation.applicability:
+        if predicate.dimension == US_EACH_PLACE_STRIKE_EXCEPTION_DIMENSION:
+            return predicate.includes
+    return None
+
+
+@dataclass(frozen=True)
+class _ContainerScopeFanout:
+    """A container-scope each-place patch resolved to its per-section fan-out."""
+
+    sections: tuple[str, ...]
+    poisoned: bool = False
+
+
+def _container_scope_fanout(
+    operation: LegalOperation,
+    *,
+    title: int,
+    before_doc: UscSourceDocument,
+) -> _ContainerScopeFanout | None:
+    """Resolve a whole-title / whole-chapter each-place text patch to sections.
+
+    Returns ``None`` for every op this fan-out does not own (non-text-patch,
+    non-each-place, or a target that names a section or another title). For an
+    owned op, returns the before-edition sections the patch touches: sections in
+    the container whose statutory text carries the match anchor, minus sections a
+    typed WHOLE-SECTION exception exempts. Sub-unit / first-instance exceptions
+    stay on the op (the materializer protects those spans). A poisoned exception
+    list (``unparsed``) returns ``poisoned=True`` — the caller refuses the op.
+
+    Membership is derived from the BEFORE edition's section set (the honest,
+    source-witnessed container extent); a section first created by a window law
+    is outside this fan-out's footing and stays a visible residual if the oracle
+    struck the term there.
+    """
+    if operation.action is not StructuralAction.TEXT_PATCH:
+        return None
+    patch = operation.text_patch
+    if patch is None or patch.selector.occurrence != -1:
+        return None
+    path = operation.target.path
+    if not path or path[0] != ("title", str(title)):
+        return None
+    chapter = ""
+    if len(path) == 2 and path[1][0] == "chapter":
+        chapter = path[1][1]
+    elif len(path) != 1:
+        return None
+
+    entries = _each_place_exception_entries(operation)
+    if entries is None:
+        # A bare container target with no typed exception predicate is only
+        # produced by the each-place re-scope for TITLE targets; chapter-target
+        # each-place patches are lowered directly with no predicate. Treat the
+        # absent predicate as "no exceptions".
+        entries = frozenset()
+    if "unparsed" in entries:
+        return _ContainerScopeFanout(sections=(), poisoned=True)
+    whole_section_exempt = {
+        parts[1]
+        for entry in entries
+        if (parts := entry.split(":")) and len(parts) == 2 and parts[0] == "s"
+    }
+    match_text = patch.selector.match_text
+    sections: list[str] = []
+    for source_section in before_doc.sections:
+        if chapter and source_section.chapter != chapter:
+            continue
+        if source_section.section in whole_section_exempt:
+            continue
+        if source_section.repealed:
+            continue
+        if not _token_in_text(source_section.statutory_text, match_text):
+            continue
+        sections.append(source_section.section)
+    return _ContainerScopeFanout(sections=tuple(sections))
 
 
 def _section_target_number(address: LegalAddress) -> str | None:
@@ -1103,6 +1207,8 @@ def _residual_family(disposition: str) -> AgreementResidualFamily:
     if disposition == DISPOSITION_MISSING_SOURCE:
         return "source_footing_gap"
     if disposition == DISPOSITION_SUNSET_REVERSION:
+        return "temporal_mismatch"
+    if disposition == DISPOSITION_DEFERRED_OP:
         return "temporal_mismatch"
     return "unknown"
 
@@ -1978,6 +2084,106 @@ def _apply_text_patch_to_target_subtree(
     return None
 
 
+def _entry_partial_for_section(entry: str, section: str) -> bool:
+    """True when a typed exception entry names a SUB-UNIT of ``section``.
+
+    Whole-section entries (``s:<sec>``) never reach the materializer for their
+    own section (the fan-out drops the section entirely); a sub-unit entry
+    (``s:<sec>:<lbl>...``) or a first-instance entry (``first:s:<sec>...``)
+    must be honored span-precisely here.
+    """
+    body = entry.removeprefix("first:")
+    parts = body.split(":")
+    if len(parts) < 2 or parts[0] != "s" or parts[1] != section:
+        return False
+    return len(parts) > 2 or entry.startswith("first:")
+
+
+def _apply_each_place_patch_protected(
+    running: str,
+    before_section: UscSection | None,
+    node_overrides: NodeOverrides | None,
+    operation: LegalOperation,
+    *,
+    match_text: str,
+    replacement: str,
+    partial_entries: tuple[str, ...],
+    op_id: str,
+) -> str | None:
+    """Each-place replace over ``running``, protecting excepted sub-unit spans.
+
+    Applies the patch to every occurrence of ``match_text`` EXCEPT occurrences
+    inside a protected sub-unit span (``s:<sec>:<lbl>...`` — the whole named
+    unit is exempt) and, for ``first:``-prefixed entries, the FIRST occurrence
+    inside the named unit's span (AIA §20(j)(2)(D)/(M): "The first instance of
+    the use of such term in section 111(b)(8)"). Spans are located in the
+    RUNNING text via the same node-location machinery every sub-section patch
+    uses. Returns ``None`` when a protected unit cannot be located — the caller
+    refuses the op rather than striking text an enacted exception protects.
+    """
+    protected_full: list[tuple[int, int]] = []
+    protected_first: list[tuple[int, int]] = []
+    for entry in partial_entries:
+        is_first = entry.startswith("first:")
+        parts = entry.removeprefix("first:").split(":")
+        labels = parts[2:]
+        if not is_first and not labels:
+            # A whole-section entry for THIS section should have been dropped at
+            # fan-out; reaching here means the footing is inconsistent — refuse.
+            return None
+        if len(labels) > len(_USC_LADDER):
+            return None
+        addr = LegalAddress(
+            path=tuple(operation.target.path[:2])
+            + tuple((_USC_LADDER[i], label) for i, label in enumerate(labels))
+        )
+        if labels:
+            node_text = _running_node_text(
+                before_section, addr, running, node_overrides, op_id=op_id
+            )
+            if node_text is None:
+                return None
+            start = running.find(node_text)
+            if start < 0:
+                return None
+            span = (start, start + len(node_text))
+        else:
+            # ``first:s:<sec>`` with no sub-unit: the whole section is the span.
+            span = (0, len(running))
+        (protected_first if is_first else protected_full).append(span)
+
+    if match_text.isalpha():
+        occurrences = [
+            m.span() for m in _word_boundary_pattern(match_text).finditer(running)
+        ]
+    else:
+        occurrences = [
+            m.span() for m in re.finditer(re.escape(match_text), running)
+        ]
+
+    protected_indices: set[int] = set()
+    for span_start, span_end in protected_full:
+        for i, (o_start, o_end) in enumerate(occurrences):
+            if o_start >= span_start and o_end <= span_end:
+                protected_indices.add(i)
+    for span_start, span_end in protected_first:
+        for i, (o_start, o_end) in enumerate(occurrences):
+            if o_start >= span_start and o_end <= span_end:
+                protected_indices.add(i)
+                break
+
+    out: list[str] = []
+    cursor = 0
+    for i, (o_start, o_end) in enumerate(occurrences):
+        if i in protected_indices:
+            continue
+        out.append(running[cursor:o_start])
+        out.append(replacement)
+        cursor = o_end
+    out.append(running[cursor:])
+    return "".join(out)
+
+
 def _materialize_one(
     operation: LegalOperation,
     before_text: str,
@@ -2201,6 +2407,41 @@ def _materialize_one(
             return _refuse_absent_text_target(
                 operation, absent_kind="match anchor", absent_text=match_text
             )
+        exception_entries = _each_place_exception_entries(operation)
+        if exception_entries is not None and count == -1:
+            # Container-scope each-place strike fanned onto this section (#220):
+            # honor any sub-unit / first-instance exceptions span-precisely.
+            section_label = _section_target_number(operation.target) or ""
+            partial_entries = tuple(
+                sorted(
+                    e
+                    for e in exception_entries
+                    if _entry_partial_for_section(e, section_label)
+                )
+            )
+            if partial_entries:
+                materialized = _apply_each_place_patch_protected(
+                    before_text,
+                    before_section,
+                    node_overrides,
+                    operation,
+                    match_text=match_text,
+                    replacement=replacement or "",
+                    partial_entries=partial_entries,
+                    op_id=op_id,
+                )
+                if materialized is None:
+                    return USDryRunRefusal(
+                        op_id=op_id,
+                        rule_id=US_DRY_RUN_REFUSED_EACH_PLACE_EXCEPTIONS_UNUSABLE_RULE_ID,
+                        message=(
+                            "each-place strike exception unit could not be located "
+                            "in the running section text; refusing rather than "
+                            "striking text the enacted exception protects"
+                        ),
+                        target_address=str(operation.target),
+                    )
+                return (materialized, "", "")
         materialized = _apply_text_patch_with_tail_dispatch(
             operation,
             before_text,
@@ -2607,6 +2848,7 @@ def build_us_dry_run(
     prior_edition_htms: Mapping[str, bytes] | None = None,
     classification_index: Any = None,
     write_receipts_out: list[WriteReceipt] | None = None,
+    after_laws_enacted_through: str = "",
 ) -> USDryRunReport:
     """Build the section-level dry-run report for one (before, after, PL) window.
 
@@ -2633,6 +2875,24 @@ def build_us_dry_run(
     after_cutoff: date | None = None
     if after_year.isdigit():
         after_cutoff = date(int(after_year), 12, 31)
+    if after_laws_enacted_through:
+        # The after edition self-declares which Public Laws it incorporates (the
+        # ``SEARCHABLE-LAWS-ENACTED-THROUGH-DATE`` header marker, ``YYYYMMDD``).
+        # That witnessed date IS the edition's temporal boundary; the December-31
+        # fallback above is systematically ~2 weeks early (annual editions run to
+        # the end of the congressional session in mid-January — e.g. the 2012
+        # edition is enacted-through 2013-01-15 and INCLUDES PL 112-274, enacted
+        # 2013-01-14), which wrongly deferred every op from a January-enacted
+        # window law (#220).
+        raw = after_laws_enacted_through.strip()
+        parsed_cutoff: date | None = None
+        if len(raw) == 8 and raw.isdigit():
+            try:
+                parsed_cutoff = date(int(raw[:4]), int(raw[4:6]), int(raw[6:8]))
+            except ValueError:
+                parsed_cutoff = None
+        if parsed_cutoff is not None:
+            after_cutoff = parsed_cutoff
 
     def _op_not_yet_in_force(op: LegalOperation) -> str | None:
         """Return a human reason if ``op`` should be skipped for temporal reasons."""
@@ -2688,6 +2948,11 @@ def build_us_dry_run(
     # section created by one window law (a section-level INSERT) can be amended by
     # a later window law in the same window.
     section_ops: dict[str, list[LegalOperation]] = {}
+    # Sections (this title) with at least one op refused on TEMPORAL grounds
+    # (not yet effective / pending condition at the after-edition cutoff). A
+    # claimed section here whose composed text mismatches an oracle CHANGE is
+    # typed ``deferred_op`` (F3, OLRC pre-incorporation), not ``lawvm_wrong``.
+    deferred_refusal_sections: set[str] = set()
     lowered_reports: list[tuple[str, str, bytes, USAmendatoryReport]] = []
     for statute_id, blob in plaw_blobs.items():
         report = lower_plaw_amendatory(
@@ -2741,10 +3006,57 @@ def build_us_dry_run(
                     },
                 )
             )
+            deferred_key = _section_key_from_address(operation.target)
+            if (
+                deferred_key is not None
+                and deferred_key[0].isdigit()
+                and int(deferred_key[0]) == int(title)
+            ):
+                deferred_refusal_sections.add(deferred_key[1])
             continue
 
         key = _section_key_from_address(operation.target)
         if key is None or int(key[0]) != int(title):
+            # Container-scope each-place text patch (whole title / whole chapter,
+            # e.g. AIA §20(j)'s "Title 35 ... is amended by striking 'of this
+            # title' each place that term appears", #220): fan the ONE enacted op
+            # out to every before-edition section in the container that carries
+            # the anchor, honoring the typed WHOLE-SECTION exceptions here (the
+            # sub-unit / first-instance exceptions ride on each fanned op and are
+            # honored span-precisely by the materializer).
+            fanout = (
+                _container_scope_fanout(operation, title=title, before_doc=before_doc)
+                if key is None
+                else None
+            )
+            if fanout is not None:
+                if fanout.poisoned:
+                    refusals.append(
+                        USDryRunRefusal(
+                            op_id=operation.op_id,
+                            rule_id=US_DRY_RUN_REFUSED_EACH_PLACE_EXCEPTIONS_UNUSABLE_RULE_ID,
+                            message=(
+                                "container-scope each-place strike carries an "
+                                "unparsed exception list; refusing rather than "
+                                "striking text the enacted exceptions may protect"
+                            ),
+                            target_address=str(operation.target),
+                        )
+                    )
+                    continue
+                for fan_section in fanout.sections:
+                    fanned = _dc_replace(
+                        operation,
+                        op_id=f"{operation.op_id}@s{fan_section}",
+                        target=LegalAddress(
+                            path=(
+                                ("title", str(title)),
+                                ("section", fan_section),
+                            )
+                        ),
+                    )
+                    section_ops.setdefault(fan_section, []).append(fanned)
+                continue
             refusals.append(
                 USDryRunRefusal(
                     op_id=operation.op_id,
@@ -3009,6 +3321,14 @@ def build_us_dry_run(
                 else:
                     rule_id = US_DRY_RUN_RESIDUAL_CLAIMED_BUT_ORACLE_UNCHANGED_RULE_ID
                     disposition = DISPOSITION_LAWVM_WRONG
+            elif section in deferred_refusal_sections:
+                # The oracle changed this section AND at least one on-target op
+                # was deferred on temporal grounds: the OLRC pre-incorporated
+                # future-effective text (F3), so this composed-vs-oracle mismatch
+                # is temporally incommensurable — driven by ops we CORRECTLY did
+                # not apply, not (provably) by a wrong materialization.
+                rule_id = US_DRY_RUN_RESIDUAL_TEXT_MISMATCH_RULE_ID
+                disposition = DISPOSITION_DEFERRED_OP
             else:
                 rule_id = US_DRY_RUN_RESIDUAL_TEXT_MISMATCH_RULE_ID
                 disposition = DISPOSITION_LAWVM_WRONG
@@ -3254,6 +3574,11 @@ def build_us_dry_run_from_archive(
         if prior is not None:
             prior_edition_htms[str(year)] = prior
 
+    # The after edition's self-declared enacted-through marker is the honest
+    # window cutoff (see the ``after_laws_enacted_through`` note in
+    # :func:`build_us_dry_run`); absence falls back to the December-31 heuristic.
+    currency = extract_usc_edition_currency(after)
+
     return build_us_dry_run(
         before_htm=before,
         after_htm=after,
@@ -3264,4 +3589,5 @@ def build_us_dry_run_from_archive(
         enacted=enacted,
         prior_edition_htms=prior_edition_htms,
         classification_index=classification_index,
+        after_laws_enacted_through=currency.get("laws_enacted_through", ""),
     )

@@ -43,6 +43,7 @@ from lawvm.core.ir import (
     IRNode,
     LegalAddress,
     LegalOperation,
+    ScopePredicate,
     TextPatchSpec,
     TextSelector,
 )
@@ -433,6 +434,221 @@ def _is_each_place_instruction(raw_text: str) -> bool:
     later occurrences unmodified — a mutation-scope error.
     """
     return _EACH_PLACE_RE.search(raw_text) is not None
+
+
+# ---------------------------------------------------------------------------
+# Whole-title each-place strike ("Title 35, United States Code, is amended by
+# striking 'of this title' each place that term appears") + its structured
+# exception list (#220, the AIA §20(j) family)
+# ---------------------------------------------------------------------------
+
+# The instruction head that scopes an each-place strike to a WHOLE USC title.
+# Matched against the raw prose BEFORE the first quoted term so a quoted payload
+# can never fake the form.
+_TITLE_SCOPE_EACH_PLACE_RE = compile_classifier_regex(
+    r"\bTitle\s+(?P<title>\d+),\s+United\s+States\s+Code,\s+is\s+amended\s+by\s+striking\b",
+    re.IGNORECASE,
+    classifier_id="us.amendatory.title_scope_each_place_re",
+)
+
+#: ScopePredicate dimension carrying the strike's per-target exceptions. Values
+#: (title-relative): ``s:<sec>`` (whole section exempt), ``s:<sec>:<lbl>...``
+#: (named sub-unit exempt; labels descend the USC ladder), and the same with a
+#: ``first:`` prefix (only the FIRST occurrence inside that unit is exempt).
+#: ``unparsed`` poisons the op: the dry-run refuses it as typed rather than
+#: striking sections an unreadable exception may protect.
+US_EACH_PLACE_STRIKE_EXCEPTION_DIMENSION = "us_each_place_strike_exception"
+
+# The exception chapeau ("The amendment made by paragraph (1) shall not apply
+# to the use of such term in the following sections ...").
+_EACH_PLACE_EXCEPTION_CHAPEAU_RE = compile_classifier_regex(
+    r"shall\s+not\s+apply\s+to\s+the\s+use\s+of\s+such\s+term\b",
+    re.IGNORECASE,
+    classifier_id="us.amendatory.each_place_exception_chapeau_re",
+)
+# One exception item, three drafting shapes (parsed per item, most specific first).
+_EXCEPTION_FIRST_INSTANCE_RE = re.compile(
+    r"first\s+instance\s+of\s+the\s+use\s+of\s+such\s+term\s+in\s+section\s+"
+    r"(?P<ref>\d+[A-Za-z]?(?:\([^()\s]+\))*)",
+    re.IGNORECASE,
+)
+_EXCEPTION_SUBSECTIONS_OF_RE = re.compile(
+    r"Subsections?\s+(?P<labels>\([^()\s]+\)(?:\s*(?:,\s*|and\s+|or\s+)+\([^()\s]+\))*)"
+    r"\s+of\s+section\s+(?P<sec>\d+[A-Za-z]?)",
+    re.IGNORECASE,
+)
+_EXCEPTION_SECTION_RE = re.compile(
+    r"Section\s+(?P<ref>\d+[A-Za-z]?(?:\([^()\s]+\))*)",
+    re.IGNORECASE,
+)
+
+
+def _exception_entry_from_ref(ref: str, *, first_instance: bool) -> str:
+    """``111(b)(8)`` → ``s:111:b:8`` (with ``first:`` prefix for first-instance)."""
+    m = re.match(r"^(?P<sec>\d+[A-Za-z]?)(?P<subs>(?:\([^()\s]+\))*)$", ref)
+    if m is None:
+        return ""
+    labels = re.findall(r"\(([^()\s]+)\)", m.group("subs") or "")
+    entry = ":".join(["s", m.group("sec"), *labels])
+    return f"first:{entry}" if first_instance else entry
+
+
+def _collect_each_place_strike_exceptions(section: ET.Element) -> frozenset[str] | None:
+    """Parse a sibling each-place-strike exception list into typed entries.
+
+    Scans the PLAW section for the exception unit (its chapeau reads "The
+    amendment made by paragraph (N) shall not apply to the use of such term in
+    the following sections ...") and parses each listed item. Returns the entry
+    set (possibly empty — no exception unit means the strike is unconditional),
+    or ``None`` when an exception ITEM could not be parsed — the caller must
+    then poison the op rather than strike text an unreadable exception protects.
+    """
+    for elem in section.iter():
+        if _localname(elem.tag) not in ("subsection", "paragraph"):
+            continue
+        shallow = _shallow_text(elem, exclude=None)
+        if _EACH_PLACE_EXCEPTION_CHAPEAU_RE.search(shallow) is None:
+            continue
+        entries: set[str] = set()
+        items = [
+            _text_of(item)
+            for item in elem.iter()
+            if _localname(item.tag) in ("subparagraph", "clause")
+        ]
+        if not items:
+            # Single-item exception carried in the chapeau's own prose.
+            items = [shallow]
+        for item_text in items:
+            m = _EXCEPTION_FIRST_INSTANCE_RE.search(item_text)
+            if m is not None:
+                entry = _exception_entry_from_ref(m.group("ref"), first_instance=True)
+                if not entry:
+                    return None
+                entries.add(entry)
+                continue
+            m = _EXCEPTION_SUBSECTIONS_OF_RE.search(item_text)
+            if m is not None:
+                labels = re.findall(r"\(([^()\s]+)\)", m.group("labels"))
+                if not labels:
+                    return None
+                for label in labels:
+                    entries.add(f"s:{m.group('sec')}:{label}")
+                continue
+            m = _EXCEPTION_SECTION_RE.search(item_text)
+            if m is not None:
+                entry = _exception_entry_from_ref(m.group("ref"), first_instance=False)
+                if not entry:
+                    return None
+                entries.add(entry)
+                continue
+            return None
+        return frozenset(entries)
+    return frozenset()
+
+
+# Multi-section instruction head: "Sections 134, 145, 146, 154, and 305 of
+# title 35, United States Code, are each amended by striking ..." (also the
+# single-item plural "Sections 111(b)(1)(A) ... is amended" drafting slip and
+# the plural repeal "Sections 155 and 155A ... are repealed"). The enacted
+# section LIST is the target set; the generic single-target resolution can only
+# fail (target_unresolved) or latch onto the bare title. Lowered by fanning the
+# ONE instruction into one instruction per named section (#220).
+# Plain compile (not compile_classifier_regex): the lazy items window abuts the
+# ``of title`` literal, which the classifier lint flags as adjacent variable
+# repeats; the window is hard-bounded ({1,120}) so backtracking is bounded too.
+# lawvm-regex: bounded lazy window between two literals; classifier lint false-positive
+_PLURAL_SECTION_LIST_HEAD_RE = re.compile(
+    r"\bSections\s+(?P<items>[^“”\"]{1,120}?)\s+of\s+title\s+"
+    r"(?P<title>\d+),\s+United\s+States\s+Code\b",
+    re.IGNORECASE,
+)
+# One section item within the list ("154(b)(4)(A)", "155A"); the list is
+# validated to consist ONLY of such items plus ,/and/or separators.
+_PLURAL_SECTION_LIST_ITEM_RE = re.compile(r"\d+[A-Za-z]?(?:\([^()\s]+\))*")
+# lawvm-regex: two-word literal verb family; classifier lint flags the optional
+# "each" as adjacent variable repeats — bounded and safe.
+_PLURAL_SECTION_LIST_VERB_RE = re.compile(
+    r"\b(?:is|are)\s+(?:each\s+)?(?:amended|repealed)\b",
+    re.IGNORECASE,
+)
+
+
+def _multi_section_head_items(raw_text: str) -> tuple[str, tuple[str, ...]] | None:
+    """Parse a plural multi-section instruction head into ``(title, items)``.
+
+    Returns ``None`` unless the prose head (before any quoted matter) names a
+    plural ``Sections <list> of title <N>, United States Code`` target followed
+    by an amendatory verb (``is/are [each] amended/repealed``). Items keep their
+    sub-unit parentheticals (``154(b)(4)(A)``) so the per-item re-lowering can
+    resolve the full ladder address.
+    """
+    prose_head = re.split(r'["“]', raw_text, maxsplit=1)[0]
+    m = _PLURAL_SECTION_LIST_HEAD_RE.search(prose_head)
+    if m is None:
+        return None
+    if _PLURAL_SECTION_LIST_VERB_RE.search(prose_head[m.end():]) is None:
+        return None
+    items_str = m.group("items")
+    items = tuple(_PLURAL_SECTION_LIST_ITEM_RE.findall(items_str))
+    if not items:
+        return None
+    # The list must consist ONLY of section items plus ,/and/or separators —
+    # otherwise the head is prose ("Sections described in subsection (b) of
+    # title ..."), not an enacted target list.
+    leftover = _PLURAL_SECTION_LIST_ITEM_RE.sub("", items_str)
+    leftover = re.sub(r"\b(?:and|or)\b", "", leftover)
+    if leftover.strip(" ,–—-"):
+        return None
+    # A SINGLE bare number after a plural "Sections" is more likely a prose
+    # artifact; accept a single item only when it carries a sub-unit ladder
+    # ("Sections 111(b)(1)(A) ... is amended", the drafting-slip form).
+    if len(items) == 1 and "(" not in items[0]:
+        return None
+    return m.group("title"), items
+
+
+def _maybe_retarget_title_scope_each_place(
+    instr: USAmendmentInstruction, section: ET.Element
+) -> USAmendmentInstruction:
+    """Re-scope a whole-title each-place strike onto its enacted TITLE target.
+
+    "Title 35, United States Code, is amended by striking 'of this title' each
+    place that term appears" names the WHOLE TITLE as its target; the generic
+    per-unit resolution instead latched onto an incidental section ref (the
+    sidenote classification or the sibling exception list — e.g. the AIA §20(j)
+    strike lowered onto ``section:251/subsection:c``, one of its own EXCEPTIONS).
+    This hook retargets the op to the bare title address and attaches the
+    structured exception list as a typed ``ScopePredicate`` so the dry-run can
+    fan the strike out per section (honoring the exceptions) instead of striking
+    the wrong single node. An unparseable exception list poisons the op
+    (``unparsed``) — refused downstream, never a wrong strike.
+    """
+    op = instr.operation
+    if op is None or instr.extra_operations:
+        return instr
+    patch = op.text_patch
+    if patch is None or patch.selector.occurrence != -1:
+        return instr
+    prose_head = re.split(r'["“]', instr.raw_text, maxsplit=1)[0]
+    m = _TITLE_SCOPE_EACH_PLACE_RE.search(prose_head)
+    if m is None:
+        return instr
+    exceptions = _collect_each_place_strike_exceptions(section)
+    includes: frozenset[str] = (
+        frozenset({"unparsed"}) if exceptions is None else exceptions
+    )
+    new_op = _dc_replace(
+        op,
+        target=LegalAddress(path=(("title", m.group("title")),)),
+        applicability=(
+            ScopePredicate(
+                dimension=US_EACH_PLACE_STRIKE_EXCEPTION_DIMENSION,
+                includes=includes,
+            ),
+        ),
+        provenance_tags=op.provenance_tags + ("us_title_scope_each_place",),
+    )
+    return _dc_replace(instr, operation=new_op, target_address=new_op.target)
 # Effective-date phrase family (AGENTS.md §2.4: previously 7 overlapping
 # regex variants of one phrase family; merged into 4 named patterns by
 # unifying the "effective" / "take effect" trigger words, which are
@@ -451,6 +667,21 @@ _EFFECTIVE_OR_TAKE_EFFECT_ON_RE = re.compile(
 )
 _EFFECTIVE_ABSOLUTE_RE = re.compile(
     r"(?:effective|take\s+effect)\s+(?:on\s+)?(?P<month>[A-Z][a-z]+)\s+(?P<day>\d{1,2}),?\s+(?P<year>\d{4})",
+    re.IGNORECASE,
+)
+# "shall take effect upon the expiration of the 1-year period beginning on the
+# date of the enactment of this Act" — the drafting sibling of the "N years
+# after enactment" form (same resolved date: enactment + N units). Pervasive in
+# modern acts (e.g. Pub. L. 112-29 (AIA) uses it as the default in §35 and in
+# most per-section effective-date subsections). Without this pattern the scope
+# text is recognized (an "Effective Date" paragraph) but unparseable, so every
+# covered op was mis-marked PENDING_CONDITION and wrongly deferred by the
+# dry-run temporal guard (#220: the title35 2010→2012 systematic class).
+_EFFECTIVE_UPON_EXPIRATION_RE = re.compile(
+    r"(?:effective|take\s+effect)\s+upon\s+the\s+expiration\s+of\s+the\s+"
+    r"(?P<n>\d+)[-\s](?P<unit>year|month|day)\s+period\s+beginning\s+on\s+"
+    r"(?:the\s+date\s+of\s+(?:the\s+)?enactment\s+of\s+this\s+Act|(?P<base_month>[A-Z][a-z]+)\s+"
+    r"(?P<base_day>\d{1,2}),?\s+(?P<base_year>\d{4}))",
     re.IGNORECASE,
 )
 
@@ -586,6 +817,7 @@ def _has_effective_date_phrase(text: str) -> bool:
         return False
     return (
         _EFFECTIVE_OR_TAKE_EFFECT_AFTER_RE.search(text) is not None
+        or _EFFECTIVE_UPON_EXPIRATION_RE.search(text) is not None
         or _EFFECTIVE_OR_TAKE_EFFECT_ON_RE.search(text) is not None
         or _EFFECTIVE_ABSOLUTE_RE.search(text) is not None
     )
@@ -625,6 +857,12 @@ def _parse_effective_date(text: str, enacted: str) -> str:
         return ""
     m = _EFFECTIVE_OR_TAKE_EFFECT_AFTER_RE.search(text)
     if m is not None:
+        return _parse_after_enactment_match(m, enacted)
+    m = _EFFECTIVE_UPON_EXPIRATION_RE.search(text)
+    if m is not None:
+        # "upon the expiration of the N-unit period beginning on X" resolves to
+        # the same date as "N units after X" (the period's last day is the day
+        # before, and the amendment is in force upon its expiration — i.e. X+N).
         return _parse_after_enactment_match(m, enacted)
     if _EFFECTIVE_OR_TAKE_EFFECT_ON_RE.search(text) is not None:
         if not enacted:
@@ -932,6 +1170,86 @@ def _collect_sibling_effective_scopes(
                 if leaf not in scopes:
                     scopes[leaf] = shallow
     return scopes
+
+
+# Act-structural effective-date scope ("SEC. 103. EFFECTIVE DATE.—The amendments
+# made by this title shall take effect ..."): the scope phrase names an ACT
+# container (title/subtitle/division/Act), not a sub-unit range. Routed through
+# ``compile_classifier_regex`` like the sibling scope classifier (AGENTS.md §2.4).
+_ACT_LEVEL_EFFECTIVE_SCOPE_RE = compile_classifier_regex(
+    r"(?:amendments\s+made\s+by|provisions\s+of)\s+this\s+"
+    r"(?P<kind>title|subtitle|division|Act)\b",
+    re.IGNORECASE,
+    classifier_id="us.amendatory.act_level_effective_scope_re",
+)
+
+
+def _collect_act_level_effective_scopes(
+    main: ET.Element,
+    xml_parent_of: dict[ET.Element, ET.Element | None],
+) -> dict[ET.Element, str]:
+    """Map act-structure containers to their dedicated effective-date scope text.
+
+    A modern act frequently carries a NON-amendatory section — "SEC. 103. EFFECTIVE
+    DATE." — declaring when "the amendments made by this title" (or subtitle /
+    division / Act) take effect. That scope lives OUTSIDE the amendatory sections, so
+    the per-section chapeau/sibling collectors can never see it; without this lane
+    the covered ops carry no effective date at all and are applied at enactment
+    (#220: PL 112-211's titles I/II — statutorily effective a year+ after enactment —
+    were replayed into the 2012 edition, the title35:2010→2012 premature-application
+    class; PL 112-29 §35 is the same shape as an act-wide default).
+
+    Returns ``{container_element: scope_text}`` where the container is the enclosing
+    ``<title>``/``<subtitle>``/``<division>`` for "this title/subtitle/division", and
+    ``main`` for "this Act" (scoped to the nearest ``<division>`` when the section
+    sits inside one — in an omnibus act "this Act" denotes the division-act). A
+    container claimed by MORE THAN ONE distinct scope section is dropped as ambiguous
+    — never guess between competing effective-date declarations.
+    """
+    claims: dict[ET.Element, list[str]] = {}
+    for section in main.iter():
+        if _localname(section.tag) != "section":
+            continue
+        # Statutory text being inserted (quotedContent) may itself contain an
+        # "effective date" section — that is the NEW LAW's text, not this act's
+        # temporal scope.
+        if _is_inside_quoted_content(section, xml_parent_of):
+            continue
+        # A true effective-date scope section performs no amendment itself.
+        if any(_localname(a.tag) == "amendingAction" for a in section.iter()):
+            continue
+        text = _text_of(section)
+        lowered = text.lower()
+        if "effective" not in lowered and "take effect" not in lowered:
+            continue
+        m = _ACT_LEVEL_EFFECTIVE_SCOPE_RE.search(text)
+        if m is None:
+            continue
+        kind = m.group("kind").lower()
+        container: ET.Element | None = None
+        if kind == "act":
+            container = main
+            walk = xml_parent_of.get(section)
+            while walk is not None:
+                if _localname(walk.tag) == "division":
+                    container = walk
+                    break
+                walk = xml_parent_of.get(walk)
+        else:
+            walk = xml_parent_of.get(section)
+            while walk is not None:
+                if _localname(walk.tag) == kind:
+                    container = walk
+                    break
+                walk = xml_parent_of.get(walk)
+        if container is None:
+            continue
+        claims.setdefault(container, []).append(text)
+    return {
+        container: texts[0]
+        for container, texts in claims.items()
+        if len(texts) == 1
+    }
 
 
 # ref href / prose chain into the pinned LegalAddress segment kinds. This MUST stay
@@ -6321,6 +6639,38 @@ def _lower_plaw_amendatory_body(
                 )
             )
 
+    # Act-structural effective-date fallback (#220): a dedicated "EFFECTIVE DATE"
+    # section scoping "the amendments made by this title/subtitle/division/Act"
+    # covers every amendatory unit inside that container that carries no CLOSER
+    # effective scope (ancestor chapeau / sibling / section-level all take
+    # precedence — "except as otherwise provided" is honored structurally). The
+    # nearest enclosing claimed container wins (subtitle over title over main).
+    if any(not rec[3] for rec in unit_records):
+        xml_parent_of: dict[ET.Element, ET.Element | None] = {main: None}
+        for parent_elem in main.iter():
+            for child_elem in parent_elem:
+                xml_parent_of[child_elem] = parent_elem
+        act_scopes = _collect_act_level_effective_scopes(main, xml_parent_of)
+        if act_scopes:
+
+            def _act_scope_for(section_elem: ET.Element) -> str:
+                walk: ET.Element | None = section_elem
+                while walk is not None:
+                    scope = act_scopes.get(walk)
+                    if scope is not None:
+                        return scope
+                    walk = xml_parent_of.get(walk)
+                return ""
+
+            unit_records = [
+                (
+                    rec
+                    if rec[3]
+                    else (rec[0], rec[1], rec[2], _act_scope_for(rec[8]), *rec[4:])
+                )
+                for rec in unit_records
+            ]
+
     if plaw_title_scope and explicit_titles and any(
         t != plaw_title_scope for t in explicit_titles
     ):
@@ -6361,6 +6711,43 @@ def _lower_plaw_amendatory_body(
             extracted = _redesignate_table_pairs(unit, section)
             if extracted is not None:
                 table_redesignate_pairs = extracted
+        # Plural multi-section head ("Sections 134, 145, ... are each amended by
+        # ...", #220): the enacted section LIST is the target set. Fan the ONE
+        # instruction into one instruction per named section — each re-lowered
+        # with an explicit single-section target phrase, so the patch/payload
+        # parsing and temporal scope are identical across the set.
+        multi = _multi_section_head_items(raw_text)
+        if multi is not None:
+            multi_title, multi_items = multi
+            for item in multi_items:
+                sequence += 1
+                base_id = unit_id or (statute_id + "#instr" + str(sequence))
+                fanned = _lower_instruction(
+                    statute_id=statute_id,
+                    enacted=enacted,
+                    instruction_id=f"{base_id}@{item}",
+                    sequence=sequence,
+                    target_phrase=f"Section {item} of title {multi_title}, United States Code",
+                    target_href="",
+                    raw_text=raw_text,
+                    effective_text=effective_text,
+                    expires_text=expires_text,
+                    quoted=quoted,
+                    actions=actions,
+                    payload_node=payload_node,
+                    inherited_address=None,
+                    inherited_via_classification=False,
+                    plaw_title_scope=plaw_title_scope,
+                    proof_title=proof_title,
+                    table_redesignate_pairs=table_redesignate_pairs,
+                    classification_index=classification_index,
+                )
+                instructions.append(fanned)
+                if fanned.finding is not None:
+                    findings.append(fanned.finding)
+                if fanned.target_address is not None and fanned.target_address.path:
+                    title_targets.add(f"title {fanned.target_address.path[0][1]}")
+            continue
         sequence += 1
         instr = _lower_instruction(
             statute_id=statute_id,
@@ -6382,6 +6769,10 @@ def _lower_plaw_amendatory_body(
             table_redesignate_pairs=table_redesignate_pairs,
             classification_index=classification_index,
         )
+        # Whole-title each-place strike re-scope (#220, AIA §20(j) family): the
+        # generic resolution above may have latched onto an incidental section
+        # ref; re-scope onto the enacted bare-title target + typed exceptions.
+        instr = _maybe_retarget_title_scope_each_place(instr, section)
         instructions.append(instr)
         if instr.finding is not None:
             findings.append(instr.finding)
