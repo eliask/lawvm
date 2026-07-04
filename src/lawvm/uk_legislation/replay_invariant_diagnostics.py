@@ -17,6 +17,7 @@ from lawvm.core.mutation_boundary import TreePathStep, TreePaths
 from lawvm.core.mutation_events import MutationEvent
 from lawvm.core.semantic_types import StructuralAction
 from lawvm.replay_adjudication import CompileAdjudication
+from lawvm.uk_legislation.canonicalize import uk_is_schedule_address
 from lawvm.uk_legislation.replay_state import NodeLookupResult
 from lawvm.uk_legislation.uk_grafter import _clean_num
 from lawvm.uk_legislation.replay_records import (
@@ -172,7 +173,10 @@ class UKReplayInvariantDiagnosticsMixin:
         if not op.target.path:
             return None
         root_kind, root_label = op.target.path[0]
-        if root_kind == "schedule":
+        # Schedule scope is the typed ``root`` selector (§5.3 / §7 delta #6), with
+        # the legacy ``("schedule", …)`` first-path-element sniff retained as a
+        # byte-safe fallback for not-yet-root-stamped addresses.
+        if uk_is_schedule_address(op.target):
             clean_label = _clean_num(str(root_label or ""))
             if not clean_label:
                 return None
@@ -222,7 +226,7 @@ class UKReplayInvariantDiagnosticsMixin:
                 allow_recursive_match=True,
             )
         schedule_root = None
-        if address.path and address.path[0][0] == "schedule":
+        if address.path and uk_is_schedule_address(address):
             schedule_label = _clean_num(str(address.path[0][1] or ""))
             for schedule in self.statute.supplements:
                 if _clean_num(str(schedule.label or "")) == schedule_label:

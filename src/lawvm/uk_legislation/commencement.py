@@ -21,6 +21,7 @@ from lawvm.core.temporal_resolution import (
 )
 from lawvm.uk_legislation.addressing import _uk_kind_value
 from lawvm.uk_legislation.canonicalize import (
+    uk_is_schedule_address,
     uk_is_transparent_wrapper_kind,
     uk_should_bubble_structural_commencement,
 )
@@ -391,8 +392,13 @@ def commencement_eid_set(
             if not addr.path:
                 continue
 
+            # An unlabeled schedule root (``@supplements ("schedule", "")``) is
+            # non-cacheable: its match set depends on live schedule state, not the
+            # path alone. Detect the schedule compartment via the typed ``root``
+            # selector (§5.3 / §7 delta #6) with the legacy first-path-element
+            # sniff retained as a byte-safe fallback.
             cacheable_match = not (
-                addr.path[0][0] == "schedule" and not str(addr.path[0][1] or "").strip()
+                uk_is_schedule_address(addr) and not str(addr.path[0][1] or "").strip()
             )
             if cacheable_match and addr.path in match_cache:
                 matching = match_cache[addr.path]
