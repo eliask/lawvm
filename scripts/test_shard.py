@@ -1032,6 +1032,13 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # round-trip, an engine-level synthetic-injection fail-red, and
         # @requires_nz_corpus data-present fail-red over the NZ legislation Farchive.
         "test_ctsf_gate_nz.py",
+        # SE (#183/#205) CTSF gate corpus — the Sweden analogue: frozen 0-billable SE
+        # baseline over the per-amending-act pre→post replay window (SE has no dated
+        # consolidation chain; the amending act is the legal-time step, and the penalized
+        # surface is the SE three-bucket genuine_mismatch set se-bench scores),
+        # FAIL/WARN/PASS diff logic, round-trip, and @requires_se_corpus data-present
+        # fail-red over the sweden.farchive.
+        "test_ctsf_gate_se.py",
         "test_diagnose_phase.py",
         "test_diff.py",
         "test_dump.py",

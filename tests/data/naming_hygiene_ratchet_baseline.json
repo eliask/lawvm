@@ -8,6 +8,7 @@
     "src/lawvm/tools/fi_anchor_manifest.py": 2,
     "src/lawvm/tools/fi_aux_pit_probe.py": 1,
     "src/lawvm/tools/nz_anchor_manifest.py": 1,
+    "src/lawvm/tools/se_anchor_manifest.py": 2,
     "src/lawvm/tools/uk_anchor_manifest.py": 2,
     "src/lawvm/tools/uk_semantic_claims.py": 2,
     "src/lawvm/us_federal/act_name_registry.py": 1,
@@ -200,6 +201,7 @@
     "lawvm.residual_ledger.v0",
     "lawvm.residual_ledger_validation.v1",
     "lawvm.scope_predicate.v1",
+    "lawvm.se_anchor_manifest.v1",
     "lawvm.se_coverage_universe.v0",
     "lawvm.se_overwrite_event.v0",
     "lawvm.selection_candidate_set.v1",
@@ -258,5 +260,5 @@
     "lawvm.work.v1",
     "lawvm.work_inventory_row.v0"
   ],
-  "total_bare_status": 16
+  "total_bare_status": 18
 }

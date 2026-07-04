@@ -108,6 +108,16 @@ DEAD_ALLOWLIST: dict[str, str] = {
     # UK. Unlike US (a span-materializer whose only sort uses the shared
     # ``default_label_sort_key``, terminally declared-only), UK IS a tree grafter with
     # a ``_label_sort_key``-keyed sort, so a byte-safe routing site exists.
+    "lawvm.tools.se_anchor_manifest": (
+        "#183/#205 SWEDEN CTSF frozen-anchor + touch-relation engine (the SE analogue "
+        "of ee/uk_anchor_manifest). Exposes ``score_se_real_corpus()`` + the frozen SE "
+        "baseline for the PARENT to wire into ``core.ctsf_gate`` (the gate section that "
+        "makes it production-reachable, exactly like EE/UK are reached from the "
+        "``lawvm ctsf-gate`` CLI). Conformance-tested by ``test_ctsf_gate_se.py``; "
+        "production wiring is INTENTIONALLY deferred to the parent's ctsf_gate "
+        "integration (the module must NOT edit ctsf_gate itself). Frontier-dead pending "
+        "that wave, mirroring the pre-wiring state EE/UK passed through."
+    ),
     "lawvm.us_federal.label_algebra": (
         "#186 §4.2 item 4 LabelAlgebra extended to U.S. federal as a DECLARED spec. "
         "US_LABEL_ALGEBRA mirrors the U.S. Code numeric-stem + ``106A`` letter-insert "

@@ -1,0 +1,44 @@
+{
+  "_doc": "CTSF residual-set-diff gate baseline — SWEDEN (#183/#205). Frozen typed-residual set of the REAL SE touch-relation anchor corpus (REAL_ANCHOR_SE_CORPUS_SIDS), keyed {sid: {family: count}} with only non-zero families retained. A SE anchor is the per-amending-act pre→post replay window (SE has no dated consolidation chain — a single-version RK oracle; the amending act is the legal-time step). The penalized surface is the SE three-bucket genuine_mismatch set (the exact surface se-bench's structural_err scores); every scored section is an op target replay touched by construction. The gate FAILs iff a NEW replay_bug/unknown residual appears vs this set; WARNs on a typed oracle/editorial/temporal move. This corpus is curated 0-BILLABLE (the honest steady state); SE amending acts whose pre→post replay surfaces genuine billable residuals are deliberately excluded (they are defects to fix, not to freeze). Regenerate with `uv run python -m lawvm.tools.se_anchor_manifest --update-baseline` (needs the SE Farchive) after a legitimate, reviewed corpus/projection change — a preregistered predict-then-compare event, never a silent baseline move.",
+  "gate_version": "v0",
+  "jurisdiction": "sweden",
+  "corpus_sids": [
+    "2002:1006",
+    "2006:1320",
+    "2011:1496",
+    "2012:682",
+    "2014:313",
+    "2015:838",
+    "2016:1216",
+    "2018:243",
+    "2018:328",
+    "2022:1495",
+    "2022:543"
+  ],
+  "families": [
+    "replay_bug",
+    "oracle_editorial_pathology",
+    "temporal_mismatch",
+    "state_index",
+    "cnf_unsupported",
+    "unknown"
+  ],
+  "fail_families": [
+    "replay_bug",
+    "unknown"
+  ],
+  "total_residuals": 0,
+  "residuals": {
+    "2002:1006": {},
+    "2006:1320": {},
+    "2011:1496": {},
+    "2012:682": {},
+    "2014:313": {},
+    "2015:838": {},
+    "2016:1216": {},
+    "2018:243": {},
+    "2018:328": {},
+    "2022:1495": {},
+    "2022:543": {}
+  }
+}
