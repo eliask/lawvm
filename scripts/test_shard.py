@@ -1047,6 +1047,22 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # engine lives in lawvm.tools.no_anchor_manifest (exposes score_no_real_corpus
         # + the frozen baseline for the parent to integrate into core.ctsf_gate).
         "test_ctsf_gate_no.py",
+        # US (#205) CTSF gate corpus — the EIGHTH-jurisdiction analogue over an
+        # architecturally different frontend: US is a TEXT/SPAN materializer
+        # (us_federal.dry_run does string surgery on located char spans), not a
+        # label-ordered tree grafter. Its anchor is one adjacent USC annual-edition
+        # window (title, before_year, after_year); the dry-run kernel replays the
+        # window's Public Laws onto the before edition and scores the materialized
+        # per-section text against the OLRC after-edition oracle, over the
+        # changed-section touch surface. The per-window disposition partition projects
+        # to CTSF families (lawvm_wrong -> replay_bug, unclassified non-agreement ->
+        # unknown; oracle_suspect/sunset/deferred/missing_source to the WARN-lane
+        # families). Frozen 0-billable US baseline, FAIL/WARN/PASS diff logic,
+        # round-trip, an excluded-billable-windows convict test, and @requires_us_corpus
+        # data-present fail-red over the us_federal.farchive. The engine lives in
+        # lawvm.tools.us_anchor_manifest (exposes score_us_real_corpus + the frozen
+        # baseline for the parent to integrate into core.ctsf_gate).
+        "test_ctsf_gate_us.py",
         "test_diagnose_phase.py",
         "test_diff.py",
         "test_dump.py",

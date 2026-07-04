@@ -12,6 +12,7 @@
     "src/lawvm/tools/se_anchor_manifest.py": 2,
     "src/lawvm/tools/uk_anchor_manifest.py": 2,
     "src/lawvm/tools/uk_semantic_claims.py": 2,
+    "src/lawvm/tools/us_anchor_manifest.py": 1,
     "src/lawvm/us_federal/act_name_registry.py": 1,
     "src/lawvm/us_federal/import_table3.py": 1,
     "src/lawvm/us_federal/table3.py": 1
@@ -88,7 +89,7 @@
     "sparse_slot_candidate_certificate",
     "sparse_slot_candidate_certificates"
   ],
-  "public_schema_count": 171,
+  "public_schema_count": 172,
   "public_schemas": [
     "lawvm.address_id.v1",
     "lawvm.address_node.v1",
@@ -259,8 +260,9 @@
     "lawvm.uk_semantic_compile_claim_template.v1",
     "lawvm.uk_semantic_compile_claim_validation.v1",
     "lawvm.uk_text_patch_compile_evidence.v1",
+    "lawvm.us_anchor_manifest.v1",
     "lawvm.work.v1",
     "lawvm.work_inventory_row.v0"
   ],
-  "total_bare_status": 20
+  "total_bare_status": 21
 }

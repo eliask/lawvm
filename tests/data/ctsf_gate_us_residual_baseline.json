@@ -1,0 +1,70 @@
+{
+  "_doc": "CTSF residual-set-diff gate baseline — US FEDERAL (#205). Frozen typed-residual set of the REAL US adjacent-edition window anchor corpus (REAL_ANCHOR_US_CORPUS_WINDOWS), keyed {window: {family: count}} with only non-zero families retained. A US anchor is one (title, before_year, after_year) OLRC-published USC annual-edition window; the dry-run kernel replays the window's Public Laws onto the before edition and scores the materialized per-section text against the after-edition oracle. The touch surface is the changed-section set (every scored section is a section the window's amendments touched). The per-section disposition partition projects to CTSF families: lawvm_wrong -> replay_bug (BILLABLE), unclassified non-agreement -> unknown (BILLABLE), oracle_suspect -> oracle_editorial_pathology, sunset_reversion/deferred_op -> temporal_mismatch, missing_source -> cnf_unsupported (all WARN-lane). The gate FAILs iff a NEW replay_bug/unknown residual appears vs this set; WARNs on a typed editorial/temporal/capability-gap move. This corpus is curated 0-BILLABLE (the honest steady state); US windows whose replay surfaces a genuine lawvm_wrong are deliberately excluded (defects to fix, not to freeze) and proven convicting by test_us_excluded_billable_windows_convict. Regenerate with `uv run python -m lawvm.tools.us_anchor_manifest --update-baseline` (needs the US Farchive) after a legitimate, reviewed corpus/projection change — a preregistered predict-then-compare event, never a silent baseline move.",
+  "gate_version": "v0",
+  "jurisdiction": "us_federal",
+  "corpus_windows": [
+    "title11:2023->2024",
+    "title20:2018->2020",
+    "title21:2023->2024",
+    "title23:2016->2018",
+    "title28:2014->2016",
+    "title28:2016->2018",
+    "title35:2020->2022",
+    "title39:2022->2023",
+    "title40:2018->2020",
+    "title40:2022->2023",
+    "title47:2023->2024",
+    "title48:2022->2023",
+    "title8:2016->2018"
+  ],
+  "families": [
+    "replay_bug",
+    "oracle_editorial_pathology",
+    "temporal_mismatch",
+    "state_index",
+    "cnf_unsupported",
+    "unknown"
+  ],
+  "fail_families": [
+    "replay_bug",
+    "unknown"
+  ],
+  "total_residuals": 38,
+  "residuals": {
+    "title11:2023->2024": {
+      "temporal_mismatch": 2
+    },
+    "title20:2018->2020": {},
+    "title21:2023->2024": {
+      "cnf_unsupported": 10
+    },
+    "title23:2016->2018": {
+      "cnf_unsupported": 2,
+      "oracle_editorial_pathology": 3
+    },
+    "title28:2014->2016": {
+      "cnf_unsupported": 2,
+      "oracle_editorial_pathology": 2,
+      "temporal_mismatch": 1
+    },
+    "title28:2016->2018": {
+      "cnf_unsupported": 2
+    },
+    "title35:2020->2022": {
+      "oracle_editorial_pathology": 1
+    },
+    "title39:2022->2023": {},
+    "title40:2018->2020": {
+      "cnf_unsupported": 5
+    },
+    "title40:2022->2023": {},
+    "title47:2023->2024": {},
+    "title48:2022->2023": {
+      "cnf_unsupported": 1
+    },
+    "title8:2016->2018": {
+      "cnf_unsupported": 5,
+      "temporal_mismatch": 2
+    }
+  }
+}
