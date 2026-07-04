@@ -400,10 +400,17 @@ def _scan_affecting_acts(archive: Farchive) -> set[str]:
 
 
 def _split_statute_id(statute_id: str) -> tuple[str, str, str]:
-    parts = statute_id.strip("/").split("/")
-    if len(parts) != 3 or not all(parts):
-        raise ValueError(f"invalid UK statute id: {statute_id!r}")
-    return parts[0], parts[1], parts[2]
+    """Split a UK statute id into ``(act_type, year, number)`` URL components.
+
+    Delegates to :func:`pdf_acquire._parse_statute_id` so regnal-year ids
+    (pre-1963, e.g. ``ukpga/Vict/45-46/61`` -> ``("ukpga", "Vict/45-46",
+    "61")``) split identically to every other acquisition lane instead of
+    crashing on the extra path segment. Modern calendar-year ids
+    (``ukpga/2020/17``) are unchanged.
+    """
+    from lawvm.uk_legislation.pdf_acquire import _parse_statute_id
+
+    return _parse_statute_id(statute_id)
 
 
 # ── Phases ──────────────────────────────────────────────────────────────────
