@@ -12,7 +12,11 @@ from lawvm.core.semantic_types import TextPatchKindEnum
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.roman import roman_to_arabic as _shared_roman_to_arabic
 from lawvm.uk_legislation.addressing import _addr_container, _addr_leaf_kind, _uk_kind_value
-from lawvm.uk_legislation.canonicalize import uk_is_transparent_wrapper_kind, uk_kind_matches
+from lawvm.uk_legislation.canonicalize import (
+    uk_is_schedule_address,
+    uk_is_transparent_wrapper_kind,
+    uk_kind_matches,
+)
 from lawvm.uk_legislation.apply_rebuild import uk_ir_node_kind
 from lawvm.uk_legislation.ordering import _label_sort_key
 from lawvm.uk_legislation.replay_records import (
@@ -1100,7 +1104,7 @@ class UKReplayTargetDiagnosticsMixin:
     def _annex_schedule_mismatch_gap(self, op: LegalOperation) -> bool:
         target = getattr(op, "target", None)
         path = tuple(getattr(target, "path", ()) or ())
-        if len(path) != 1 or str(path[0][0] or "").lower() != "schedule":
+        if len(path) != 1 or target is None or not uk_is_schedule_address(target):
             return False
         witness = _witness_for_op(op)
         extraction = getattr(witness, "extraction_witness", None)
@@ -1312,9 +1316,9 @@ class UKReplayTargetDiagnosticsMixin:
 
     def _missing_schedule_branch_gap(self, target: LegalAddress) -> bool:
         path = tuple(getattr(target, "path", ()) or ())
-        if len(path) < 2 or str(path[0][0] or "").lower() != "schedule":
+        if len(path) < 2 or not uk_is_schedule_address(target):
             return False
-        schedule_target = LegalAddress(path=path[:1], special=None)
+        schedule_target = LegalAddress(path=path[:1], special=None, root=target.root)
         schedule_node, _, _ = self._find_node_by_target(schedule_target)
         return schedule_node is None
 
@@ -1688,7 +1692,7 @@ class UKReplayTargetDiagnosticsMixin:
 
     def _missing_schedule_root_gap(self, target: LegalAddress) -> bool:
         path = tuple(getattr(target, "path", ()) or ())
-        if len(path) != 1 or str(path[0][0] or "").lower() != "schedule":
+        if len(path) != 1 or not uk_is_schedule_address(target):
             return False
         want_label = str(path[0][1] or "").strip()
         if not want_label:

@@ -275,7 +275,7 @@ def try_lower_direct_definition_list_end_schedule_entry(
 ) -> UKScheduleBatchLoweringResult:
     if action != "insert" or heading_facet_target:
         return UKScheduleBatchLoweringResult(handled=False)
-    if len(target.path) != 1 or str(target.path[0][0]).lower() != "schedule":
+    if len(target.path) != 1 or _addr_container(target) != "schedule":
         return UKScheduleBatchLoweringResult(handled=False)
     source_row_id = (
         str(extracted_el.get("id") or extracted_el.get("Id") or "")

@@ -13,7 +13,7 @@ from lawvm.uk_legislation.addressing import (
     _addr_leaf_kind,
     _addr_leaf_label,
 )
-from lawvm.uk_legislation.canonicalize import uk_kind_matches
+from lawvm.uk_legislation.canonicalize import uk_is_schedule_address, uk_kind_matches
 from lawvm.uk_legislation.replay_text import _normalized_replay_subtree_text
 from lawvm.uk_legislation.uk_grafter import _clean_num
 from lawvm.uk_legislation.witness_sidecars import _witness_for_op
@@ -179,7 +179,7 @@ def uk_repeated_form_label_payload_shape_gap(
     if payload is None or _action_name(op.action) != "insert":
         return False
     target_path = op.target.path
-    if len(target_path) != 1 or str(target_path[0][0] or "").lower() != "schedule":
+    if len(target_path) != 1 or not uk_is_schedule_address(op.target):
         return False
     if payload.kind.value.lower() != "schedule":
         return False

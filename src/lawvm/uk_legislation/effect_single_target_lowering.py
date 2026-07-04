@@ -8,6 +8,7 @@ from typing import Any, Optional, Protocol, Sequence
 
 from lawvm.core.ir import LegalAddress, LegalOperation
 from lawvm.core.semantic_types import FacetKind
+from lawvm.uk_legislation.canonicalize import uk_is_schedule_address
 from lawvm.uk_legislation.effects import UKEffectRecord
 from lawvm.uk_legislation.effect_crossheading_prelude import (
     append_crossheading_group_repeal_observation,
@@ -563,10 +564,13 @@ def _lower_effect_target(ctx: _EffectTargetLoweringInput) -> _EffectTargetLoweri
         and content_ir is not None
         and str(content_ir.get("kind") or "").lower() in {"schedule", "irnodekind.schedule"}
         and len(target.path) > 1
-        and str(target.path[0][0] or "").lower() == "schedule"
+        and uk_is_schedule_address(target)
     ):
         original_target = target
-        target = LegalAddress(path=target.path[:1], special=None)
+        # Retarget to the schedule root, preserving the ``supplements`` compartment
+        # selector so the truncated address stays in the schedule lane by ``root``
+        # rather than falling back to the path sniff (§5.3 / §7 delta #6).
+        target = LegalAddress(path=target.path[:1], special=None, root=target.root)
         payload_match_target = target
         _append_uk_effect_lowering_observation(
             lowering_rejections_out,
