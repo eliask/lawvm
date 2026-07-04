@@ -60,14 +60,27 @@ def _strip_payload_leading_label(node: IRNode) -> IRNode:
 
 
 def _address_from_serialized_path(path_text: str) -> LegalAddress:
+    # Inverse of ``LegalAddress.__str__``: a serialized address that names a
+    # non-body compartment root renders as ``@<root> <path>`` (§5.3 / §7 delta
+    # #6). Peel the ``@<root> `` prefix back into the ``root`` field so the
+    # round-trip does not fold ``@supplements`` into the first path element's
+    # kind (a schedule address must reconstruct with ``root="supplements"``, not
+    # a bogus ``("@supplements schedule", …)`` element).
+    text = str(path_text or "")
+    root: Optional[str] = None
+    if text.startswith("@"):
+        prefix, _, remainder = text[1:].partition(" ")
+        if prefix:
+            root = prefix
+            text = remainder
     parts = []
-    for part in str(path_text or "").split("/"):
+    for part in text.split("/"):
         if ":" not in part:
             continue
         kind, label = part.split(":", 1)
         if kind:
             parts.append((kind, label))
-    return LegalAddress(path=tuple(parts))
+    return LegalAddress(path=tuple(parts), root=root)
 
 
 from lawvm.uk_legislation.witness_sidecars import (

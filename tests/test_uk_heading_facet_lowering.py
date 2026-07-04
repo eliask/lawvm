@@ -289,7 +289,7 @@ def test_structural_insert_with_crossheading_carrier_still_lowers() -> None:
     )
 
     assert len(ops) == 1
-    assert ops[0].target == LegalAddress((("schedule", "6"), ("paragraph", "43a")))
+    assert ops[0].target == LegalAddress((("schedule", "6"), ("paragraph", "43a")), root="supplements")
     assert not any(
         record["rule_id"] == "uk_effect_crossheading_insert_rejected"
         for record in lowering_rejections

@@ -5218,7 +5218,7 @@ def test_executor_classifies_existing_destination_for_supported_sibling_renumber
     assert adjudication.kind == "uk_replay_existing_target_conflict_gap"
     assert adjudication.detail["action"] == "renumber"
     assert adjudication.detail["target"] == "schedule:26/paragraph:5"
-    assert adjudication.detail["destination"] == "schedule:26/paragraph:15"
+    assert adjudication.detail["destination"] == "@supplements schedule:26/paragraph:15"
     assert adjudication.detail["reason_code"] == "renumber_destination_target_present"
     assert adjudication.detail["family"] == "source_shape_gap"
     assert classify_uk_replay_adjudication_bucket(adjudication.kind) == "source_shape"

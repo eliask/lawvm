@@ -1696,7 +1696,7 @@ def test_compile_inserted_schedule_wrapper_retargets_descendant_part_target_to_s
     )
 
     assert len(ops) == 1
-    assert str(ops[0].target) == "schedule:5a"
+    assert str(ops[0].target) == "@supplements schedule:5a"
     assert ops[0].payload is not None
     assert ops[0].payload.kind == IRNodeKind.SCHEDULE
     assert ops[0].payload.label == "SCHEDULE 5A"
@@ -1707,8 +1707,8 @@ def test_compile_inserted_schedule_wrapper_retargets_descendant_part_target_to_s
         if record["rule_id"] == "uk_effect_source_schedule_parent_payload_retargeted"
     ]
     assert len(retarget) == 1
-    assert retarget[0]["original_target"] == "schedule:5a/part:1"
-    assert retarget[0]["target"] == "schedule:5a"
+    assert retarget[0]["original_target"] == "@supplements schedule:5a/part:1"
+    assert retarget[0]["target"] == "@supplements schedule:5a"
     assert retarget[0]["strict_disposition"] == "record"
 
 
@@ -1776,7 +1776,7 @@ def test_compile_empty_type_whole_schedule_insert_from_source_parent_formula() -
 
     assert len(ops) == 1
     assert ops[0].action == StructuralAction.INSERT
-    assert str(ops[0].target) == "schedule:6a"
+    assert str(ops[0].target) == "@supplements schedule:6a"
     assert ops[0].payload is not None
     assert ops[0].payload.kind == IRNodeKind.SCHEDULE
     assert ops[0].payload.label == "SCHEDULE 6A"
@@ -1787,7 +1787,7 @@ def test_compile_empty_type_whole_schedule_insert_from_source_parent_formula() -
     ]
     assert len(observations) == 1
     assert observations[0]["source_parent_id"] == "schedule-2-paragraph-1-3"
-    assert observations[0]["target"] == "schedule:6a"
+    assert observations[0]["target"] == "@supplements schedule:6a"
     assert observations[0]["strict_disposition"] == "record"
 
 
@@ -1897,7 +1897,7 @@ def test_compile_rejects_flat_text_as_whole_schedule_replacement_payload() -> No
     assert rejection["rule_id"] == "uk_effect_broad_schedule_flat_payload_rejected"
     assert rejection["family"] == "payload_coverage_filter"
     assert rejection["reason_code"] == "broad_schedule_or_part_replace_payload_undercovered"
-    assert rejection["target"] == "schedule:2"
+    assert rejection["target"] == "@supplements schedule:2"
     assert rejection["blocking"] is True
     assert rejection["strict_disposition"] == "block"
 
@@ -2210,7 +2210,7 @@ def test_compile_mixed_heading_structural_insert_allows_explicit_schedule_paragr
 
     assert len(ops) == 1
     assert ops[0].action is StructuralAction.INSERT
-    assert ops[0].target == LegalAddress((("schedule", "22"), ("paragraph", "89a")))
+    assert ops[0].target == LegalAddress((("schedule", "22"), ("paragraph", "89a")), root="supplements")
     assert ops[0].payload is not None
     assert ops[0].payload.kind is IRNodeKind.CROSSHEADING
     assert ops[0].payload.text == "Quantitative restrictions not to apply to ordinary charters"
@@ -2472,7 +2472,7 @@ def test_compile_inserted_schedule_paragraph_p1group_title_becomes_crossheading_
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
 
     assert len(ops) == 1
-    assert ops[0].target == LegalAddress((("schedule", "6"), ("paragraph", "43a")))
+    assert ops[0].target == LegalAddress((("schedule", "6"), ("paragraph", "43a")), root="supplements")
     payload = ops[0].payload
     assert payload is not None
     assert payload.kind is IRNodeKind.CROSSHEADING
@@ -2625,10 +2625,10 @@ def test_compile_schedule_paragraph_range_with_plural_cross_headings_suffix_expa
         StructuralAction.INSERT,
     ]
     assert [op.target for op in ops] == [
-        LegalAddress((("schedule", "6"), ("paragraph", "45"))),
-        LegalAddress((("schedule", "6"), ("paragraph", "46"))),
-        LegalAddress((("schedule", "6"), ("paragraph", "47"))),
-        LegalAddress((("schedule", "6"), ("paragraph", "48"))),
+        LegalAddress((("schedule", "6"), ("paragraph", "45")), root="supplements"),
+        LegalAddress((("schedule", "6"), ("paragraph", "46")), root="supplements"),
+        LegalAddress((("schedule", "6"), ("paragraph", "47")), root="supplements"),
+        LegalAddress((("schedule", "6"), ("paragraph", "48")), root="supplements"),
     ]
     payloads = [op.payload for op in ops]
     non_none_payloads = [payload for payload in payloads if payload is not None]
@@ -2649,7 +2649,7 @@ def test_compile_schedule_paragraph_range_with_plural_cross_headings_suffix_expa
     assert [payload.children[0].label for payload in non_none_payloads] == ["45", "46", "47", "48"]
     assert any(
         record["rule_id"] == "uk_effect_chained_insertion_anchor_lowered"
-        and record["target"] == "schedule:6/paragraph:46"
+        and record["target"] == "@supplements schedule:6/paragraph:46"
         and record["preceding_eid"] == "schedule-6-paragraph-45"
         for record in lowering_records
     )
@@ -4850,8 +4850,8 @@ def test_compile_substituted_for_label_change_targets_source_old_sibling() -> No
     assert ops[0].witness_rule_id == "uk_effect_substituted_for_label_changing_target_rebound"
     assert any(
         record["rule_id"] == "uk_effect_substituted_for_label_changing_target_rebound"
-        and record["substitutions"][0]["source_target"] == "schedule:4/paragraph:1/item:b"
-        and record["substitutions"][0]["replacement_target"] == "schedule:4/paragraph:1/item:c"
+        and record["substitutions"][0]["source_target"] == "@supplements schedule:4/paragraph:1/item:b"
+        and record["substitutions"][0]["replacement_target"] == "@supplements schedule:4/paragraph:1/item:c"
         for record in lowering_records
     )
 
@@ -4902,8 +4902,8 @@ def test_compile_words_substituted_uses_explicit_source_schedule_paragraph_targe
         if record["rule_id"] == "uk_effect_source_text_schedule_paragraph_target_overrides_metadata"
     )
     assert (
-        override_record["metadata_target"] == "schedule:3/paragraph:11"
-        and override_record["source_target"] == "schedule:3/paragraph:5"
+        override_record["metadata_target"] == "@supplements schedule:3/paragraph:11"
+        and override_record["source_target"] == "@supplements schedule:3/paragraph:5"
     )
     assert override_record["target_resolution"] == {
         "rule_id": "uk_effect_source_text_schedule_paragraph_target_overrides_metadata",
@@ -4919,10 +4919,10 @@ def test_compile_words_substituted_uses_explicit_source_schedule_paragraph_targe
         "target_resolution_status": "recovered",
         "source_target": "Sch. 3 para. 11",
         "candidate_count": 1,
-        "selected_target": "schedule:3/paragraph:5",
+        "selected_target": "@supplements schedule:3/paragraph:5",
         "selected_target_differs_from_source": True,
         "scope_confidence": "explicit_source",
-        "metadata_target": "schedule:3/paragraph:11",
+        "metadata_target": "@supplements schedule:3/paragraph:11",
         "jurisdiction_status": "explicit_source_schedule_paragraph_overrides_metadata",
     }
 
@@ -5439,7 +5439,7 @@ def test_compile_source_owned_schedule_structural_sibling_insert() -> None:
     assert [row["rule_id"] for row in lowering_records] == [
         "uk_effect_structural_sibling_insert_lowered",
     ]
-    assert lowering_records[0]["target"] == "schedule:10/paragraph:1/item:aa"
+    assert lowering_records[0]["target"] == "@supplements schedule:10/paragraph:1/item:aa"
     assert lowering_records[0]["blocking"] is False
 
     base = IRStatute(
@@ -5875,7 +5875,7 @@ def test_compile_amendment_program_inserted_section_child_insert_is_frontier() -
     rejection = lowering_records[0]
     assert rejection["family"] == "amendment_program_lowering"
     assert rejection["reason_code"] == "insert_targets_prior_amendment_inserted_parent"
-    assert rejection["target"] == "schedule:2/paragraph:1"
+    assert rejection["target"] == "@supplements schedule:2/paragraph:1"
     assert rejection["source_paragraph_label"] == "1"
     assert rejection["inserted_parent_kind"] == "section"
     assert rejection["inserted_parent_label"] == "136r"
@@ -5930,7 +5930,7 @@ def test_compile_same_schedule_inserted_anchor_ground_insert_as_source_chain() -
 
     assert len(ops) == 1
     assert ops[0].action == StructuralAction.INSERT
-    assert str(ops[0].target) == "schedule:2/paragraph:ground/subparagraph:5g"
+    assert str(ops[0].target) == "@supplements schedule:2/paragraph:ground/subparagraph:5g"
     assert ops[0].payload is not None
     assert ops[0].payload.kind == IRNodeKind.SUBPARAGRAPH
     assert ops[0].payload.label == "5g"
@@ -5993,7 +5993,7 @@ def test_compile_contextual_same_schedule_inserted_anchor_ground_insert() -> Non
     )
 
     assert len(ops) == 1
-    assert str(ops[0].target) == "schedule:2/paragraph:ground/subparagraph:6b"
+    assert str(ops[0].target) == "@supplements schedule:2/paragraph:ground/subparagraph:6b"
     assert ops[0].payload is not None
     assert ops[0].payload.label == "6b"
     assert ops[0].payload.text == "Any of the following applies."
@@ -6053,9 +6053,9 @@ def test_compile_multi_ground_inserted_anchor_range_split_by_feed_targets() -> N
         )
 
     assert [str(op.target) for op in ops] == [
-        "schedule:2/paragraph:ground/subparagraph:2zb",
-        "schedule:2/paragraph:ground/subparagraph:2zc",
-        "schedule:2/paragraph:ground/subparagraph:2zd",
+        "@supplements schedule:2/paragraph:ground/subparagraph:2zb",
+        "@supplements schedule:2/paragraph:ground/subparagraph:2zc",
+        "@supplements schedule:2/paragraph:ground/subparagraph:2zd",
     ]
     assert [op.payload.text if op.payload is not None else "" for op in ops] == [
         "The landlord holds a superior tenancy.",
@@ -14095,7 +14095,7 @@ def test_compile_labeled_end_range_blocks_incompatible_child_endpoint_target() -
     ]
     assert lowering_records[0]["blocking"] is True
     assert lowering_records[0]["strict_disposition"] == "block"
-    assert lowering_records[0]["target"] == "schedule:1/paragraph:1"
+    assert lowering_records[0]["target"] == "@supplements schedule:1/paragraph:1"
     assert lowering_records[0]["target_suffix_kind"] == "paragraph"
     assert lowering_records[0]["target_suffix_label"] == "b"
 
@@ -20904,9 +20904,9 @@ def test_compile_broad_schedule_table_column_text_patch_selector() -> None:
         "table_carrier_recovery_rule": "uk_replay_table_carrier_anchor_filtered_descendant_table",
         "table_column_text_action": "replace_text",
         "table_label": "",
-        "table_marker_parent_target": "schedule:1",
+        "table_marker_parent_target": "@supplements schedule:1",
         "target_ref": "Sch. 1",
-        "original_target": "schedule:1",
+        "original_target": "@supplements schedule:1",
     }
     assert any(
         record["rule_id"] == "uk_effect_table_column_text_patch"
@@ -25972,7 +25972,8 @@ def test_compile_repeal_table_quoted_words_allows_blank_feed_type_when_source_cl
     assert len(ops) == 1
     assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target == LegalAddress(
-        path=(("schedule", "22"), ("paragraph", "84"), ("subparagraph", "1"))
+        path=(("schedule", "22"), ("paragraph", "84"), ("subparagraph", "1")),
+        root="supplements",
     )
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "or structure"
@@ -27002,7 +27003,7 @@ def test_compile_repeal_table_structural_schedule_paragraph_list_and_range_membe
         assert ops[0].witness_rule_id == "uk_effect_repeal_table_structural_repeal"
         assert any(
             record["rule_id"] == "uk_effect_repeal_table_structural_repeal"
-            and record["target"] == f"schedule:29/paragraph:{paragraph_label}"
+            and record["target"] == f"@supplements schedule:29/paragraph:{paragraph_label}"
             and record["extent_cell"] == "In Schedule 29, paragraphs 20, 21 and 41 to 43."
             and record["blocking"] is False
             for record in lowering_records
@@ -27010,7 +27011,7 @@ def test_compile_repeal_table_structural_schedule_paragraph_list_and_range_membe
     else:
         assert any(
             record["rule_id"] == "uk_effect_repeal_table_structural_repeal_unresolved"
-            and record["target"] == f"schedule:29/paragraph:{paragraph_label}"
+            and record["target"] == f"@supplements schedule:29/paragraph:{paragraph_label}"
             and record["match_count"] == 0
             and record["blocking"] is True
             for record in lowering_records
@@ -27076,8 +27077,8 @@ def test_compile_repeal_table_broad_schedule_repeal_lowers_descendant_feed_row()
     assert any(
         record["rule_id"] == "uk_effect_broad_container_repeal_table_feed_descendant_repeal"
         and record["reason_code"] == "broad_container_repeal_table_feed_descendant_derived"
-        and record["target"] == "schedule:12/paragraph:1"
-        and record["broad_container_target"] == "schedule:12"
+        and record["target"] == "@supplements schedule:12/paragraph:1"
+        and record["broad_container_target"] == "@supplements schedule:12"
         and record["extent_cell"] == "Schedule 12."
         and record["blocking"] is False
         for record in lowering_records
@@ -27145,7 +27146,7 @@ def test_compile_repeal_table_schedule_except_paragraphs_matches_feed_descendant
         assert any(
             record["rule_id"] == "uk_effect_repeal_table_structural_repeal"
             and record["reason_code"] == "container_except_extent_row_feed_descendant_repeal"
-            and record["target"] == f"schedule:12/paragraph:{paragraph_label}"
+            and record["target"] == f"@supplements schedule:12/paragraph:{paragraph_label}"
             and record["extent_cell"] == "Schedule 12, except paragraphs 17 and 18."
             and record["blocking"] is False
             for record in lowering_records
@@ -27154,7 +27155,7 @@ def test_compile_repeal_table_schedule_except_paragraphs_matches_feed_descendant
         assert any(
             record["rule_id"] == "uk_effect_repeal_table_structural_repeal_unresolved"
             and record["reason_code"] == "no_unique_matching_repeal_table_structural_row"
-            and record["target"] == f"schedule:12/paragraph:{paragraph_label}"
+            and record["target"] == f"@supplements schedule:12/paragraph:{paragraph_label}"
             and record["blocking"] is True
             for record in lowering_records
         )
@@ -27218,7 +27219,7 @@ def test_compile_repeal_table_structural_title_year_member_repeal() -> None:
     assert ops[0].witness_rule_id == "uk_effect_repeal_table_structural_repeal"
     assert any(
         record["rule_id"] == "uk_effect_repeal_table_structural_repeal"
-        and record["target"] == "schedule:7/paragraph:16"
+        and record["target"] == "@supplements schedule:7/paragraph:16"
         and record["extent_cell"] == "In schedule 7, paragraph 16."
         and record["enactment_match_basis"] == "exact_affected_title_year"
         and record["blocking"] is False
@@ -27279,7 +27280,7 @@ def test_compile_repeal_table_structural_title_year_mismatch_stays_unresolved() 
     assert ops == []
     assert any(
         record["rule_id"] == "uk_effect_repeal_table_structural_repeal_unresolved"
-        and record["target"] == "schedule:7/paragraph:16"
+        and record["target"] == "@supplements schedule:7/paragraph:16"
         and record["match_count"] == 0
         and record["blocking"] is True
         for record in lowering_records
@@ -27844,7 +27845,7 @@ def test_compile_repeal_table_mixed_schedule_paragraph_carried_descendant_list(
     assert any(
         record["rule_id"] == "uk_effect_repeal_table_structural_repeal"
         and record["reason_code"] == "mixed_structural_and_word_repeal_split_structural_target"
-        and record["target"] == "/".join(f"{kind}:{label}" for kind, label in expected_target)
+        and record["target"] == "@supplements " + "/".join(f"{kind}:{label}" for kind, label in expected_target)
         and record["blocking"] is False
         for record in lowering_records
     )
@@ -27903,7 +27904,7 @@ def test_compile_repeal_table_mixed_schedule_paragraph_word_clause_not_structura
     assert any(
         record["rule_id"] == "uk_effect_repeal_table_structural_repeal_unresolved"
         and record["reason_code"] == "mixed_structural_and_word_repeal_requires_split"
-        and record["target"] == "schedule:7/paragraph:36"
+        and record["target"] == "@supplements schedule:7/paragraph:36"
         and record["blocking"] is True
         for record in lowering_records
     )
@@ -27966,7 +27967,7 @@ def test_compile_repeal_table_mixed_schedule_descendant_definition_split() -> No
         record["rule_id"] == "uk_effect_repeal_table_structural_repeal"
         and record["reason_code"]
         == "mixed_structural_and_definition_repeal_split_structural_target"
-        and record["target"] == "schedule:4/paragraph:1/subparagraph:9"
+        and record["target"] == "@supplements schedule:4/paragraph:1/subparagraph:9"
         and record["split_from_mixed_extent_row"] is True
         and record["blocking"] is False
         for record in lowering_records
@@ -28026,7 +28027,7 @@ def test_compile_repeal_table_definition_clause_does_not_repeal_parent_paragraph
     assert any(
         record["rule_id"] == "uk_effect_repeal_table_structural_repeal_unresolved"
         and record["reason_code"] == "no_unique_matching_repeal_table_structural_row"
-        and record["target"] == "schedule:4/paragraph:4"
+        and record["target"] == "@supplements schedule:4/paragraph:4"
         and record["blocking"] is True
         for record in lowering_records
     )
@@ -29958,7 +29959,7 @@ def test_compile_blocks_structural_added_pseudo_definition_target() -> None:
         and record["reason_code"]
         == "metadata_definition_pseudo_target_requires_definition_entry_compiler"
         and record["target"]
-        == 'schedule:2/part:1/paragraph:1/subparagraph:1/item:defn/item:"the/item:1996/item:act"'
+        == '@supplements schedule:2/part:1/paragraph:1/subparagraph:1/item:defn/item:"the/item:1996/item:act"'
         and record["blocking"] is True
         and record["strict_disposition"] == "block"
         for record in lowering_records
@@ -30029,7 +30030,7 @@ def test_compile_pseudo_definition_entry_insert_uses_source_definition_anchor() 
     )
     assert definition_record["blocking"] is False
     assert definition_record["strict_disposition"] == "record"
-    assert definition_record["target"] == "schedule:2/part:1/paragraph:1/subparagraph:1"
+    assert definition_record["target"] == "@supplements schedule:2/part:1/paragraph:1/subparagraph:1"
     assert definition_record["text_match"] == "TEXT_BEFORE_DEFINITION_advertising agency"
     assert definition_record["source_anchor_definition_term"] == "advertising agency"
     assert definition_record["source_definition_insert_direction"] == "before"
@@ -30108,7 +30109,7 @@ def test_compile_pseudo_definition_child_substitution_uses_bounded_selector() ->
     assert lowering_records[0]["strict_disposition"] == "record"
     assert (
         lowering_records[0]["original_target"]
-        == 'schedule:2/part:1/paragraph:1/subparagraph:1/item:defn/item:"/item:associate"/item:a'
+        == '@supplements schedule:2/part:1/paragraph:1/subparagraph:1/item:defn/item:"/item:associate"/item:a'
     )
 
 
@@ -32635,7 +32636,7 @@ def test_compile_except_phrase_substitution_preserves_excluded_phrase_selector()
                 "“electronic communications code”;"
             ),
             "target_ref": "Sch. 4 para. 88",
-            "target": "schedule:4/paragraph:88",
+            "target": "@supplements schedule:4/paragraph:88",
             "text_match": (
                 f"TEXT_EXCEPT_PHRASE{US}telecommunications code{US}telecommunications code system"
             ),
@@ -33780,7 +33781,7 @@ def test_compile_each_place_occurring_records_all_occurrences_lowering_observati
     assert all_occurrence_record["reason_code"] == "explicit_all_occurrences_text_patch"
     assert all_occurrence_record["blocking"] is False
     assert all_occurrence_record["strict_disposition"] == "record"
-    assert all_occurrence_record["target"] == "schedule:17/part:5"
+    assert all_occurrence_record["target"] == "@supplements schedule:17/part:5"
     assert all_occurrence_record["text_match"] == "the Board"
     assert all_occurrence_record["replacement"] == "Canal & River Trust"
     assert all_occurrence_record["occurrence"] == 0
@@ -38968,12 +38969,12 @@ def test_compile_substituted_for_old_new_sibling_series_rebinds_each_target() ->
         if record["rule_id"] == "uk_effect_substituted_for_label_changing_target_rebound"
     )
     assert [item["source_target"] for item in label_change_record["substitutions"]] == [
-        "schedule:1/paragraph:4/subparagraph:2",
-        "schedule:1/paragraph:4/subparagraph:3",
+        "@supplements schedule:1/paragraph:4/subparagraph:2",
+        "@supplements schedule:1/paragraph:4/subparagraph:3",
     ]
     assert [item["replacement_target"] for item in label_change_record["substitutions"]] == [
-        "schedule:1/paragraph:4/subparagraph:2a",
-        "schedule:1/paragraph:4/subparagraph:2b",
+        "@supplements schedule:1/paragraph:4/subparagraph:2a",
+        "@supplements schedule:1/paragraph:4/subparagraph:2b",
     ]
 
 
@@ -39032,7 +39033,7 @@ def test_compile_substituted_for_single_schedule_item_with_new_sibling_lowers_in
     assert any(
         record["rule_id"] == "uk_effect_substituted_series_new_sibling_insert_lowered"
         and record["blocking"] is False
-        and record["target"] == "schedule:9/paragraph:127/subparagraph:2/item:e"
+        and record["target"] == "@supplements schedule:9/paragraph:127/subparagraph:2/item:e"
         for record in observations
     )
 
@@ -41218,7 +41219,7 @@ def test_compile_multi_enactment_grouped_schedule_target_lowers_alternate_select
 
     assert len(ops) == 1
     assert ops[0].action == StructuralAction.TEXT_PATCH
-    assert str(ops[0].target) == "schedule:7/paragraph:10/subparagraph:3/item:b"
+    assert str(ops[0].target) == "@supplements schedule:7/paragraph:10/subparagraph:3/item:b"
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == f"TEXT_ALTERNATE_UNIQUE{US}seven{US}7"
     assert ops[0].text_patch.replacement == "14"
@@ -41272,7 +41273,7 @@ def test_compile_multi_enactment_plural_schedule_target_lowers_alternate_selecto
 
     assert len(ops) == 1
     assert ops[0].action == StructuralAction.TEXT_PATCH
-    assert str(ops[0].target) == "schedule:6/paragraph:94/subparagraph:3/item:b"
+    assert str(ops[0].target) == "@supplements schedule:6/paragraph:94/subparagraph:3/item:b"
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == f"TEXT_ALTERNATE_UNIQUE{US}seven{US}7"
     assert ops[0].text_patch.replacement == "14"
@@ -42077,7 +42078,7 @@ def test_compile_embedded_table_structural_paragraph_substitution_is_not_table_e
     )
 
     assert [op.action for op in ops] == [StructuralAction.INSERT, StructuralAction.REPLACE]
-    assert [str(op.target) for op in ops] == ["schedule:21/paragraph:5a", "schedule:21/paragraph:6"]
+    assert [str(op.target) for op in ops] == ["@supplements schedule:21/paragraph:5a", "@supplements schedule:21/paragraph:6"]
     assert [op.payload.label if op.payload is not None else "" for op in ops] == ["5A", "6"]
     assert any(
         row["rule_id"] == "uk_effect_embedded_table_payload_structural_substitution_preserved"
@@ -45995,7 +45996,7 @@ def test_compile_schedule_list_entry_table_payload_preserves_rows() -> None:
 
     assert len(ops) == 1
     assert ops[0].action is StructuralAction.INSERT
-    assert ops[0].target == LegalAddress(path=(("schedule", "5"),))
+    assert ops[0].target == LegalAddress(path=(("schedule", "5"),), root="supplements")
     assert ops[0].payload is not None
     assert ops[0].payload.kind is IRNodeKind.TABLE
     assert [cell.text for cell in ops[0].payload.children[0].children] == [
@@ -48122,7 +48123,7 @@ def test_compile_schedule_table_end_rows_preserves_tabular_payload() -> None:
 
     assert len(ops) == 1
     assert ops[0].action is StructuralAction.INSERT
-    assert ops[0].target == LegalAddress(path=(("schedule", "5"),))
+    assert ops[0].target == LegalAddress(path=(("schedule", "5"),), root="supplements")
     assert ops[0].payload is not None
     assert ops[0].payload.kind is IRNodeKind.TABLE
     assert [row.children[0].text for row in ops[0].payload.children] == [
@@ -49245,7 +49246,7 @@ def test_compile_structural_schedule_part_repeal_not_table_entry_rejected() -> N
 
     assert len(ops) == 1
     assert ops[0].action == StructuralAction.REPEAL
-    assert str(ops[0].target) == "schedule:2/part:11"
+    assert str(ops[0].target) == "@supplements schedule:2/part:11"
     assert not [
         record
         for record in lowering_rejections
@@ -53132,7 +53133,7 @@ def test_compile_substitution_range_expands_from_source_payload_children_and_ins
     )
     assert any(
         record["rule_id"] == "uk_effect_substituted_range_extra_payload_sibling_insert_lowered"
-        and record["target"] == "schedule:4/paragraph:11/item:ba"
+        and record["target"] == "@supplements schedule:4/paragraph:11/item:ba"
         and record["replaced_sibling_count"] == 2
         for record in lowering_records
     )
@@ -53792,7 +53793,7 @@ def test_compile_schedule_part_abbreviation_ref_records_target_normalization() -
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
 
     assert len(ops) == 1
-    assert ops[0].target == LegalAddress(path=(("schedule", "4"), ("part", "1")))
+    assert ops[0].target == LegalAddress(path=(("schedule", "4"), ("part", "1")), root="supplements")
     schedule_part_observations = [
         record
         for record in lowering_records
@@ -53804,7 +53805,7 @@ def test_compile_schedule_part_abbreviation_ref_records_target_normalization() -
         and record["family"] == "target_shape_normalization"
         and record["strict_disposition"] == "record"
         and record["target_ref"] == "Sch. 4 Pt 1"
-        and record["target"] == "schedule:4/part:1"
+        and record["target"] == "@supplements schedule:4/part:1"
         for record in lowering_records
     )
 
@@ -54376,9 +54377,9 @@ def test_compile_metadata_cross_container_renumber_corrects_effect_type_destinat
         lowering_records[0]["reason_code"]
         == "source_text_and_affected_target_override_effect_metadata_destination"
     )
-    assert lowering_records[0]["source_target"] == "schedule:22/paragraph:88"
-    assert lowering_records[0]["destination"] == "schedule:22/paragraph:88/subparagraph:1"
-    assert lowering_records[0]["metadata_destination"] == "schedule:2/paragraph:88/subparagraph:1"
+    assert lowering_records[0]["source_target"] == "@supplements schedule:22/paragraph:88"
+    assert lowering_records[0]["destination"] == "@supplements schedule:22/paragraph:88/subparagraph:1"
+    assert lowering_records[0]["metadata_destination"] == "@supplements schedule:2/paragraph:88/subparagraph:1"
     assert lowering_records[0]["blocking"] is False
     assert lowering_records[0]["strict_disposition"] == "record"
     manual_frontier = classify_uk_manual_compile_frontier(
@@ -54620,8 +54621,8 @@ def test_compile_metadata_cross_container_renumber_blocks_when_affected_target_d
 
     assert ops == []
     assert lowering_records[0]["rule_id"] == "uk_effect_metadata_cross_container_renumber_rejected"
-    assert lowering_records[0]["source_target"] == "schedule:22/paragraph:88"
-    assert lowering_records[0]["destination"] == "schedule:2/paragraph:88/subparagraph:1"
+    assert lowering_records[0]["source_target"] == "@supplements schedule:22/paragraph:88"
+    assert lowering_records[0]["destination"] == "@supplements schedule:2/paragraph:88/subparagraph:1"
     assert lowering_records[0]["blocking"] is True
     assert lowering_records[0]["strict_disposition"] == "block"
 
@@ -54660,8 +54661,8 @@ def test_compile_metadata_words_in_renumber_strips_scope_phrase_from_source_targ
     assert ops[0].destination.path == (("schedule", "22"), ("paragraph", "72"), ("item", "a"))
     assert ops[0].witness_rule_id == "uk_effect_metadata_renumber_lowered"
     assert lowering_records[0]["rule_id"] == "uk_effect_metadata_renumber_lowered"
-    assert lowering_records[0]["source_target"] == "schedule:22/paragraph:72"
-    assert lowering_records[0]["destination"] == "schedule:22/paragraph:72/item:a"
+    assert lowering_records[0]["source_target"] == "@supplements schedule:22/paragraph:72"
+    assert lowering_records[0]["destination"] == "@supplements schedule:22/paragraph:72/item:a"
 
 
 def test_compile_metadata_renumber_uses_source_text_destination_label_when_metadata_conflicts() -> None:
@@ -55078,14 +55079,14 @@ def test_compile_flat_p1para_schedule_paragraph_insert_owns_heading_gap() -> Non
     assert op.payload.attrs["eId"] == "schedule-2-paragraph-17B"
     assert any(
         row.get("rule_id") == "uk_effect_nonaddressable_schedule_part_insert_target_normalized"
-        and row.get("metadata_target") == "schedule:2/part:1/paragraph:17b"
-        and row.get("normalized_target") == "schedule:2/paragraph:17b"
+        and row.get("metadata_target") == "@supplements schedule:2/part:1/paragraph:17b"
+        and row.get("normalized_target") == "@supplements schedule:2/paragraph:17b"
         and row.get("target_resolution", {}).get("target_resolution_status") == "recovered"
         and row.get("target_resolution", {}).get("scope_confidence")
         == "explicit_source_with_context"
         and row.get("target_resolution", {}).get("source_target")
-        == "schedule:2/part:1/paragraph:17b"
-        and row.get("target_resolution", {}).get("selected_target") == "schedule:2/paragraph:17b"
+        == "@supplements schedule:2/part:1/paragraph:17b"
+        and row.get("target_resolution", {}).get("selected_target") == "@supplements schedule:2/paragraph:17b"
         for row in lowering_records
     )
     assert any(
@@ -59793,7 +59794,7 @@ def test_compile_crossheading_and_paragraph_replace_splits_titled_payload() -> N
     )
     assert heading_op.witness_rule_id == "uk_effect_crossheading_and_structural_replacement_split_lowered"
     assert paragraph_op.action is StructuralAction.REPLACE
-    assert paragraph_op.target == LegalAddress(path=(("schedule", "6"), ("paragraph", "6")))
+    assert paragraph_op.target == LegalAddress(path=(("schedule", "6"), ("paragraph", "6")), root="supplements")
     assert paragraph_op.payload is not None
     assert paragraph_op.payload.kind is IRNodeKind.PARAGRAPH
     assert paragraph_op.payload.label == "6"
@@ -59887,14 +59888,14 @@ def test_compile_crossheading_and_paragraph_repeal_lowers_guarded_group_repeal()
 
     assert len(ops) == 1
     assert ops[0].action is StructuralAction.REPEAL
-    assert ops[0].target == LegalAddress(path=(("schedule", "22"), ("paragraph", "4")))
+    assert ops[0].target == LegalAddress(path=(("schedule", "22"), ("paragraph", "4")), root="supplements")
     assert ops[0].witness_rule_id == "uk_effect_crossheading_and_structural_repeal_lowered"
     selector_tag = next(
         note for note in ops[0].provenance_tags if note.startswith(_NOTE_CROSSHEADING_GROUP_REPEAL_SELECTOR)
     )
     selector = json.loads(selector_tag.removeprefix(_NOTE_CROSSHEADING_GROUP_REPEAL_SELECTOR))
     assert selector["selector_mode"] == "structural_with_heading_above_repeal"
-    assert selector["structural_target"] == "schedule:22/paragraph:4"
+    assert selector["structural_target"] == "@supplements schedule:22/paragraph:4"
     assert any(
         record["rule_id"] == "uk_effect_crossheading_and_structural_repeal_lowered"
         and record["blocking"] is False
@@ -60153,7 +60154,8 @@ def test_compile_bare_quoted_substitution_after_target_context() -> None:
     assert len(ops) == 1
     assert ops[0].action is StructuralAction.TEXT_PATCH
     assert ops[0].target == LegalAddress(
-        path=(("schedule", "a1"), ("paragraph", "8"), ("subparagraph", "8"))
+        path=(("schedule", "a1"), ("paragraph", "8"), ("subparagraph", "8")),
+        root="supplements",
     )
     assert ops[0].text_patch == _replace_patch(
         "the same meaning as in section 197 of the Criminal Justice Act 2003 "
@@ -60681,7 +60683,7 @@ def test_compile_schedule_list_entry_insert_lowers_to_typed_schedule_entry() -> 
     assert len(ops) == 1
     op = ops[0]
     assert op.action is StructuralAction.INSERT
-    assert op.target == LegalAddress(path=(("schedule", "3"),))
+    assert op.target == LegalAddress(path=(("schedule", "3"),), root="supplements")
     assert op.payload is not None
     assert op.payload.kind is IRNodeKind.SCHEDULE_ENTRY
     assert op.payload.label is None
@@ -60728,7 +60730,7 @@ def test_compile_schedule_list_entry_insert_preserves_explicit_anchor_ordinal() 
     assert len(ops) == 1
     op = ops[0]
     assert op.action is StructuralAction.INSERT
-    assert op.target == LegalAddress(path=(("schedule", "1"),))
+    assert op.target == LegalAddress(path=(("schedule", "1"),), root="supplements")
     assert op.payload is not None
     assert op.payload.kind is IRNodeKind.SCHEDULE_ENTRY
     assert op.payload.text.startswith("Any offence against a child or young person")
@@ -60778,7 +60780,7 @@ def test_compile_schedule_list_entry_insert_allows_explicit_schedule_partition_t
     assert len(ops) == 1
     op = ops[0]
     assert op.action is StructuralAction.INSERT
-    assert op.target == LegalAddress(path=(("schedule", "2"), ("part", "2")))
+    assert op.target == LegalAddress(path=(("schedule", "2"), ("part", "2")), root="supplements")
     assert op.payload is not None
     assert op.payload.kind is IRNodeKind.SCHEDULE_ENTRY
     assert op.payload.label is None
@@ -61133,7 +61135,7 @@ def test_compile_schedule_list_entry_insert_splits_subparagraph_payload_entries(
         "paragraph 30B (producing coal)",
         "paragraph 30C (producing steel)",
     ]
-    assert all(op.target == LegalAddress(path=(("schedule", "15"), ("paragraph", "26"), ("subparagraph", "2"))) for op in ops)
+    assert all(op.target == LegalAddress(path=(("schedule", "15"), ("paragraph", "26"), ("subparagraph", "2")), root="supplements") for op in ops)
     assert all(op.witness_rule_id == "uk_effect_schedule_list_entry_insert" for op in ops)
     selector_notes = [
         next(note for note in op.provenance_tags if note.startswith("schedule_list_entry_selector:"))
@@ -61874,7 +61876,7 @@ def test_compile_schedule_list_entry_repeal_lowers_to_selector() -> None:
     assert len(ops) == 1
     op = ops[0]
     assert op.action is StructuralAction.REPEAL
-    assert op.target == LegalAddress(path=(("schedule", "3"),))
+    assert op.target == LegalAddress(path=(("schedule", "3"),), root="supplements")
     assert op.payload is None
     assert op.witness_rule_id == "uk_effect_schedule_list_entry_repeal"
     selector_note = next(
@@ -61928,7 +61930,7 @@ def test_compile_schedule_list_entry_repeal_table_extent_entries() -> None:
     assert len(ops) == 1
     op = ops[0]
     assert op.action is StructuralAction.REPEAL
-    assert op.target == LegalAddress(path=(("schedule", "8"),))
+    assert op.target == LegalAddress(path=(("schedule", "8"),), root="supplements")
     assert op.payload is None
     assert op.witness_rule_id == "uk_effect_schedule_list_entry_repeal"
     selector_note = next(
@@ -61978,7 +61980,7 @@ def test_compile_schedule_list_entry_repeal_handles_omit_entry_for_form() -> Non
     assert len(ops) == 1
     op = ops[0]
     assert op.action is StructuralAction.REPEAL
-    assert op.target == LegalAddress(path=(("schedule", "3"),))
+    assert op.target == LegalAddress(path=(("schedule", "3"),), root="supplements")
     selector_note = next(
         note for note in op.provenance_tags if note.startswith("schedule_list_entry_repeal_selector:")
     )
@@ -62023,7 +62025,7 @@ def test_compile_schedule_list_entry_repeal_handles_bare_entry_in_each_schedule(
     assert len(ops) == 1
     op = ops[0]
     assert op.action is StructuralAction.REPEAL
-    assert op.target == LegalAddress(path=(("schedule", "5"),))
+    assert op.target == LegalAddress(path=(("schedule", "5"),), root="supplements")
     assert op.witness_rule_id == "uk_effect_schedule_list_entry_repeal"
     selector_note = next(
         note for note in op.provenance_tags if note.startswith("schedule_list_entry_repeal_selector:")
@@ -62068,7 +62070,7 @@ def test_compile_schedule_list_entry_repeal_allows_index_paragraph_carrier() -> 
     assert len(ops) == 1
     op = ops[0]
     assert op.action is StructuralAction.REPEAL
-    assert op.target == LegalAddress(path=(("schedule", "22"), ("paragraph", "147")))
+    assert op.target == LegalAddress(path=(("schedule", "22"), ("paragraph", "147")), root="supplements")
     assert op.witness_rule_id == "uk_effect_schedule_list_entry_repeal"
     selector_note = next(
         note for note in op.provenance_tags if note.startswith("schedule_list_entry_repeal_selector:")
@@ -62119,7 +62121,7 @@ def test_compile_numbered_schedule_entry_repeal_refines_partition_target() -> No
     assert any(
         row["rule_id"] == "uk_effect_numbered_schedule_entry_repeal_target_refined"
         and row["blocking"] is False
-        and row["original_target"] == "schedule:2/part:2"
+        and row["original_target"] == "@supplements schedule:2/part:2"
         and row["refined_target"] == "schedule:2/part:2/paragraph:86"
         for row in observations
     )
@@ -62158,7 +62160,7 @@ def test_compile_broad_schedule_part_repeal_does_not_refine_without_entry_number
 
     assert len(ops) == 1
     assert ops[0].action is StructuralAction.REPEAL
-    assert ops[0].target == LegalAddress(path=(("schedule", "2"), ("part", "2")))
+    assert ops[0].target == LegalAddress(path=(("schedule", "2"), ("part", "2")), root="supplements")
     assert not any(
         row["rule_id"] == "uk_effect_numbered_schedule_entry_repeal_target_refined"
         for row in observations
@@ -62200,14 +62202,14 @@ def test_compile_schedule_partition_entry_repeal_lowers_to_selector() -> None:
     assert len(ops) == 1
     op = ops[0]
     assert op.action is StructuralAction.REPEAL
-    assert op.target == LegalAddress(path=(("schedule", "2"), ("part", "2")))
+    assert op.target == LegalAddress(path=(("schedule", "2"), ("part", "2")), root="supplements")
     assert op.witness_rule_id == "uk_effect_schedule_list_entry_repeal"
     selector_note = next(
         note for note in op.provenance_tags if note.startswith("schedule_list_entry_repeal_selector:")
     )
     selector = json.loads(selector_note.removeprefix("schedule_list_entry_repeal_selector:"))
     assert selector["anchors"] == ["the Deer Commission for Scotland"]
-    assert selector["target"] == "schedule:2/part:2"
+    assert selector["target"] == "@supplements schedule:2/part:2"
     assert observations[0]["rule_id"] == "uk_effect_schedule_list_entry_repeal"
     assert observations[0]["blocking"] is False
 
@@ -62247,7 +62249,7 @@ def test_compile_schedule_list_entry_replace_lowers_to_selector() -> None:
     assert len(ops) == 1
     op = ops[0]
     assert op.action is StructuralAction.REPLACE
-    assert op.target == LegalAddress(path=(("schedule", "3"),))
+    assert op.target == LegalAddress(path=(("schedule", "3"),), root="supplements")
     assert op.payload is not None
     assert op.payload.kind is IRNodeKind.SCHEDULE_ENTRY
     assert op.payload.text == "The National Library of Scotland"
@@ -62297,7 +62299,7 @@ def test_compile_schedule_list_entry_replace_splits_source_owned_multi_entry_pay
     assert len(ops) == 1
     op = ops[0]
     assert op.action is StructuralAction.REPLACE
-    assert op.target == LegalAddress(path=(("schedule", "16"), ("part", "1")))
+    assert op.target == LegalAddress(path=(("schedule", "16"), ("part", "1")), root="supplements")
     assert op.payload is not None
     assert op.payload.kind is IRNodeKind.SCHEDULE_ENTRY
     assert op.payload.text == "Section 61."
@@ -62364,7 +62366,7 @@ def test_compile_plural_schedule_index_entry_replace_lowers_to_contiguous_select
     assert len(ops) == 1
     op = ops[0]
     assert op.action is StructuralAction.REPLACE
-    assert op.target == LegalAddress(path=(("schedule", "4"),))
+    assert op.target == LegalAddress(path=(("schedule", "4"),), root="supplements")
     assert op.payload is not None
     assert op.payload.kind is IRNodeKind.SCHEDULE_ENTRY
     assert op.payload.text == "starting rate for savings section 7"
@@ -62523,7 +62525,7 @@ def test_compile_schedule_list_entry_replace_handles_bare_quoted_entry() -> None
     assert len(ops) == 1
     op = ops[0]
     assert op.action is StructuralAction.REPLACE
-    assert op.target == LegalAddress(path=(("schedule", "8"),))
+    assert op.target == LegalAddress(path=(("schedule", "8"),), root="supplements")
     assert op.payload is not None
     assert op.payload.kind is IRNodeKind.SCHEDULE_ENTRY
     assert op.payload.text == "Her Majesty's Chief Inspector of the Scottish Fire and Rescue Service"
@@ -62574,7 +62576,7 @@ def test_compile_schedule_list_entry_replace_handles_in_each_schedule_clause() -
     assert len(ops) == 1
     op = ops[0]
     assert op.action is StructuralAction.REPLACE
-    assert op.target == LegalAddress(path=(("schedule", "6"),))
+    assert op.target == LegalAddress(path=(("schedule", "6"),), root="supplements")
     assert op.payload is not None
     assert op.payload.kind is IRNodeKind.SCHEDULE_ENTRY
     assert op.payload.text == "Commissioner for Ethical Standards in Public Life in Scotland"
@@ -62714,7 +62716,7 @@ def test_compile_quoted_schedule_entries_for_repeal_lowers_to_selector() -> None
     assert len(ops) == 1
     op = ops[0]
     assert op.action is StructuralAction.REPEAL
-    assert op.target == LegalAddress(path=(("schedule", "4"),))
+    assert op.target == LegalAddress(path=(("schedule", "4"),), root="supplements")
     assert op.witness_rule_id == "uk_effect_schedule_list_entry_repeal"
     selector_note = next(
         note for note in op.provenance_tags if note.startswith("schedule_list_entry_repeal_selector:")
@@ -64318,10 +64320,10 @@ def test_compile_source_parent_substitution_range_payload_lowers_replace_and_tai
         StructuralAction.REPEAL,
     ]
     assert [str(op.target) for op in ops] == [
-        "schedule:1/paragraph:d",
-        "schedule:1/paragraph:e",
-        "schedule:1/paragraph:f",
-        "schedule:1/paragraph:g",
+        "@supplements schedule:1/paragraph:d",
+        "@supplements schedule:1/paragraph:e",
+        "@supplements schedule:1/paragraph:f",
+        "@supplements schedule:1/paragraph:g",
     ]
     assert ops[0].witness_rule_id == "uk_effect_source_parent_substitution_range_payload_lowered"
     assert all(op.witness_rule_id == "uk_effect_source_parent_substitution_range_payload_lowered" for op in ops[1:])
@@ -64365,7 +64367,7 @@ def test_compile_source_parent_substitution_range_payload_lowers_replace_and_tai
                 "In schedule 1 (managers of an establishment), for paragraphs (d) to (g) there is substituted—"
             ),
             "target_ref": "Sch. 1 para. (d)",
-            "target": "schedule:1/paragraph:d",
+            "target": "@supplements schedule:1/paragraph:d",
             "start_label": "d",
             "end_label": "g",
             "trailing_refs": ("Sch. 1 para. (e)", "Sch. 1 para. (f)", "Sch. 1 para. (g)"),
@@ -64877,8 +64879,8 @@ def test_compile_after_paragraph_insert_connector_sibling_lowers_schedule_parent
     assert ops[1].payload.text.startswith("an SCE formed in accordance with Council Regulation")
     assert any(
         row["rule_id"] == rule_id
-        and row["anchor_target"] == "schedule:4/paragraph:82/subparagraph:3/item:c"
-        and row["payload"]["target"] == "schedule:4/paragraph:82/subparagraph:3/item:d"
+        and row["anchor_target"] == "@supplements schedule:4/paragraph:82/subparagraph:3/item:c"
+        and row["payload"]["target"] == "@supplements schedule:4/paragraph:82/subparagraph:3/item:d"
         for row in observations
     )
 
@@ -68081,7 +68083,7 @@ def test_compile_enacted_schedule_table_row_refines_target_to_source_part() -> N
 
     assert len(ops) == 1
     assert ops[0].action is StructuralAction.INSERT
-    assert str(ops[0].target) == "schedule:1/part:4/paragraph:32b"
+    assert str(ops[0].target) == "@supplements schedule:1/part:4/paragraph:32b"
     assert ops[0].payload is not None
     assert ops[0].payload.kind == IRNodeKind.P1GROUP
     assert len(ops[0].payload.children) == 1
@@ -68093,8 +68095,8 @@ def test_compile_enacted_schedule_table_row_refines_target_to_source_part() -> N
         for row in lowering
         if row.get("rule_id") == "uk_effect_enacted_schedule_table_row_part_target_refined"
     )
-    assert refinement_record["metadata_target"] == "schedule:1/paragraph:32b"
-    assert refinement_record["refined_target"] == "schedule:1/part:4/paragraph:32b"
+    assert refinement_record["metadata_target"] == "@supplements schedule:1/paragraph:32b"
+    assert refinement_record["refined_target"] == "@supplements schedule:1/part:4/paragraph:32b"
     assert refinement_record["source_part_label"] == "4"
     assert refinement_record["target_resolution"] == {
         "rule_id": "uk_effect_enacted_schedule_table_row_part_target_refined",
@@ -68108,17 +68110,17 @@ def test_compile_enacted_schedule_table_row_refines_target_to_source_part() -> N
         "strict_disposition": "record",
         "quirks_disposition": "record",
         "target_resolution_status": "recovered",
-        "source_target": "schedule:1/paragraph:32b",
+        "source_target": "@supplements schedule:1/paragraph:32b",
         "candidate_count": 1,
         "target_candidates": (
             {
-                "target": "schedule:1/part:4/paragraph:32b",
+                "target": "@supplements schedule:1/part:4/paragraph:32b",
                 "reason": "enacted_schedule_table_row_part_context",
                 "target_ref": "sch. 1 para. 32B",
                 "source_part_label": "4",
             },
         ),
-        "selected_target": "schedule:1/part:4/paragraph:32b",
+        "selected_target": "@supplements schedule:1/part:4/paragraph:32b",
         "selected_target_differs_from_source": True,
         "scope_confidence": "explicit_source_with_context",
         "source_rule_id": "uk_affecting_act_enacted_schedule_table_row_source_extracted",
@@ -71481,7 +71483,7 @@ def test_compile_can_strict_block_inserted_schedule_payload_descendant_eid_synth
             "affected_provisions": "Sch. 12",
             "affecting_provisions": "reg. 5",
             "effect_type": "inserted",
-            "target": "schedule:12",
+            "target": "@supplements schedule:12",
             "reason": (
                 "Whole-schedule payload has descendants without source EIDs; "
                 "strict lowering did not synthesize local descendant identity"
