@@ -5163,7 +5163,21 @@ def _lower_instruction(
                 "add-at-end without a quoted payload",
             )
     elif family == "amend_to_read":
-        if _FUTURE_EFFECTIVE_RE.search(effective_text or raw_text):
+        # Future-effective amend-to-read: prefer the TYPED temporal path (the op
+        # lowers normally; ``source.effective`` / PENDING_CONDITION make the
+        # dry-run temporal guard defer it) over a lowering-time finding. The
+        # finding remains only where the typed path cannot own the semantics:
+        # sunset/expiry language (reversion is not an op the section-text model
+        # represents), or instruction-LOCAL future language with no recognized
+        # scope and no parseable date (nothing typed would defer it).
+        _temporal_text = effective_text or raw_text
+        if _FUTURE_EFFECTIVE_RE.search(_temporal_text) and (
+            _is_sunset_language(_temporal_text)
+            or (
+                not effective_text
+                and not _parse_effective_date(_temporal_text, enacted)
+            )
+        ):
             finding = _finding(
                 DEFERRED_AMEND_TO_READ_FINDING_RULE_ID,
                 "future-effective / sunset amend-to-read not lowered as immediate amendment",
