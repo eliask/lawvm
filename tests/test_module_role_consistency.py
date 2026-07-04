@@ -123,6 +123,16 @@ DEAD_ALLOWLIST: dict[str, str] = {
         "default_label_sort_key. Routing the grafter through it is the load-bearing "
         "follow-up (the EE shape), deferred here."
     ),
+    "lawvm.tools.nz_anchor_manifest": (
+        "NZ (#205) CTSF anchor+touch engine — the fourth-jurisdiction analogue of "
+        "ee_/uk_anchor_manifest, over NZ's dated PIT archived-version chain. It has "
+        "synthetic + data-present coverage (test_ctsf_gate_nz.py) and a committed "
+        "0-billable baseline; production wiring is the parent's job — the "
+        "`--- NEW ZEALAND ---` section of core.ctsf_gate imports "
+        "`score_nz_real_corpus` / `attribute_statute` from here (mirroring the EE/UK "
+        "imports that make those manifests LIVE), which will retire this entry. "
+        "Deferred here so this deliverable does not edit core/ctsf_gate.py."
+    ),
 }
 
 

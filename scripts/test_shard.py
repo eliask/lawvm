@@ -1025,6 +1025,13 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # FAIL/WARN/PASS diff logic, round-trip, and @requires_eu_corpus data-present
         # fail-red over the EU Cellar archive.
         "test_ctsf_gate_eu.py",
+        # NZ (#205) CTSF gate corpus — the fifth-jurisdiction analogue over the
+        # RICHEST anchor surface (the dense dated PIT archived-version chain): frozen
+        # 0-billable NZ baseline (partial-coverage lag → temporal_mismatch;
+        # op-local-convicted wrong-ops → replay_bug), FAIL/WARN/PASS diff logic,
+        # round-trip, an engine-level synthetic-injection fail-red, and
+        # @requires_nz_corpus data-present fail-red over the NZ legislation Farchive.
+        "test_ctsf_gate_nz.py",
         "test_diagnose_phase.py",
         "test_diff.py",
         "test_dump.py",

@@ -7,6 +7,7 @@
     "src/lawvm/tools/eu_anchor_manifest.py": 1,
     "src/lawvm/tools/fi_anchor_manifest.py": 2,
     "src/lawvm/tools/fi_aux_pit_probe.py": 1,
+    "src/lawvm/tools/nz_anchor_manifest.py": 1,
     "src/lawvm/tools/uk_anchor_manifest.py": 2,
     "src/lawvm/tools/uk_semantic_claims.py": 2,
     "src/lawvm/us_federal/act_name_registry.py": 1,
@@ -85,7 +86,7 @@
     "sparse_slot_candidate_certificate",
     "sparse_slot_candidate_certificates"
   ],
-  "public_schema_count": 168,
+  "public_schema_count": 169,
   "public_schemas": [
     "lawvm.address_id.v1",
     "lawvm.address_node.v1",
@@ -127,8 +128,8 @@
     "lawvm.dsse.v1",
     "lawvm.dump.v1",
     "lawvm.ee_anchor_manifest.v1",
-    "lawvm.eu_anchor_manifest.v1",
     "lawvm.eu_acquire_corpus_run.v0",
+    "lawvm.eu_anchor_manifest.v1",
     "lawvm.eu_enumeration_snapshot.v0",
     "lawvm.eu_reference_report.v1",
     "lawvm.execution_authorization_report.v1",
@@ -173,6 +174,7 @@
     "lawvm.must_trace_ledger.v0",
     "lawvm.mutation_boundary_report.v1",
     "lawvm.node_version.v1",
+    "lawvm.nz_anchor_manifest.v1",
     "lawvm.official_corrigendum_event.v1",
     "lawvm.oracle_defect_external_confirmation.v1",
     "lawvm.overlay.v1",
@@ -256,5 +258,5 @@
     "lawvm.work.v1",
     "lawvm.work_inventory_row.v0"
   ],
-  "total_bare_status": 15
+  "total_bare_status": 16
 }
