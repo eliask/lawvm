@@ -673,6 +673,14 @@ _EFFECTIVE_OR_TAKE_EFFECT_ON_RE = re.compile(
     r"(?:effective|take\s+effect)\s+(?:on\s+)?(?:the\s+)?date\s+of\s+(?:the\s+)?enactment\s+of\s+this\s+Act",
     re.IGNORECASE,
 )
+# "shall take effect on, and shall apply beginning on, the date of enactment of
+# this Act" — the enactment-date form with an interposed applicability clause
+# (e.g. HERA, PL 110-289 §1163). Same resolved date as the plain ON form.
+_EFFECTIVE_ON_ENACTMENT_WITH_APPLY_RE = re.compile(
+    r"(?:effective|take\s+effect)\s+on,\s+and\s+shall\s+apply[\w\s,]{0,60}?,?\s+"
+    r"the\s+date\s+of\s+(?:the\s+)?enactment\s+of\s+this\s+Act",
+    re.IGNORECASE,
+)
 _EFFECTIVE_ABSOLUTE_RE = re.compile(
     r"(?:effective|take\s+effect)\s+(?:on\s+)?(?P<month>[A-Z][a-z]+)\s+(?P<day>\d{1,2}),?\s+(?P<year>\d{4})",
     re.IGNORECASE,
@@ -827,6 +835,7 @@ def _has_effective_date_phrase(text: str) -> bool:
         _EFFECTIVE_OR_TAKE_EFFECT_AFTER_RE.search(text) is not None
         or _EFFECTIVE_UPON_EXPIRATION_RE.search(text) is not None
         or _EFFECTIVE_OR_TAKE_EFFECT_ON_RE.search(text) is not None
+        or _EFFECTIVE_ON_ENACTMENT_WITH_APPLY_RE.search(text) is not None
         or _EFFECTIVE_ABSOLUTE_RE.search(text) is not None
     )
 
@@ -872,7 +881,10 @@ def _parse_effective_date(text: str, enacted: str) -> str:
         # the same date as "N units after X" (the period's last day is the day
         # before, and the amendment is in force upon its expiration — i.e. X+N).
         return _parse_after_enactment_match(m, enacted)
-    if _EFFECTIVE_OR_TAKE_EFFECT_ON_RE.search(text) is not None:
+    if (
+        _EFFECTIVE_OR_TAKE_EFFECT_ON_RE.search(text) is not None
+        or _EFFECTIVE_ON_ENACTMENT_WITH_APPLY_RE.search(text) is not None
+    ):
         if not enacted:
             return ""
         parsed = _parse_iso_date_or_none(enacted)
@@ -1234,7 +1246,22 @@ def _collect_act_level_effective_scopes(
         # e.g. JASTA §7): applicability-only scopes do not defer the amendment.
         if "take effect" not in lowered and not _has_effective_date_phrase(text):
             continue
-        m = _ACT_LEVEL_EFFECTIVE_SCOPE_RE.search(text)
+        # The scope phrase and the take-effect declaration must share a
+        # SENTENCE: an implementation section whose text happens to contain
+        # both "the provisions of this subtitle" and, sentences later, an
+        # unrelated "shall take effect" (HERA §2132's notice-issuance clause)
+        # is not a temporal scope over the container's amendments.
+        m = None
+        for sentence in re.split(r"(?<=[.;])\s+", text):
+            sentence_lowered = sentence.lower()
+            if (
+                "take effect" not in sentence_lowered
+                and not _has_effective_date_phrase(sentence)
+            ):
+                continue
+            m = _ACT_LEVEL_EFFECTIVE_SCOPE_RE.search(sentence)
+            if m is not None:
+                break
         if m is None:
             continue
         kind = m.group("kind").lower()

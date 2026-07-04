@@ -678,6 +678,17 @@ def _container_scope_fanout(
     patch = operation.text_patch
     if patch is None or patch.selector.occurrence != -1:
         return None
+    if patch.selector.occurrence_mode != "Auto":
+        # occurrence=-1 with mode "Last" is the terminal-punct family ("striking
+        # the period at the end"), never an each-place container strike — fanning
+        # it would strike a period in EVERY section of the container (a real
+        # mis-resolved chapter-target op did exactly that in PL 113-291 §901(h)).
+        return None
+    if "each place" not in (operation.source.raw_text if operation.source else "").lower():
+        # A container-wide text patch is only enacted through the explicit
+        # "each place (it appears / that term appears)" drafting form; without
+        # that witness the op is a mis-resolved single-target patch.
+        return None
     path = operation.target.path
     if not path or path[0] != ("title", str(title)):
         return None
