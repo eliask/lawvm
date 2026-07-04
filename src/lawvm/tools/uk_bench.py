@@ -79,6 +79,12 @@ from lawvm.uk_legislation.source_adjudication import (
     normalize_uk_replay_compare_eids,
     uk_prospective_only_presence_ambiguous_eids,
 )
+from lawvm.uk_legislation.oracle_suspect_claim import (
+    claim_from_dict as _oracle_suspect_claim_from_dict,
+    validated_oracle_suspect_eids as _validated_oracle_suspect_eids,
+    ORACLE_SUSPECT_CLAIM_KIND as _ORACLE_SUSPECT_CLAIM_KIND,
+)
+from lawvm.core.semantic_types import StructuralAction as _StructuralAction
 from lawvm.uk_legislation.source_state import (
     is_uk_affecting_act_xml_source_observation,
     uk_source_parse_observations_from_ir,
@@ -90,6 +96,7 @@ from lawvm.tools.uk_replay_regime import UKReplayRegime, normalize_uk_replay_reg
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]  # LawVM/
 _DEFAULT_DB = _REPO_ROOT / "data" / "uk_legislation.farchive"
+_ORACLE_SUSPECT_CLAIMS_DIR = _REPO_ROOT / "data" / "uk" / "oracle_suspect_claims"
 _BENCH_DIR = _REPO_ROOT / "data" / "uk_bench_runs"
 _HISTORY_CSV = _REPO_ROOT / "data" / "uk_benchmark_history.csv"
 _CORPUS_CSV = _REPO_ROOT / "data" / "uk" / "bench_corpus.csv"
@@ -120,6 +127,70 @@ _CURATE_PRESET_MIN_YEARS = {
     "modern-tight": 1990,
 }
 _CURATE_HARD_PRESETS = frozenset({"hard-canary", "hard-tight", "hard-stress"})
+
+
+def _oracle_suspect_claim_path(statute_id: str) -> Path:
+    """Path to the authored oracle_suspect (D3) claim file for a statute."""
+    stem = str(statute_id or "").replace("/", "__")
+    return _ORACLE_SUSPECT_CLAIMS_DIR / f"{stem}.json"
+
+
+def _resolve_oracle_suspect_eids(
+    statute_id: str,
+    ops: Sequence[Any],
+    effects: Sequence[Any],
+    oracle_eids: Iterable[str],
+    validations_out: Optional[list[dict[str, Any]]] = None,
+) -> set[str]:
+    """Load + validate authored oracle_suspect (D3) claims for *statute_id*.
+
+    Returns the union of validated suspect eIds (compare form). Absent an
+    authored file the set is empty and the caller's compare set is byte-unchanged
+    (the presence drop is a no-op). Each claim is bound to reality by
+    ``validate_oracle_suspect_claim``: a compiled REPEAL op must target the eId,
+    the bound feed effect must be an APPLIED repeal, and the oracle must retain
+    the eId live — the publisher self-contradiction. No inference, no forced
+    replay.
+    """
+    path = _oracle_suspect_claim_path(statute_id)
+    if not path.exists():
+        return set()
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return set()
+    rows = payload.get("claims") if isinstance(payload, dict) else None
+    if not isinstance(rows, list):
+        return set()
+    claims = [
+        _oracle_suspect_claim_from_dict(row)
+        for row in rows
+        if isinstance(row, dict)
+        and str(row.get("claim_kind") or "") == _ORACLE_SUSPECT_CLAIM_KIND
+    ]
+    if not claims:
+        return set()
+    repeal_op_target_eids = {
+        _fallback_target_eid(op.target)
+        for op in ops
+        if getattr(op, "action", None) is _StructuralAction.REPEAL
+    }
+    applied_repeal_effect_ids = {
+        str(getattr(effect, "effect_id", "") or "")
+        for effect in effects
+        if getattr(effect, "applied", False)
+        and str(getattr(effect, "effect_type", "") or "").strip().lower().startswith(
+            "repealed"
+        )
+    }
+    return _validated_oracle_suspect_eids(
+        claims,
+        statute_id=statute_id,
+        repeal_op_target_eids=repeal_op_target_eids,
+        repeal_effect_ids_applied=applied_repeal_effect_ids,
+        oracle_eids=oracle_eids,
+        validations_out=validations_out,
+    )
 _CORPUS_FIELDNAMES = [
     "statute_id",
     "type",
@@ -2400,6 +2471,18 @@ def _score_statute(
                     enacted_statute=enacted_ir,
                     replayed_statute=replayed_ir,
                 )
+                # D3 (#211/#219) author-owned oracle_suspect presence drop: an
+                # authored claim types specific oracle-only eIds as a feed-vs-
+                # consolidation contradiction (feed repealed + Applied, oracle
+                # retains live unannotated). Validated against reality (compiled
+                # REPEAL op + applied feed repeal + oracle-retained). Absent an
+                # authored file the set is empty ⇒ compare set byte-unchanged.
+                oracle_suspect_eids = _resolve_oracle_suspect_eids(
+                    sid,
+                    ops,
+                    parsed_effects_for_statute or (),
+                    oracle_eids,
+                )
                 replay_compare_eids, oracle_compare_eids = normalize_uk_replay_compare_eids(
                     replayed_eids,
                     oracle_eids,
@@ -2409,6 +2492,7 @@ def _score_statute(
                         "retain_text_fully_repealed_eids", ()
                     ),
                     presence_ambiguous_eids=presence_ambiguous_eids,
+                    oracle_suspect_eids=oracle_suspect_eids,
                 )
                 replay_common = replay_compare_eids & oracle_compare_eids
                 n_replay_common = len(replay_common)

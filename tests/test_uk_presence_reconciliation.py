@@ -116,6 +116,44 @@ def test_live_provision_drop_still_convicts() -> None:
     assert "section-2" not in replayed
 
 
+# --- normalize_uk_replay_compare_eids: oracle_suspect presence form (D3) ------
+
+
+def test_oracle_suspect_eid_dropped_when_replay_applied_the_repeal() -> None:
+    replayed, oracle = normalize_uk_replay_compare_eids(
+        {"section-1"},
+        {"section-1", "section-80-5", "section-80-6"},
+        oracle_suspect_eids={"section-80-5", "section-80-6"},
+    )
+    # Feed-repealed (replay dropped them), oracle retained: the author-typed
+    # oracle_suspect eIds are dropped from the oracle side, no penalized key.
+    assert oracle == {"section-1"}
+    assert replayed == {"section-1"}
+
+
+def test_oracle_suspect_never_forces_replay_to_re_add() -> None:
+    # When replay kept the eId (not the D3 shape), the oracle_suspect drop is a
+    # no-op on that key: it only removes an oracle-only residual.
+    replayed, oracle = normalize_uk_replay_compare_eids(
+        {"section-1", "section-80-5"},
+        {"section-1", "section-80-5"},
+        oracle_suspect_eids={"section-80-5"},
+    )
+    assert oracle == {"section-1", "section-80-5"}
+    assert replayed == {"section-1", "section-80-5"}
+
+
+def test_oracle_suspect_absent_is_noop() -> None:
+    replayed, oracle = normalize_uk_replay_compare_eids(
+        {"section-1"},
+        {"section-1", "section-80-5"},
+        oracle_suspect_eids=(),
+    )
+    # Without the author's oracle_suspect testimony the drop stays penalized.
+    assert "section-80-5" in oracle
+    assert "section-80-5" not in replayed
+
+
 # --- normalize_uk_replay_compare_eids: prospective presence ambiguity --------
 
 

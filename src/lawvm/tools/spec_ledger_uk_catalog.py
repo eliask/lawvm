@@ -784,6 +784,17 @@ _UK_RULE_SPECS: Dict[str, str] = {
         "A validated parent-authoritative or genuinely-ambiguous N5 reconciliation claim emits a non-replayable typed finding naming the authoritative surface, leaving the affected base text intact (the safe §2.1 default — never a silent over-omission).",
     "uk_source_feed_reconciliation_finding_withheld_unvalidated":
         "An unvalidated N5 source/feed reconciliation claim withholds its finding, so the source/feed target-conflict effect stays on the manual frontier byte-unchanged.",
+    # -- Oracle-suspect (D3, #211/#219) feed-vs-consolidation contradiction ------
+    "uk_oracle_suspect_claim_validated":
+        "An authored oracle_suspect claim is well-formed and bound to reality — a compiled REPEAL op targets each claimed eId, the bound feed effect is an APPLIED repeal, and the oracle still retains each eId live — so its eIds are typed oracle_suspect (a feed-vs-consolidation publisher self-contradiction) and dropped from the oracle compare side where replay does not carry them; no replay forced.",
+    "uk_oracle_suspect_claim_rejected_schema":
+        "An oracle_suspect claim is rejected because its kind/ids/statute/effect-id/suspect-eids schema is malformed or names a different statute.",
+    "uk_oracle_suspect_claim_rejected_no_repeal_op":
+        "An oracle_suspect claim is rejected because no compiled REPEAL op targets a claimed suspect eId — replay did not apply the repeal, so there is no oracle contradiction to type.",
+    "uk_oracle_suspect_claim_rejected_feed_not_applied":
+        "An oracle_suspect claim is rejected because its bound feed effect is not an APPLIED repeal, so the feed did not authorise the removal the oracle would be contradicting.",
+    "uk_oracle_suspect_claim_rejected_oracle_absent":
+        "An oracle_suspect claim is rejected because the oracle does NOT retain a claimed suspect eId live, so there is no publisher self-contradiction to type oracle_suspect.",
     "uk_manual_frontier_as_if_application_modification_out_of_scope":
         "An 'as if' application/modification effect treated as out of current replay scope.",
     "uk_manual_frontier_application_modification_payload_out_of_scope":

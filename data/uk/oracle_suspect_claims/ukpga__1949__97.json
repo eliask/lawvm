@@ -1,0 +1,16 @@
+{
+  "statute_id": "ukpga/1949/97",
+  "claims": [
+    {
+      "claim_id": "os-1949-97-s80-5-6",
+      "claim_kind": "oracle_suspect_feed_repeal",
+      "statute_id": "ukpga/1949/97",
+      "effect_id": "key-2f041c004682bd263f12bd03ab983845",
+      "suspect_eids": ["section-80-5", "section-80-6"],
+      "affected_target": "s. 80(5)(6)",
+      "rationale": "Publisher self-contradiction (D3, task #211): the legislation.gov.uk effects feed marks s. 80(5) and s. 80(6) repealed by uksi/2005/1082 Sch.5 para.6 / Sch.6, Applied=\"true\", with a real commenced date (2005-04-26). Replay correctly applied the feed-authorised repeal (both eIds absent from the replayed tree). Yet the same publisher's consolidation (the oracle) retains BOTH subsections LIVE with no repeal annotation. This is an oracle defect (authoritative oracle != correct), not a replay bug: the oracle-only presence residual is typed oracle_suspect. Comparison-only; no replay forced.",
+      "claimant": "stream-uk-211-d3:reviewed-2026-07-04",
+      "claim_status": "proposed"
+    }
+  ]
+}

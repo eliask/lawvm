@@ -932,6 +932,7 @@ def normalize_uk_replay_compare_eids(
     oracle_visible_number_eid_aliases: dict[str, str] | None = None,
     oracle_retained_repeal_eids: Iterable[str] | None = None,
     presence_ambiguous_eids: Iterable[str] | None = None,
+    oracle_suspect_eids: Iterable[str] | None = None,
 ) -> UKReplayCompareEIDSets:
     """Normalize UK replay-vs-oracle EID sets for known compare-shape noise.
 
@@ -1011,6 +1012,23 @@ def normalize_uk_replay_compare_eids(
     retained_norm = _norm_side_set(oracle_retained_repeal_eids)
     if retained_norm:
         oracle_norm -= (retained_norm & oracle_norm) - replay_norm
+
+    # Author-asserted oracle_suspect presence reconciliation (D3, #211/#219 —
+    # oracle-defect lane; mirrors the EE / NO ``oracle_suspect`` discipline).
+    # An AUTHORED claim testifies that the oracle publisher SELF-CONTRADICTS on
+    # these eIds: the official effects feed marks the provision repealed +
+    # Applied="true" with a real commenced date, yet the same publisher's
+    # consolidation retains it live with NO repeal annotation. Replay correctly
+    # applied the feed-authorised repeal (eId absent), so the oracle-only
+    # residual is an oracle defect, not a replay bug. Drop such an oracle eId
+    # ONLY when replay does not carry it (feed-repealed ⇒ replay dropped it):
+    # this NEVER forces replay to re-add the provision, and NEVER excuses a
+    # replay-only eId. Comparison-only; monotone (removes penalized oracle keys
+    # only, never manufactures a divergence). Absent a claim the set is empty
+    # and this is a no-op.
+    oracle_suspect_norm = _norm_side_set(oracle_suspect_eids)
+    if oracle_suspect_norm:
+        oracle_norm -= (oracle_suspect_norm & oracle_norm) - replay_norm
 
     # Prospective-effect presence ambiguity (temporal_applicability): whether
     # the current consolidation reflects a structural effect whose only feed
