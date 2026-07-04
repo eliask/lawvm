@@ -96,7 +96,7 @@
     "src/lawvm/substrate/locus_links.py": 7,
     "src/lawvm/substrate/model_code_derivation.py": 3,
     "src/lawvm/sweden/fetch.py": 27,
-    "src/lawvm/sweden/grafter.py": 26,
+    "src/lawvm/sweden/grafter.py": 29,
     "src/lawvm/tools/audit.py": 2,
     "src/lawvm/tools/audit_channels.py": 6,
     "src/lawvm/tools/bench.py": 3,
@@ -198,5 +198,5 @@
     "src/lawvm/us_federal/table3.py": 4,
     "src/lawvm/us_federal/usc_witness.py": 4
   },
-  "total_raw_re_compile": 1224
+  "total_raw_re_compile": 1227
 }

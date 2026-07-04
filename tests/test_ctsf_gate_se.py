@@ -211,26 +211,41 @@ def test_se_real_corpus_gate_passes():
 
 
 @requires_se_corpus
-def test_se_excluded_billable_acts_convict():
-    """The DELIBERATELY-EXCLUDED SE amending acts (genuine pre→post replay divergences)
-    convict as billable — proof the fail-red mechanism fires on real bugs, and that
-    they are rightly kept OUT of the 0-billable corpus (not frozen green).
+def test_se_promoted_218_acts_are_gated_clean():
+    """The four SE amending acts convicted by the new SE CTSF gate (#218) were genuine
+    replay defects — PDF footnote-interleaving and wrapped-cross-reference
+    mis-segmentation in ``parse_se_official_act_text`` — that have been fixed at the
+    parser root and PROMOTED into ``REAL_ANCHOR_SE_CORPUS_SIDS``. They must now attribute
+    GATED-CLEAN (no candidate replay bug), proving the fix (not a metric dodge):
 
-    These are ``official_oracle_match_current_surface_drift`` / segmentation defects the
-    #183 SE metric surfaces: e.g. 2009:538 §9a truncates the inserted clause; 2021:1035
-    §7/§9 mis-segments section boundaries; 2026:249 §10a drops a "11 §" reference.
+      * 2009:538 §9a truncated the inserted clause at the wrapped ``4 a §``
+        cross-reference; §4b folded a mid-body ``Prop.``/``Ändringen innebär`` footnote.
+      * 2021:1035 §9 truncated at the wrapped ``2 kap.``\\n``7 §`` chapter-section
+        cross-reference and spawned a ghost §7.
+      * 2026:249 §10a truncated at ``3 kap.``\\n``11 §`` and spawned a 2-level ghost
+        §9a/heading; a trailing numbered ``Prop.`` footnote leaked in.
+      * 2015:1037 §2 folded a multi-line ``Jfr Europa...`` EU-directive footnote; §4
+        folded a mid-body ``Senaste lydelse`` footnote.
+
+    All four are members of the frozen 0-billable corpus now, so
+    ``test_committed_se_baseline_matches_real_corpus`` also guards them; this test adds
+    the explicit predict-then-compare assertion that the promotion is real (the acts
+    genuinely gate clean, they were not merely dropped from the convicting set).
     """
     from lawvm.sweden.fetch import open_se_archive
     from lawvm.tools.se_anchor_manifest import _default_db, attribute_statute
 
     archive = open_se_archive(_default_db(), readonly=True)
     try:
-        for sid in ("2009:538", "2021:1035", "2026:249"):
+        for sid in ("2009:538", "2015:1037", "2021:1035", "2026:249"):
+            assert sid in REAL_ANCHOR_SE_CORPUS_SIDS, sid
             attr = attribute_statute(sid, archive=archive)
             assert attr.status == "OK", sid
-            assert attr.candidate_bug_observations, (
-                f"excluded SE act {sid} no longer convicts — if its replay was fixed, "
-                f"promote it into REAL_ANCHOR_SE_CORPUS_SIDS (a preregistered move)."
+            assert not attr.candidate_bug_observations, (
+                f"promoted SE act {sid} regressed — it convicts again; the #218 parser "
+                f"fix (grafter.parse_se_official_act_text footnote/cross-reference "
+                f"folding) must keep it 0-billable."
             )
+            assert attr.is_gated_clean, sid
     finally:
         archive.close()

@@ -138,6 +138,21 @@ _SE_CROSS_REFERENCE_STYCKET_RE = re.compile(
 # leading additional ``§`` in the tail — a legitimate section start would
 # never carry that, because the section marker comes before the text, not after.
 _SE_CROSS_REFERENCE_PLURAL_SECTION_RE = re.compile(r"^\s*§", re.IGNORECASE)
+# A numbered transitional-provision list item — the SFS ``Övergångsbestämmelser``
+# shape that follows the last amended/inserted section, e.g.
+# ``1. Denna lag träder i kraft den 30 juni 2009 ...`` / ``2. Utgifter ...``. The
+# single (unnumbered) transitional line already opens with ``Denna lag`` /
+# ``Denna förordning`` and is caught by the ``startswith("denna ")`` guard; the
+# numbered list form starts with ``<N>. Denna ...`` so it needs its own anchor.
+# Once the block starts, subsequent list items (``<N>. ...``) belong to it too
+# (handled by the ``effective_lines`` carry-over). Without this the numbered
+# transitional list leaks into the last provision's body (was previously masked
+# because a truncating wrap-split spilled it into a since-removed ghost provision;
+# real witnesses: 2009:538 §9a, 2014:313 §42).
+_SE_TRANSITIONAL_LIST_ITEM_RE = re.compile(
+    r"^\d+\.\s+Denna\s+(?:lag|förordning|balk)\b",
+    re.IGNORECASE,
+)
 _ITEM_RE = re.compile(r"^(?P<label>\d+|[a-z])[\.\)]\s{1,5}(?P<text>.{1,2000})$", re.IGNORECASE)
 _APPENDIX_RE = re.compile(r"^(Bilaga)(\s{0,5}\*\s{0,5}|\s{1,5}|)(?P<label>\d+[a-z]|\d+|[A-Z]|)\s{0,5}(?P<title>.{0,500})$", re.IGNORECASE)
 _MARKER_RE = re.compile(r"/(?P<phrase>[^/\n]{1,200}) (?P<kind>[IU]):(?P<date>\d{4}-\d{2}-\d{2})/")
@@ -148,9 +163,48 @@ _PDF_HREF_RE = re.compile(r'href=["\']([^"\']+\.pdf(|\?[^"\']{0,500}))["\']', re
 _FOOTNOTE_LINE_RE = re.compile(
     r"^\d+\s+"
     r"(?:Jfr\b|Senaste lydelse\b|Tidigare lydelse\b|Lydelse enligt\b|"
-    r"Paragrafen\b|Rubriken\b|Förordningen omtryckt\b).+$",
+    r"Paragrafen\b|Rubriken\b|Förordningen omtryckt\b|Prop\.\s*\d{4}).+$",
     re.IGNORECASE,
 )
+# UNNUMBERED footnote-start lines. ``_FOOTNOTE_LINE_RE`` matches only the numbered
+# footnote shape (``<N> Senaste lydelse ...`` / ``<N> Prop. ...``), but the SFS PDF
+# text extractor frequently drops the superscript marker digit, leaving a bare
+# footnote line the numbered matcher misses. These then get interleaved into a
+# provision body (a page-bottom footnote physically placed between two lines of a
+# wrapped provision, or trailing the last provision). None is provision text:
+#   * ``Prop. 2008/09:178, bet. 2008/09:SkU32, rskr. 2008/09:246.`` — the bill /
+#     committee / riksdag-communication provenance triad, optionally ``Jfr``-led.
+#   * ``Ändringen innebär att andra stycket upphävs.`` — an editorial change note.
+#   * ``Jfr Europaparlamentets och rådets direktiv 2014/59/EU ...`` — an EU-law
+#     comparison note (wraps across several lines).
+#   * ``Senaste lydelse 2007:340.`` / ``Tidigare lydelse ...`` — the prior-wording
+#     provenance stamp.
+# Each shape is unambiguous (a provision sentence never opens with any of them).
+# Anchored to the line start so only a footnote is stripped, never substantive body
+# text. Real witnesses: 2009:538 §4b (Prop/Ändringen mid-body), 2015:1037 §2 (Jfr
+# tail) + §4 (Senaste lydelse mid-body), 2026:249 §10a (numbered Prop tail).
+_SE_UNNUMBERED_FOOTNOTE_START_RE = re.compile(
+    r"^(?:"
+    r"(?:Jfr\s+)?[Pp]rop\.\s*\d{4}(?:/\d{2,4})?:\d+\b"
+    r"|Ändringen\s+innebär\b"
+    r"|Jfr\s+Europa"
+    r"|Senaste\s+lydelse\b"
+    r"|Tidigare\s+lydelse\b"
+    r"|Lydelse\s+enligt\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _is_se_body_footnote_line(line: str) -> bool:
+    """True when ``line`` starts a standalone unnumbered footnote (bill provenance,
+    editorial change note, EU-law ``Jfr`` comparison, or ``Senaste/Tidigare lydelse``
+    stamp) that a PDF page break interleaved into a provision body. See
+    ``_SE_UNNUMBERED_FOOTNOTE_START_RE``."""
+    # lawvm-regex: owning_parser feeds parse_se_official_act_text's footnote extractor
+    return bool(_SE_UNNUMBERED_FOOTNOTE_START_RE.match(line.strip()))
+
+
 _TITLE_BASE_SFS_RE = re.compile(r"\((\d{4}:\d+)\)")
 _SV_DATE_TEXT_RE = re.compile(
     r"\b(?P<day>\d{1,2})\s+"
@@ -1770,6 +1824,41 @@ def _is_cross_reference_continuation(tail: str) -> bool:
     )
 
 
+# A wrapped mid-sentence cross-reference whose continuation begins with an
+# ordinary lowercase word. An amended/inserted SFS provision body is a full
+# Swedish sentence and therefore ALWAYS opens with a capital letter (or a digit
+# list-enumerator). So when a line matches ``_SECTION_RE`` but the text after the
+# ``<N> §`` marker begins with a lowercase letter, that ``<N> §`` is a
+# cross-reference *inside* the previous section's sentence that wrapped onto a new
+# line — not a new section start. Examples the SE #183 metric surfaced:
+#   * 2009:538 §9a: ``...arbete som avses i`` \n ``4 a § ska även innehålla...``
+#   * 2021:1035 §9: ``...finns i 2 kap.`` \n ``7 § brottsbalken.``
+#   * 2026:249 §10a: ``...som avses i 3 kap.`` \n ``11 § första stycket lagen...``
+# The prior parser split each of these at the wrapped ``<N> §``, truncating the
+# host provision and spawning a ghost provision (and a ghost INSERT op) under the
+# cross-referenced label. Folding the line back into the host reconstructs the
+# full provision text (real clean-corpus precedent: 2014:313 §42, whose
+# ``...enligt 3 kap.`` \n ``1 § lagen (2009:62)...`` wrap is the same shape).
+_SE_CROSS_REFERENCE_LOWERCASE_ONLY_RE = re.compile(r"^[a-zåäö]")
+
+
+def _is_lowercase_wrapped_cross_reference(tail: str) -> bool:
+    """True when the ``<N> §`` marker's tail begins a lowercase mid-sentence wrap.
+
+    A genuine amended/inserted provision body opens with a capital letter, so a
+    ``<N> §`` line whose tail starts lowercase can only be a cross-reference that
+    wrapped onto a new line inside the previous section's sentence. Only the
+    lowercase-letter start is required — an empty tail (a bare section marker whose
+    body follows on the next line) is NOT folded here (that is a legitimate
+    section-start shape handled by the normal split path).
+    """
+    normalized_tail = _normalize_space(tail)
+    # lawvm-regex: owning_parser feeds parse_se_official_act_text section-boundary split
+    return bool(normalized_tail) and bool(
+        _SE_CROSS_REFERENCE_LOWERCASE_ONLY_RE.match(normalized_tail)
+    )
+
+
 def parse_se_statute(payload: bytes | str | dict[str, Any], statute_id: Optional[str] = None) -> IRStatute:
     """Parse Sweden current-text JSON into the shared IRStatute tree.
 
@@ -2053,7 +2142,8 @@ def parse_se_official_act_text(text: str, sfs_id: str) -> SEOfficialActText:
         if _SECTION_RE.match(line):
             seen_section = True
         if seen_section:
-            if line.lower().startswith("denna "):
+            # lawvm-regex: owning_parser transitional-clause split in parse_se_official_act_text
+            if line.lower().startswith("denna ") or _SE_TRANSITIONAL_LIST_ITEM_RE.match(line):
                 effective_lines.append(line)
             elif effective_lines:
                 effective_lines.append(line)
@@ -2105,6 +2195,11 @@ def parse_se_official_act_text(text: str, sfs_id: str) -> SEOfficialActText:
         return ""
 
     for index, line in enumerate(provision_lines):
+        if _is_se_body_footnote_line(line):
+            # A page-bottom bill-provenance / editorial footnote the PDF text
+            # extractor interleaved into a provision body. Drop it so it does not
+            # fold into the current section's text (real witness: 2009:538 §4b).
+            continue
         next_line = _next_meaningful_line(index)
         match = _SECTION_RE.match(line)
         if match:
@@ -2121,6 +2216,16 @@ def parse_se_official_act_text(text: str, sfs_id: str) -> SEOfficialActText:
                 if current_label is not None:
                     current_lines.append(line)
                 continue
+            if current_label is not None and _is_lowercase_wrapped_cross_reference(tail):
+                # A "<N> §" whose tail starts lowercase is a cross-reference that
+                # wrapped onto a new line inside the current section's sentence
+                # (a genuine provision body opens with a capital). Fold it back
+                # into the host provision instead of splitting — otherwise the host
+                # is truncated at the wrap and a ghost provision (and INSERT op) is
+                # spawned under the cross-referenced label (SE #183 witnesses
+                # 2009:538 §9a, 2021:1035 §9, 2026:249 §10a).
+                current_lines.append(line)
+                continue
             if current_label is not None and next_label == current_label:
                 current_lines.append(line)
                 continue
@@ -2128,13 +2233,27 @@ def parse_se_official_act_text(text: str, sfs_id: str) -> SEOfficialActText:
             current_label = next_label
             current_lines = [tail] if tail else []
             continue
-        if line and _looks_like_heading(line, next_line) and _SECTION_RE.match(next_line):
+        _heading_next_match = _SECTION_RE.match(next_line)
+        if (
+            line
+            and _looks_like_heading(line, next_line)
+            and _heading_next_match
+            # The "heading" candidate must precede a GENUINE section start. When the
+            # following "<N> §" line is really a lowercase-tail cross-reference that
+            # wrapped mid-sentence (see ``_is_lowercase_wrapped_cross_reference``),
+            # ``line`` is the wrapping sentence's prior fragment, not a heading —
+            # do not peel it out as an inserted heading (real witness: 2026:249
+            # §10a, whose "...som avses i det i" line preceded the wrapped
+            # "9 a § angivna..." cross-reference and was mis-read as a §9a heading).
+            and not _is_lowercase_wrapped_cross_reference(
+                _clean_official_section_tail(next_line, _heading_next_match.group("tail") or "")
+            )
+        ):
             if current_label is not None:
                 _flush_current()
                 current_label = None
                 current_lines = []
-            _m_next = _SECTION_RE.match(next_line)
-            next_label = _label_norm(_m_next.group("label")) if _m_next else ""
+            next_label = _label_norm(_heading_next_match.group("label"))
             inserted_headings.append(SEOfficialHeadingText(before_label=next_label, text=line))
             continue
         if current_label is not None:
@@ -3112,10 +3231,22 @@ def _extract_footnotes(lines: list[str]) -> tuple[list[str], tuple[str, ...]]:
     idx = 0
     while idx < len(lines):
         line = lines[idx]
-        if not _FOOTNOTE_LINE_RE.match(line):
+        if not _FOOTNOTE_LINE_RE.match(line) and not _is_se_body_footnote_line(line):
             kept.append(line)
             idx += 1
             continue
+        # A multi-line ``Jfr Europa...`` EU-law comparison footnote wraps onto
+        # continuation lines that begin with a directive/regulation NUMBER
+        # (``2011/35/EU, 2012/30/EU ...``) rather than a lowercase word, so the
+        # default lowercase/hyphen wrap heuristic below would stop early and leak
+        # the numeric tail into the provision body. When the footnote START is this
+        # EU-comparison shape, greedily absorb every following line until the
+        # bounded break conditions (a new footnote / section / ``Denna`` / signoff)
+        # fire — the guards below already stop at those boundaries. Real witness:
+        # 2015:1037 §2, whose ``Jfr ... 2011/35/EU, 2012/30/EU och 2013/36/EU ...``
+        # continuation started with a digit.
+        # lawvm-regex: owning_parser footnote-wrap detection in parse_se_official_act_text
+        greedy_eu_footnote = bool(re.match(r"^Jfr\s+Europa", line.strip(), re.IGNORECASE))
         parts = [line]
         while idx + 1 < len(lines):
             next_line = lines[idx + 1]
@@ -3131,7 +3262,11 @@ def _extract_footnotes(lines: list[str]) -> tuple[list[str], tuple[str, ...]]:
                         idx += 2
                         continue
                 break
-            if _FOOTNOTE_LINE_RE.match(next_line) or _SECTION_RE.match(next_line):
+            if (
+                _FOOTNOTE_LINE_RE.match(next_line)
+                or _is_se_body_footnote_line(next_line)
+                or _SECTION_RE.match(next_line)
+            ):
                 break
             if next_line.lower().startswith("denna ") or next_line.lower() == "på regeringens vägnar":
                 break
@@ -3139,7 +3274,7 @@ def _extract_footnotes(lines: list[str]) -> tuple[list[str], tuple[str, ...]]:
                 parts.append(next_line)
                 idx += 1
                 continue
-            if parts[-1].endswith("-") or next_line[:1].islower():
+            if greedy_eu_footnote or parts[-1].endswith("-") or next_line[:1].islower():
                 parts.append(next_line)
                 idx += 1
                 continue

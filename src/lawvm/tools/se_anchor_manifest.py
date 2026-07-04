@@ -492,15 +492,26 @@ REAL_ANCHOR_SE_JURISDICTION = "sweden"
 REAL_ANCHOR_SE_CORPUS_SIDS: tuple[str, ...] = (
     "2002:1006",  # scored clean (4 op targets, all exact) — base 1999:1229
     "2006:1320",  # scored clean (2 op targets: editorial_attribution_only + inline_numbering_only)
+    "2009:538",   # PROMOTED #218 (5 op targets, all clean) — base 2007:346; was the
+    #               truncated-inserted-clause / mid-body-footnote bug (§9a wrapped
+    #               "4 a §" cross-reference split; §4b Prop./Ändringen footnote fold)
     "2011:1496",  # scored clean (4 op targets, editorial_attribution_only) — base 2007:757
     "2012:682",   # scored clean (2 op targets, exact) — base 2011:1244
     "2014:313",   # scored clean (2 op targets, exact) — base 2005:551
+    "2015:1037",  # PROMOTED #218 (7 op targets, all clean) — base 2005:1057; was the
+    #               Jfr-EU-directive / "Senaste lydelse" footnote-fold bug (§2 §4)
     "2015:838",   # scored clean (5 op targets, all exact) — base 2010:598
     "2016:1216",  # scored clean (3 op targets, exact) — base 2001:650
     "2018:243",   # scored clean (4 op targets, exact) — base 2011:1244
     "2018:328",   # scored clean (4 op targets, exact) — base 2007:528
+    "2021:1035",  # PROMOTED #218 (1 op target, clean) — base 2010:299; was the
+    #               "2 kap.\\n7 §" chapter-section cross-reference mis-segmentation
+    #               (ghost §7 + truncated §9)
     "2022:1495",  # scored clean (3 op targets, exact) — base 2009:400
     "2022:543",   # scored clean (3 op targets: editorial + inline_numbering) — base 2009:93
+    "2026:249",   # PROMOTED #218 (2 op targets, all clean) — base 2010:1846; was the
+    #               "3 kap.\\n11 §" cross-reference drop + 2-level ghost §9a/heading
+    #               mis-segmentation (§10a truncation) + trailing numbered Prop. footnote
 )
 
 # The committed SE baseline artifact (frozen, sibling of the FI/EE/UK/EU ones).
