@@ -83,7 +83,7 @@ def run_uk_transition_graph_replay(
     from farchive import Farchive
 
     from lawvm.uk_legislation import uk_amendment_replay as uk_replay_module
-    from lawvm.uk_legislation.uk_grafter import parse_uk_statute_ir_bytes
+    from lawvm.uk_legislation.enacted_base_loader import load_enacted_base
 
     enacted_url = f"{_LEG_BASE}/{statute_id}/enacted/data.xml"
     with Farchive(_DEFAULT_DB, readonly=True) as archive:
@@ -93,12 +93,16 @@ def run_uk_transition_graph_replay(
                 f"enacted XML missing from archive for {enacted_url}; "
                 f"run `lawvm uk-acquire {statute_id}` first"
             )
-        base_ir = parse_uk_statute_ir_bytes(
+        # PDF-only Acts carry a NumberOfProvisions="0" stub whose XML body is
+        # empty; the shared loader substitutes the PDF replay base for those,
+        # and is byte-identical to parse_uk_statute_ir_bytes for real XML bodies.
+        base_ir = load_enacted_base(
+            statute_id,
             enacted_bytes,
-            statute_id=statute_id,
+            archive,
             version_label="enacted",
             source_path=enacted_url,
-        )
+        ).base_ir
         pipeline = uk_replay_module.UKReplayPipeline(_REPO_ROOT)
         ops = pipeline.compile_ops_for_statute(
             statute_id,
