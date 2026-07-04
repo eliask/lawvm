@@ -771,6 +771,42 @@ from lawvm.tools.no_anchor_manifest import (  # noqa: E402
     write_no_baseline,
 )
 
+# ---------------------------------------------------------------------------
+# The REAL touch-relation corpus — UNITED STATES (task #205, EIGHTH + final
+# jurisdiction).
+#
+# The US analogue of NO/EE/UK: ``us_anchor_manifest`` replays OLRC adjacent-edition
+# USC windows and projects the per-window dry-run disposition partition into the shared
+# CTSF residual family (0-billable steady state). The US manifest already owns its
+# ``load_us_baseline`` / ``write_us_baseline`` AND ``score_us_real_corpus`` (unlike
+# NZ/SE, which needed the gate to add their baseline I/O), so the gate imports them
+# as-is and only adds ``run_us_gate_report`` (mirroring ``run_nz_gate_report``). US
+# keys its baseline by ``corpus_windows`` (adjacent-edition windows), not ``corpus_sids``.
+# ---------------------------------------------------------------------------
+
+from lawvm.tools.us_anchor_manifest import (  # noqa: E402
+    REAL_ANCHOR_US_CORPUS_WINDOWS,  # noqa: F401 — re-exported for parity
+    REAL_ANCHOR_US_JURISDICTION,  # noqa: F401 — re-exported for parity
+    GATE_US_BASELINE_PATH,  # noqa: F401 — re-exported for parity
+    load_us_baseline,
+    score_us_real_corpus,
+    us_anchor_corpus_available,
+    write_us_baseline,
+)
+
+
+def run_us_gate_report(baseline_path: Path | None = None) -> GateResult:
+    """Score the REAL US corpus and diff it against the frozen US baseline.
+
+    Reads the US federal Farchive (the US corpus is scored via per-window offline
+    dry-run replay). Deterministic given the frozen corpus bytes. Returns the
+    :class:`GateResult`; the fail-red enforcement lives in :func:`run_gate` /
+    :func:`main` (which gate ALL data-backed corpora).
+    """
+    current = score_us_real_corpus()
+    baseline = load_us_baseline(baseline_path)
+    return residual_set_diff_gate(current, baseline)
+
 
 def ee_anchor_corpus_available() -> bool:
     """True iff the Riigi Teataja archive backing the EE real corpus is present.
@@ -1395,6 +1431,11 @@ def run_gate(baseline_path: Path | None = None) -> int:
         emit_verdict_signals(no_result)
         if no_result.failed:
             rc = 1
+    if us_anchor_corpus_available():
+        us_result = run_us_gate_report()
+        emit_verdict_signals(us_result)
+        if us_result.failed:
+            rc = 1
     return rc
 
 
@@ -1490,6 +1531,12 @@ def main(argv: list[str] | None = None) -> int:
         "Norway (Lovdata) corpus.",
     )
     parser.add_argument(
+        "--update-us-baseline",
+        action="store_true",
+        help="Rewrite the frozen US (#205) CTSF gate residual baseline from the "
+        "US federal (OLRC USC) corpus.",
+    )
+    parser.add_argument(
         "--json",
         action="store_true",
         help="Emit the gate result as JSON instead of the human report.",
@@ -1556,6 +1603,18 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Wrote CTSF gate NO residual baseline: {out}")
         return 0
 
+    if args.update_us_baseline:
+        if not us_anchor_corpus_available():
+            print(
+                "Cannot regenerate the US #205 baseline: the US federal (OLRC USC) "
+                "Farchive is absent. Set LAWVM_CANONICAL_DATA_ROOT to a checkout with "
+                "the US corpus and retry."
+            )
+            return 0
+        out = write_us_baseline()
+        print(f"Wrote CTSF gate US residual baseline: {out}")
+        return 0
+
     if args.update_ee_baseline:
         if not ee_anchor_corpus_available():
             print(
@@ -1606,7 +1665,8 @@ def main(argv: list[str] | None = None) -> int:
         rc = _fold_eu_gate_into_rc(rc, json_mode=args.json)
         rc = _fold_nz_gate_into_rc(rc, json_mode=args.json)
         rc = _fold_se_gate_into_rc(rc, json_mode=args.json)
-        return _fold_no_gate_into_rc(rc, json_mode=args.json)
+        rc = _fold_no_gate_into_rc(rc, json_mode=args.json)
+        return _fold_us_gate_into_rc(rc, json_mode=args.json)
 
     result = run_gate_report()
     emit_verdict_signals(result)
@@ -1622,7 +1682,8 @@ def main(argv: list[str] | None = None) -> int:
     rc = _fold_eu_gate_into_rc(rc, json_mode=args.json)
     rc = _fold_nz_gate_into_rc(rc, json_mode=args.json)
     rc = _fold_se_gate_into_rc(rc, json_mode=args.json)
-    return _fold_no_gate_into_rc(rc, json_mode=args.json)
+    rc = _fold_no_gate_into_rc(rc, json_mode=args.json)
+    return _fold_us_gate_into_rc(rc, json_mode=args.json)
 
 
 def _fold_ee_gate_into_rc(rc: int, *, json_mode: bool) -> int:
@@ -1778,6 +1839,29 @@ def _fold_no_gate_into_rc(rc: int, *, json_mode: bool) -> int:
             )
         )
     return 1 if no_result.failed else rc
+
+
+def _fold_us_gate_into_rc(rc: int, *, json_mode: bool) -> int:
+    """Gate the US (#205) corpus and fold its verdict into the process exit code.
+
+    Data-aware: an absent US federal Farchive SKIPS the US lane cleanly. When present,
+    score the US corpus, log its verdict, and raise ``rc`` to 1 iff the US gate FAILs.
+    Human mode prints a labelled section; JSON mode logs + folds without a second blob.
+    This is the EIGHTH and final CTSF jurisdiction — its fold completes the honest metric.
+    """
+    if not us_anchor_corpus_available():
+        return rc
+    us_result = run_us_gate_report()
+    emit_verdict_signals(us_result)
+    if not json_mode:
+        print("\n--- UNITED STATES (#205) corpus ---")
+        print(
+            format_report(
+                us_result,
+                corpus_label="the REAL #205 US touch-relation anchor corpus",
+            )
+        )
+    return 1 if us_result.failed else rc
 
 
 if __name__ == "__main__":  # pragma: no cover

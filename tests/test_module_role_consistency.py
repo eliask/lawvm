@@ -49,17 +49,14 @@ DEAD_ALLOWLIST: dict[str, str] = {
         "coverage; production CLI wiring is intentionally deferred until the "
         "holdout corpus list and runtime budget are settled."
     ),
-    "lawvm.tools.us_anchor_manifest": (
-        "US federal (#205, EIGHTH jurisdiction) CTSF anchor engine — exposes "
-        "score_us_real_corpus / load_us_baseline / us_anchor_corpus_available + the "
-        "frozen 0-billable baseline for the parent to wire the US section into "
-        "core.ctsf_gate (mirroring the pre-wiring frontier state SE/NO/NZ passed "
-        "through). Synthetic + data-present coverage exists "
-        "(test_ctsf_gate_us.py); the DEAD_ALLOWLIST entry is removed once "
-        "core.ctsf_gate statically imports it and folds run_us_gate_report into the "
-        "multi-jurisdiction run_gate exit code (a one-way ratchet shrink: frontier "
-        "wired to production)."
-    ),
+    # UNITED STATES (#205, EIGHTH + final jurisdiction) anchor manifest is no longer
+    # here — the ``--- UNITED STATES ---`` section of ``core.ctsf_gate`` now statically
+    # imports ``score_us_real_corpus`` / ``load_us_baseline`` /
+    # ``us_anchor_corpus_available`` / ``write_us_baseline`` and folds
+    # ``run_us_gate_report`` into the multi-jurisdiction ``run_gate`` exit code, exactly
+    # like EE/UK/EU/NZ/SE/NO. That makes it a LIVE production importer, so its
+    # DEAD_ALLOWLIST entry was removed (a legitimate one-way ratchet shrink: frontier
+    # wired to production). This completes the honest CTSF metric across all 8 frontends.
     # NORWAY / SWEDEN / NEW ZEALAND anchor manifests are no longer here — the
     # ``--- NORWAY ---`` / ``--- SWEDEN ---`` / ``--- NEW ZEALAND ---`` sections of
     # ``core.ctsf_gate`` now statically import ``score_no_real_corpus`` /
