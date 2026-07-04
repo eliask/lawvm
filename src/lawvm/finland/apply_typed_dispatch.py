@@ -24,7 +24,8 @@ from lawvm.core.mutation_boundary import (
 )
 from lawvm.core.observed_write_audit import ObservedWriteAudit, build_observed_write_audit
 from lawvm.core.phase_result import Finding
-from lawvm.core.semantic_types import FacetKind, IRNodeKind
+from lawvm.core.semantic_types import FacetKind, IRNodeKind, StructuralAction
+from lawvm.core.totalization import FailureClass, NoopIdempotent
 from lawvm.core import tree_ops as _tops
 from lawvm.core.tree_ops import Path, default_label_sort_key, normalized_label_key
 from lawvm.finland.ops import (
@@ -35,6 +36,7 @@ from lawvm.finland.ops import (
     _assert_intent_compat,
 )
 from lawvm.finland.standalone_targets import StandaloneSectionTargetsInput
+from lawvm.finland.totalization_table import FI_TOTALIZATION_TABLE
 from lawvm.finland.apply_policy import (
     _check_occupancy_policy,
     _resolve_section_path_with_fallbacks,
@@ -994,10 +996,19 @@ def _apply_intent_section_level(
                 ctx_label,
                 rop.resolved_target_label,
             )
+            # θ (REPEAL, TARGET_ABSENT) — a subsection repeal whose parent section
+            # is already absent: an idempotent (well-formed no-op) repeal. Routed
+            # through FI's θ TotalizationTable so the table is the single source of
+            # the skip code (byte-identical: the cell resolves to
+            # NoopIdempotent("idempotent_repeal_parent_section_absent")).
+            _idempotent_repeal_disp = FI_TOTALIZATION_TABLE.lookup(
+                StructuralAction.REPEAL, FailureClass.TARGET_ABSENT
+            )
+            assert isinstance(_idempotent_repeal_disp, NoopIdempotent)
             _emit_apply_op_skipped_witness(
                 findings_out,
                 rop=rop,
-                reason_code="idempotent_repeal_parent_section_absent",
+                reason_code=_idempotent_repeal_disp.code,
                 failure_reason="parent section already absent (idempotent repeal)",
                 clause_text=f"repeal target subsection label={rop.resolved_target_subsection_label}",
             )

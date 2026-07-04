@@ -1,12 +1,29 @@
-"""Finland's θ totalization table — the observation-based off-domain model (#186).
+"""Finland's θ totalization table — mixed routed / observation-based model (#186).
 
 Design reference: ``notes_internal/FABLE_UNIVERSAL_ALGEBRA.md`` §2.3. This module
 extends the neutral θ TotalizationTable (``core/totalization.py``) to Finland.
 
-WHY FI IS DIFFERENT (declared-only, routing DEFERRED / N-A). The reject/adjudicate
+ROUTING STATUS (#206 tail). Three of FI's cells are now LOAD-BEARING — θ is their
+SINGLE SOURCE, imported by the production apply path:
+
+* ``(RENUMBER, SELF_RELABEL) → NoopIdempotent("self_relabel_noop")`` —
+  ``restructure_plan.py`` (``_execute_relabel`` ~2118, ``_execute_same_parent_
+  relabel_group`` ~1701) reads ``FI_TOTALIZATION_TABLE.lookup(...).code``.
+* ``(RENUMBER, DEST_OCCUPIED) → Reject("destination_occupied")`` —
+  ``restructure_plan.py::_execute_relabel`` ~2259 reads the table.
+* ``(REPEAL, TARGET_ABSENT) → NoopIdempotent("idempotent_repeal_parent_section_
+  absent")`` — ``apply_typed_dispatch.py`` ~1000 reads the table.
+
+Each routed site is BYTE-IDENTICAL (the table returns exactly the disposition the
+inline code used to hard-code; SHA-verified on the FI corpus). The conformance
+test (``tests/test_totalization_conformance_fi.py``) binds these cells to the
+``.lookup(...)`` call, so dropping the routing FAILS the test.
+
+WHY THE OCCUPANCY CELLS STAY DECLARED (routing N-A). The reject/adjudicate
 frontends (NO/SE/EE/UK) partition every off-domain op into a REJECTED lane
-carrying a ``*_replay_*`` code, and θ.lookup routes that partition. FI has NO such
-partition:
+carrying a ``*_replay_*`` code, and θ.lookup routes that partition. FI's OCCUPANCY
+lane has NO such partition — it cannot be byte-safely routed through a single
+table cell:
 
 * **Off-domain occupancy is a NON-BLOCKING OBSERVATION, not a reject.**
   ``finland/apply_policy.py`` (~838): when a slot's occupancy is outside
@@ -89,13 +106,14 @@ FI_OCCUPANCY_OBSERVATION_KIND = "APPLY.OCCUPANCY_POLICY_VIOLATION"
 
 
 def build_fi_totalization_table() -> TotalizationTable:
-    """Construct FI's DECLARED θ table (observation/idempotent-skip based).
+    """Construct FI's θ table (mixed routed / observation-based).
 
     The occupancy cells are ``NoopIdempotent`` (apply-and-observe, non-blocking);
     the idempotent-skip cells are ``NoopIdempotent`` (skip reason_code); the one
-    genuine destination-collision cell is a ``Reject``. Routing is DEFERRED — the
-    table is a faithful DECLARED spec (see the module docstring for why FI's
-    observation model makes routing N-A rather than load-bearing).
+    genuine destination-collision cell is a ``Reject``. The three RENUMBER/REPEAL
+    precondition-failure cells are ROUTED — θ is their single source, imported by
+    ``restructure_plan.py`` / ``apply_typed_dispatch.py`` (byte-identical). The
+    occupancy cells stay DECLARED (routing N-A; see the module docstring).
     """
     return TotalizationTable(
         jurisdiction="fi",
@@ -114,22 +132,24 @@ def build_fi_totalization_table() -> TotalizationTable:
             (StructuralAction.REPLACE, FailureClass.TARGET_ABSENT): NoopIdempotent(
                 FI_OCCUPANCY_OBSERVATION_KIND
             ),
-            # ── Idempotent-skip cells: outcome="skipped", a well-formed no-op. ──
-            # REPEAL of a subsection whose parent section is already absent — an
-            # idempotent repeal (apply_typed_dispatch.py ~1000).
+            # ── Idempotent-skip cell (ROUTED: θ is the single source). REPEAL of a
+            # subsection whose parent section is already absent — an idempotent
+            # repeal. apply_typed_dispatch.py ~1000 reads this cell's code. ───────
             (StructuralAction.REPEAL, FailureClass.TARGET_ABSENT): NoopIdempotent(
                 "idempotent_repeal_parent_section_absent"
             ),
-            # A RENUMBER/relabel whose parsed source address equals its
-            # destination address — nothing to move (restructure_plan.py
-            # ~1701/~2118). Keys on the additive FI SELF_RELABEL class.
+            # (ROUTED: θ is the single source.) A RENUMBER/relabel whose parsed
+            # source address equals its destination — nothing to move. Keys on the
+            # additive FI SELF_RELABEL class. restructure_plan.py ~1701/~2118 read
+            # this cell's code.
             (StructuralAction.RENUMBER, FailureClass.SELF_RELABEL): NoopIdempotent(
                 "self_relabel_noop"
             ),
-            # ── The one genuine off-domain FAILURE. A grouped RENUMBER whose
-            # destination label is already held by a DIFFERENT occupant: FI does
-            # NOT recover (no scaffold-relabel-over-occupant); the executor fails
-            # the op (restructure_plan.py ~2259). A Reject, not a Recover. ────────
+            # ── The one genuine off-domain FAILURE (ROUTED: θ is the single
+            # source). A RENUMBER whose destination label is already held by a
+            # DIFFERENT occupant: FI does NOT recover (no scaffold-relabel-over-
+            # occupant); the executor fails the op. A Reject, not a Recover.
+            # restructure_plan.py ~2259 reads this cell's code. ──────────────────
             (StructuralAction.RENUMBER, FailureClass.DEST_OCCUPIED): Reject(
                 "destination_occupied"
             ),

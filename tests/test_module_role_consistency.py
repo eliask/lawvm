@@ -68,24 +68,19 @@ DEAD_ALLOWLIST: dict[str, str] = {
         "(test_uk_pdf_marginal_notes.py); production wiring is INTENTIONALLY "
         "deferred to the bulk tier-1 PDF acquisition lane (the #177 follow-up)."
     ),
-    # #186 load-bearing follow-up: sweden/norway ``totalization_table`` are no
-    # longer here — the grafters now statically import them and dispatch on
-    # ``table.lookup(...)`` at every declared off-domain site, so the tables (and
-    # the neutral ``core.totalization`` type they build on) are LIVE, reachable
-    # from the production apply paths. The allowlist entries + the
-    # ``core.totalization`` test_only_live baseline row were removed (a
-    # legitimate one-way ratchet shrink: frontier wired to production).
-    "lawvm.finland.totalization_table": (
-        "#186 θ TotalizationTable extended to Finland as a DECLARED spec. FI is "
-        "OBSERVATION-BASED (off-domain occupancy is a non-blocking observation — "
-        "the op still applies — with a three-outcome applied/skipped/failed "
-        "mutation-event ledger, NOT a reject/adjudicate partition), so there is no "
-        "reject lane for θ.lookup to be the single source of; routing is DEFERRED / "
-        "N-A. The table is conformance-tested (test_totalization_conformance_fi.py "
-        "binds each declared cell to FI's ACTUAL runtime code at the source level) "
-        "but has no production importer yet — the SE/NO frontier-before-routing "
-        "shape. Wiring, if ever wanted, is the load-bearing follow-up."
-    ),
+    # #186 load-bearing follow-up: sweden/norway/finland ``totalization_table`` are
+    # no longer here — the grafters now statically import them and dispatch on
+    # ``table.lookup(...)`` at their off-domain sites, so the tables (and the
+    # neutral ``core.totalization`` type they build on) are LIVE, reachable from
+    # the production apply paths. FINLAND (#206 tail): ``restructure_plan.py`` and
+    # ``apply_typed_dispatch.py`` now read
+    # ``FI_TOTALIZATION_TABLE.lookup(action, failure).code`` at the RENUMBER
+    # self-relabel / dest-occupied and the REPEAL parent-absent sites (θ is the
+    # single source of those three codes, byte-identical). FI's occupancy-
+    # observation cells stay declared (routing N-A — not a single-cell partition),
+    # but the module now has a production importer, so it is LIVE and its allowlist
+    # entry was removed (a legitimate one-way ratchet shrink: frontier wired to
+    # production, mirroring the SE/NO/label_algebra flips).
     # #186 load-bearing follow-up (#206 tail): ``finland.label_algebra`` is no
     # longer here — ``finland/merge.py`` now statically imports ``fi_label_sort_key``
     # and dispatches the container-section sibling-merge ORDERING through it (the

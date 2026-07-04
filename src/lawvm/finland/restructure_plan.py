@@ -32,11 +32,13 @@ from lawvm.core.ir import IRNode, LegalAddress
 from lawvm.core.payload_surface import TargetUnitKind
 from lawvm.core.phase_result import Finding
 from lawvm.finland.source_pathology import build_recodification_source_chain_gap_pathology
-from lawvm.core.semantic_types import IRNodeKind
+from lawvm.core.semantic_types import IRNodeKind, StructuralAction
+from lawvm.core.totalization import FailureClass, NoopIdempotent, Reject
 from lawvm.core import tree_ops as _tops
 from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.relabel_identity import RelabelParentKey
 from lawvm.finland.ops import AmendmentOp, OpType, ResolvedOp
+from lawvm.finland.totalization_table import FI_TOTALIZATION_TABLE
 
 if TYPE_CHECKING:
     from lawvm.finland.migration_ledger import MigrationLedger
@@ -1668,7 +1670,24 @@ def _execute_same_parent_relabel_group(
     source_statute: str = "",
     lookup_cache: _RelabelLookupCache | None = None,
 ) -> Tuple[IRNode, List[ExecutedOp]]:
-    """Execute a same-parent RELABEL chain atomically against one parent snapshot."""
+    """Execute a same-parent RELABEL chain atomically against one parent snapshot.
+
+    GROUP-ATOMICITY (θ §5.5) IS DELIBERATELY N-A HERE. "Atomically" means every
+    member is resolved against ONE consistent parent snapshot (so intra-group
+    relabels do not interfere), NOT that a failing member rolls the group back.
+    Unlike US compound instructions (``us_federal/amendatory.py::_lower_atomic_
+    group`` → ``core.filter_result.enforce_group_atomicity``, all-or-none), FI is
+    PARTIAL-APPLY by design: an individual member's ``self_relabel_noop`` /
+    ``target_not_found`` failure is recorded on that member while the OTHER members
+    still land. Only GROUP-STRUCTURAL failures (parse / parent-mismatch / parent-
+    not-found / destination-collision below) fail the whole group — and those
+    already return every op failed WITHOUT the kernel transform. This matches FI's
+    non-blocking observation model (a FI amendment clause lowers to a FLAT list of
+    INDEPENDENT ops — ``johtolause/lower_surface.py::lower_surface_clause_to_
+    parsed_ops`` — never a 1→N atomic legal act), so wiring
+    ``enforce_group_atomicity`` here would CHANGE behaviour (flip partial-applies
+    to whole-group rejections) — it is correctly NOT wired. See #206 assessment.
+    """
 
     if not ops:
         return tree, []
@@ -1693,12 +1712,20 @@ def _execute_same_parent_relabel_group(
                 for o in ops
             ]
         if _same_parsed_relabel_address(target_path, dest_path):
+            # θ (RENUMBER, SELF_RELABEL) — source == destination, nothing to move.
+            # Routed through FI's θ TotalizationTable so the table is the single
+            # source of the disposition code (byte-identical: the cell resolves to
+            # NoopIdempotent("self_relabel_noop"), the literal the site emitted).
+            _disp = FI_TOTALIZATION_TABLE.lookup(
+                StructuralAction.RENUMBER, FailureClass.SELF_RELABEL
+            )
+            assert isinstance(_disp, NoopIdempotent)
             missing_executed.append(
                 ExecutedOp(
                     op=op,
                     success=False,
                     note="RELABEL op source and destination are identical",
-                    reason_code="self_relabel_noop",
+                    reason_code=_disp.code,
                 )
             )
             continue
@@ -2111,11 +2138,17 @@ def _execute_relabel(
             reason_code="parse_failed",
         )
     if _same_parsed_relabel_address(target_path, dest_path):
+        # θ (RENUMBER, SELF_RELABEL) — routed through FI's θ TotalizationTable
+        # (byte-identical: NoopIdempotent("self_relabel_noop")).
+        _disp = FI_TOTALIZATION_TABLE.lookup(
+            StructuralAction.RENUMBER, FailureClass.SELF_RELABEL
+        )
+        assert isinstance(_disp, NoopIdempotent)
         return tree, ExecutedOp(
             op=op,
             success=False,
             note="RELABEL op source and destination are identical",
-            reason_code="self_relabel_noop",
+            reason_code=_disp.code,
         )
 
     new_label = dest_path[-1][1]  # leaf label of destination
@@ -2252,11 +2285,20 @@ def _execute_relabel(
                 reason_code="destination_parent_missing",
             )
         if _tops.find(parent_node, dest_path[-1][0], new_label) is not None:
+            # θ (RENUMBER, DEST_OCCUPIED) — the destination label is already held
+            # by a DIFFERENT occupant; FI does NOT recover (no relabel-over-
+            # occupant). Routed through FI's θ TotalizationTable so the table is
+            # the single source of the rejection code (byte-identical: the cell
+            # resolves to Reject("destination_occupied"), the literal emitted here).
+            _disp = FI_TOTALIZATION_TABLE.lookup(
+                StructuralAction.RENUMBER, FailureClass.DEST_OCCUPIED
+            )
+            assert isinstance(_disp, Reject)
             return tree, ExecutedOp(
                 op=op,
                 success=False,
                 note=f"destination already contains {dest_path[-1][0]}:{new_label}",
-                reason_code="destination_occupied",
+                reason_code=_disp.code,
             )
         tree = _tops.insert_sorted(tree, explicit_destination_parent, relabeled)
         applied_from = tuple(found_path)
