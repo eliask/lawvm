@@ -5472,6 +5472,32 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
     uk_corpus_all_p.add_argument("--enacted-only", dest="enacted_only", action="store_true")
     uk_corpus_all_p.add_argument("--delay", type=float, default=0.3, metavar="SECS")
 
+    uk_corpus_pdf_p = uk_corpus_sub.add_parser(
+        "pdf",
+        help="acquire PDF-only acts' inline-named PDFs into the PDF lane (resumable)",
+        description=(
+            "Resumable, bounded crawl of the PDF-only worklist: every enacted "
+            "stub already in the archive that names its own PDF inline and whose "
+            "PDF blob is not yet in the leg://pdf/ lane. Re-running skips acquired "
+            "PDFs, so a partial run resumes cleanly. --limit bounds the batch; "
+            "--limit 0 runs the whole remaining worklist (durable session only)."
+        ),
+    )
+    _uk_corpus_db(uk_corpus_pdf_p)
+    uk_corpus_pdf_p.add_argument(
+        "--limit", type=int, default=0, metavar="N",
+        help="max acts to fetch this run (0 = whole remaining worklist)",
+    )
+    uk_corpus_pdf_p.add_argument(
+        "--all-pdf-named", dest="all_pdf_named", action="store_true",
+        help="include every PDF-named act, not just metadata-only (PDF-only) stubs",
+    )
+    uk_corpus_pdf_p.add_argument(
+        "--worklist-only", dest="worklist_only", action="store_true",
+        help="only report the remaining worklist size; fetch nothing",
+    )
+    uk_corpus_pdf_p.add_argument("--delay", type=float, default=1.0, metavar="SECS")
+
     uk_corpus_stats_p = uk_corpus_sub.add_parser("stats", help="archive summary")
     _uk_corpus_db(uk_corpus_stats_p)
     uk_corpus_traindict_p = uk_corpus_sub.add_parser("train-dict", help="train the xml compression dictionary")

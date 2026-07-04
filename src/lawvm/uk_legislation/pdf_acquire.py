@@ -450,3 +450,181 @@ def acquire_pdf_sample(
             )
         )
     return sample
+
+
+# ---------------------------------------------------------------------------
+# Corpus-scale worklist enumeration + resumable crawl
+# ---------------------------------------------------------------------------
+#
+# The worklist is NOT a discovered list — every candidate is an enacted stub
+# ALREADY in the XML lane that names its own PDF inline (see the module
+# docstring).  So enumeration is a pure in-archive scan: no network, fully
+# deterministic, and resumable *by construction* — a stub whose PDF blob is
+# already in the ``leg://pdf/`` lane is skipped, so re-running the crawl only
+# fetches what is still missing.
+
+# An enacted stub locator is the bare legislation.gov.uk enacted-XML URL.
+_ENACTED_SUFFIX = "/enacted/data.xml"
+_LEG_URL_PREFIX = "https://www.legislation.gov.uk/"
+
+# A metadata-only ("PDF-only") stub declares no provisions: its enacted AND
+# current XML are stubs, so the PDF is the *only* text source.  These are the
+# ~7,547 acts the PDF lane exists to recover.  The marker is inlined in the
+# stub's ``<ukm:...NumberOfProvisions="0">`` attribute.
+_PDF_ONLY_MARKER = b'NumberOfProvisions="0"'
+
+
+def _statute_id_from_enacted_locator(locator: str) -> str | None:
+    """Recover ``act_type/year/number`` from an enacted-stub locator, or None.
+
+    ``https://www.legislation.gov.uk/ukpga/1983/38/enacted/data.xml`` ->
+    ``ukpga/1983/38``.  Returns None for any locator that is not a bare
+    legislation.gov.uk enacted-XML stub (so the scan ignores current/effects
+    feeds, PDF-lane blobs, negative-cache markers, etc.).
+    """
+    if not locator.startswith(_LEG_URL_PREFIX) or not locator.endswith(_ENACTED_SUFFIX):
+        return None
+    return locator[len(_LEG_URL_PREFIX) : -len(_ENACTED_SUFFIX)]
+
+
+@dataclass(frozen=True, slots=True)
+class PdfWorklistItem:
+    """One acquisition-eligible act: its id plus the PDF it names inline."""
+
+    statute_id: str
+    alternative: PdfAlternative
+    pdf_only: bool
+
+
+def iter_pdf_worklist(
+    archive: Any,
+    *,
+    pdf_only: bool = True,
+    include_cached: bool = False,
+) -> "list[PdfWorklistItem]":
+    """Scan the archive for acts whose inline-named PDF is not yet in the lane.
+
+    Pure in-archive scan (no network).  For every enacted stub already stored in
+    the XML lane, extract its inline PDF ``ukm:Alternative``; an act is on the
+    worklist iff it names a PDF whose ``leg://pdf/`` blob is not already stored
+    (``include_cached=True`` overrides this, yielding every PDF-named act).
+
+    ``pdf_only=True`` (the default, and the corpus-scale target) restricts to
+    metadata-only stubs (``NumberOfProvisions="0"``) — the ~7,547 acts that exist
+    upstream *only* as PDF.  ``pdf_only=False`` yields every PDF-named act
+    (including those that also have a real XML body).
+
+    Resumable by construction: because it skips PDFs already in the lane, a
+    re-run after a partial crawl returns only the still-missing remainder.
+    """
+    items: list[PdfWorklistItem] = []
+    for locator in archive.locators():
+        sid = _statute_id_from_enacted_locator(locator)
+        if sid is None:
+            continue
+        stub = archive.get(locator)
+        if stub is None:
+            continue
+        is_pdf_only = _PDF_ONLY_MARKER in stub
+        if pdf_only and not is_pdf_only:
+            continue
+        alt = extract_pdf_url_from_stub(stub)
+        if alt is None:
+            continue
+        if not include_cached and archive.has(pdf_lane_locator(alt.url)):
+            continue
+        items.append(
+            PdfWorklistItem(statute_id=sid, alternative=alt, pdf_only=is_pdf_only)
+        )
+    # Deterministic order so a bounded (``limit``) crawl is reproducible and a
+    # resumed run continues where the previous left off.
+    items.sort(key=lambda it: it.statute_id)
+    return items
+
+
+@dataclass
+class PdfCrawlReport:
+    """Bounded summary of a corpus-scale (resumable) PDF crawl.
+
+    Mirrors the acquire-summary discipline: aggregate counts + a bounded list of
+    per-act reports (only the failures are retained in full so the output never
+    grows unbounded with corpus size).
+    """
+
+    worklist_total: int = 0
+    attempted: int = 0
+    acquired: int = 0
+    already_cached: int = 0
+    errors: int = 0
+    total_bytes: int = 0
+    remaining: int = 0
+    error_reports: list[PdfAcquireReport] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "worklist_total": self.worklist_total,
+            "attempted": self.attempted,
+            "acquired": self.acquired,
+            "already_cached": self.already_cached,
+            "errors": self.errors,
+            "total_bytes": self.total_bytes,
+            "remaining": self.remaining,
+            "error_reports": [r.to_dict() for r in self.error_reports],
+        }
+
+
+def crawl_pdf_worklist(
+    archive: Any,
+    *,
+    limit: int = 0,
+    pdf_only: bool = True,
+    delay: float = _DEFAULT_DELAY,
+    verbose: bool = False,
+    progress_every: int = 25,
+) -> PdfCrawlReport:
+    """Fetch PDFs for the in-archive worklist, resumable and bounded.
+
+    Enumerates :func:`iter_pdf_worklist` (already-acquired PDFs skipped), then
+    fetches up to ``limit`` of them sequentially with the courteous inter-request
+    delay.  ``limit=0`` means the whole remaining worklist (for the durable
+    full-corpus run in a persistent session — NOT a transient scope).
+
+    Output is bounded: only aggregate counts are printed periodically, and only
+    failing per-act reports are retained.  ``remaining`` in the returned report
+    is the worklist size minus what this run acquired, so the caller knows how
+    much a subsequent resumed run still has to do.
+    """
+    worklist = iter_pdf_worklist(archive, pdf_only=pdf_only)
+    report = PdfCrawlReport(worklist_total=len(worklist))
+    batch = worklist if limit <= 0 else worklist[:limit]
+
+    timer: list[float] = [0.0]
+    for idx, item in enumerate(batch, start=1):
+        r = acquire_pdf_for_statute(
+            item.statute_id,
+            archive,
+            delay=delay,
+            timer=timer,
+            fetch_stub_if_missing=False,
+            verbose=False,
+        )
+        report.attempted += 1
+        if r.error is not None:
+            report.errors += 1
+            report.error_reports.append(r)
+        elif r.already_cached:
+            report.already_cached += 1
+            report.total_bytes += r.fetched_bytes or 0
+        else:
+            report.acquired += 1
+            report.total_bytes += r.fetched_bytes or 0
+        if verbose and (idx % progress_every == 0 or idx == len(batch)):
+            print(
+                f"  [{idx}/{len(batch)}] acquired={report.acquired} "
+                f"cached={report.already_cached} errors={report.errors} "
+                f"bytes={report.total_bytes:,}",
+                flush=True,
+            )
+
+    report.remaining = report.worklist_total - report.acquired
+    return report

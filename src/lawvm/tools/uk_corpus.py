@@ -1013,6 +1013,49 @@ def run_repair_multiple_choices(
     )
 
 
+def run_pdf(
+    archive: Farchive,
+    *,
+    limit: int,
+    pdf_only: bool,
+    delay: float,
+    worklist_only: bool,
+) -> None:
+    """Resumable, bounded crawl of the PDF-only worklist (no network discovery).
+
+    The worklist is a pure in-archive scan (enacted stubs that name their own
+    PDF inline and whose PDF blob is not yet in the ``leg://pdf/`` lane), so the
+    crawl skips already-acquired PDFs and resumes cleanly.  Output is bounded:
+    aggregate counts plus (on failure) a capped tail of failing per-act reports.
+    """
+    from lawvm.uk_legislation.pdf_acquire import crawl_pdf_worklist, iter_pdf_worklist
+
+    lane = "pdf-only" if pdf_only else "all-pdf-named"
+    if worklist_only:
+        pending = iter_pdf_worklist(archive, pdf_only=pdf_only)
+        print(f"\n[pdf] {lane} worklist remaining: {len(pending):,}  (fetch nothing)")
+        return
+
+    print(f"\n[pdf] {lane} crawl  limit={limit or 'ALL'}  delay={delay}s")
+    report = crawl_pdf_worklist(
+        archive, limit=limit, pdf_only=pdf_only, delay=delay, verbose=True
+    )
+    print(
+        f"  worklist={report.worklist_total:,}  attempted={report.attempted:,}  "
+        f"acquired={report.acquired:,}  cached={report.already_cached:,}  "
+        f"errors={report.errors:,}  bytes={report.total_bytes:,}  "
+        f"remaining={report.remaining:,}"
+    )
+    if report.error_reports:
+        # Bounded failure tail (never dump the whole corpus on stdout).
+        by_error: dict[str, int] = {}
+        for r in report.error_reports:
+            by_error[r.error or "unknown"] = by_error.get(r.error or "unknown", 0) + 1
+        print("  error breakdown: " + "  ".join(f"{k}={v}" for k, v in sorted(by_error.items())))
+        for r in report.error_reports[:10]:
+            print(f"    ! {r.statute_id}: {r.error}")
+
+
 def main(args: Any) -> None:
     command = getattr(args, "uk_corpus_command", None) or "stats"
     db_path = Path(getattr(args, "db", _DEFAULT_ARCHIVE))
@@ -1027,6 +1070,20 @@ def main(args: Any) -> None:
         if command == "repack":
             st = archive.repack(storage_class="xml")
             print(f"Repacked: {st.blobs_repacked:,} blobs, saved {st.bytes_saved:,} bytes")
+            return
+
+        if command == "pdf":
+            # PDF lane uses its own courteous fetcher (pdf_acquire), not _HTTP.
+            print(f"UK corpus → {db_path}")
+            run_pdf(
+                archive,
+                limit=int(getattr(args, "limit", 0) or 0),
+                pdf_only=not bool(getattr(args, "all_pdf_named", False)),
+                delay=float(getattr(args, "delay", 1.0)),
+                worklist_only=bool(getattr(args, "worklist_only", False)),
+            )
+            st = archive.stats()
+            print(f"\nDone. {st.locator_count:,} locators, {st.total_stored_bytes / 1e6:.1f} MB stored")
             return
 
         http = _HTTP(delay=getattr(args, "delay", _DEFAULT_DELAY))
@@ -1070,6 +1127,7 @@ __all__ = [
     "do_affecting",
     "do_download",
     "do_enumerate",
+    "run_pdf",
     "do_repair_multiple_choices",
     "do_refresh",
     "do_stats",

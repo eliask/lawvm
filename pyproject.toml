@@ -27,6 +27,12 @@ test = [
   "pytest>=8.0",
   "hypothesis>=6.100",
 ]
+# Optional PDF-layout extraction (marginal-note / side-note geometry binding for
+# the UK PDF-only acquisition lane and Finland's pdf_layout). Imported
+# dynamically, so its absence degrades to the plain pdftotext grammar path.
+pdf = [
+  "pdfplumber>=0.11",
+]
 
 [project.scripts]
 lawvm = "lawvm.tools.cli:main"
