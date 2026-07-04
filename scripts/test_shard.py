@@ -1019,6 +1019,12 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # diff logic, round-trip, and @requires_uk_corpus data-present fail-red over
         # the legislation.gov.uk archive.
         "test_ctsf_gate_uk.py",
+        # EU (#204) CTSF gate corpus — the fourth-jurisdiction analogue, the last
+        # un-gated jurisdiction: frozen 0-billable EU baseline over the offline
+        # replay-conservation window (EU stores no consolidation oracle / dated DAG),
+        # FAIL/WARN/PASS diff logic, round-trip, and @requires_eu_corpus data-present
+        # fail-red over the EU Cellar archive.
+        "test_ctsf_gate_eu.py",
         "test_diagnose_phase.py",
         "test_diff.py",
         "test_dump.py",

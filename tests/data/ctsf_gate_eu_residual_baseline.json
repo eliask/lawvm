@@ -1,0 +1,76 @@
+{
+  "_doc": "CTSF residual-set-diff gate baseline — EUROPEAN UNION (#183/#204). Frozen typed-residual set of the REAL EU replay-conservation corpus (REAL_ANCHOR_EU_CORPUS_CHAINS), keyed {sid: {family: count}} with only non-zero families retained. An EU anchor is an offline replay WINDOW (amender applied to its base, both Farchive-stored) — EU stores NO consolidation oracle and NO dated DAG, so the scored property is the conserved apply fold's invariant (|applied|+|skipped|==|ops|), NOT an oracle diff. The gate FAILs iff a NEW replay_bug/unknown residual appears vs this set (an apply RAISE or a conservation violation); WARNs on a typed cnf_unsupported op-skip move. This corpus is curated 0-BILLABLE (the honest steady state); a full sweep of the #204 ZIP-recovered acts found 0 billable EU replay bugs. Regenerate with `uv run python -m lawvm.core.ctsf_gate --update-eu-baseline` (needs the EU Cellar Farchive) after a legitimate, reviewed corpus/projection change — a preregistered predict-then-compare event, never a silent baseline move.",
+  "gate_version": "v0",
+  "jurisdiction": "european_union",
+  "corpus_chains": [
+    [
+      "32006R1996",
+      "32008R0402"
+    ],
+    [
+      "32010R0053",
+      "32009R0754"
+    ],
+    [
+      "32011R0057",
+      "32009R0754"
+    ],
+    [
+      "32014R0540",
+      "32017R1576"
+    ],
+    [
+      "32015R0340",
+      "32012R0923"
+    ],
+    [
+      "32017R1151",
+      "32008R0692"
+    ],
+    [
+      "32022R1303",
+      "32019R0787"
+    ],
+    [
+      "32023R0331",
+      "32022R2309"
+    ],
+    [
+      "32023R1114",
+      "32010R1093"
+    ],
+    [
+      "32023R2694",
+      "32009R1284"
+    ]
+  ],
+  "families": [
+    "replay_bug",
+    "oracle_editorial_pathology",
+    "temporal_mismatch",
+    "state_index",
+    "cnf_unsupported",
+    "unknown"
+  ],
+  "fail_families": [
+    "replay_bug",
+    "unknown"
+  ],
+  "total_residuals": 4,
+  "residuals": {
+    "32006R1996->32008R0402": {},
+    "32010R0053->32009R0754": {},
+    "32011R0057->32009R0754": {},
+    "32014R0540->32017R1576": {
+      "cnf_unsupported": 1
+    },
+    "32015R0340->32012R0923": {},
+    "32017R1151->32008R0692": {},
+    "32022R1303->32019R0787": {},
+    "32023R0331->32022R2309": {},
+    "32023R1114->32010R1093": {
+      "cnf_unsupported": 3
+    },
+    "32023R2694->32009R1284": {}
+  }
+}

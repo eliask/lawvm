@@ -292,10 +292,11 @@ def _cnf_table_oracle() -> SemanticStructureNode:
 
 
 # Jurisdiction of the FI real corpus. FI was the first #183 touch-relation
-# attribution engine (``fi_anchor_manifest``); EE now has its own analogue
-# (``ee_anchor_manifest``, task #205) and participates as a SECOND jurisdiction
-# corpus below. UK still has no anchor-manifest / plan_snapshots path yet, so it is
-# documented as the next-jurisdiction step, not silently dropped.
+# attribution engine (``fi_anchor_manifest``); EE (``ee_anchor_manifest``, #205), UK
+# (``uk_anchor_manifest``, #205), and EU (``eu_anchor_manifest``, #204 — the last
+# un-gated jurisdiction, on a replay-conservation model rather than an oracle-touch
+# one) each have their own analogue and participate as the SECOND / THIRD / FOURTH
+# jurisdiction corpora below.
 # See notes_internal/CTSF_PHASE3_REALANCHORS_2026_07_03.md.
 REAL_ANCHOR_JURISDICTION = "finland"
 
@@ -418,6 +419,196 @@ REAL_ANCHOR_UK_CORPUS_SIDS: tuple[str, ...] = (
 
 # The committed UK baseline artifact (frozen, sibling of the FI/EE ones).
 GATE_UK_BASELINE_PATH = Path("tests/data/ctsf_gate_uk_residual_baseline.json")
+
+
+# ---------------------------------------------------------------------------
+# The REAL touch-relation corpus — EUROPEAN UNION (task #204, FOURTH jurisdiction).
+#
+# EU is the last un-gated jurisdiction. Its oracle model is DIFFERENT from FI/EE/UK
+# and the difference is material (documented in ``lawvm.tools.eu_anchor_manifest``):
+# the EU Cellar corpus stores NO sector-0 consolidation (every ``consolidation_date``
+# is ``enacted``; 0 consolidated CELEXes) and NO persisted dated amendment DAG. So the
+# "score the native replay against a published consolidation and type each per-unit
+# divergence via the touch relation" model FI/EE/UK use has NO oracle to run against
+# for EU today — fabricating one would be the exact ``authoritative oracle ≠ correct``
+# anti-pattern the EU honesty regime forbids (``eu_oracle_divergence``: the
+# consolidation is editorial, "no legal value", NEVER repaired toward).
+#
+# Instead an EU "anchor" is a genuine, offline, deterministic replay WINDOW: an
+# amending act applied to its base, both stored in the Farchive, replayed network-free
+# (graft base → lower amender → order → ``apply_eu_ops_conserved``). The scored
+# property is the CONSERVED apply fold's own invariant — every op partitions into
+# ``applied_ops`` or a typed ``skipped_items`` rejection, and ``|applied| + |skipped|
+# == |ops|``. Its violation (or an apply RAISE mid-fold) is a genuine replay defect,
+# exactly the ``replay_bug`` / ``unknown`` the honest metric convicts. The
+# ``eu_anchor_manifest`` attribution engine emits typed ``TouchObservation``s whose EU
+# verdict map projects 1:1 onto the CTSF residual families (apply_raise → replay_bug,
+# conservation_violation → unknown, typed_op_skip → cnf_unsupported). The gate diffs
+# THAT set against the frozen EU baseline — the same fail-red mechanism as FI/EE/UK.
+#
+# This corpus is curated 0-BILLABLE (no replay_bug/unknown) — the honest steady state,
+# mirroring FI/EE/UK. A full corpus sweep of the 1,357 #204 ZIP-recovered acts found
+# 49 offline-replayable base+amender chains and ZERO apply-raises / conservation
+# violations (0 real billable EU replay bugs) — so nothing billable is frozen green.
+# The corpus carries 8 fully-applied clean windows plus 2 typed-op-skip windows that
+# exercise the non-billable ``cnf_unsupported`` WARN lane.
+# ---------------------------------------------------------------------------
+
+REAL_ANCHOR_EU_JURISDICTION = "european_union"
+
+# The frozen, content-pinned EU corpus of ``(amender, base)`` CELEX pairs (sorted by
+# amender, explicit — membership is part of the frozen input). Each is a real,
+# offline-replayable amendment window from the #204 ZIP-recovered acts; annotated with
+# the residual family it contributes at freeze time so the coverage is auditable.
+REAL_ANCHOR_EU_CORPUS_CHAINS: tuple[tuple[str, str], ...] = (
+    ("32006R1996", "32008R0402"),  # scored clean (1 op applied)
+    ("32010R0053", "32009R0754"),  # scored clean (2 ops applied)
+    ("32011R0057", "32009R0754"),  # scored clean (1 op applied)
+    ("32014R0540", "32017R1576"),  # cnf_unsupported(1) — typed-op-skip WARN lane
+    ("32015R0340", "32012R0923"),  # scored clean (1 op applied)
+    ("32017R1151", "32008R0692"),  # scored clean (1 op applied)
+    ("32022R1303", "32019R0787"),  # scored clean (1 op applied)
+    ("32023R0331", "32022R2309"),  # scored clean (2 ops applied)
+    ("32023R1114", "32010R1093"),  # cnf_unsupported(3) — typed-op-skip WARN lane
+    ("32023R2694", "32009R1284"),  # scored clean (2 ops applied)
+)
+
+# The committed EU baseline artifact (frozen, sibling of the FI/EE/UK ones).
+GATE_EU_BASELINE_PATH = Path("tests/data/ctsf_gate_eu_residual_baseline.json")
+
+
+def eu_anchor_corpus_available() -> bool:
+    """True iff the EU Cellar Farchive backing the EU real corpus is present.
+
+    Scoring the EU #204 corpus re-derives the replay-conservation residual per window
+    via offline replay, which reads the EU Cellar Farchive. When it is absent (a
+    corpus-free CI checkout) the EU real-corpus tests SKIP; the gate's unit surface
+    stays corpus-free and always runs.
+    """
+    try:
+        from lawvm.tools.eu_anchor_manifest import _default_db
+
+        return _default_db().exists()
+    # An availability PROBE: any archive-open failure legitimately means "corpus
+    # absent" (tests skip; the CLI reports the frozen baseline).
+    # lawvm-failloud: corpus-availability probe; absence is the answer, not an error
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def score_eu_real_corpus(
+    chains: Iterable[tuple[str, str]] | None = None,
+) -> dict[str, dict[str, int]]:
+    """Score the EU #204 replay-conservation corpus into its typed-residual set.
+
+    For each ``(amender, base)`` window, run the ``eu_anchor_manifest`` attribution
+    engine (offline replay-conservation) and project each ``TouchObservation`` into
+    its CTSF residual family (the EU ``_VERDICT_TO_FAMILY``). Returns the same diffable
+    ``{sid: {family: count}}`` shape as :func:`score_real_corpus`, only non-zero
+    families retained, a clean-but-scored window present with an empty family map.
+    Deterministic in sid order.
+
+    Reads the EU Cellar Farchive (per-window offline replay). Deterministic given the
+    frozen corpus bytes; NOT the wall-clock-free path — same as the FI/EE/UK corpora.
+    """
+    from farchive import Farchive
+
+    from lawvm.tools.eu_anchor_manifest import (
+        _VERDICT_TO_FAMILY as _EU_VERDICT_TO_FAMILY,
+        _default_db as _eu_default_db,
+        EUChainRef,
+        attribute_chain,
+    )
+
+    corpus = tuple(chains) if chains is not None else REAL_ANCHOR_EU_CORPUS_CHAINS
+    # Open ONE archive handle for the whole corpus so each window's replay reuses it.
+    archive = Farchive(str(_eu_default_db()), readonly=True)
+    try:
+        out: dict[str, dict[str, int]] = {}
+        for amender, base in corpus:
+            attr = attribute_chain(EUChainRef(amender=amender, base=base), archive=archive)
+            families: dict[str, int] = {}
+            for obs in attr.observations:
+                family = _EU_VERDICT_TO_FAMILY[obs.verdict]
+                families[family] = families.get(family, 0) + 1
+            out[attr.sid] = {fam: n for fam, n in sorted(families.items()) if n}
+        return dict(sorted(out.items()))
+    finally:
+        archive.close()
+
+
+def _eu_baseline_payload(residuals: dict[str, dict[str, int]]) -> dict[str, Any]:
+    total = sum(
+        count for families in residuals.values() for count in families.values()
+    )
+    return {
+        "_doc": (
+            "CTSF residual-set-diff gate baseline — EUROPEAN UNION (#183/#204). Frozen "
+            "typed-residual set of the REAL EU replay-conservation corpus "
+            "(REAL_ANCHOR_EU_CORPUS_CHAINS), keyed {sid: {family: count}} with only "
+            "non-zero families retained. An EU anchor is an offline replay WINDOW "
+            "(amender applied to its base, both Farchive-stored) — EU stores NO "
+            "consolidation oracle and NO dated DAG, so the scored property is the "
+            "conserved apply fold's invariant (|applied|+|skipped|==|ops|), NOT an "
+            "oracle diff. The gate FAILs iff a NEW replay_bug/unknown residual appears "
+            "vs this set (an apply RAISE or a conservation violation); WARNs on a typed "
+            "cnf_unsupported op-skip move. This corpus is curated 0-BILLABLE (the "
+            "honest steady state); a full sweep of the #204 ZIP-recovered acts found 0 "
+            "billable EU replay bugs. Regenerate with `uv run python -m "
+            "lawvm.core.ctsf_gate --update-eu-baseline` (needs the EU Cellar Farchive) "
+            "after a legitimate, reviewed corpus/projection change — a preregistered "
+            "predict-then-compare event, never a silent baseline move."
+        ),
+        "gate_version": GATE_VERSION,
+        "jurisdiction": REAL_ANCHOR_EU_JURISDICTION,
+        "corpus_chains": [list(c) for c in REAL_ANCHOR_EU_CORPUS_CHAINS],
+        "families": list(RESIDUAL_VERDICT_FAMILIES),
+        "fail_families": list(FAIL_FAMILIES),
+        "total_residuals": total,
+        "residuals": residuals,
+    }
+
+
+def load_eu_baseline(path: Path | None = None) -> dict[str, dict[str, int]]:
+    """Load the frozen EU typed-residual baseline ({sid: {family: count}})."""
+    p = path if path is not None else _repo_root() / GATE_EU_BASELINE_PATH
+    data = json.loads(p.read_text(encoding="utf-8"))
+    residuals = data.get("residuals", {})
+    return {
+        sid: {fam: int(cnt) for fam, cnt in families.items()}
+        for sid, families in sorted(residuals.items())
+    }
+
+
+def write_eu_baseline(
+    residuals: dict[str, dict[str, int]] | None = None, path: Path | None = None
+) -> Path:
+    """Write the frozen EU typed-residual baseline. Regeneration entrypoint.
+
+    Defaults to snapshotting the REAL EU corpus (``score_eu_real_corpus()``). Reads
+    the EU Cellar Farchive; pass ``residuals`` to write a precomputed set (corpus-free).
+    """
+    p = path if path is not None else _repo_root() / GATE_EU_BASELINE_PATH
+    payload = _eu_baseline_payload(
+        residuals if residuals is not None else score_eu_real_corpus()
+    )
+    p.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
+    return p
+
+
+def run_eu_gate_report(baseline_path: Path | None = None) -> GateResult:
+    """Score the REAL EU corpus and diff it against the frozen EU baseline.
+
+    Reads the EU Cellar Farchive (the EU corpus is scored via offline replay).
+    Deterministic given the frozen corpus bytes. Returns the :class:`GateResult`; the
+    fail-red enforcement lives in :func:`run_gate` / :func:`main` (which gate ALL four
+    corpora).
+    """
+    current = score_eu_real_corpus()
+    baseline = load_eu_baseline(baseline_path)
+    return residual_set_diff_gate(current, baseline)
 
 
 def ee_anchor_corpus_available() -> bool:
@@ -994,8 +1185,9 @@ def emit_verdict_signals(result: GateResult) -> None:
 def run_gate(baseline_path: Path | None = None) -> int:
     """PRIMARY callable gate entry → exit code.
 
-    Data-aware, MULTI-JURISDICTION: gates the FI #183 corpus, the EE #205 corpus, and
-    the UK #205 corpus. For each jurisdiction whose archive is PRESENT, score its real
+    Data-aware, MULTI-JURISDICTION: gates the FI #183 corpus, the EE #205 corpus, the
+    UK #205 corpus, and the EU #204 corpus. For each jurisdiction whose archive is
+    PRESENT, score its real
     corpus, diff against the frozen baseline, emit the verdict signals, and fail red
     (1) iff a NEW billable (``replay_bug``/``unknown``) residual appeared. A
     jurisdiction whose archive is ABSENT SKIPS cleanly (its corpus is derived via
@@ -1020,6 +1212,11 @@ def run_gate(baseline_path: Path | None = None) -> int:
         uk_result = run_uk_gate_report()
         emit_verdict_signals(uk_result)
         if uk_result.failed:
+            rc = 1
+    if eu_anchor_corpus_available():
+        eu_result = run_eu_gate_report()
+        emit_verdict_signals(eu_result)
+        if eu_result.failed:
             rc = 1
     return rc
 
@@ -1092,6 +1289,12 @@ def main(argv: list[str] | None = None) -> int:
         "legislation.gov.uk corpus.",
     )
     parser.add_argument(
+        "--update-eu-baseline",
+        action="store_true",
+        help="Rewrite the frozen EU (#204) CTSF gate residual baseline from the "
+        "EU Cellar corpus.",
+    )
+    parser.add_argument(
         "--json",
         action="store_true",
         help="Emit the gate result as JSON instead of the human report.",
@@ -1108,6 +1311,18 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         out = write_uk_baseline()
         print(f"Wrote CTSF gate UK residual baseline: {out}")
+        return 0
+
+    if args.update_eu_baseline:
+        if not eu_anchor_corpus_available():
+            print(
+                "Cannot regenerate the EU #204 baseline: the EU Cellar Farchive is "
+                "absent. Set LAWVM_CANONICAL_DATA_ROOT to a checkout with the EU corpus "
+                "and retry."
+            )
+            return 0
+        out = write_eu_baseline()
+        print(f"Wrote CTSF gate EU residual baseline: {out}")
         return 0
 
     if args.update_ee_baseline:
@@ -1153,9 +1368,11 @@ def main(argv: list[str] | None = None) -> int:
                 "the frozen baseline as the pinned state (fail-red runs where the "
                 "corpus is present)."
             )
-        # Even with FI absent, the EE / UK corpora may be present — gate independently.
+        # Even with FI absent, the EE / UK / EU corpora may be present — gate
+        # independently.
         rc = _fold_ee_gate_into_rc(0, json_mode=args.json)
-        return _fold_uk_gate_into_rc(rc, json_mode=args.json)
+        rc = _fold_uk_gate_into_rc(rc, json_mode=args.json)
+        return _fold_eu_gate_into_rc(rc, json_mode=args.json)
 
     result = run_gate_report()
     emit_verdict_signals(result)
@@ -1167,7 +1384,8 @@ def main(argv: list[str] | None = None) -> int:
     # exit 0. Fold the EE + UK jurisdictions' verdicts into the same exit code.
     rc = 1 if result.failed else 0
     rc = _fold_ee_gate_into_rc(rc, json_mode=args.json)
-    return _fold_uk_gate_into_rc(rc, json_mode=args.json)
+    rc = _fold_uk_gate_into_rc(rc, json_mode=args.json)
+    return _fold_eu_gate_into_rc(rc, json_mode=args.json)
 
 
 def _fold_ee_gate_into_rc(rc: int, *, json_mode: bool) -> int:
@@ -1226,6 +1444,35 @@ def _fold_uk_gate_into_rc(rc: int, *, json_mode: bool) -> int:
             )
         )
     return 1 if uk_result.failed else rc
+
+
+def _fold_eu_gate_into_rc(rc: int, *, json_mode: bool) -> int:
+    """Gate the EU (#204) corpus and fold its verdict into the process exit code.
+
+    Data-aware: an absent EU Cellar Farchive SKIPS the EU lane cleanly (returns ``rc``
+    unchanged). When present, score the EU corpus, log its verdict, and raise ``rc`` to
+    1 iff the EU gate FAILs (a new EU billable — an apply RAISE or a conservation
+    violation). Keeps FI/EE/UK/EU independent — any jurisdiction FAILing flips CI red.
+
+    In HUMAN mode the EU verdict is printed as its own labelled section. In JSON mode it
+    is NOT printed as a second blob (that would break the single-object stdout contract
+    the FI JSON callers/tests rely on) — the verdict is still logged via
+    ``emit_verdict_signals`` and folded into the exit code; the machine-readable EU
+    result is available directly via :func:`run_eu_gate_report`.
+    """
+    if not eu_anchor_corpus_available():
+        return rc
+    eu_result = run_eu_gate_report()
+    emit_verdict_signals(eu_result)
+    if not json_mode:
+        print("\n--- EUROPEAN UNION (#204) corpus ---")
+        print(
+            format_report(
+                eu_result,
+                corpus_label="the REAL #204 EU replay-conservation anchor corpus",
+            )
+        )
+    return 1 if eu_result.failed else rc
 
 
 if __name__ == "__main__":  # pragma: no cover
