@@ -49,15 +49,14 @@ DEAD_ALLOWLIST: dict[str, str] = {
         "coverage; production CLI wiring is intentionally deferred until the "
         "holdout corpus list and runtime budget are settled."
     ),
-    "lawvm.tools.no_anchor_manifest": (
-        "NORWAY (#183/#205) frozen-anchor + touch-relation CTSF engine — the fourth-"
-        "jurisdiction analogue of ee/uk_anchor_manifest. Exposes score_no_real_corpus() "
-        "+ the frozen NO baseline and is bound by test_ctsf_gate_no.py (@requires_no_"
-        "corpus data-present fail-red). Production wiring into core.ctsf_gate's multi-"
-        "jurisdiction run_gate is INTENTIONALLY deferred to the parent integration "
-        "(unlike ee/uk, which core.ctsf_gate statically imports); the CLI --update-"
-        "baseline entrypoint is reachable via python -m lawvm.tools.no_anchor_manifest."
-    ),
+    # NORWAY / SWEDEN / NEW ZEALAND anchor manifests are no longer here — the
+    # ``--- NORWAY ---`` / ``--- SWEDEN ---`` / ``--- NEW ZEALAND ---`` sections of
+    # ``core.ctsf_gate`` now statically import ``score_no_real_corpus`` /
+    # ``score_se_real_corpus`` / ``score_nz_real_corpus`` (+ availability probes,
+    # baseline loaders/writers, and NO's ``run_no_gate_report``) and fold each into
+    # the multi-jurisdiction ``run_gate`` exit code, exactly like EE/UK/EU. That makes
+    # all three LIVE production importers, so their DEAD_ALLOWLIST entries were removed
+    # (a legitimate one-way ratchet shrink: frontier wired to production).
     # #186 CTSF Phase 3: ``ctsf_residual_report`` is no longer here — the new
     # ``core.ctsf_gate`` residual-set-diff gate statically imports it, and the gate
     # is wired into the ``lawvm ctsf-gate`` CLI subcommand, so both modules are now
@@ -117,16 +116,6 @@ DEAD_ALLOWLIST: dict[str, str] = {
     # UK. Unlike US (a span-materializer whose only sort uses the shared
     # ``default_label_sort_key``, terminally declared-only), UK IS a tree grafter with
     # a ``_label_sort_key``-keyed sort, so a byte-safe routing site exists.
-    "lawvm.tools.se_anchor_manifest": (
-        "#183/#205 SWEDEN CTSF frozen-anchor + touch-relation engine (the SE analogue "
-        "of ee/uk_anchor_manifest). Exposes ``score_se_real_corpus()`` + the frozen SE "
-        "baseline for the PARENT to wire into ``core.ctsf_gate`` (the gate section that "
-        "makes it production-reachable, exactly like EE/UK are reached from the "
-        "``lawvm ctsf-gate`` CLI). Conformance-tested by ``test_ctsf_gate_se.py``; "
-        "production wiring is INTENTIONALLY deferred to the parent's ctsf_gate "
-        "integration (the module must NOT edit ctsf_gate itself). Frontier-dead pending "
-        "that wave, mirroring the pre-wiring state EE/UK passed through."
-    ),
     "lawvm.us_federal.label_algebra": (
         "#186 §4.2 item 4 LabelAlgebra extended to U.S. federal as a DECLARED spec. "
         "US_LABEL_ALGEBRA mirrors the U.S. Code numeric-stem + ``106A`` letter-insert "
@@ -141,16 +130,6 @@ DEAD_ALLOWLIST: dict[str, str] = {
         "FI, US's grafter still positions inserts via the shared "
         "default_label_sort_key. Routing the grafter through it is the load-bearing "
         "follow-up (the EE shape), deferred here."
-    ),
-    "lawvm.tools.nz_anchor_manifest": (
-        "NZ (#205) CTSF anchor+touch engine — the fourth-jurisdiction analogue of "
-        "ee_/uk_anchor_manifest, over NZ's dated PIT archived-version chain. It has "
-        "synthetic + data-present coverage (test_ctsf_gate_nz.py) and a committed "
-        "0-billable baseline; production wiring is the parent's job — the "
-        "`--- NEW ZEALAND ---` section of core.ctsf_gate imports "
-        "`score_nz_real_corpus` / `attribute_statute` from here (mirroring the EE/UK "
-        "imports that make those manifests LIVE), which will retire this entry. "
-        "Deferred here so this deliverable does not edit core/ctsf_gate.py."
     ),
 }
 

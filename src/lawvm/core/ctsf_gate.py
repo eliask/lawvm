@@ -611,6 +611,167 @@ def run_eu_gate_report(baseline_path: Path | None = None) -> GateResult:
     return residual_set_diff_gate(current, baseline)
 
 
+# ---------------------------------------------------------------------------
+# The REAL touch-relation corpus — NEW ZEALAND (task #205, FIFTH jurisdiction).
+#
+# The NZ analogue of EE/UK: ``nz_anchor_manifest`` replays NZ's dated PIT
+# archived-version chain and emits typed ``TouchObservation``s whose verdict projects
+# into the shared CTSF residual family. The gate scores THAT set against the frozen NZ
+# baseline — the same fail-red mechanism as FI/EE/UK/EU. The frozen NZ corpus is
+# curated to a preregistered residual set (all non-billable ``temporal_mismatch``
+# coverage-lag observations; 0 billable NZ replay bugs).
+#
+# Scoring lives in ``nz_anchor_manifest`` (``score_nz_real_corpus``); the corpus
+# membership + jurisdiction + baseline path are frozen constants there. The gate
+# imports them so the wiring is a thin, uniform mirror of the EU section.
+# ---------------------------------------------------------------------------
+
+from lawvm.tools.nz_anchor_manifest import (  # noqa: E402
+    GATE_NZ_BASELINE_PATH,
+    REAL_ANCHOR_NZ_CORPUS_SIDS,  # noqa: F401 — re-exported for parity with EU constants
+    REAL_ANCHOR_NZ_JURISDICTION,  # noqa: F401 — re-exported for parity
+    nz_anchor_corpus_available,
+    score_nz_real_corpus,
+)
+
+
+def load_nz_baseline(path: Path | None = None) -> dict[str, dict[str, int]]:
+    """Load the frozen NZ typed-residual baseline ({sid: {family: count}})."""
+    p = path if path is not None else _repo_root() / GATE_NZ_BASELINE_PATH
+    data = json.loads(p.read_text(encoding="utf-8"))
+    residuals = data.get("residuals", {})
+    return {
+        sid: {fam: int(cnt) for fam, cnt in families.items()}
+        for sid, families in sorted(residuals.items())
+    }
+
+
+def run_nz_gate_report(baseline_path: Path | None = None) -> GateResult:
+    """Score the REAL NZ corpus and diff it against the frozen NZ baseline.
+
+    Reads the NZ legislation Farchive (the NZ corpus is scored via dated-PIT replay).
+    Deterministic given the frozen corpus bytes. Returns the :class:`GateResult`; the
+    fail-red enforcement lives in :func:`run_gate` / :func:`main` (which gate ALL
+    data-backed corpora).
+    """
+    current = score_nz_real_corpus()
+    baseline = load_nz_baseline(baseline_path)
+    return residual_set_diff_gate(current, baseline)
+
+
+def _nz_baseline_payload(residuals: dict[str, dict[str, int]]) -> dict[str, Any]:
+    total = sum(
+        count for families in residuals.values() for count in families.values()
+    )
+    return {
+        "_doc": (
+            "CTSF residual-set-diff gate baseline — NEW ZEALAND (#183/#205). Frozen "
+            "typed-residual set of the REAL NZ touch-relation anchor corpus "
+            "(REAL_ANCHOR_NZ_CORPUS_SIDS), keyed {sid: {family: count}} with only "
+            "non-zero families retained. A NZ anchor is one DATED archived consolidated "
+            "snapshot (legislation.govt.nz publishes a dense dated PIT chain — the "
+            "RICHEST anchor surface of any frontend); the chain replay carries a single "
+            "evolving tree base->latest and each dated version is scored against its "
+            "archived oracle. NZ chain replay is an EXPLICIT partial-coverage dry-run "
+            "(replay_claims=False): a per-anchor oracle-vs-replay disagreement is "
+            "COVERAGE LAG (a skipped/uncovered/pre-2007-baked op the oracle already "
+            "reflects) unless NZ's authoritative op-LOCAL divergence detector convicts "
+            "it (an oracle-present produced unit the on-or-after oracle contradicts). "
+            "Coverage-lag anchors are commensurability-limited (oracle_suspect) so their "
+            "divergences type to temporal_mismatch (non-billable); only an "
+            "op-local-convicted, touched, persistent divergence is a replay_bug. The "
+            "gate FAILs iff a NEW replay_bug/unknown residual appears vs this set; WARNs "
+            "on a typed oracle/editorial/temporal move. This corpus is curated "
+            "0-BILLABLE (the honest steady state); NZ acts whose chain replay surfaces a "
+            "genuine op-local wrong-op are deliberately excluded (defects to fix, not to "
+            "freeze). Regenerate with `uv run python -m lawvm.core.ctsf_gate "
+            "--update-nz-baseline` (needs the NZ Farchive) after a legitimate, reviewed "
+            "corpus/projection change — a preregistered predict-then-compare event, "
+            "never a silent baseline move."
+        ),
+        "gate_version": GATE_VERSION,
+        "jurisdiction": REAL_ANCHOR_NZ_JURISDICTION,
+        "corpus_sids": list(REAL_ANCHOR_NZ_CORPUS_SIDS),
+        "families": list(RESIDUAL_VERDICT_FAMILIES),
+        "fail_families": list(FAIL_FAMILIES),
+        "total_residuals": total,
+        "residuals": residuals,
+    }
+
+
+def write_nz_baseline(
+    residuals: dict[str, dict[str, int]] | None = None, path: Path | None = None
+) -> Path:
+    """Write the frozen NZ typed-residual baseline. Regeneration entrypoint.
+
+    Defaults to snapshotting the REAL NZ corpus (``score_nz_real_corpus()``). Reads the
+    NZ legislation Farchive; pass ``residuals`` to write a precomputed set (corpus-free).
+    """
+    p = path if path is not None else _repo_root() / GATE_NZ_BASELINE_PATH
+    payload = _nz_baseline_payload(
+        residuals if residuals is not None else score_nz_real_corpus()
+    )
+    p.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
+    return p
+
+
+# ---------------------------------------------------------------------------
+# The REAL touch-relation corpus — SWEDEN (task #205, SIXTH jurisdiction).
+#
+# The SE analogue of EE/UK: ``se_anchor_manifest`` replays SFS amendment windows and
+# emits typed ``TouchObservation``s projected into the shared CTSF residual family. The
+# gate scores THAT set against the frozen SE baseline (0-billable steady state). The SE
+# manifest already owns its ``load_se_baseline`` / ``write_se_baseline`` (imported here
+# for the gate's uniform report surface); the gate adds only the report + fold.
+# ---------------------------------------------------------------------------
+
+from lawvm.tools.se_anchor_manifest import (  # noqa: E402
+    REAL_ANCHOR_SE_CORPUS_SIDS,  # noqa: F401 — re-exported for parity
+    REAL_ANCHOR_SE_JURISDICTION,  # noqa: F401 — re-exported for parity
+    GATE_SE_BASELINE_PATH,  # noqa: F401 — re-exported for parity
+    load_se_baseline,
+    score_se_real_corpus,  # noqa: F401 — re-exported for parity
+    se_anchor_corpus_available,
+    write_se_baseline,
+)
+
+
+def run_se_gate_report(baseline_path: Path | None = None) -> GateResult:
+    """Score the REAL SE corpus and diff it against the frozen SE baseline.
+
+    Reads the Sweden (SFS) Farchive. Deterministic given the frozen corpus bytes.
+    Returns the shared :class:`GateResult`; fail-red enforcement lives in
+    :func:`run_gate` / :func:`main`.
+    """
+    current = score_se_real_corpus()
+    baseline = load_se_baseline(baseline_path)
+    return residual_set_diff_gate(current, baseline)
+
+
+# ---------------------------------------------------------------------------
+# The REAL touch-relation corpus — NORWAY (task #205, SEVENTH jurisdiction).
+#
+# The NO analogue of EE/UK: ``no_anchor_manifest`` replays Lovdata base→as_of windows
+# and emits typed ``TouchObservation``s projected into the shared CTSF residual family
+# (0-billable steady state). The NO manifest already owns its ``load_no_baseline`` /
+# ``write_no_baseline`` AND a ``run_no_gate_report`` that returns the shared
+# :class:`GateResult`; the gate re-exports them for a uniform report surface.
+# ---------------------------------------------------------------------------
+
+from lawvm.tools.no_anchor_manifest import (  # noqa: E402
+    REAL_ANCHOR_NO_CORPUS_SIDS,  # noqa: F401 — re-exported for parity
+    REAL_ANCHOR_NO_JURISDICTION,  # noqa: F401 — re-exported for parity
+    GATE_NO_BASELINE_PATH,  # noqa: F401 — re-exported for parity
+    load_no_baseline,  # noqa: F401 — re-exported for parity
+    no_anchor_corpus_available,
+    run_no_gate_report,
+    score_no_real_corpus,  # noqa: F401 — re-exported for parity
+    write_no_baseline,
+)
+
+
 def ee_anchor_corpus_available() -> bool:
     """True iff the Riigi Teataja archive backing the EE real corpus is present.
 
@@ -1186,7 +1347,8 @@ def run_gate(baseline_path: Path | None = None) -> int:
     """PRIMARY callable gate entry → exit code.
 
     Data-aware, MULTI-JURISDICTION: gates the FI #183 corpus, the EE #205 corpus, the
-    UK #205 corpus, and the EU #204 corpus. For each jurisdiction whose archive is
+    UK #205 corpus, the EU #204 corpus, and the NZ / SE / NO #205 corpora — ALL
+    data-backed jurisdictions. For each jurisdiction whose archive is
     PRESENT, score its real
     corpus, diff against the frozen baseline, emit the verdict signals, and fail red
     (1) iff a NEW billable (``replay_bug``/``unknown``) residual appeared. A
@@ -1217,6 +1379,21 @@ def run_gate(baseline_path: Path | None = None) -> int:
         eu_result = run_eu_gate_report()
         emit_verdict_signals(eu_result)
         if eu_result.failed:
+            rc = 1
+    if nz_anchor_corpus_available():
+        nz_result = run_nz_gate_report()
+        emit_verdict_signals(nz_result)
+        if nz_result.failed:
+            rc = 1
+    if se_anchor_corpus_available():
+        se_result = run_se_gate_report()
+        emit_verdict_signals(se_result)
+        if se_result.failed:
+            rc = 1
+    if no_anchor_corpus_available():
+        no_result = run_no_gate_report()
+        emit_verdict_signals(no_result)
+        if no_result.failed:
             rc = 1
     return rc
 
@@ -1295,6 +1472,24 @@ def main(argv: list[str] | None = None) -> int:
         "EU Cellar corpus.",
     )
     parser.add_argument(
+        "--update-nz-baseline",
+        action="store_true",
+        help="Rewrite the frozen NZ (#205) CTSF gate residual baseline from the "
+        "legislation.govt.nz corpus.",
+    )
+    parser.add_argument(
+        "--update-se-baseline",
+        action="store_true",
+        help="Rewrite the frozen SE (#205) CTSF gate residual baseline from the "
+        "Sweden (SFS) corpus.",
+    )
+    parser.add_argument(
+        "--update-no-baseline",
+        action="store_true",
+        help="Rewrite the frozen NO (#205) CTSF gate residual baseline from the "
+        "Norway (Lovdata) corpus.",
+    )
+    parser.add_argument(
         "--json",
         action="store_true",
         help="Emit the gate result as JSON instead of the human report.",
@@ -1323,6 +1518,42 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         out = write_eu_baseline()
         print(f"Wrote CTSF gate EU residual baseline: {out}")
+        return 0
+
+    if args.update_nz_baseline:
+        if not nz_anchor_corpus_available():
+            print(
+                "Cannot regenerate the NZ #205 baseline: the legislation.govt.nz "
+                "Farchive is absent. Set LAWVM_CANONICAL_DATA_ROOT to a checkout with "
+                "the NZ corpus and retry."
+            )
+            return 0
+        out = write_nz_baseline()
+        print(f"Wrote CTSF gate NZ residual baseline: {out}")
+        return 0
+
+    if args.update_se_baseline:
+        if not se_anchor_corpus_available():
+            print(
+                "Cannot regenerate the SE #205 baseline: the Sweden (SFS) Farchive is "
+                "absent. Set LAWVM_CANONICAL_DATA_ROOT to a checkout with the SE corpus "
+                "and retry."
+            )
+            return 0
+        out = write_se_baseline()
+        print(f"Wrote CTSF gate SE residual baseline: {out}")
+        return 0
+
+    if args.update_no_baseline:
+        if not no_anchor_corpus_available():
+            print(
+                "Cannot regenerate the NO #205 baseline: the Norway (Lovdata) Farchive "
+                "is absent. Set LAWVM_CANONICAL_DATA_ROOT to a checkout with the NO "
+                "corpus and retry."
+            )
+            return 0
+        out = write_no_baseline()
+        print(f"Wrote CTSF gate NO residual baseline: {out}")
         return 0
 
     if args.update_ee_baseline:
@@ -1372,7 +1603,10 @@ def main(argv: list[str] | None = None) -> int:
         # independently.
         rc = _fold_ee_gate_into_rc(0, json_mode=args.json)
         rc = _fold_uk_gate_into_rc(rc, json_mode=args.json)
-        return _fold_eu_gate_into_rc(rc, json_mode=args.json)
+        rc = _fold_eu_gate_into_rc(rc, json_mode=args.json)
+        rc = _fold_nz_gate_into_rc(rc, json_mode=args.json)
+        rc = _fold_se_gate_into_rc(rc, json_mode=args.json)
+        return _fold_no_gate_into_rc(rc, json_mode=args.json)
 
     result = run_gate_report()
     emit_verdict_signals(result)
@@ -1385,7 +1619,10 @@ def main(argv: list[str] | None = None) -> int:
     rc = 1 if result.failed else 0
     rc = _fold_ee_gate_into_rc(rc, json_mode=args.json)
     rc = _fold_uk_gate_into_rc(rc, json_mode=args.json)
-    return _fold_eu_gate_into_rc(rc, json_mode=args.json)
+    rc = _fold_eu_gate_into_rc(rc, json_mode=args.json)
+    rc = _fold_nz_gate_into_rc(rc, json_mode=args.json)
+    rc = _fold_se_gate_into_rc(rc, json_mode=args.json)
+    return _fold_no_gate_into_rc(rc, json_mode=args.json)
 
 
 def _fold_ee_gate_into_rc(rc: int, *, json_mode: bool) -> int:
@@ -1473,6 +1710,74 @@ def _fold_eu_gate_into_rc(rc: int, *, json_mode: bool) -> int:
             )
         )
     return 1 if eu_result.failed else rc
+
+
+def _fold_nz_gate_into_rc(rc: int, *, json_mode: bool) -> int:
+    """Gate the NZ (#205) corpus and fold its verdict into the process exit code.
+
+    Data-aware: an absent NZ legislation Farchive SKIPS the NZ lane cleanly (returns
+    ``rc`` unchanged). When present, score the NZ corpus, log its verdict, and raise
+    ``rc`` to 1 iff the NZ gate FAILs (a new NZ billable). Keeps every jurisdiction
+    independent — any one FAILing flips CI red. Human mode prints a labelled section;
+    JSON mode logs the verdict + folds the exit code without a second stdout blob.
+    """
+    if not nz_anchor_corpus_available():
+        return rc
+    nz_result = run_nz_gate_report()
+    emit_verdict_signals(nz_result)
+    if not json_mode:
+        print("\n--- NEW ZEALAND (#205) corpus ---")
+        print(
+            format_report(
+                nz_result,
+                corpus_label="the REAL #205 NZ touch-relation anchor corpus",
+            )
+        )
+    return 1 if nz_result.failed else rc
+
+
+def _fold_se_gate_into_rc(rc: int, *, json_mode: bool) -> int:
+    """Gate the SE (#205) corpus and fold its verdict into the process exit code.
+
+    Data-aware: an absent Sweden Farchive SKIPS the SE lane cleanly. When present,
+    score the SE corpus, log its verdict, and raise ``rc`` to 1 iff the SE gate FAILs.
+    Human mode prints a labelled section; JSON mode logs + folds without a second blob.
+    """
+    if not se_anchor_corpus_available():
+        return rc
+    se_result = run_se_gate_report()
+    emit_verdict_signals(se_result)
+    if not json_mode:
+        print("\n--- SWEDEN (#205) corpus ---")
+        print(
+            format_report(
+                se_result,
+                corpus_label="the REAL #205 SE touch-relation anchor corpus",
+            )
+        )
+    return 1 if se_result.failed else rc
+
+
+def _fold_no_gate_into_rc(rc: int, *, json_mode: bool) -> int:
+    """Gate the NO (#205) corpus and fold its verdict into the process exit code.
+
+    Data-aware: an absent Norway Farchive SKIPS the NO lane cleanly. When present,
+    score the NO corpus, log its verdict, and raise ``rc`` to 1 iff the NO gate FAILs.
+    Human mode prints a labelled section; JSON mode logs + folds without a second blob.
+    """
+    if not no_anchor_corpus_available():
+        return rc
+    no_result = run_no_gate_report()
+    emit_verdict_signals(no_result)
+    if not json_mode:
+        print("\n--- NORWAY (#205) corpus ---")
+        print(
+            format_report(
+                no_result,
+                corpus_label="the REAL #205 NO touch-relation anchor corpus",
+            )
+        )
+    return 1 if no_result.failed else rc
 
 
 if __name__ == "__main__":  # pragma: no cover
