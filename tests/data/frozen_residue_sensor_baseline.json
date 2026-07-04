@@ -32,7 +32,7 @@
       "src/lawvm/uk_legislation/source_parent_payloads.py": 1,
       "src/lawvm/uk_legislation/table_sources.py": 2,
       "src/lawvm/uk_legislation/text_matching.py": 1,
-      "src/lawvm/us_federal/dry_run.py": 2,
+      "src/lawvm/us_federal/dry_run.py": 3,
       "src/lawvm/us_federal/sunset.py": 1
     },
     "per_op_fstring_regex": {
@@ -98,10 +98,10 @@
       "src/lawvm/substrate/locus_links.py": 1
     }
   },
-  "grand_total": 427,
+  "grand_total": 428,
   "totals": {
     "clause_boundary_dup": 55,
-    "multi_finditer_same_src": 105,
+    "multi_finditer_same_src": 106,
     "per_op_fstring_regex": 248,
     "span_overlap_dedup": 19
   }
