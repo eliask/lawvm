@@ -340,6 +340,100 @@ def _no_oracle_suspect(result: Any) -> Optional[str]:
     return None
 
 
+# ---------------------------------------------------------------------------
+# Confirmed oracle-side editorial corrections (the per-section oracle_suspect rail)
+# ---------------------------------------------------------------------------
+#
+# Norway's Lovdata consolidation is law-IN-FORCE but not necessarily consolidation-
+# CORRECT (``notes/NORWAY_LAWVM_STATUS.md``; project discipline
+# ``reference_authoritative_oracle_not_correct``): the keeper sometimes SILENTLY
+# corrects a typo in the enacted lovtidend text without any amending act. Replay
+# faithfully preserves the ENACTED wording, so at such a section replay diverges from
+# the oracle even though no op is missing — the divergence is oracle-side, not a replay
+# bug. Because the touch relation keys on the whole section, an incidental replay touch
+# ELSEWHERE in the section (e.g. a genuinely-applied amendment to another clause) would
+# otherwise mis-convict the untouched, oracle-corrected clause as a replay bug.
+#
+# This registry types those divergences out of the billable lane — the per-SECTION
+# analogue of the per-anchor ``oracle_suspect`` witness (``_no_oracle_suspect``) and of
+# Finland's ``get_consolidated_oracle_suspect`` / Estonia's
+# ``source_adjudication.oracle_suspect``. It is DELIBERATELY narrow: each entry is
+# EXACT-TEXT-PINNED (the enacted fragment replay carries + the corrected fragment the
+# oracle carries), and it only fires when substituting the enacted fragment for the
+# corrected one in the replayed section text reproduces the oracle section text BYTE-
+# FOR-BYTE. A confirmation therefore cannot mask a real replay defect: if replay drops
+# or mangles ANYTHING else at the section, the byte-exact reconciliation fails and the
+# section stays penalized/billable. Never a blanket "trust the oracle" — a single
+# audited editorial fix, keyed to the exact bytes.
+#
+# Each key is ``(base_id, section_key)``; each value is a tuple of
+# ``(enacted_fragment, corrected_fragment, note)`` corrections that jointly reconcile
+# the section (applied in listed order).
+_NO_ORACLE_EDITORIAL_CORRECTIONS: dict[
+    tuple[str, str], tuple[tuple[str, str, str], ...]
+] = {
+    # Tilskuddsordning aug 2020 (Tilskudd ved koronautbruddet), §5 second-condition
+    # item. The enacted lovtidend text cross-references "skatteloven § 23 første ledd
+    # bokstav b" — a Lovtidend typo: skatteloven (no/lov/1999-03-26-14) has NO § 23; the
+    # provision on non-resident tax liability actually cited is § 2-3 ("Person som ikke
+    # er bosatt og selskap m.v. som ikke er hjemmehørende i riket"). Lovdata's live
+    # consolidation SILENTLY corrected the missing hyphen ("§ 23" → "§ 2-3", and
+    # hyperlinked it to lov/1999-03-26-14/§2-3) with no amending act. Replay preserves
+    # the enacted "§ 23"; the divergence is the keeper's editorial correction. Not a
+    # missed/mangled op — see the §5 amendments (2021-06-18-112, 2022-01-28-3), neither
+    # of which touches this clause.
+    (
+        "no/lov/2020-12-18-156",
+        "section:5",
+    ): (
+        (
+            "skatteloven § 23 første ledd bokstav b",
+            "skatteloven § 2-3 første ledd bokstav b",
+            "Lovtidend typo § 23 for skatteloven § 2-3 (non-resident tax liability); "
+            "silently corrected by the Lovdata consolidation, no amending act.",
+        ),
+    ),
+}
+
+
+def _oracle_editorial_reconciles(
+    base_id: str,
+    section_key: str,
+    replay_text: str,
+    oracle_text: str,
+) -> Optional[str]:
+    """Confirmed oracle-editorial-correction witness for a penalized section (else None).
+
+    Returns a non-empty witness string iff ``(base_id, section_key)`` carries a curated
+    correction AND applying every listed ``enacted→corrected`` substitution to the
+    replayed section text reproduces the oracle section text BYTE-FOR-BYTE. The byte-
+    exact gate is what makes this safe: it fires only when the WHOLE section-level
+    divergence is exactly the confirmed editorial fix(es) and nothing else — any other
+    replay drift at the section leaves ``patched != oracle`` and the section stays
+    billable. ``None`` when there is no entry, a fragment is absent, or the substitution
+    does not reconcile (a divergence that is NOT purely the confirmed correction).
+    """
+    corrections = _NO_ORACLE_EDITORIAL_CORRECTIONS.get((base_id, section_key))
+    if not corrections:
+        return None
+    patched = replay_text
+    notes: list[str] = []
+    for enacted, corrected, note in corrections:
+        if enacted not in patched:
+            return None
+        patched = patched.replace(enacted, corrected)
+        notes.append(note)
+    if patched != oracle_text:
+        return None
+    return "; ".join(notes)
+
+
+def _oracle_editorial_note(base_id: str, section_key: str) -> str:
+    """Human-readable note(s) for a confirmed oracle-editorial key (for evidence)."""
+    corrections = _NO_ORACLE_EDITORIAL_CORRECTIONS.get((base_id, section_key), ())
+    return "; ".join(note for _enacted, _corrected, note in corrections)
+
+
 @dataclass(frozen=True)
 class _NOReplayScore:
     """The raw materials of one NO base→current replay comparison."""
@@ -347,6 +441,11 @@ class _NOReplayScore:
     base_text: dict[str, str]
     replayed_text: dict[str, str]
     penalized_keys: frozenset[str]
+    # Penalized keys whose ENTIRE section-level divergence is a confirmed oracle-side
+    # editorial correction (``_NO_ORACLE_EDITORIAL_CORRECTIONS``). These are NOT scored
+    # as replay bugs: the attribution retypes them to ``oracle_suspect_standing_untouched``
+    # (family ``oracle_editorial_pathology`` — the non-billable WARN lane).
+    oracle_editorial_keys: frozenset[str]
     n_oracle_sections: int
     oracle_suspect: Optional[str]
     status: str
@@ -367,7 +466,7 @@ def _score_no_replay(
         load_no_original_lti_bytes,
         resolve_no_source_path,
     )
-    from lawvm.norway.verify import verify_no_against_current
+    from lawvm.norway.verify import load_no_current_statute, verify_no_against_current
     from lawvm.tools.section_keys import section_key_from_path
 
     dd = resolve_no_source_path(data_dir)
@@ -377,13 +476,15 @@ def _score_no_replay(
     # BEFORE-amendments wording).
     base_raw = load_no_original_lti_bytes(base_id, dd)
     if not base_raw:
-        return _NOReplayScore({}, {}, frozenset(), 0, None, "BASE_ABSENT")
+        return _NOReplayScore({}, {}, frozenset(), frozenset(), 0, None, "BASE_ABSENT")
     base_statute = parse_no_statute(base_raw, base_id)
     base_text = _no_section_text_map(base_statute.body if base_statute else None)
 
     result = verify_no_against_current(base_id, as_of=as_of, data_dir=dd)
     if result.error:
-        return _NOReplayScore(base_text, {}, frozenset(), 0, None, f"ERROR:{result.error}")
+        return _NOReplayScore(
+            base_text, {}, frozenset(), frozenset(), 0, None, f"ERROR:{result.error}"
+        )
 
     replay = result.replay
     replayed_body = (
@@ -402,6 +503,29 @@ def _score_no_replay(
         if key:
             penalized.add(key)
 
+    # Per-SECTION oracle-suspect rail: of the penalized keys, which are a CONFIRMED
+    # oracle-side editorial correction (``_NO_ORACLE_EDITORIAL_CORRECTIONS``)? A key
+    # qualifies only when substituting the curated enacted→corrected fragment(s) into
+    # the replayed section text reproduces the ORACLE section text byte-for-byte — so we
+    # need the oracle's own per-section wording surface. This is byte-exact-gated: any
+    # other replay drift at the section keeps it billable (see the registry docstring).
+    oracle_editorial: set[str] = set()
+    if any((base_id, key) in _NO_ORACLE_EDITORIAL_CORRECTIONS for key in penalized):
+        try:
+            oracle_statute = load_no_current_statute(base_id, dd)
+            oracle_text = _no_section_text_map(oracle_statute.body)
+        except Exception:  # noqa: BLE001 — a missing oracle just leaves keys billable
+            oracle_text = {}
+        for key in penalized:
+            witness = _oracle_editorial_reconciles(
+                base_id,
+                key,
+                replayed_text.get(key, ""),
+                oracle_text.get(key, ""),
+            )
+            if witness:
+                oracle_editorial.add(key)
+
     # The oracle section denominator is (replay sections ∪ penalized keys): a
     # penalized key not present in the replayed body (CONSOLIDATED_MISSING /
     # OPS_MISSING) still counts a scored oracle unit.
@@ -411,6 +535,7 @@ def _score_no_replay(
         base_text=base_text,
         replayed_text=replayed_text,
         penalized_keys=frozenset(penalized),
+        oracle_editorial_keys=frozenset(oracle_editorial),
         n_oracle_sections=n_oracle,
         oracle_suspect=_no_oracle_suspect(result),
         status="OK",
@@ -430,7 +555,18 @@ def score_no_anchors(
     the amendment chain — replay's own notion of what the amendments touched, in the
     same (wording) dimension as the divergence.
     """
-    score = _score_no_replay(base_id, as_of, data_dir=data_dir)
+    return _anchors_from_score(
+        as_of, _score_no_replay(base_id, as_of, data_dir=data_dir)
+    )
+
+
+def _anchors_from_score(as_of: str, score: _NOReplayScore) -> list[AnchorObservation]:
+    """Build the base→current anchor pair from an already-computed replay score.
+
+    Split out of :func:`score_no_anchors` so :func:`attribute_statute` can score the
+    (heavy) NO replay ONCE and reuse the same ``_NOReplayScore`` for both the anchor
+    chain and the per-section oracle-editorial retyping (``oracle_editorial_keys``).
+    """
     if score.status != "OK":
         return [
             AnchorObservation(
@@ -541,8 +677,20 @@ def attribute_statute(
     the chronological scored anchor list ``[base, current]``. A ``current`` divergence
     over a section replay TOUCHED (its base→replayed text moved) that stays diverged
     is a candidate replay bug; a divergence over an untouched section is oracle-side.
+
+    PER-SECTION ORACLE-SUSPECT RETYPING. The neutral touch relation keys on the whole
+    section, so a genuinely-applied amendment to ONE clause of a section makes the whole
+    section "touched" — which would mis-convict a CONFIRMED oracle-side editorial
+    correction at a DIFFERENT, untouched clause of the same section as a replay bug (the
+    touch is not in the same textual locus as the divergence). After attribution we
+    retype any observation over a byte-exact-confirmed oracle-editorial key
+    (``_score_no_replay``'s ``oracle_editorial_keys``) to
+    ``oracle_suspect_standing_untouched`` (family ``oracle_editorial_pathology``, the
+    non-billable WARN lane). This never masks a real defect: the key only qualifies when
+    the WHOLE section divergence reconciles to the curated correction byte-for-byte.
     """
-    anchors = score_no_anchors(base_id, as_of, data_dir=data_dir)
+    score = _score_no_replay(base_id, as_of, data_dir=data_dir)
+    anchors = _anchors_from_score(as_of, score)
     scored = [a for a in anchors if a.struct_sim >= 0.0]
     if len(scored) < 2:
         return StatuteAttribution(
@@ -552,7 +700,28 @@ def attribute_statute(
             observations=(),
             status="ERROR:fewer-than-2-scorable-anchors",
         )
-    observations = attribute_divergences(base_id, anchors)
+    observations = list(attribute_divergences(base_id, anchors))
+    if score.oracle_editorial_keys:
+        retyped: list[TouchObservation] = []
+        for obs in observations:
+            if obs.section_key in score.oracle_editorial_keys:
+                note = _oracle_editorial_note(base_id, obs.section_key)
+                retyped.append(
+                    TouchObservation(
+                        sid=obs.sid,
+                        section_key=obs.section_key,
+                        verdict="oracle_suspect_standing_untouched",
+                        window=obs.window,
+                        touching_amendments=(),
+                        evidence=(
+                            "confirmed oracle-side editorial correction (byte-exact "
+                            f"reconciliation): {note}"
+                        ),
+                    )
+                )
+            else:
+                retyped.append(obs)
+        observations = retyped
     return StatuteAttribution(
         base_id=base_id,
         as_of=as_of,
@@ -569,16 +738,21 @@ def attribute_statute(
 REAL_ANCHOR_NO_JURISDICTION = "norway"
 
 # The frozen, content-pinned NO touch-relation corpus: real ``lov`` acts with genuine
-# amendment chains that REPLAY CLEAN (base→current reproduces every replay-touched
-# oracle section). Curated 0-BILLABLE — acts whose replay surfaces genuine billable
-# residuals (a replay-touched section the oracle carries that replay drops/mismatches)
-# are DELIBERATELY EXCLUDED and reported as found bugs, never frozen green. Each entry
-# is ``(base_id, as_of)``. Sorted, unique.
+# amendment chains that are 0-BILLABLE (no ``replay_bug``/``unknown`` residual). Most
+# REPLAY CLEAN (base→current reproduces every replay-touched oracle section); a member
+# MAY carry a typed NON-billable residual (``oracle_editorial_pathology`` — the WARN
+# lane, e.g. a confirmed oracle-side editorial correction), exactly as the FI/UK/EE
+# corpora do. Acts whose replay surfaces genuine BILLABLE residuals (a replay-touched
+# section the oracle carries that replay drops/mismatches) are DELIBERATELY EXCLUDED and
+# reported as found bugs, never frozen green. Each entry is ``(base_id, as_of)``. Sorted,
+# unique.
 REAL_ANCHOR_NO_CORPUS: tuple[tuple[str, str], ...] = (
     ("no/lov/2004-05-14-25", "2026-03-29"),   # Voldgiftsloven
     ("no/lov/2006-08-18-61", "2026-03-29"),   # Beredskapslagringsloven
     ("no/lov/2017-06-16-60", "2026-03-29"),   # Klimaloven (3 amendments applied)
     ("no/lov/2019-06-21-70", "2026-03-29"),   # Havne- og farvannsloven
+    ("no/lov/2020-05-07-38", "2026-03-29"),   # Rekonstruksjonsloven (§10-64 sunset date replays clean)
+    ("no/lov/2020-12-18-156", "2026-03-29"),  # Tilskuddsordning aug 2020 (§5 oracle-editorial: § 23→§ 2-3 WARN lane)
     ("no/lov/2021-05-21-42", "2026-03-29"),   # Språklova
     ("no/lov/2022-05-12-28", "2026-03-29"),   # Advokatloven
     ("no/lov/2023-06-16-62", "2026-03-29"),   # Valgloven

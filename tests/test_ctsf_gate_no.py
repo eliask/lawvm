@@ -84,12 +84,16 @@ def test_committed_no_baseline_is_zero_billable():
     """The committed NO baseline carries ZERO billable (replay_bug/unknown) residuals
     — the honest 0-billable steady state.
 
-    Provenance: the NO corpus is curated to lov acts whose base→current replay
-    reproduces every replay-touched oracle section. NO acts whose replay surfaces
-    GENUINE billable residuals (e.g. no/lov/2020-05-07-38 § 10-64 sunset-date, and
-    no/lov/2020-12-18-156 § 5) are DELIBERATELY EXCLUDED — they are defects to fix,
-    not to freeze. So the NO gate's FAIL lane is proven by synthetic injection
-    (``test_no_new_billable_fails``), not a standing residual.
+    Provenance: the NO corpus is curated to lov acts whose base→current replay is
+    0-BILLABLE (no replay_bug/unknown). Most reproduce every replay-touched oracle
+    section; a member MAY carry a typed NON-billable residual (the WARN lane): e.g.
+    no/lov/2020-12-18-156 § 5 carries a confirmed oracle-side editorial correction
+    (Lovtidend typo "skatteloven § 23" that Lovdata silently corrected to "§ 2-3",
+    no amending act), typed ``oracle_editorial_pathology`` via the anchor manifest's
+    byte-exact editorial-correction registry — never a replay bug. NO acts whose
+    replay surfaces GENUINE billable residuals are DELIBERATELY EXCLUDED — they are
+    defects to fix, not to freeze. So the NO gate's FAIL lane is proven by synthetic
+    injection (``test_no_new_billable_fails``), not a standing residual.
     """
     committed = load_no_baseline()
     committed_billable = sum(
