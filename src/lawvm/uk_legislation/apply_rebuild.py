@@ -132,17 +132,21 @@ def uk_insert_node_sorted_cow(
     parent without aliasing the original list.
     """
     from lawvm.uk_legislation.canonicalize import uk_insert_into_children
-    from lawvm.uk_legislation.ordering import _label_sort_key
+    from lawvm.uk_legislation.label_algebra import uk_label_sort_key
 
     if uk_has_same_kind_label_child(children, new_node):
         return list(children), None
     new_children = list(children)
     # ``uk_insert_into_children`` accepts list[IRNode] and mutates it; we pass a
     # mutable copy and return it (the caller never aliases the input list).
+    # Sibling ORDER is dispatched THROUGH ``UK_LABEL_ALGEBRA`` (#186): the label
+    # algebra's ``order`` op is the load-bearing insertion-position source, mirroring
+    # EE's ``ee_label_sort_key`` / FI's ``fi_label_sort_key``. Byte-identical to the
+    # old ``ordering._label_sort_key`` by construction (see ``uk_label_sort_key``).
     uk_insert_into_children(
         new_children,
         new_node,
-        label_sort_key=_label_sort_key,
+        label_sort_key=uk_label_sort_key,
     )
     try:
         inserted_idx = new_children.index(new_node)

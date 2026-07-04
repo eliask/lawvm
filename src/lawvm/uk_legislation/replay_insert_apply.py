@@ -17,7 +17,7 @@ from lawvm.uk_legislation.addressing import (
 from lawvm.uk_legislation.apply_rebuild import uk_with_attr_set
 from lawvm.uk_legislation.authority_filter import _following_eid, _preceding_eid
 from lawvm.uk_legislation.canonicalize import uk_find_body_predecessor_parent
-from lawvm.uk_legislation.ordering import _label_sort_key
+from lawvm.uk_legislation.label_algebra import uk_label_sort_key
 from lawvm.uk_legislation.provenance_notes import (
     _schedule_list_entry_selector,
     _schedule_list_entry_table_rows_selector,
@@ -536,7 +536,7 @@ class UKReplayInsertApplyMixin:
             following_eid=following_eid,
             find_node_by_target=replay._find_node_by_target,
             find_node_and_parent_statute=self._find_node_and_parent_statute,
-            label_sort_key=_label_sort_key,
+            label_sort_key=uk_label_sort_key,
         )
         target_eid = self._derive_target_eid(target)
         if target_eid and "eId" not in new_node.attrs and "id" not in new_node.attrs:
@@ -685,7 +685,7 @@ class UKReplayInsertApplyMixin:
                 self.statute.body,
                 str(new_node.kind),
                 new_node.label,
-                label_sort_key=_label_sort_key,
+                label_sort_key=uk_label_sort_key,
             )
             if pred_parent is not None and pred_idx is not None:
                 if self._skip_insert_if_parent_already_has_target_child(

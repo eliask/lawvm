@@ -92,6 +92,22 @@ DEAD_ALLOWLIST: dict[str, str] = {
     # reroute and the fresh-letter ``successor_set`` mint stay direct — see the
     # module docstring for why FI (built on ``_section_sort_key``, not the core
     # ``default_label_sort_key``) cannot re-route them byte-identically.
+    # #186 load-bearing follow-up: ``uk_legislation.label_algebra`` is no longer here
+    # — ``uk_legislation/replay_insert_apply.py`` (module-level) and
+    # ``apply_rebuild.py`` now import ``uk_label_sort_key`` and route the grafter's
+    # sibling insertion-position sorts (``uk_resolve_insertion_parent`` /
+    # ``uk_find_body_predecessor_parent`` / ``uk_insert_into_children``) through it
+    # (the ``UK_LABEL_ALGEBRA.order`` operation), so the algebra is LIVE, reachable
+    # from the production replay/apply path — the UK analogue of EE routing its
+    # sibling sorts through ``ee_label_sort_key`` and FI through ``fi_label_sort_key``.
+    # Byte-identical BY CONSTRUCTION (``uk_label_sort_key`` returns
+    # ``UK_LABEL_ALGEBRA.parse(label).sort_key``, which is
+    # ``ordering._label_sort_key(label)``). The allowlist entry was removed (a
+    # legitimate one-way ratchet shrink: frontier wired to production).
+    # ``replay_exercised`` is Finland-only, so no baseline replay-map row changes for
+    # UK. Unlike US (a span-materializer whose only sort uses the shared
+    # ``default_label_sort_key``, terminally declared-only), UK IS a tree grafter with
+    # a ``_label_sort_key``-keyed sort, so a byte-safe routing site exists.
     "lawvm.us_federal.label_algebra": (
         "#186 §4.2 item 4 LabelAlgebra extended to U.S. federal as a DECLARED spec. "
         "US_LABEL_ALGEBRA mirrors the U.S. Code numeric-stem + ``106A`` letter-insert "
@@ -106,20 +122,6 @@ DEAD_ALLOWLIST: dict[str, str] = {
         "FI, US's grafter still positions inserts via the shared "
         "default_label_sort_key. Routing the grafter through it is the load-bearing "
         "follow-up (the EE shape), deferred here."
-    ),
-    "lawvm.uk_legislation.label_algebra": (
-        "#186 §4.2 item 4 LabelAlgebra extended to U.K. legislation as a DECLARED "
-        "spec. UK_LABEL_ALGEBRA mirrors UK's numeric-stem + ``4A`` / ``4ZA`` "
-        "letter-insert label calculus (parse / order / successor / collision) built "
-        "from UK's ACTUAL primitives (ordering._label_sort_key / "
-        "canonicalize._clean_num / source_parent_payloads._next_same_stem_alnum_label). "
-        "It faithfully mirrors UK's REAL lexicographic order (4 < 4A < 4B < 4ZA), "
-        "NOT the brief's ZA < A interstitial priority (which UK's ordering primitive "
-        "does not encode — a declared-but-honest gap). It is conformance-tested "
-        "(test_label_algebra_uk.py binds each op to that real code) but, "
-        "parallel-first per #186, has no production importer yet — UK's grafter "
-        "still positions inserts via _label_sort_key directly. Routing the grafter "
-        "through it is the load-bearing follow-up (the EE shape), deferred here."
     ),
 }
 

@@ -32,12 +32,22 @@ UK's label surface (VERIFIED against the UK provision primitives at runtime):
   successor (returns ``''`` — the single-letter series is exhausted). This is UK's
   real fresh-sibling calculus.
 
-SCOPE (declared-first, byte-identical). This is a DECLARED, conformance-tested
-MIRROR of UK's real label code, NOT routed into any grafter / apply / replay path
-(``tests/test_label_algebra_uk.py`` binds each declared behaviour to UK's ACTUAL
-``_label_sort_key`` / ``_clean_num`` / ``_next_same_stem_alnum_label`` code, so it
-FAILS if that label logic drifts). It covers the numeric + lettered insert calculus
-— the ``4A`` / ``4ZA`` shape.
+SCOPE (declared-first, byte-identical). This is a conformance-tested MIRROR of UK's
+real label code (``tests/test_label_algebra_uk.py`` binds each declared behaviour to
+UK's ACTUAL ``_label_sort_key`` / ``_clean_num`` / ``_next_same_stem_alnum_label``
+code, so it FAILS if that label logic drifts). It covers the numeric + lettered
+insert calculus — the ``4A`` / ``4ZA`` shape.
+
+LOAD-BEARING (the #186 follow-up). The algebra's ``order`` operation is now ROUTED
+into UK's production replay/apply grafter: ``uk_label_sort_key`` (below) is imported
+by ``uk_legislation/replay_insert_apply.py`` and ``apply_rebuild.py`` and passed as
+the ``label_sort_key`` hook to the sibling insertion-position sorts
+(``uk_resolve_insertion_parent`` / ``uk_find_body_predecessor_parent`` /
+``uk_insert_into_children``). Because ``uk_label_sort_key`` returns
+``UK_LABEL_ALGEBRA.parse(label).sort_key`` and that parse computes its ``sort_key``
+as ``ordering._label_sort_key(label)``, the routing is BYTE-IDENTICAL to the prior
+direct ``_label_sort_key`` calls by construction — the UK analogue of EE's
+``ee_label_sort_key`` and FI's ``fi_label_sort_key`` routings.
 
 HONEST DIVERGENCE (ZA < A). The #186 seam brief names the UK surface as ``4A`` /
 ``4ZA`` "with the ``ZA < A`` ordering". UK's REAL ``_label_sort_key`` does NOT
@@ -68,6 +78,7 @@ from lawvm.uk_legislation.source_parent_payloads import _next_same_stem_alnum_la
 __all__ = [
     "UK_LABEL_ALGEBRA",
     "build_uk_label_algebra",
+    "uk_label_sort_key",
     "uk_parse_label",
 ]
 
@@ -178,3 +189,31 @@ def build_uk_label_algebra() -> LabelAlgebra:
 
 #: UK's concrete label algebra (module-level singleton; the frontend datum).
 UK_LABEL_ALGEBRA: LabelAlgebra = build_uk_label_algebra()
+
+
+def uk_label_sort_key(label: Optional[str]) -> Tuple[Any, ...]:
+    """UK's authoritative sibling-order key, dispatched THROUGH the algebra (#186).
+
+    Returns ``UK_LABEL_ALGEBRA.parse(label).sort_key`` — the algebra's ``order``
+    operation packaged as the ``label -> key`` callable the grafter's insertion
+    positioning sites (``uk_insert_into_children`` / ``uk_resolve_insertion_parent``
+    / ``uk_find_body_predecessor_parent``) accept as their ``label_sort_key`` hook.
+    Routing those sites here makes the ``LabelAlgebra`` seam LOAD-BEARING for UK's
+    insertion ordering (§2.1 O2: "the insertion POSITION comes from the label
+    algebra's ordering") instead of them calling ``ordering._label_sort_key``
+    directly — the UK analogue of ``estonia.label_algebra.ee_label_sort_key`` and
+    ``finland.label_algebra.fi_label_sort_key``.
+
+    Signature MATCHES ``ordering._label_sort_key`` (``Optional[str] -> tuple``) so it
+    is a drop-in ``label_sort_key`` at those sites. A ``None`` label routes through
+    the algebra's ``label or ''`` normalization exactly as the primitive does (both
+    yield the ``((-1, ''),)`` empty-label sentinel key).
+
+    BYTE-IDENTICAL to ``ordering._label_sort_key`` BY CONSTRUCTION: the algebra's
+    parse computes ``sort_key = _label_sort_key(label)`` (see ``uk_parse_label``), so
+    ``UK_LABEL_ALGEBRA.parse(label or '').sort_key`` equals ``_label_sort_key(label)``
+    for every label — including the empty/``None`` and ``(4A)`` / ``4ZA`` surfaces.
+    The conformance test (``tests/test_label_algebra_uk.py``) pins ``order`` == the
+    ``_label_sort_key`` compare, so a drift fails there.
+    """
+    return UK_LABEL_ALGEBRA.parse(label or "").sort_key
