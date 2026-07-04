@@ -445,9 +445,13 @@ def _is_each_place_instruction(raw_text: str) -> bool:
 # The instruction head that scopes an each-place strike to a WHOLE USC title.
 # Matched against the raw prose BEFORE the first quoted term so a quoted payload
 # can never fake the form.
+# Case-SENSITIVE "Title" + a not-preceded-by-"of" guard: the whole-title form is
+# drafted "Title 35, United States Code, is amended ..." while a section-targeted
+# head reads "Section 101(18) of title 11, United States Code, is amended ..." —
+# the lowercase "of title" run must never re-scope a section-targeted strike.
 _TITLE_SCOPE_EACH_PLACE_RE = compile_classifier_regex(
-    r"\bTitle\s+(?P<title>\d+),\s+United\s+States\s+Code,\s+is\s+amended\s+by\s+striking\b",
-    re.IGNORECASE,
+    r"(?<!of )\bTitle\s+(?P<title>\d+),\s+United\s+States\s+Code,\s+is\s+amended\s+by\s+striking\b",
+    0,
     classifier_id="us.amendatory.title_scope_each_place_re",
 )
 
@@ -628,6 +632,10 @@ def _maybe_retarget_title_scope_each_place(
         return instr
     patch = op.text_patch
     if patch is None or patch.selector.occurrence != -1:
+        return instr
+    if patch.selector.occurrence_mode != "Auto":
+        # occurrence=-1 with mode "Last" is the terminal-punct family, not an
+        # each-place strike; never re-scope it.
         return instr
     prose_head = re.split(r'["“]', instr.raw_text, maxsplit=1)[0]
     m = _TITLE_SCOPE_EACH_PLACE_RE.search(prose_head)
@@ -1220,7 +1228,11 @@ def _collect_act_level_effective_scopes(
             continue
         text = _text_of(section)
         lowered = text.lower()
-        if "effective" not in lowered and "take effect" not in lowered:
+        # Require an actual TAKE-EFFECT declaration (or a parseable effective
+        # phrase), not merely an "EFFECTIVE DATE"-titled APPLICABILITY section
+        # ("The amendments made by this Act shall apply to any injury ...",
+        # e.g. JASTA §7): applicability-only scopes do not defer the amendment.
+        if "take effect" not in lowered and not _has_effective_date_phrase(text):
             continue
         m = _ACT_LEVEL_EFFECTIVE_SCOPE_RE.search(text)
         if m is None:

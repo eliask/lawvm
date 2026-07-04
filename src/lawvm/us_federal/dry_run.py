@@ -689,9 +689,16 @@ def _container_scope_fanout(
 
     entries = _each_place_exception_entries(operation)
     if entries is None:
-        # A bare container target with no typed exception predicate is only
-        # produced by the each-place re-scope for TITLE targets; chapter-target
-        # each-place patches are lowered directly with no predicate. Treat the
+        if not chapter:
+            # A bare-TITLE each-place patch WITHOUT the typed exception
+            # predicate was not deliberately re-scoped by the whole-title
+            # strike lowering hook — it is a target-resolution failure. Never
+            # fan a mis-lowered op across a whole title (that converts one
+            # unresolved target into title-wide wrong claims); let it fall
+            # through to the typed out-of-scope refusal.
+            return None
+        # Chapter-target each-place patches are lowered directly from an
+        # explicit "Chapter N of title M" head with no predicate. Treat the
         # absent predicate as "no exceptions".
         entries = frozenset()
     if "unparsed" in entries:
