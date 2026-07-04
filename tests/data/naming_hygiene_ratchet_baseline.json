@@ -7,6 +7,7 @@
     "src/lawvm/tools/eu_anchor_manifest.py": 1,
     "src/lawvm/tools/fi_anchor_manifest.py": 2,
     "src/lawvm/tools/fi_aux_pit_probe.py": 1,
+    "src/lawvm/tools/no_anchor_manifest.py": 2,
     "src/lawvm/tools/nz_anchor_manifest.py": 1,
     "src/lawvm/tools/se_anchor_manifest.py": 2,
     "src/lawvm/tools/uk_anchor_manifest.py": 2,
@@ -87,7 +88,7 @@
     "sparse_slot_candidate_certificate",
     "sparse_slot_candidate_certificates"
   ],
-  "public_schema_count": 169,
+  "public_schema_count": 171,
   "public_schemas": [
     "lawvm.address_id.v1",
     "lawvm.address_node.v1",
@@ -174,6 +175,7 @@
     "lawvm.must_clause.v0",
     "lawvm.must_trace_ledger.v0",
     "lawvm.mutation_boundary_report.v1",
+    "lawvm.no_anchor_manifest.v1",
     "lawvm.node_version.v1",
     "lawvm.nz_anchor_manifest.v1",
     "lawvm.official_corrigendum_event.v1",
@@ -260,5 +262,5 @@
     "lawvm.work.v1",
     "lawvm.work_inventory_row.v0"
   ],
-  "total_bare_status": 18
+  "total_bare_status": 20
 }

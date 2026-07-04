@@ -49,6 +49,15 @@ DEAD_ALLOWLIST: dict[str, str] = {
         "coverage; production CLI wiring is intentionally deferred until the "
         "holdout corpus list and runtime budget are settled."
     ),
+    "lawvm.tools.no_anchor_manifest": (
+        "NORWAY (#183/#205) frozen-anchor + touch-relation CTSF engine — the fourth-"
+        "jurisdiction analogue of ee/uk_anchor_manifest. Exposes score_no_real_corpus() "
+        "+ the frozen NO baseline and is bound by test_ctsf_gate_no.py (@requires_no_"
+        "corpus data-present fail-red). Production wiring into core.ctsf_gate's multi-"
+        "jurisdiction run_gate is INTENTIONALLY deferred to the parent integration "
+        "(unlike ee/uk, which core.ctsf_gate statically imports); the CLI --update-"
+        "baseline entrypoint is reachable via python -m lawvm.tools.no_anchor_manifest."
+    ),
     # #186 CTSF Phase 3: ``ctsf_residual_report`` is no longer here — the new
     # ``core.ctsf_gate`` residual-set-diff gate statically imports it, and the gate
     # is wired into the ``lawvm ctsf-gate`` CLI subcommand, so both modules are now
