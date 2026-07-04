@@ -24,6 +24,7 @@ from lawvm.uk_legislation.effect_payload_normalization import (
 from lawvm.uk_legislation.effect_payload_rejections import (
     reject_missing_structural_payload,
     reject_mixed_heading_structural_insert_missing_payload,
+    reject_untyped_foreign_payload_whole_provision_replace,
 )
 from lawvm.uk_legislation.effect_schedule_lowering import (
     lower_source_range_definition_list_end_schedule_entries,
@@ -559,6 +560,38 @@ def _lower_effect_target(ctx: _EffectTargetLoweringInput) -> _EffectTargetLoweri
     source_structural_payload_matches_target = (
         structural_payload.source_structural_payload_matches_target
     )
+    # ── D1: block untyped foreign-payload whole-provision clobbers (#211/#219) ──
+    # A whole-section/subsection REPLACE compiled from an untyped (Type="")
+    # feed row whose action was INFERRED (not derived from the effect type)
+    # and whose structural payload extraction found NO source node matching
+    # the target (``content_ir is None and actual_el is None`` →
+    # ``source_structural_payload_matches_target`` is necessarily False). Left
+    # to run, ``infer_source_payload_from_target`` below reuses the ENTIRE
+    # affecting schedule ``extracted_text`` (e.g. CRoW 2000 Sch. 9 para. 1's
+    # substituted s. 28 of the Wildlife & Countryside Act 1981, ~41 kB
+    # identical across NPACA 1949 ss. 16/103/106/107) as the section body,
+    # deleting every real subsection eId. The source carries no payload FOR
+    # this target, so replacing a live provision with the affecting schedule
+    # text is definitionally a clobber. Genuine untyped substitutions
+    # (s. 20(2)/(3): real P2 payload, ``source_structural_payload_matches_target``
+    # True) are untouched. Mirrors Fable's empty-payload Cause-1 block, keyed
+    # on the foreign-payload signal.
+    if reject_untyped_foreign_payload_whole_provision_replace(
+        effect=effect,
+        effect_type=effect_type,
+        action=action,
+        t_str=t_str,
+        target=target,
+        structural_extraction_found_source_node=(
+            structural_payload.content_ir is not None
+            or structural_payload.actual_el is not None
+        ),
+        source_structural_payload_matches_target=source_structural_payload_matches_target,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        lowering_rejections_out=lowering_rejections_out,
+    ):
+        return unchanged
     if (
         action == "insert"
         and content_ir is not None

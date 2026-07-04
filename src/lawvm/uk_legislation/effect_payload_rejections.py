@@ -169,6 +169,100 @@ def reject_broad_schedule_flat_replace_payload(
 
 _UK_BODY_SECTION_LIKE_KINDS = frozenset({"section", "article", "rule", "regulation"})
 
+# D1 (#211/#219): whole-provision REPLACE targets that a foreign-payload clobber
+# would otherwise smuggle the entire affecting schedule text onto. A bare
+# section or subsection leaf (``target.special is None``) with no facet.
+_UK_WHOLE_PROVISION_REPLACE_LEAF_KINDS = frozenset({"section", "subsection"})
+
+_UK_EFFECT_UNTYPED_FOREIGN_PAYLOAD_WHOLE_PROVISION_REPLACE_RULE_ID = (
+    "uk_effect_untyped_foreign_payload_whole_provision_replace_rejected"
+)
+
+
+def reject_untyped_foreign_payload_whole_provision_replace(
+    *,
+    effect: UKEffectRecord,
+    effect_type: str,
+    action: str,
+    t_str: str,
+    target: LegalAddress,
+    structural_extraction_found_source_node: bool,
+    source_structural_payload_matches_target: bool,
+    extracted_el: Optional[ET._Element],
+    extracted_text: Optional[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> bool:
+    """Block untyped foreign-payload whole-provision REPLACE clobbers (D1).
+
+    UK effect feeds carry untyped (``Type=""``) rows whose action can only be
+    INFERRED from the affecting-source drafting verbs. When such a row is an
+    inferred whole-section/subsection REPLACE and the structural-payload
+    extraction found NO source node matching the target
+    (``structural_extraction_found_source_node`` False, so
+    ``source_structural_payload_matches_target`` is necessarily False), the
+    downstream ``infer_source_payload_from_target`` fallback reuses the ENTIRE
+    affecting schedule ``extracted_text`` as the section body — e.g. CRoW 2000
+    Sch. 9 para. 1 substituting s. 28 of the Wildlife & Countryside Act 1981 (a
+    DIFFERENT act) lowered as a ~41 kB flat payload identically onto NPACA 1949
+    ss. 16/103/106/107, deleting every real subsection eId.
+
+    The source carries no payload FOR this target, so replacing a live provision
+    with the affecting schedule text is definitionally a clobber. Genuine
+    untyped substitutions that DO carry a target-matching source node
+    (``source_structural_payload_matches_target`` True, e.g. NPACA s. 20(2)/(3))
+    are left untouched — those never reach this gate because a source node was
+    found. Sibling of ``uk_effect_application_modification_table_rejected``
+    (family ``applicability_scope``): the untyped foreign-payload row is an
+    application/modification-adjacent artefact the feed exposes without a
+    target-owned structural payload.
+    """
+    if action != "replace":
+        return False
+    # Untyped feed row: only rows with no effect type reach the source-verb
+    # inference path (``_uk_effect_type_action`` returns None → inferred action).
+    if str(effect_type or "").strip() != "":
+        return False
+    # A source-matching structural node WAS found → not a foreign-payload
+    # clobber (this is the s. 20(2)/(3) legitimate-substitution guard).
+    if structural_extraction_found_source_node or source_structural_payload_matches_target:
+        return False
+    # Whole-provision target only: a bare section/subsection leaf with no facet.
+    # Deeper leaves (paragraph/subparagraph/item) and heading/other facets carry
+    # their own narrower lowering lanes and are out of D1's scope.
+    if target.special is not None:
+        return False
+    leaf_kind = (_addr_leaf_kind(target) or "").lower()
+    if leaf_kind not in _UK_WHOLE_PROVISION_REPLACE_LEAF_KINDS:
+        return False
+    if _addr_container(target) == "schedule":
+        return False
+    _append_uk_effect_lowering_rejection(
+        lowering_rejections_out,
+        rule_id=_UK_EFFECT_UNTYPED_FOREIGN_PAYLOAD_WHOLE_PROVISION_REPLACE_RULE_ID,
+        family="applicability_scope",
+        reason_code="untyped_foreign_payload_whole_provision_replace_clobber",
+        reason=(
+            "UK untyped (Type=\"\") feed row inferred a whole-provision REPLACE, "
+            "but the affecting source carries no structural node matching the "
+            "target; lowering would reuse the entire affecting schedule text as "
+            "the provision body, clobbering every real descendant eId. The "
+            "source carries no payload FOR this target, so the replacement is "
+            "definitionally a clobber and is rejected."
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={
+            "target_ref": t_str,
+            "target": str(target),
+            "target_leaf_kind": leaf_kind,
+            "effect_type": str(effect_type or ""),
+            "strict_disposition": "block",
+            "quirks_disposition": QuirksDisposition.REJECT,
+        },
+    )
+    return True
+
 
 def reject_body_section_replace_with_unmatched_schedule_payload(
     *,

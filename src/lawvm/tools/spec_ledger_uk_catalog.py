@@ -58,6 +58,9 @@ _UK_RULE_SPECS: Dict[str, str] = {
     # -- Repeal payload hygiene -------------------------------------------------
     "uk_effect_repeal_payload_dropped":
         "A UK REPEAL/TEXT_REPEAL effect arriving at the generic single-target mint boundary with a synthesised non-None payload has that payload coerced to None (a repeal removes its target, so a content payload is contradictory); the drop is recorded as a non-blocking observation, never silently applied.",
+    # -- Foreign-payload whole-provision clobber block (D1, #211/#219) ----------
+    "uk_effect_untyped_foreign_payload_whole_provision_replace_rejected":
+        "An untyped (Type=\"\") feed row that inferred a whole section/subsection replace but whose structural-payload extraction found no source node matching the target is refused, since the fallback would reuse the entire affecting-schedule text as the provision body and clobber every real descendant eId; the source carries no payload FOR this target, so the replacement is definitionally a clobber.",
     # -- Whole-Act / occurrence-scope substitution (OPC §6 occurrence scope) ----
     "uk_effect_simple_whole_act_all_occurrences_substitution_text_patch":
         "'In this Act, for X substitute Y' rewrites every occurrence of X across the whole Act.",
