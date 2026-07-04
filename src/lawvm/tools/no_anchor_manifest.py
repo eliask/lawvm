@@ -368,7 +368,7 @@ def _score_no_replay(
         resolve_no_source_path,
     )
     from lawvm.norway.verify import verify_no_against_current
-    from lawvm.tools.section_keys import extract_ir_sections, section_key_from_path
+    from lawvm.tools.section_keys import section_key_from_path
 
     dd = resolve_no_source_path(data_dir)
 
