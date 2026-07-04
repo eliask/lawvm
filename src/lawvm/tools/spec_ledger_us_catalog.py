@@ -583,6 +583,30 @@ _US_RULE_SPECS: Dict[str, str] = {
         "keep composing on the unchanged before text — the safe wrong "
         "(over-retention, never over-repeal)."
     ),
+    "us_dry_run_refused_each_place_strike_exceptions_unusable": (
+        "Refusal: a container-scope (whole-title / whole-chapter) each-place text "
+        "patch whose structured exception list is unusable — the lowerer poisoned "
+        "it (``unparsed``) or a per-section exception unit could not be located in "
+        "the running section text. Applying the strike anyway could delete text the "
+        "enacted exceptions protect (AIA sec 20(j)(2) lists whole sections, sub-units, "
+        "and first-instance carve-outs), so the op (or its per-section application) "
+        "is refused as typed — never a wrong strike (#220)."
+    ),
+    "us_each_place_strike_exception": (
+        "ScopePredicate dimension carried on a whole-title each-place strike op "
+        "(#220): the parsed AIA-sec-20(j)(2)-shape exception entries "
+        "(``s:<sec>``, ``s:<sec>:<lbl>...``, ``first:``-prefixed first-instance, or "
+        "the ``unparsed`` poison). The dry-run fan-out honors whole-section entries "
+        "at fan-out time and sub-unit / first-instance entries span-precisely at "
+        "materialization; ``unparsed`` refuses the op."
+    ),
+    "us_title_scope_each_place": (
+        "Provenance tag on an op the lowerer re-scoped from an incidentally-"
+        "resolved single target onto its enacted WHOLE-TITLE each-place strike "
+        "target (the AIA sec 20(j)(1) shape: Title 35, United States Code, is "
+        "amended by striking the term each place that term appears; #220). The "
+        "dry-run fans the op per before-edition section carrying the anchor."
+    ),
     # --- Temporal refusal: source-side effective/expiry places the op outside the window.
     "us_dry_run_deferred_op_not_yet_effective": (
         "Refusal: the instruction carries a source-side effective or expiry date that "

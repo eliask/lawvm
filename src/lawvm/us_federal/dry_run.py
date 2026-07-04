@@ -2171,11 +2171,13 @@ def _apply_each_place_patch_protected(
         (protected_first if is_first else protected_full).append(span)
 
     if match_text.isalpha():
+        # lawvm-regex: owning_parser each-place occurrence enumeration over the section-text apply surface
         occurrences = [
             m.span() for m in _word_boundary_pattern(match_text).finditer(running)
         ]
     else:
         occurrences = [
+            # lawvm-regex: owning_parser each-place occurrence enumeration over the section-text apply surface
             m.span() for m in re.finditer(re.escape(match_text), running)
         ]
 

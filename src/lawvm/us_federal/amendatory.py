@@ -489,9 +489,11 @@ _EXCEPTION_SECTION_RE = re.compile(
 
 def _exception_entry_from_ref(ref: str, *, first_instance: bool) -> str:
     """``111(b)(8)`` → ``s:111:b:8`` (with ``first:`` prefix for first-instance)."""
+    # lawvm-regex: owning_parser each-place exception item parse over the enacted exception list
     m = re.match(r"^(?P<sec>\d+[A-Za-z]?)(?P<subs>(?:\([^()\s]+\))*)$", ref)
     if m is None:
         return ""
+    # lawvm-regex: owning_parser each-place exception item parse
     labels = re.findall(r"\(([^()\s]+)\)", m.group("subs") or "")
     entry = ":".join(["s", m.group("sec"), *labels])
     return f"first:{entry}" if first_instance else entry
@@ -511,6 +513,7 @@ def _collect_each_place_strike_exceptions(section: ET.Element) -> frozenset[str]
         if _localname(elem.tag) not in ("subsection", "paragraph"):
             continue
         shallow = _shallow_text(elem, exclude=None)
+        # lawvm-regex: owning_parser each-place exception chapeau recognizer
         if _EACH_PLACE_EXCEPTION_CHAPEAU_RE.search(shallow) is None:
             continue
         entries: set[str] = set()
@@ -523,6 +526,7 @@ def _collect_each_place_strike_exceptions(section: ET.Element) -> frozenset[str]
             # Single-item exception carried in the chapeau's own prose.
             items = [shallow]
         for item_text in items:
+            # lawvm-regex: owning_parser each-place exception item recognizer
             m = _EXCEPTION_FIRST_INSTANCE_RE.search(item_text)
             if m is not None:
                 entry = _exception_entry_from_ref(m.group("ref"), first_instance=True)
@@ -530,14 +534,17 @@ def _collect_each_place_strike_exceptions(section: ET.Element) -> frozenset[str]
                     return None
                 entries.add(entry)
                 continue
+            # lawvm-regex: owning_parser each-place exception item recognizer
             m = _EXCEPTION_SUBSECTIONS_OF_RE.search(item_text)
             if m is not None:
+                # lawvm-regex: owning_parser each-place exception item parse
                 labels = re.findall(r"\(([^()\s]+)\)", m.group("labels"))
                 if not labels:
                     return None
                 for label in labels:
                     entries.add(f"s:{m.group('sec')}:{label}")
                 continue
+            # lawvm-regex: owning_parser each-place exception item recognizer
             m = _EXCEPTION_SECTION_RE.search(item_text)
             if m is not None:
                 entry = _exception_entry_from_ref(m.group("ref"), first_instance=False)
@@ -560,7 +567,7 @@ def _collect_each_place_strike_exceptions(section: ET.Element) -> frozenset[str]
 # Plain compile (not compile_classifier_regex): the lazy items window abuts the
 # ``of title`` literal, which the classifier lint flags as adjacent variable
 # repeats; the window is hard-bounded ({1,120}) so backtracking is bounded too.
-# lawvm-regex: bounded lazy window between two literals; classifier lint false-positive
+# lawvm-regex: owning_parser bounded lazy window between two literals; classifier lint false-positive
 _PLURAL_SECTION_LIST_HEAD_RE = re.compile(
     r"\bSections\s+(?P<items>[^“”\"]{1,120}?)\s+of\s+title\s+"
     r"(?P<title>\d+),\s+United\s+States\s+Code\b",
@@ -569,7 +576,7 @@ _PLURAL_SECTION_LIST_HEAD_RE = re.compile(
 # One section item within the list ("154(b)(4)(A)", "155A"); the list is
 # validated to consist ONLY of such items plus ,/and/or separators.
 _PLURAL_SECTION_LIST_ITEM_RE = re.compile(r"\d+[A-Za-z]?(?:\([^()\s]+\))*")
-# lawvm-regex: two-word literal verb family; classifier lint flags the optional
+# lawvm-regex: owning_parser two-word literal verb family; classifier lint flags the optional
 # "each" as adjacent variable repeats — bounded and safe.
 _PLURAL_SECTION_LIST_VERB_RE = re.compile(
     r"\b(?:is|are)\s+(?:each\s+)?(?:amended|repealed)\b",
@@ -587,12 +594,15 @@ def _multi_section_head_items(raw_text: str) -> tuple[str, tuple[str, ...]] | No
     resolve the full ladder address.
     """
     prose_head = re.split(r'["“]', raw_text, maxsplit=1)[0]
+    # lawvm-regex: owning_parser plural multi-section head recognizer
     m = _PLURAL_SECTION_LIST_HEAD_RE.search(prose_head)
     if m is None:
         return None
+    # lawvm-regex: owning_parser plural multi-section verb recognizer
     if _PLURAL_SECTION_LIST_VERB_RE.search(prose_head[m.end():]) is None:
         return None
     items_str = m.group("items")
+    # lawvm-regex: owning_parser plural multi-section item list parse
     items = tuple(_PLURAL_SECTION_LIST_ITEM_RE.findall(items_str))
     if not items:
         return None
@@ -638,6 +648,7 @@ def _maybe_retarget_title_scope_each_place(
         # each-place strike; never re-scope it.
         return instr
     prose_head = re.split(r'["“]', instr.raw_text, maxsplit=1)[0]
+    # lawvm-regex: owning_parser whole-title each-place strike head recognizer
     m = _TITLE_SCOPE_EACH_PLACE_RE.search(prose_head)
     if m is None:
         return instr
@@ -833,8 +844,10 @@ def _has_effective_date_phrase(text: str) -> bool:
         return False
     return (
         _EFFECTIVE_OR_TAKE_EFFECT_AFTER_RE.search(text) is not None
+        # lawvm-regex: owning_parser amendatory effective-date drafting-form recognizer (this module is the PL amendatory owning parser)
         or _EFFECTIVE_UPON_EXPIRATION_RE.search(text) is not None
         or _EFFECTIVE_OR_TAKE_EFFECT_ON_RE.search(text) is not None
+        # lawvm-regex: owning_parser amendatory effective-date drafting-form recognizer
         or _EFFECTIVE_ON_ENACTMENT_WITH_APPLY_RE.search(text) is not None
         or _EFFECTIVE_ABSOLUTE_RE.search(text) is not None
     )
@@ -875,6 +888,7 @@ def _parse_effective_date(text: str, enacted: str) -> str:
     m = _EFFECTIVE_OR_TAKE_EFFECT_AFTER_RE.search(text)
     if m is not None:
         return _parse_after_enactment_match(m, enacted)
+    # lawvm-regex: owning_parser amendatory effective-date drafting-form recognizer
     m = _EFFECTIVE_UPON_EXPIRATION_RE.search(text)
     if m is not None:
         # "upon the expiration of the N-unit period beginning on X" resolves to
@@ -882,6 +896,7 @@ def _parse_effective_date(text: str, enacted: str) -> str:
         # before, and the amendment is in force upon its expiration — i.e. X+N).
         return _parse_after_enactment_match(m, enacted)
     if (
+        # lawvm-regex: owning_parser amendatory effective-date drafting-form recognizer
         _EFFECTIVE_OR_TAKE_EFFECT_ON_RE.search(text) is not None
         or _EFFECTIVE_ON_ENACTMENT_WITH_APPLY_RE.search(text) is not None
     ):
@@ -1259,6 +1274,7 @@ def _collect_act_level_effective_scopes(
                 and not _has_effective_date_phrase(sentence)
             ):
                 continue
+            # lawvm-regex: owning_parser act-level effective scope-phrase recognizer
             m = _ACT_LEVEL_EFFECTIVE_SCOPE_RE.search(sentence)
             if m is not None:
                 break
