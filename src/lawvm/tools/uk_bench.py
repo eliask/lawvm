@@ -77,6 +77,7 @@ from lawvm.uk_legislation.source_adjudication import (
     classify_uk_replay_residual,
     is_core_uk_comparison,
     normalize_uk_replay_compare_eids,
+    uk_prospective_only_presence_ambiguous_eids,
 )
 from lawvm.uk_legislation.source_state import (
     is_uk_affecting_act_xml_source_observation,
@@ -2388,11 +2389,26 @@ def _score_statute(
                     replayed_eids.update(_collect_eids([s]))
                 _mark_phase("collect_replay_eids")
                 n_replayed_eids = len(replayed_eids)
+                # #211 presence reconciliations (comparison-only, monotone):
+                # whole-provision RetainText-repealed oracle eIds accept the
+                # repeal-applied replay form; eIds owned by prospective-only
+                # effects accept either form (temporal application of an
+                # uncommenced effect is PIT/editorial dependent).
+                presence_ambiguous_eids = uk_prospective_only_presence_ambiguous_eids(
+                    parsed_effects_for_statute or (),
+                    ops,
+                    enacted_statute=enacted_ir,
+                    replayed_statute=replayed_ir,
+                )
                 replay_compare_eids, oracle_compare_eids = normalize_uk_replay_compare_eids(
                     replayed_eids,
                     oracle_eids,
                     oracle_physical_eid_aliases=oracle_physical_eid_aliases,
                     oracle_visible_number_eid_aliases=oracle_visible_number_eid_aliases,
+                    oracle_retained_repeal_eids=oracle_eid_data.get(
+                        "retain_text_fully_repealed_eids", ()
+                    ),
+                    presence_ambiguous_eids=presence_ambiguous_eids,
                 )
                 replay_common = replay_compare_eids & oracle_compare_eids
                 n_replay_common = len(replay_common)

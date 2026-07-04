@@ -930,6 +930,8 @@ def normalize_uk_replay_compare_eids(
     oracle_eids: Iterable[str],
     oracle_physical_eid_aliases: dict[str, str] | None = None,
     oracle_visible_number_eid_aliases: dict[str, str] | None = None,
+    oracle_retained_repeal_eids: Iterable[str] | None = None,
+    presence_ambiguous_eids: Iterable[str] | None = None,
 ) -> UKReplayCompareEIDSets:
     """Normalize UK replay-vs-oracle EID sets for known compare-shape noise.
 
@@ -989,6 +991,42 @@ def normalize_uk_replay_compare_eids(
         if (normalized := _normalize_uk_source_container_eid(eid))
         and not _is_uk_nonlegal_text_fragment_eid(normalized)
     }
+    def _norm_side_set(eids: Iterable[str] | None) -> set[str]:
+        return {
+            alias_norm.get(normalized, normalized)
+            for eid in (eids or ())
+            if (normalized := _normalize_uk_source_container_eid(eid))
+            and not _is_uk_nonlegal_text_fragment_eid(normalized)
+        }
+
+    # Whole-provision <Repeal RetainText="true"> presence reconciliation
+    # (presentation_cleanup, presence dimension — the presence analogue of
+    # ``retain_text_elided_text_map``): the oracle testifies these eIds are
+    # REPEALED with the wording editorially retained on the page, so a replay
+    # that applied the repeal (eId absent) matches the oracle exactly as a
+    # replay that kept the provision does. Accept EITHER form: drop such an
+    # oracle eId only when replay does not carry it (a replay that kept it
+    # still scores as an ordinary match). Comparison-only; monotone (it can
+    # only remove penalized keys, never manufacture a divergence).
+    retained_norm = _norm_side_set(oracle_retained_repeal_eids)
+    if retained_norm:
+        oracle_norm -= (retained_norm & oracle_norm) - replay_norm
+
+    # Prospective-effect presence ambiguity (temporal_applicability): whether
+    # the current consolidation reflects a structural effect whose only feed
+    # in-force dates are PROSPECTIVE is point-in-time and editorial dependent
+    # (see ``prospective_effect_warrant``, verified mixed-sign) — the compiled
+    # ``uk_prospective_effect_applied_to_current`` observation records each
+    # application. On the presence surface both forms are consistent with the
+    # source, so eIds under a prospective-only op's target are excused on
+    # WHICHEVER side they are one-sided: an oracle-only eId (replay applied an
+    # uncommenced repeal the editors did not) and a replay-only eId (replay
+    # applied an uncommenced insert) are both ambiguity, not conviction.
+    ambiguous_norm = _norm_side_set(presence_ambiguous_eids)
+    if ambiguous_norm:
+        oracle_norm -= (ambiguous_norm & oracle_norm) - replay_norm
+        replay_norm -= (ambiguous_norm & replay_norm) - oracle_norm
+
     dropped_prefixes: set[str] = set()
     dropped_prefix_descendants: set[str] = set()
     kept: set[str] = set()
@@ -1040,6 +1078,158 @@ def normalize_uk_replay_compare_eids(
         kept.add(eid)
 
     return UKReplayCompareEIDSets(replayed=kept, oracle=oracle_norm)
+
+
+def _ir_kind_name(kind: Any) -> str:
+    """Normalize an IRNodeKind / string kind to its bare lowercase name."""
+    value = getattr(kind, "value", kind)
+    return str(value or "").split(".")[-1].strip().lower()
+
+
+def _ir_label_canon(label: Any) -> str:
+    return str(label or "").strip().strip(".").lower()
+
+
+def _ir_label_candidates(label: Any, want_kind: str) -> set[str]:
+    """Canonical comparison forms of an IR node label for target matching.
+
+    Container labels carry drift the address label does not: a leading kind
+    word (``Part IX``, ``SCHEDULE 6``) and Roman numbering on old Acts
+    (``Part IX`` vs address label ``9``). Yields the lowered label, the
+    kind-word-stripped token, and — for an UPPERCASE Roman token only (the
+    ``canonicalize_compare_eid`` discipline, so paragraph ``(iv)`` labels are
+    never touched) — its Arabic form.
+    """
+    raw = str(label or "").strip().strip(".")
+    out = {raw.lower()}
+    token = raw
+    if raw.lower().startswith(want_kind + " "):
+        token = raw[len(want_kind) + 1 :].strip().strip(".")
+        out.add(token.lower())
+    if token and token.isupper():
+        from lawvm.roman import roman_to_arabic
+
+        value = roman_to_arabic(token)
+        if value:
+            out.add(str(value))
+    return out
+
+
+def _ir_subtree_eids(node: Any, out: set[str]) -> None:
+    attrs = getattr(node, "attrs", None) or {}
+    eid = attrs.get("eId") or attrs.get("id")
+    if eid:
+        out.add(str(eid))
+    for child in getattr(node, "children", ()) or ():
+        _ir_subtree_eids(child, out)
+
+
+def _ir_resolve_target_nodes(roots: list[Any], path: Iterable[Any]) -> list[Any]:
+    """Resolve a ``LegalAddress.path`` against IR roots by (kind, label) search.
+
+    Each step matches DESCENDANT nodes of the previous step's matches (not only
+    direct children), so intermediate wrappers (crossheadings, Pblocks) are
+    transparent — a diagnostic-grade resolver for the comparison layer, NOT the
+    replay mutation resolver.
+    """
+    def _node_matches(node: Any, want_kind: str, want_label: str) -> bool:
+        if _ir_kind_name(getattr(node, "kind", "")) != want_kind:
+            return False
+        # IR container labels may carry the kind word ("SCHEDULE 6",
+        # "Part IX") and Roman numbering — match on canonical forms.
+        return want_label in _ir_label_candidates(
+            getattr(node, "label", ""), want_kind
+        )
+
+    current = list(roots)
+    for step in path:
+        kind, label = step[0], step[1]
+        want_kind = _ir_kind_name(kind)
+        want_label = _ir_label_canon(label)
+        if not want_kind or not want_label:
+            return []
+        matches: list[Any] = []
+        for root in current:
+            # Descendant search stopping at a matching node (a match's own
+            # subtree is the resolved unit, never re-matched within).
+            stack = list(getattr(root, "children", ()) or ())
+            while stack:
+                node = stack.pop()
+                if _node_matches(node, want_kind, want_label):
+                    matches.append(node)
+                    continue
+                stack.extend(getattr(node, "children", ()) or ())
+            # A supplements root may itself BE the addressed schedule node.
+            if _node_matches(root, want_kind, want_label):
+                matches.append(root)
+        if not matches:
+            return []
+        current = matches
+    return current
+
+
+def _ir_statute_roots(statute: Any) -> list[Any]:
+    roots: list[Any] = []
+    body = getattr(statute, "body", None)
+    if body is not None:
+        roots.append(body)
+    roots.extend(getattr(statute, "supplements", ()) or ())
+    return roots
+
+
+def uk_prospective_only_presence_ambiguous_eids(
+    effects: Iterable[Any],
+    ops: Iterable[Any],
+    *,
+    enacted_statute: Any = None,
+    replayed_statute: Any = None,
+) -> set[str]:
+    """eIds whose presence is ambiguous because a PROSPECTIVE-ONLY effect owns them.
+
+    A structural effect whose only feed in-force dates are prospective has not
+    been commenced per the feed's own testimony; whether the current
+    consolidation reflects it anyway is point-in-time and editorial dependent
+    (``prospective_effect_warrant`` — an empirical blanket do-not-apply gate is
+    verified mixed-sign). The presence comparison therefore cannot bill either
+    form. This helper projects the recorded
+    ``uk_prospective_effect_applied_to_current`` population onto the compare-eId
+    surface: for every compiled op owned by a prospective-only structural
+    effect, the op target's subtree eIds — resolved against the ENACTED IR (what
+    a repeal/replace removes) and the REPLAYED IR (what an insert/replace adds)
+    — are returned for ``normalize_uk_replay_compare_eids``'s
+    ``presence_ambiguous_eids`` dual-form acceptance. Comparison-only; compiled
+    ops and materialized text are untouched.
+    """
+    prospective_ids = {
+        str(effect_id)
+        for e in effects
+        if (effect_id := getattr(e, "effect_id", ""))
+        and getattr(e, "is_prospective_only", False)
+        and e.is_structural_for_replay()
+    }
+    if not prospective_ids:
+        return set()
+    ambiguous: set[str] = set()
+    enacted_roots = _ir_statute_roots(enacted_statute) if enacted_statute is not None else []
+    replayed_roots = _ir_statute_roots(replayed_statute) if replayed_statute is not None else []
+    for op in ops:
+        op_id = str(getattr(op, "op_id", "") or "")
+        if op_id not in prospective_ids:
+            base, sep, suffix = op_id.rpartition("_")
+            if not (sep and suffix.isdigit() and base in prospective_ids):
+                continue
+        target = getattr(op, "target", None)
+        path = tuple(getattr(target, "path", ()) or ())
+        if not path:
+            # A whole-Act prospective op would excuse the entire comparison;
+            # never widen the ambiguity to the whole statute.
+            continue
+        for roots in (enacted_roots, replayed_roots):
+            if not roots:
+                continue
+            for node in _ir_resolve_target_nodes(roots, path):
+                _ir_subtree_eids(node, ambiguous)
+    return ambiguous
 
 
 def classify_uk_current_projection_eid_shape(

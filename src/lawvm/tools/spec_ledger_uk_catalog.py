@@ -661,6 +661,8 @@ _UK_RULE_SPECS: Dict[str, str] = {
         "The oracle-comparison adapter aligns LawVM and oracle eIDs before scoring divergences.",
     "uk_oracle_retain_text_repeal_elided":
         "An oracle <Repeal RetainText=\"true\"> retained phrase (a 1-D-consolidation display artifact, not law — the analogue of Finlex's 'Aiempi sanamuoto kuuluu:' marker) is elided into a comparison-only oracle text variant so the comparison accepts either the repeal-applied or repeal-not-applied form, never raising a spurious text_diff; replay is untouched (presentation_cleanup).",
+    "uk_oracle_retain_text_whole_provision_repeal_presence_optional":
+        "An oracle provision whose ENTIRE live body wording sits inside <Repeal RetainText=\"true\"> wrappers (only number/heading labels outside) is a repealed-but-editorially-retained provision, so its EID is presence-ambiguous: the comparison accepts either the repeal-applied (eId absent) or repeal-not-applied (eId present) replay form; replay is untouched (presentation_cleanup, presence dimension).",
     "uk_non_schedule_list_entry_preserved":
         "A non-schedule list entry that LawVM cannot lower is preserved verbatim rather than dropped.",
     "uk_schedule_list_entry_preserved":

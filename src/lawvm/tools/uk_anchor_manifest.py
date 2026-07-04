@@ -396,9 +396,11 @@ def _score_uk_replay(statute_id: str, *, archive: Any) -> _UKReplayScore:
     PRESENCE maps + the UK comparison_class (the oracle-suspect witness).
     """
     from lawvm.uk_legislation.oracle_align import align_uk_replay_to_oracle_with_report
+    from lawvm.uk_legislation.effects import load_effects_for_statute_from_archive
     from lawvm.uk_legislation.source_adjudication import (
         classify_uk_bench_comparison,
         normalize_uk_replay_compare_eids,
+        uk_prospective_only_presence_ambiguous_eids,
     )
     from lawvm.uk_legislation.uk_amendment_replay import (
         UKReplayPipeline,
@@ -436,7 +438,12 @@ def _score_uk_replay(statute_id: str, *, archive: Any) -> _UKReplayScore:
         enacted_eids.update(_collect_eids([s]))
 
     pipeline = UKReplayPipeline(_repo_root())
-    ops = pipeline.compile_ops_for_statute(statute_id, archive=archive)
+    effects = load_effects_for_statute_from_archive(statute_id, archive)
+    ops = pipeline.compile_ops_for_statute(
+        statute_id,
+        archive=archive,
+        preloaded_effects=effects or None,
+    )
     replayed_ir = replay_uk_ops(
         enacted_ir,
         ops,
@@ -456,12 +463,23 @@ def _score_uk_replay(statute_id: str, *, archive: Any) -> _UKReplayScore:
 
     # Normalize each side's compare-eId set against the oracle for known compare-shape
     # noise (parent-path drift, display-number drift, non-legal fragment ids, ...) —
-    # the same noise normalization ``uk-bench`` applies before scoring.
+    # the same noise normalization ``uk-bench`` applies before scoring; plus the two
+    # presence reconciliations (#211): whole-provision RetainText-repealed oracle
+    # eIds accept the repeal-applied replay form, and eIds owned by prospective-only
+    # effects accept either form (temporal application is PIT/editorial dependent).
+    presence_ambiguous_eids = uk_prospective_only_presence_ambiguous_eids(
+        effects,
+        ops,
+        enacted_statute=enacted_ir,
+        replayed_statute=replayed_ir,
+    )
     replay_compare, oracle_compare = normalize_uk_replay_compare_eids(
         replayed_eids,
         oracle_eids,
         oracle_physical_eid_aliases=oracle_physical_eid_aliases,
         oracle_visible_number_eid_aliases=oracle_visible_number_eid_aliases,
+        oracle_retained_repeal_eids=oracle_data.get("retain_text_fully_repealed_eids", ()),
+        presence_ambiguous_eids=presence_ambiguous_eids,
     )
     enacted_compare, _oracle_compare_b = normalize_uk_replay_compare_eids(
         enacted_eids,

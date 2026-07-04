@@ -306,6 +306,69 @@ def _oracle_text_eliding_retained_repeals(el: Optional[ET._Element]) -> tuple[st
     return "".join(parts).strip(), elided
 
 
+# Whole-provision retained repeal (presence dimension). When EVERY piece of a
+# provision's live body wording sits inside ``<Repeal RetainText="true">``
+# wrappers, the oracle itself testifies the provision is REPEALED and only its
+# text is editorially retained on the page (savings / partial-commencement
+# display, the 1-D consolidation artifact above). The provision's EID is then
+# ambiguous for the PRESENCE comparison exactly as its text is for the text
+# comparison: a replay that applied the repeal (eId gone) and a replay that kept
+# it (eId present, retained wording) are BOTH consistent with the oracle. The
+# eIds detected here are exported as ``retain_text_fully_repealed_eids`` so the
+# comparison layer (``normalize_uk_replay_compare_eids``) can accept either
+# presence form — comparison-only; replay ops and materialized text untouched.
+# Structural labels (provision numbers / titles) are NOT live body wording: the
+# editors frequently leave the ``Pnumber``/heading outside the ``<Repeal>``
+# wrapper while every body word is inside it (e.g. asp/2020/10 s.2/s.6).
+_RETAIN_TEXT_WHOLE_PROVISION_PRESENCE_RULE_ID = (
+    "uk_oracle_retain_text_whole_provision_repeal_presence_optional"
+)
+_ORACLE_STRUCTURAL_LABEL_TAGS = frozenset(
+    {"pnumber", "number", "title", "titleblock", "commentaryref"}
+)
+
+
+def _oracle_is_fully_retained_repealed(el: Optional[ET._Element]) -> bool:
+    """True iff *el* holds a retained repeal and NO live body wording outside it.
+
+    Mirrors ``_oracle_text_eliding_retained_repeals`` (``itertext``-order walk,
+    retained-repeal subtrees dropped, tails kept) but additionally skips
+    structural-label subtrees (``Pnumber``/``Number``/``Title``) — a provision
+    whose every body word is retained-repealed is presence-ambiguous even though
+    its number/heading remains outside the ``<Repeal>`` wrapper.
+    """
+    if el is None:
+        return False
+    if not _contains_retained_repeal(el):
+        return False
+    live_parts: list[str] = []
+
+    def _walk(node: ET._Element) -> None:
+        if _is_retained_repeal(node):
+            if node.tail:
+                live_parts.append(node.tail)
+            return
+        if _tag(node).lower() in _ORACLE_STRUCTURAL_LABEL_TAGS:
+            if node.tail:
+                live_parts.append(node.tail)
+            return
+        if node.text:
+            live_parts.append(node.text)
+        for child in node:
+            _walk(child)
+            if (
+                child.tail
+                and not _is_retained_repeal(child)
+                and _tag(child).lower() not in _ORACLE_STRUCTURAL_LABEL_TAGS
+            ):
+                live_parts.append(child.tail)
+
+    _walk(el)
+    live = "".join(live_parts).strip()
+    # lawvm-regex: diagnostic comparison-only presentation-cleanup residue test (dot-leaders/whitespace), never consumed by replay
+    return not live or bool(_DOT_OR_SPACE_ONLY_RE.match(live))
+
+
 def _local_structural_text(el: ET._Element) -> str:
     """Collect local provision text without absorbing child provisions."""
     structural = {
@@ -2310,6 +2373,7 @@ def _visit_eid(
     *,
     tag: Optional[str] = None,
     is_known_live: bool = False,
+    retain_text_fully_repealed_eids: Optional[set[str]] = None,
 ):
     if not is_known_live and _is_zombie(el, False, pit_date):
         return
@@ -2447,6 +2511,32 @@ def _visit_eid(
                         "quirks_disposition": QuirksDisposition.RECORD,
                     }
                 )
+                # presentation_cleanup, PRESENCE dimension: when the retained
+                # repeal covers the provision's ENTIRE live body wording (only
+                # number/heading labels sit outside the <Repeal> wrapper), the
+                # oracle testifies the provision is repealed with text retained
+                # for display — so the EID itself is comparison-ambiguous: a
+                # repeal-applied replay (eId gone) and a repeal-not-applied
+                # replay (eId present) both match the oracle. Export the eId so
+                # the compare layer can accept either presence form. Auditable,
+                # never silent (AGENTS.md §0/§7); comparison-only.
+                if (
+                    retain_text_fully_repealed_eids is not None
+                    and _oracle_is_fully_retained_repealed(el)
+                ):
+                    retain_text_fully_repealed_eids.add(eid)
+                    oracle_identity_observations.append(
+                        {
+                            "rule_id": _RETAIN_TEXT_WHOLE_PROVISION_PRESENCE_RULE_ID,
+                            "phase": "oracle_compare_normalization",
+                            "family": "presentation_cleanup",
+                            "original_eid": eid,
+                            "xml_tag": tag,
+                            "physical_path_key": this_node_path,
+                            "strict_disposition": "record",
+                            "quirks_disposition": QuirksDisposition.RECORD,
+                        }
+                    )
         if clean_num:
             is_nested_schedule_descendant = False
             if context.startswith("schedule") and parent_path_key:
@@ -2552,6 +2642,7 @@ def _visit_eid(
             text_content_cache,
             tag=ct,
             is_known_live=True,
+            retain_text_fully_repealed_eids=retain_text_fully_repealed_eids,
         )
 
 
@@ -2568,6 +2659,11 @@ def _extract_eid_map_from_root(root: Any, pit_date: Optional[str] = None) -> Dic
     # comparison accept EITHER form (repeal applied / not applied) so the 1-D
     # consolidation artifact is neutral.  See _oracle_text_eliding_retained_repeals.
     retain_text_elided_text_map: dict[str, str] = {}
+    # presentation_cleanup, presence dimension: oracle eIds whose ENTIRE live
+    # body wording is inside <Repeal RetainText="true"> wrappers — repealed
+    # provisions the editors keep visible. Presence-ambiguous for comparison
+    # (either replay form matches); see _oracle_is_fully_retained_repealed.
+    retain_text_fully_repealed_eids: set[str] = set()
     text_content_cache: dict[ET._Element, str] = {}
     try:
         is_eur = root.find(f".//{{{_LEG_NS}}}EURetained") is not None
@@ -2588,6 +2684,7 @@ def _extract_eid_map_from_root(root: Any, pit_date: Optional[str] = None) -> Dic
                 oracle_identity_observations,
                 retain_text_elided_text_map,
                 text_content_cache,
+                retain_text_fully_repealed_eids=retain_text_fully_repealed_eids,
             )
         schedules = root.find(f".//{{{_LEG_NS}}}Schedules")
         if schedules is not None:
@@ -2604,11 +2701,13 @@ def _extract_eid_map_from_root(root: Any, pit_date: Optional[str] = None) -> Dic
                 oracle_identity_observations,
                 retain_text_elided_text_map,
                 text_content_cache,
+                retain_text_fully_repealed_eids=retain_text_fully_repealed_eids,
             )
         return {
             "eid_map": eid_map,
             "text_map": text_map,
             "retain_text_elided_text_map": retain_text_elided_text_map,
+            "retain_text_fully_repealed_eids": tuple(sorted(retain_text_fully_repealed_eids)),
             "physical_eid_aliases": physical_eid_aliases,
             "visible_number_eid_aliases": visible_number_eid_aliases,
             "oracle_identity_observations": oracle_identity_observations,
