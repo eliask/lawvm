@@ -1,0 +1,40 @@
+{
+  "_doc": "CTSF residual-set-diff gate baseline — NORWAY (#183/#205). Frozen typed-residual set of the REAL NO touch-relation anchor corpus (REAL_ANCHOR_NO_CORPUS), keyed {sid: {family: count}} with only non-zero families retained. A NO anchor is the base→current replay window (Norway replays the lovtidend base forward to as_of and scores against the single live Lovdata consolidated oracle — no crawled dated-PIT chain). The gate FAILs iff a NEW replay_bug/unknown residual appears vs this set; WARNs on a typed oracle/editorial/temporal move. This corpus is curated 0-BILLABLE (the honest steady state); NO acts whose base→current replay surfaces genuine billable residuals are deliberately excluded (they are defects to fix, not to freeze — see the module's found-bug report). Regenerate with `uv run python -m lawvm.tools.no_anchor_manifest --update-baseline` (needs the Norway Farchive) after a legitimate, reviewed corpus/projection change — a preregistered predict-then-compare event, never a silent baseline move.",
+  "gate_version": "v0",
+  "jurisdiction": "norway",
+  "corpus_sids": [
+    "no/lov/2004-05-14-25",
+    "no/lov/2006-08-18-61",
+    "no/lov/2017-06-16-60",
+    "no/lov/2019-06-21-70",
+    "no/lov/2021-05-21-42",
+    "no/lov/2022-05-12-28",
+    "no/lov/2023-06-16-62",
+    "no/lov/2024-01-12-1",
+    "no/lov/2025-04-25-12"
+  ],
+  "families": [
+    "replay_bug",
+    "oracle_editorial_pathology",
+    "temporal_mismatch",
+    "state_index",
+    "cnf_unsupported",
+    "unknown"
+  ],
+  "fail_families": [
+    "replay_bug",
+    "unknown"
+  ],
+  "total_residuals": 0,
+  "residuals": {
+    "no/lov/2004-05-14-25": {},
+    "no/lov/2006-08-18-61": {},
+    "no/lov/2017-06-16-60": {},
+    "no/lov/2019-06-21-70": {},
+    "no/lov/2021-05-21-42": {},
+    "no/lov/2022-05-12-28": {},
+    "no/lov/2023-06-16-62": {},
+    "no/lov/2024-01-12-1": {},
+    "no/lov/2025-04-25-12": {}
+  }
+}

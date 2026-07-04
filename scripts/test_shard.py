@@ -1039,6 +1039,14 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # FAIL/WARN/PASS diff logic, round-trip, and @requires_se_corpus data-present
         # fail-red over the sweden.farchive.
         "test_ctsf_gate_se.py",
+        # NO (#205) CTSF gate corpus — the Norway analogue: frozen
+        # 0-billable NO baseline over the base→current replay window (Norway replays
+        # the lovtidend base forward to as_of, scores against the single live Lovdata
+        # consolidated oracle), FAIL/WARN/PASS diff logic, round-trip, and
+        # @requires_no_corpus data-present fail-red over the Norway Farchive. The
+        # engine lives in lawvm.tools.no_anchor_manifest (exposes score_no_real_corpus
+        # + the frozen baseline for the parent to integrate into core.ctsf_gate).
+        "test_ctsf_gate_no.py",
         "test_diagnose_phase.py",
         "test_diff.py",
         "test_dump.py",
