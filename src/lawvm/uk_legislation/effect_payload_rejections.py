@@ -188,6 +188,7 @@ def reject_untyped_foreign_payload_whole_provision_replace(
     target: LegalAddress,
     structural_extraction_found_source_node: bool,
     source_structural_payload_matches_target: bool,
+    source_routes_to_text_patch: bool = False,
     extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
@@ -215,12 +216,28 @@ def reject_untyped_foreign_payload_whole_provision_replace(
     (family ``applicability_scope``): the untyped foreign-payload row is an
     application/modification-adjacent artefact the feed exposes without a
     target-owned structural payload.
+
+    FALSE-POSITIVE EXCLUSION (``source_routes_to_text_patch``): an untyped row
+    whose extracted source parses into text-patch fragments (``after "X" there
+    is inserted "Y"`` / ``for "X" substitute "Y"`` quoted-anchor word edits) is
+    NOT a whole-body clobber. Its inferred ``action="replace"`` is a placeholder
+    the downstream text-fragment lane splits into TEXT_PATCH ops (e.g. an
+    empty-type compound quoted-anchor word-insert on a bare subsection). Those
+    rows never reuse the whole affecting body — only rows whose extracted text
+    parses into ZERO fragments hit the ``infer_source_payload_from_target``
+    whole-body fallback that produces the clobber. The genuine 41 kB clobbers
+    (NPACA ss. 16/103/106/107) parse to zero fragments; the caller passes True
+    here for any row the text-patch lane would consume, and the guard abstains.
     """
     if action != "replace":
         return False
     # Untyped feed row: only rows with no effect type reach the source-verb
     # inference path (``_uk_effect_type_action`` returns None → inferred action).
     if str(effect_type or "").strip() != "":
+        return False
+    # Text-patch-eligible rows route to ``lower_uk_text_fragment_rewrite`` (their
+    # ``replace`` action is a placeholder); they are not whole-body clobbers.
+    if source_routes_to_text_patch:
         return False
     # A source-matching structural node WAS found → not a foreign-payload
     # clobber (this is the s. 20(2)/(3) legitimate-substitution guard).

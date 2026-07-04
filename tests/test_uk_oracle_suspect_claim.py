@@ -13,8 +13,6 @@ oracle must retain each eId live. Any failing leg rejects the whole claim.
 """
 from __future__ import annotations
 
-from typing import Any
-
 from lawvm.uk_legislation.oracle_suspect_claim import (
     CLAIM_REJECTED_FEED_NOT_APPLIED_RULE_ID,
     CLAIM_REJECTED_NO_REPEAL_OP_RULE_ID,
@@ -32,17 +30,23 @@ _SID = "ukpga/1949/97"
 _EFFECT = "key-2f041c004682bd263f12bd03ab983845"
 
 
-def _claim(**overrides) -> OracleSuspectClaim:
-    base: dict[str, Any] = dict(
-        claim_id="os-1949-97-s80-5-6",
-        claim_kind=ORACLE_SUSPECT_CLAIM_KIND,
-        statute_id=_SID,
-        effect_id=_EFFECT,
-        suspect_eids=("section-80-5", "section-80-6"),
-        affected_target="s. 80(5)(6)",
+def _claim(
+    *,
+    claim_id: str = "os-1949-97-s80-5-6",
+    claim_kind: str = ORACLE_SUSPECT_CLAIM_KIND,
+    statute_id: str = _SID,
+    effect_id: str = _EFFECT,
+    suspect_eids: tuple[str, ...] = ("section-80-5", "section-80-6"),
+    affected_target: str = "s. 80(5)(6)",
+) -> OracleSuspectClaim:
+    return OracleSuspectClaim(
+        claim_id=claim_id,
+        claim_kind=claim_kind,
+        statute_id=statute_id,
+        effect_id=effect_id,
+        suspect_eids=suspect_eids,
+        affected_target=affected_target,
     )
-    base.update(overrides)
-    return OracleSuspectClaim(**base)
 
 
 def _validate(

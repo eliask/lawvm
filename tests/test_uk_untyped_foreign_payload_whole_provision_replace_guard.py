@@ -66,6 +66,7 @@ def _call(
     action: str = "replace",
     structural_extraction_found_source_node: bool = False,
     source_structural_payload_matches_target: bool = False,
+    source_routes_to_text_patch: bool = False,
 ) -> tuple[bool, list[dict[str, Any]]]:
     rejections: list[dict[str, Any]] = []
     rejected = reject_untyped_foreign_payload_whole_provision_replace(
@@ -76,6 +77,7 @@ def _call(
         target=target,
         structural_extraction_found_source_node=structural_extraction_found_source_node,
         source_structural_payload_matches_target=source_structural_payload_matches_target,
+        source_routes_to_text_patch=source_routes_to_text_patch,
         extracted_el=None,
         extracted_text=None,
         lowering_rejections_out=rejections,
@@ -167,3 +169,16 @@ def test_ignores_schedule_container_targets() -> None:
     target = LegalAddress(path=(("schedule", "1"), ("paragraph", "3")))
     rejected, _ = _call(target)
     assert rejected is False
+
+
+def test_ignores_text_patch_routed_rows() -> None:
+    """False-positive guard: an empty-type row whose extracted source parses into
+    text-patch fragments (``after "X" there is inserted "Y"`` compound word-insert
+    on a bare subsection, e.g. the ukpga/1962/46 s.86(4) case that lowers to two
+    TEXT_PATCH ops) is NOT a whole-body clobber and must NOT be blocked, even
+    though its inferred placeholder action is ``replace`` with no source-matching
+    structural node."""
+    target = LegalAddress(path=(("section", "86"), ("subsection", "4")))
+    rejected, rejections = _call(target, source_routes_to_text_patch=True)
+    assert rejected is False
+    assert not rejections

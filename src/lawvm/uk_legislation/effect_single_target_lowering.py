@@ -64,6 +64,7 @@ from lawvm.uk_legislation.heading_facets import (
     _is_heading_only_ref,
 )
 from lawvm.uk_legislation.lowering_records import _append_uk_effect_lowering_observation
+from lawvm.uk_legislation.nlp_parser import parse_fragment_substitution
 from lawvm.uk_legislation.source_amendment_program_fragments import (
     _fragment_substitution_amendment_program_inserted_parent_child_insert,
     lower_amendment_program_inserted_anchor_structural_insert,
@@ -576,6 +577,17 @@ def _lower_effect_target(ctx: _EffectTargetLoweringInput) -> _EffectTargetLoweri
     # (s. 20(2)/(3): real P2 payload, ``source_structural_payload_matches_target``
     # True) are untouched. Mirrors Fable's empty-payload Cause-1 block, keyed
     # on the foreign-payload signal.
+    # The false-positive guard: a row whose extracted source parses into
+    # text-patch fragments (``after "X" there is inserted "Y"`` / ``for "X"
+    # substitute "Y"`` quoted-anchor word edits) is NOT a whole-body clobber —
+    # its ``action="replace"`` is a placeholder the downstream text-fragment
+    # lane (``lower_uk_text_fragment_rewrite``) splits into TEXT_PATCH ops. The
+    # genuine 41 kB clobber's extracted text is flat structural body prose that
+    # parses into ZERO fragments (``infer_source_payload_from_target`` reuses
+    # the whole body). Only whole-body-fallback rows may reach the D1 block.
+    source_routes_to_text_patch = bool(
+        parse_fragment_substitution(" ".join((extracted_text or "").split()))
+    )
     if reject_untyped_foreign_payload_whole_provision_replace(
         effect=effect,
         effect_type=effect_type,
@@ -587,6 +599,7 @@ def _lower_effect_target(ctx: _EffectTargetLoweringInput) -> _EffectTargetLoweri
             or structural_payload.actual_el is not None
         ),
         source_structural_payload_matches_target=source_structural_payload_matches_target,
+        source_routes_to_text_patch=source_routes_to_text_patch,
         extracted_el=extracted_el,
         extracted_text=extracted_text,
         lowering_rejections_out=lowering_rejections_out,
