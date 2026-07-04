@@ -129,8 +129,35 @@ def canonicalize_compare_eid(eid: str) -> str:
     return "-".join(out)
 
 
+# The UK ``supplements`` compartment root selector. A UK ``LegalAddress`` whose
+# ``root`` equals this string lives in the schedules compartment (``IRStatute.
+# supplements``), mirroring the SE-bilaga / EU-annex ``root="supplements"``
+# convention (FABLE_UNIVERSAL_ALGEBRA §5.3 / §7 delta #6). ``root=None`` (the
+# default) names the statute ``body``.
+UK_SUPPLEMENTS_ROOT = "supplements"
+
+
+def uk_is_schedule_address(addr: LegalAddress) -> bool:
+    """Return True when *addr* targets the UK schedules (``supplements``) root.
+
+    The schedule-compartment signal is the typed ``root`` selector
+    (``root == "supplements"``) — the drift-robust successor to the bespoke
+    ``path[0][0] == "schedule"`` leaf-kind sniff (§5.3 / §7 delta #6). The path
+    sniff is retained as a fallback so an address that has not yet been stamped
+    with ``root`` (e.g. a raw pre-canonicalization construction) still routes to
+    the schedule lane — this keeps the migration byte-identical: every address
+    that reached the schedule lane before still reaches it now, whether it
+    carries ``root="supplements"`` or only the legacy ``("schedule", …)`` first
+    path element.
+    """
+
+    if addr.root == UK_SUPPLEMENTS_ROOT:
+        return True
+    return bool(addr.path) and addr.path[0][0] == "schedule"
+
+
 def uk_addr_container(addr: LegalAddress) -> str:
-    if addr.path and addr.path[0][0] == "schedule":
+    if uk_is_schedule_address(addr):
         return "schedule"
     return "section"
 
@@ -729,8 +756,16 @@ def canonicalize_uk_address(addr: LegalAddress) -> LegalAddress:
     path = tuple(addr.path or ())
     if not path:
         return addr
+    is_schedule = uk_addr_container(addr) == "schedule"
+    # Stamp the schedules-compartment root selector on schedule addresses so the
+    # schedule lane is driven by the typed ``root`` (§5.3 / §7 delta #6), not a
+    # path-shape sniff. Body addresses keep ``root=None``. ``root`` participates
+    # in equality/hash but never appears in the UK replay *product* (the
+    # materialized statute IR) — it is an internal dispatch selector — so this is
+    # byte-identical to the pre-migration schedule address for replay output.
+    target_root = UK_SUPPLEMENTS_ROOT if is_schedule else None
     normalized: list[tuple[str, str]] = []
-    if uk_addr_container(addr) == "schedule":
+    if is_schedule:
         schedule_depth = 0
         for idx, (kind, label) in enumerate(path):
             if idx == 0 and kind == "schedule":
@@ -784,6 +819,11 @@ def canonicalize_uk_address(addr: LegalAddress) -> LegalAddress:
             normalized.append((kind, label))
 
     normalized_path = tuple(normalized)
-    if normalized_path == path:
+    if normalized_path == path and addr.root == target_root and not addr.ordinals:
         return addr
-    return LegalAddress(path=normalized_path, special=addr.special)
+    return LegalAddress(
+        path=normalized_path,
+        special=addr.special,
+        ordinals=addr.ordinals,
+        root=target_root,
+    )
