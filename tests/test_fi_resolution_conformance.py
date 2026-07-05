@@ -168,8 +168,32 @@ def _single_candidate_registry():
 
 
 def _ambiguous_registry():
-    """Registry where ``kuntalaki`` names two acts over time (→ AMBIGUOUS)."""
+    """Registry where ``kuntalaki`` names two acts over time. One (410/2015) is
+    still in force, so the DEFAULT multi-version disambiguation resolves it to the
+    live version; the ``disambiguate_multi_version=False`` opt-out keeps AMBIGUOUS."""
     return build_registry([_KUNTALAKI_OLD, _KUNTALAKI_NEW], aliases=None)
+
+
+# Two DISTINCT acts BOTH in force under one name: no unique live version, so even
+# with multi-version disambiguation ON (the default) the cite stays AMBIGUOUS — a
+# genuine homonym has no defensible single referent.
+_HOMONYM_A = StatuteNameEntry(
+    statute_id="100/2001",
+    canonical_title="Yhteisnimilaki",
+    valid_from=dt.date(2001, 1, 1),
+    valid_to=None,
+)
+_HOMONYM_B = StatuteNameEntry(
+    statute_id="200/2010",
+    canonical_title="Yhteisnimilaki",
+    valid_from=dt.date(2010, 1, 1),
+    valid_to=None,
+)
+
+
+def _genuinely_ambiguous_registry():
+    """Two live distinct acts under one name → AMBIGUOUS even under the default."""
+    return build_registry([_HOMONYM_A, _HOMONYM_B], aliases=None)
 
 
 def _empty_registry():
@@ -277,23 +301,40 @@ def test_t2_resolved_by_name_single_candidate():
     assert m.target_provision_ref.statute_id == "fi-name:luonnonsuojelulaki"
 
 
-def test_t2_ambiguous_by_name_two_candidates_never_picks():
-    """T2×ambiguous: a by-name cite whose registry has ≥2 as-of candidates.
-
-    Whole-timeline (``as_of=None``) lookup of ``kuntalaki`` surfaces both the
-    1995 and the 2015 act → ``AMBIGUOUS`` with ALL candidates listed, a finding
-    emitted, and NO pick (``work_id`` stays ``None``).
-    """
+def test_t2_by_name_two_versions_resolves_to_live_by_default():
+    """T2×ambiguous, DEFAULT (multi-version disambiguation now on): a whole-timeline
+    lookup of ``kuntalaki`` surfaces both the 1995 and the 2015 act, but exactly one
+    (410/2015) is still in force, so the as-of-live version is picked — stamped
+    APPROXIMATE (a heuristic pick, never EXACT), with the repealed 365/1995 rejected.
+    All candidates are still reported. The never-pick contract is preserved under the
+    ``disambiguate_multi_version=False`` opt-out (sibling test below)."""
     m = _fi_name_placeholder("kuntalaki", surface="kuntalaissa")
     reg = _ambiguous_registry()
     (res,) = resolve_mentions([m], statute_registry=reg, as_of=None)
+
+    assert res.resolution_status is ResolutionStatus.RESOLVED
+    assert res.work_id == "410/2015"
+    assert set(res.candidates) == {"365/1995", "410/2015"}
+    assert res.rejected_candidates == ("365/1995",)
+    assert res.mention.cite_confidence is CiteConfidence.APPROXIMATE
+    assert res.finding is None
+
+
+def test_t2_by_name_two_candidates_never_picks_when_disabled():
+    """T2×ambiguous, OPT-OUT: with ``disambiguate_multi_version=False`` the byte-
+    unchanged contract holds — ≥2 as-of candidates → AMBIGUOUS, all candidates
+    listed, a finding emitted, NO pick, placeholder id NOT rewritten."""
+    m = _fi_name_placeholder("kuntalaki", surface="kuntalaissa")
+    reg = _ambiguous_registry()
+    (res,) = resolve_mentions(
+        [m], statute_registry=reg, as_of=None, disambiguate_multi_version=False
+    )
 
     assert res.resolution_status is ResolutionStatus.AMBIGUOUS
     assert res.work_id is None  # never picks
     assert set(res.candidates) == {"365/1995", "410/2015"}
     assert res.finding is not None
     assert set(res.finding.candidate_target_ids) == {"365/1995", "410/2015"}
-    # The mention is re-typed AMBIGUOUS but the placeholder id is NOT rewritten.
     assert res.mention.cite_confidence is CiteConfidence.AMBIGUOUS
     assert res.mention.target_provision_ref is not None
     assert res.mention.target_provision_ref.statute_id == "fi-name:kuntalaki"
@@ -472,7 +513,7 @@ _COVERED_STATUSES: dict[ResolutionStatus, str] = {
     ResolutionStatus.STATUTE_ONLY: "test_t1_statute_only_bare_section_no_id_no_registry_hit",
     ResolutionStatus.BROKEN: "test_t1_broken_passthrough_documented_bitemporal_elsewhere",
     ResolutionStatus.RESOLVED: "test_t2_resolved_by_name_single_candidate",
-    ResolutionStatus.AMBIGUOUS: "test_t2_ambiguous_by_name_two_candidates_never_picks",
+    ResolutionStatus.AMBIGUOUS: "test_t2_by_name_two_candidates_never_picks_when_disabled",
     ResolutionStatus.OPEN: "test_t3_open_vague_marker_carries_no_target",
 }
 
@@ -527,8 +568,8 @@ def test_each_status_is_actually_produced_by_resolve():
         ),
         (
             ResolutionStatus.AMBIGUOUS,
-            _fi_name_placeholder("kuntalaki"),
-            ambig_reg,
+            _fi_name_placeholder("yhteisnimilaki"),
+            _genuinely_ambiguous_registry(),
         ),
         (
             ResolutionStatus.STATUTE_ONLY,
