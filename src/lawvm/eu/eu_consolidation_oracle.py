@@ -291,7 +291,7 @@ def fetch_consolidation_bytes(
     # would be a silent empty oracle (11/75 of the first acquisition run did
     # exactly that). Probe the siblings before failing; a manifestation with NO
     # act-rooted member is a typed acquisition gap.
-    m = re.match(r"^(?P<stem>.+/)DOC_(?P<n>\d+)$", item_url)
+    m = re.match(r"^(?P<stem>.+/)DOC_(?P<n>\d+)$", item_url)  # lawvm-regex: witness_only shape-parses an already-acquired Cellar item URL (source-plane locator census) to derive sibling DOC member URLs, not a post-parse semantic recognizer over statute text
     if m:
         selected_n = int(m.group("n"))
         misses = 0

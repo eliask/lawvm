@@ -340,7 +340,7 @@ def _base_number_forms(base_celex: str) -> frozenset[str]:
     base under either convention. An unparseable ``base_celex`` yields the empty
     set (guard inactive — never a false skip on a malformed id).
     """
-    m = re.match(r"^3(?P<year>\d{4})[A-Z](?P<num>\d+)$", base_celex)
+    m = re.match(r"^3(?P<year>\d{4})[A-Z](?P<num>\d+)$", base_celex)  # lawvm-regex: witness_only shape-parses a CELEX identifier (source-plane id census) into its citable number forms, not a post-parse semantic recognizer over statute text
     if not m:
         return frozenset()
     year = m.group("year")
