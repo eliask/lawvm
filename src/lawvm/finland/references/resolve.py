@@ -550,6 +550,15 @@ _REWIDENED_PHRASE_LEMMA = "statute_name_as_of_rewidened_out_of_window"
 # ``asetus`` homonym). A best-effort pick -> APPROXIMATE.
 _HEAD_FILTER_PHRASE_LEMMA = "statute_name_law_decree_head_pick"
 
+# Provenance tag recorded when a ``fi-name:`` placeholder resolves via the CURATED
+# colloquial-nickname alias table (``registries/statute_name_aliases.py``): the cite
+# used a nickname whose official title does not contain it (``julkisuuslaki`` ->
+# 1999/621), so no generated surface could ever match and the identity comes from a
+# human-verified 1:1 alias, NOT a parsed-exact surface. A defensible best-effort
+# resolution -> APPROXIMATE (never EXACT), so a curated-alias id stays distinguishable
+# from a generation-exact one downstream (honesty over recall — §0.3 tag-don't-guess).
+_CURATED_ALIAS_PHRASE_LEMMA = "statute_name_curated_alias"
+
 
 # ---------------------------------------------------------------------------
 # Multi-version disambiguation (recall lever, honesty-preserving)
@@ -801,6 +810,26 @@ def _resolve_fi_name(
                     mention,
                     work_id,
                     phrase_lemma=_REWIDENED_PHRASE_LEMMA,
+                    cite_confidence=CiteConfidence.APPROXIMATE,
+                ),
+                resolution_status=ResolutionStatus.RESOLVED,
+                work_id=work_id,
+                candidates=candidate_ids,
+                rejected_candidates=(),
+                finding=None,
+            )
+        # A curated-alias-only single hit is a best-effort nickname resolution, not a
+        # parsed-exact surface: stamp APPROXIMATE with the curated-alias provenance so
+        # the human-verified 1:1 nickname pick stays distinguishable from an EXACT one.
+        # ``getattr`` default: a duck-typed registry result (test stubs, alternate
+        # substrates) that predates the ``via_alias`` provenance field degrades to a
+        # plain EXACT hit — the field is an optional best-effort signal, never required.
+        if getattr(result, "via_alias", False):
+            return ResolvedReference(
+                mention=_rewrite_target_id(
+                    mention,
+                    work_id,
+                    phrase_lemma=_CURATED_ALIAS_PHRASE_LEMMA,
                     cite_confidence=CiteConfidence.APPROXIMATE,
                 ),
                 resolution_status=ResolutionStatus.RESOLVED,

@@ -50,6 +50,87 @@ def test_every_seeded_alias_resolves_single_to_its_mapped_id() -> None:
         assert [c.statute_id for c in res.candidates] == [alias.statute_id]
 
 
+def test_alias_only_hit_reports_via_alias() -> None:
+    """An alias-ONLY surface key reports ``via_alias=True`` (drives APPROXIMATE)."""
+    reg = build_registry([])  # aliases-only, no generated entries
+    res = reg.lookup("julkisuuslaki")
+    assert res.registry_status == "single"
+    assert res.via_alias is True
+
+
+def test_generated_surface_is_not_via_alias() -> None:
+    """A generation-derived surface stays ``via_alias=False`` (real EXACT match).
+
+    ``via_alias`` marks ONLY alias-provenanced keys; a key produced by generation
+    from an official title must not be flagged, so the resolver keeps it EXACT.
+    """
+    reg = build_registry([("1096/1996", "Luonnonsuojelulaki")])
+    res = reg.lookup("luonnonsuojelulaki")
+    assert res.registry_status == "single"
+    assert res.via_alias is False
+
+
+def test_alias_key_also_generated_is_not_via_alias() -> None:
+    """A key BOTH aliased and generated is a real EXACT surface (not alias-only).
+
+    When a generated title produces the SAME normalized key an alias also names
+    (for the SAME id), the hit is a parsed-exact surface: ``via_alias`` must be
+    False so the resolver does not downgrade a real EXACT match to APPROXIMATE.
+    """
+    custom = (StatuteNameAlias("metsälaki", "1093/1996", "Metsälaki"),)
+    reg = build_registry([("1093/1996", "Metsälaki")], aliases=custom)
+    res = reg.lookup("metsälaki")
+    assert res.registry_status == "single"
+    assert [c.statute_id for c in res.candidates] == ["1093/1996"]
+    assert res.via_alias is False
+
+
+def test_second_pass_verified_aliases_present_and_single() -> None:
+    """The bucket-(d) unindexed-base-act aliases resolve single to their id.
+
+    These acts ARE in the corpus but are oracle/consolidated-only (absent from
+    ``list_statute_ids()``), so the generated registry never indexed them; the
+    curated alias binds the nickname directly.  Each was verified 1:1 by the
+    amendment-parent linkage + a unique corpus title (no same-named twin).
+    """
+    reg = build_registry([])
+    expected = {
+        "terveydenhoitolaki": "1965/469",
+        "merityöaikalaki": "1976/296",
+        "väestökirjalaki": "1969/141",
+        "kunnallislaki": "1976/953",
+        "maatilalaki": "1977/188",
+        "lihantarkastuslaki": "1960/160",
+        "maidontarkastuslaki": "1946/558",
+        "ydinvastuulaki": "1972/484",
+    }
+    keys = {a.alias_key: a.statute_id for a in STATUTE_NAME_ALIASES}
+    for nick, sid in expected.items():
+        assert keys.get(nick) == sid, (nick, keys.get(nick))
+        res = reg.lookup(nick)
+        assert res.registry_status == "single", (nick, res.registry_status)
+        assert [c.statute_id for c in res.candidates] == [sid], nick
+        assert res.via_alias is True, nick
+
+
+def test_temporally_ambiguous_second_pass_surfaces_excluded() -> None:
+    """Nicknames denoting >1 act over time stay OUT of the curated table.
+
+    ``maksuperustelaki`` (two acts both titled "Valtion maksuperustelaki",
+    1973/980 repealed 1992 and the current 1992/150) and the multi-parent
+    ``valtionosuuslaki`` / ``tielaki`` / ``jakolaki`` / ``suojelulaki`` /
+    ``tukilaki`` / ``eläkelaki`` were EXCLUDED — a single-id alias would force a
+    silent temporal/subject mis-pick.
+    """
+    keys = {a.alias_key for a in STATUTE_NAME_ALIASES}
+    for forbidden in (
+        "maksuperustelaki", "valtionosuuslaki", "tielaki", "jakolaki",
+        "suojelulaki", "tukilaki", "eläkelaki", "voimaanpanolaki",
+        "asuntotuotantolaki", "yhtiölaki",
+    ):
+        assert forbidden not in keys, forbidden
+
+
 def test_alias_keys_are_normalized_lowercase_single_token() -> None:
     """Alias keys match the by-name normalization (lower-case, no extra space)."""
     for alias in STATUTE_NAME_ALIASES:

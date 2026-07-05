@@ -125,6 +125,64 @@ STATUTE_NAME_ALIASES: tuple[StatuteNameAlias, ...] = (
         "sakkolaki", "2002/672",
         "Laki sakon täytäntöönpanosta",
     ),
+    # ------------------------------------------------------------------
+    # Second curation pass (bucket (d) "in-data-but-unindexed" — the base act
+    # IS in the farchive but is NOT enumerated in ``list_statute_ids()`` (it is
+    # oracle/consolidated-only), so the registry artifact never indexed a
+    # head-bearing entry for it and the nickname misses.  Each id was VERIFIED by
+    # (1) the amendment-parent linkage (``data/finland/amendment_parents.csv``):
+    # EVERY amendment title referencing the nickname (``Laki <nick-in-genitive>
+    # muuttamisesta`` …) resolves to a SINGLE base parent id; and (2) that id's
+    # ``docTitle`` read from the farchive oracle, confirmed to be the SOLE corpus
+    # act carrying that nominative title (no same-titled twin).  Two-parent /
+    # multi-version nicknames (``valtionosuuslaki``, ``asuntotuotantolaki``,
+    # ``tielaki``, ``jakolaki``, ``suojelulaki``, ``tukilaki``, ``voimaanpanolaki``,
+    # ``eläkelaki``, ``yhtiölaki`` …) were EXCLUDED to the ambiguous/backlog lane.
+    # For these, the nickname EQUALS the act's official title — it misses only
+    # because the base act is unindexed, so the nickname is unambiguous by
+    # construction.
+    StatuteNameAlias(
+        "terveydenhoitolaki", "1965/469",
+        "Terveydenhoitolaki",
+    ),
+    StatuteNameAlias(
+        "merityöaikalaki", "1976/296",
+        "Merityöaikalaki",
+    ),
+    StatuteNameAlias(
+        "väestökirjalaki", "1969/141",
+        "Väestökirjalaki",
+    ),
+    StatuteNameAlias(
+        "kunnallislaki", "1976/953",
+        "Kunnallislaki",
+    ),
+    StatuteNameAlias(
+        "maatilalaki", "1977/188",
+        "Maatilalaki",
+    ),
+    StatuteNameAlias(
+        "lihantarkastuslaki", "1960/160",
+        "Lihantarkastuslaki",
+    ),
+    StatuteNameAlias(
+        "maidontarkastuslaki", "1946/558",
+        "Maidontarkastuslaki",
+    ),
+    # True colloquial nickname whose official title DIFFERS from the nickname
+    # (verified single-parent, act in corpus, no same-titled twin):
+    #  * ``ydinvastuulaki`` — the act titled "Atomivastuulaki" (1972/484), later
+    #    colloquially the ydinvastuulaki; every ``ydinvastuulain`` amendment title
+    #    resolves to 1972/484 and no act is titled "Ydinvastuulaki".
+    #
+    # DELIBERATELY EXCLUDED (would denote >1 act over time — the fail-loud/backlog
+    # lane): ``maksuperustelaki`` — BOTH 1973/980 (repealed 1992-03-01) and the
+    # current 1992/150 are titled "Valtion maksuperustelaki", so a pre-1992
+    # citation means 1973/980; a single-id alias would silently mis-pick.
+    StatuteNameAlias(
+        "ydinvastuulaki", "1972/484",
+        "Atomivastuulaki",
+    ),
 )
 
 

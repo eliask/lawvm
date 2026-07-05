@@ -34,6 +34,7 @@ Design (per ``FI_MORPHOLOGY_DESIGN_DECISION.md`` Index B):
 
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
 import json
 from dataclasses import dataclass
@@ -126,6 +127,15 @@ class RegistryResult:
     candidates: tuple[Candidate, ...] = ()
     surface: str = ""
     as_of: Optional[dt.date] = None
+    via_alias: bool = False
+    """True iff the matched surface key was registered ONLY by the curated
+    colloquial-nickname alias table (:mod:`statute_name_aliases`) and never by
+    generation from an official title.  A curated nickname is a human-verified
+    1:1 judgement, NOT a parsed-exact surface, so a hit is a BEST-EFFORT
+    resolution: the resolver stamps it :class:`CiteConfidence.APPROXIMATE` (never
+    EXACT) with the ``statute_name_curated_alias`` provenance.  A key that is BOTH
+    generated and aliased is a real generated surface and stays ``via_alias=False``
+    (EXACT).  Only meaningful for a ``single`` result."""
 
 
 def _split_head(title: str) -> tuple[str, str] | None:
@@ -593,12 +603,27 @@ class StatuteNameRegistry:
     the caller decides, the registry never picks.
     """
 
-    __slots__ = ("_index", "_content_index", "_content_folded_index")
+    __slots__ = (
+        "_index",
+        "_content_index",
+        "_content_folded_index",
+        "_generated_keys",
+        "_alias_keys",
+    )
 
     def __init__(self) -> None:
         # normalized surface key -> list of entries (one per (id, window) that
         # generates this surface).  A surface may appear under several entries.
         self._index: dict[str, list[StatuteNameEntry]] = {}
+        # Surface keys produced by GENERATION from an official title (via
+        # ``_register``).  Used to decide alias PROVENANCE: a key that is both
+        # generated and aliased is a real exact surface (EXACT), not an
+        # alias-only best-effort resolution.
+        self._generated_keys: set[str] = set()
+        # Surface keys registered by the curated colloquial-nickname alias table
+        # (via ``register_aliases``).  A key in ``_alias_keys`` but NOT in
+        # ``_generated_keys`` is ALIAS-ONLY: a hit is APPROXIMATE, never EXACT.
+        self._alias_keys: set[str] = set()
         # (head, content-word-set) -> list of base-act entries.  The FP-gated
         # inflection-robust fallback index (see ``lookup_content_word_set``); only
         # clean head-first base-act descriptive titles are indexed here.
@@ -618,6 +643,9 @@ class StatuteNameRegistry:
     def _register(self, entry: StatuteNameEntry) -> None:
         for key in _inflected_surfaces(entry.canonical_title):
             self._register_key(key, entry)
+            # Record the key as GENERATION-derived so an alias sharing it is
+            # correctly treated as a real exact surface (EXACT), not alias-only.
+            self._generated_keys.add(key)
         content_key = _title_content_key(entry.canonical_title)
         if content_key is not None:
             self._register_content_key(content_key, entry)
@@ -688,7 +716,13 @@ class StatuteNameRegistry:
                 statute_id=alias.statute_id,
                 canonical_title=alias.official_title,
             )
-            self._register_key(_normalize_key(alias.alias_key), entry)
+            key = _normalize_key(alias.alias_key)
+            self._register_key(key, entry)
+            # Mark the key as alias-registered.  ``lookup`` reports ``via_alias``
+            # only when the key is alias-registered AND not generation-derived, so
+            # an alias that happens to coincide with a generated surface stays a
+            # real EXACT match rather than being downgraded to APPROXIMATE.
+            self._alias_keys.add(key)
 
     @staticmethod
     def _result_from_bucket(
@@ -747,7 +781,14 @@ class StatuteNameRegistry:
         bucket = self._index.get(key)
         if not bucket:
             return RegistryResult(registry_status="none", surface=name_surface, as_of=as_of)
-        return self._result_from_bucket(bucket, name_surface, as_of)
+        result = self._result_from_bucket(bucket, name_surface, as_of)
+        # The matched surface came ONLY from the curated alias table (never from
+        # generation) — a single hit is a best-effort nickname resolution the
+        # resolver stamps APPROXIMATE.  A key both generated and aliased is a real
+        # exact surface and stays ``via_alias=False``.
+        if key in self._alias_keys and key not in self._generated_keys:
+            result = dataclasses.replace(result, via_alias=True)
+        return result
 
     def lookup_content_word_set(
         self,

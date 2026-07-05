@@ -121,6 +121,52 @@ def test_fi_name_single_resolves_and_rewrites_id() -> None:
     assert original.target_provision_ref.statute_id == "fi-name:luonnonsuojelulaki"
 
 
+def test_curated_alias_resolves_approximate_with_provenance() -> None:
+    """A curated colloquial-nickname alias resolves BEST-EFFORT (APPROXIMATE).
+
+    ``julkisuuslaki`` is not derivable from its official title
+    ("Laki viranomaisten toiminnan julkisuudesta", 1999/621); it resolves ONLY
+    via the curated alias table.  A curated-alias hit is a human-verified 1:1
+    judgement, not a parsed-exact surface, so the rewritten mention carries
+    APPROXIMATE confidence and the ``statute_name_curated_alias`` provenance —
+    NEVER a laundered EXACT (honesty over recall).
+    """
+    reg = build_registry([])  # aliases-only (default), no generated entries
+    [rr] = resolve_mentions(
+        [_mention("fi-name:julkisuuslaki", section_label="7")],
+        statute_registry=reg,
+        eu_registry=eu_nickname,
+    )
+    assert rr.resolution_status is ResolutionStatus.RESOLVED
+    assert rr.work_id == "1999/621"
+    assert rr.mention.target_provision_ref is not None
+    assert rr.mention.target_provision_ref.statute_id == "1999/621"
+    assert rr.mention.target_provision_ref.section_label == "7"
+    # Best-effort, not exact: APPROXIMATE + the curated-alias provenance tag.
+    assert rr.mention.cite_confidence is CiteConfidence.APPROXIMATE
+    assert rr.mention.phrase_lemma == "statute_name_curated_alias"
+
+
+def test_generated_surface_coinciding_with_alias_stays_exact() -> None:
+    """An alias key that ALSO has a generated surface is a real EXACT match.
+
+    ``via_alias`` is only reported when the key is alias-only; a key produced by
+    generation from an official title (even if an alias also names it) is a
+    parsed-exact surface and must stay EXACT, never be downgraded to APPROXIMATE.
+    """
+    # ``metsälaki`` is the generated nominative of a real base title; no alias
+    # coincides with it here, so it is a plain generated EXACT hit.
+    reg = build_registry([StatuteNameEntry("1093/1996", "Metsälaki")])
+    [rr] = resolve_mentions(
+        [_mention("fi-name:metsälaki")],
+        statute_registry=reg,
+        eu_registry=eu_nickname,
+    )
+    assert rr.resolution_status is ResolutionStatus.RESOLVED
+    assert rr.work_id == "1093/1996"
+    assert rr.mention.cite_confidence is CiteConfidence.EXACT
+
+
 def test_fi_name_multiple_temporal_versions_is_ambiguous() -> None:
     """Two temporal versions, no as_of filter -> ambiguous, both candidates, no pick."""
     reg = _statute_registry()
