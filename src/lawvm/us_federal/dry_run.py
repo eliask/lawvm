@@ -63,6 +63,7 @@ from lawvm.core.mutation_boundary_proof import MutationBoundaryProof
 from lawvm.core.semantic_types import StructuralAction, TextPatchKindEnum
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.us_federal.amendatory import (
+    DEFERRED_AMEND_TO_READ_FINDING_RULE_ID,
     RULE_STRIKE_INSERT_TAIL,
     RULE_STRIKE_INSERT_THROUGH_TAIL,
     US_EACH_PLACE_STRIKE_EXCEPTION_DIMENSION,
@@ -631,6 +632,38 @@ def _section_key_from_address(address: LegalAddress) -> tuple[str, str] | None:
     return title, section
 
 
+def _deferred_whole_chapter_rewrite(
+    address: LegalAddress, raw_text: str
+) -> str | None:
+    """Return the chapter label iff ``address`` is a bare chapter target AND the
+    finding's raw text is a genuine whole-chapter "amended to read as follows" body
+    rewrite (e.g. AIA §6's "Chapter 31 of title 35 ... is amended to read as
+    follows"), NOT a "the item relating to section X in the table of sections"
+    conforming amendment (which is also deferred + chapter-targeted but touches no
+    section BODY — only the former editorially pre-dates section bodies into the OLRC
+    consolidation). Plain substring predicate (no regex): the drafting form is
+    literal and the address already pins the chapter scope."""
+    chapter = ""
+    has_section = False
+    for kind, label in address.path:
+        if kind == "chapter":
+            chapter = label
+        elif kind == "section":
+            has_section = True
+    if has_section or not chapter:
+        return None
+    lowered = (raw_text or "").lower()
+    # A whole-chapter body rewrite reads "chapter <n> of title <m> ... is amended to
+    # read as follows"; the table-of-sections conforming form reads "the item
+    # relating to section <s> in the table of sections ...". Require the body-rewrite
+    # witness and exclude the table-of-sections witness.
+    if "amended to read as follows" not in lowered:
+        return None
+    if "chapter " not in lowered or "table of sections" in lowered:
+        return None
+    return chapter
+
+
 def _each_place_exception_entries(operation: LegalOperation) -> frozenset[str] | None:
     """Return the op's typed each-place-strike exception entries, or None.
 
@@ -903,20 +936,32 @@ class USDryRunReport:
     # collision-free window (the common case), and the kernel never reorders/drops
     # an op, so apply order — and thus the rows/refusals — stays byte-identical.
     same_moment_findings: tuple[CompileAdjudication, ...] = ()
+    # F3 (lowering-time deferral): section keys ("35:103") whose future-effective
+    # whole-section/whole-chapter "amended to read as follows" rewrite was WITHHELD
+    # at LOWERING time as a ``deferred_amend_to_read`` finding (never a lowered op the
+    # dry-run temporal guard could refuse). The OLRC pre-incorporates that future body
+    # into the after edition, so a composed-vs-oracle mismatch on such a section is F3
+    # OLRC pre-dating (``deferred_op``), not ``lawvm_wrong``. Folded into
+    # :meth:`deferred_op_section_keys` so the ROW typing and the north-star count use
+    # ONE deferred set (they must reconcile, else the residue leaks to unclassified).
+    lowering_deferred_sections: tuple[str, ...] = ()
     replay_authorized: bool = False
 
     def sunset_reversion_section_keys(self) -> frozenset[str]:
         return frozenset(f"{self.title}:{c.section}" for c in self.sunset_reversions)
 
     def deferred_op_section_keys(self) -> frozenset[str]:
-        """Sections whose only on-target ops were deferred (future-effective).
+        """Sections whose on-target ops were deferred (future-effective).
 
-        These are NOT missing_source: LawVM lowered the right amendment but the
-        after-edition cutoff precedes its statutory effective date. If the OLRC's
-        after-edition text already reflects the deferred amendment, the gap is
-        OLRC editorial pre-dating, not a missing amendment.
+        These are NOT missing_source: LawVM lowered/recognized the right amendment
+        but the after-edition cutoff precedes its statutory effective date. If the
+        OLRC's after-edition text already reflects the deferred amendment, the gap is
+        OLRC editorial pre-dating, not a missing amendment. Two channels feed this:
+        an op REFUSED on temporal grounds in the dry-run (the classic path), and an
+        amend-to-read rewrite deferred at LOWERING time (``lowering_deferred_sections``,
+        which never became a refusable op).
         """
-        keys: set[str] = set()
+        keys: set[str] = set(self.lowering_deferred_sections)
         for ref in self.refusals:
             if ref.rule_id != US_DRY_RUN_REFUSED_DEFERRED_OP_NOT_YET_EFFECTIVE_RULE_ID:
                 continue
@@ -963,11 +1008,52 @@ class USDryRunReport:
         # it), so it is not a source-footing gap — exclude it from missing_source.
         sunset_keys = self.sunset_reversion_section_keys()
         deferred_keys = self.deferred_op_section_keys()
+        # A CLAIMED section whose composed residual ROW is itself ``missing_source``
+        # (a sub-op landed a missing_source signal, e.g. a strike whose anchor is
+        # absent) is a genuine source-footing gap on the SAME footing as an unclaimed
+        # missing_source section — count it too. (The bench's missing_source total
+        # reads THIS north-star count, not the row-disposition projection, so without
+        # this a claimed-missing_source residual would reconcile to nothing and leak to
+        # unclassified. Pre-existing latent gap surfaced once the deferred partition
+        # was tightened; adding it keeps the residual accounting exact.)
+        claimed_missing_source_rows = {
+            r.section_key
+            for r in self.residual_rows()
+            if r.disposition == DISPOSITION_MISSING_SOURCE and r.section_key in changed
+        }
         missing = tuple(
-            sorted((changed - set(self.claimed_sections) - sunset_keys - deferred_keys))
+            sorted(
+                (changed - set(self.claimed_sections) - sunset_keys - deferred_keys)
+                | claimed_missing_source_rows
+            )
         )
         sunset = tuple(sorted(changed & sunset_keys))
-        deferred = tuple(sorted(changed & deferred_keys))
+        # ``deferred`` counts oracle-changed sections owned by an F3 deferral. Two
+        # channels feed ``deferred_keys``: the original OP-REFUSAL channel (an op
+        # refused on temporal grounds — the section may still be CLAIMED via other
+        # ops; its counting is preserved byte-identically so the frozen corpus does
+        # not move), and the NEW lowering-time amend-to-read deferral channel
+        # (``lowering_deferred_sections``), which the title-wide conforming each-place
+        # strike routinely also CLAIMED, leaving a residual ROW. For a lowering-deferred
+        # section already OWNED ELSEWHERE — it AGREED (covered), or its residual row is
+        # ``lawvm_wrong`` / ``oracle_suspect`` (counted by the row-disposition
+        # projection) — do not also count it as deferred, keeping the partition
+        # disjoint so the residual accounting reconciles exactly. Scoped to the NEW
+        # channel so the op-refusal channel's pre-existing count is untouched.
+        agreeing_changed = {s for s in self.agreeing_sections() if s in changed}
+        row_disposition_by_section = {
+            r.section_key: r.disposition for r in self.residual_rows()
+        }
+        lowering_deferred_owned_elsewhere = {
+            s
+            for s in self.lowering_deferred_sections
+            if s in agreeing_changed
+            or row_disposition_by_section.get(s)
+            in (DISPOSITION_LAWVM_WRONG, DISPOSITION_ORACLE_SUSPECT)
+        }
+        deferred = tuple(
+            sorted((changed & deferred_keys) - lowering_deferred_owned_elsewhere)
+        )
         return {
             "oracle_changed_section_count": denom,
             "sections_materialized_in_agreement": numer,
@@ -2973,6 +3059,12 @@ def build_us_dry_run(
     # claimed section here whose composed text mismatches an oracle CHANGE is
     # typed ``deferred_op`` (F3, OLRC pre-incorporation), not ``lawvm_wrong``.
     deferred_refusal_sections: set[str] = set()
+    # F3 lowering-time deferral channel (see below): bare section labels ("103")
+    # whose future-effective amend-to-read rewrite was withheld at lowering time.
+    # Kept separate from the op-refusal channel so the report can publish this set
+    # (``lowering_deferred_sections``) and ``deferred_op_section_keys`` reconciles
+    # the ROW typing with the north-star count from ONE source of truth.
+    lowering_deferred_sections: set[str] = set()
     lowered_reports: list[tuple[str, str, bytes, USAmendatoryReport]] = []
     for statute_id, blob in plaw_blobs.items():
         report = lower_plaw_amendatory(
@@ -2981,6 +3073,52 @@ def build_us_dry_run(
         )
         report_enacted = report.enacted or statute_id
         lowered_reports.append((report_enacted, statute_id, blob, report))
+        # F3 (lowering-time deferral): a whole-section "amended to read as follows"
+        # whose FUTURE-EFFECTIVE language is owned by the temporal layer is WITHHELD
+        # at lowering time as a ``deferred_amend_to_read`` finding — it never becomes
+        # an op the dry-run temporal guard can defer, so its section is absent from
+        # the op-refusal ``deferred_refusal_sections`` collected below. But the OLRC
+        # after-edition oracle routinely PRE-INCORPORATES that future-effective
+        # rewrite (the AIA §3 first-inventor-to-file rewrites of §§102/103/135/291,
+        # etc., appear in the 2012 edition though effective 2013-03-16). Absent this
+        # seed, the title-wide conforming each-place strike then fans onto such a
+        # section, materializes the OLD (pre-rewrite) body, and the composed-vs-
+        # pre-incorporated-oracle mismatch is mis-typed ``lawvm_wrong``. Seeding the
+        # deferred-finding target sections here types that mismatch ``deferred_op``
+        # (F3, temporal_mismatch) — the honest disposition (the oracle editorially
+        # pre-dated a future op we CORRECTLY did not apply), never a repair-to-oracle.
+        # ``getattr`` guard: a few dry-run unit tests monkeypatch
+        # ``lower_plaw_amendatory`` with a minimal report double exposing only
+        # ``operations()`` + ``enacted`` — treat a report without ``instructions`` as
+        # carrying no deferred findings (there is nothing to seed).
+        for instruction in getattr(report, "instructions", ()) or ():
+            f = instruction.finding
+            if f is None or f.rule_id != DEFERRED_AMEND_TO_READ_FINDING_RULE_ID:
+                continue
+            ta = instruction.target_address
+            if ta is None:
+                continue
+            fkey = _section_key_from_address(ta)
+            if fkey is not None and fkey[0].isdigit() and int(fkey[0]) == int(title):
+                deferred_refusal_sections.add(fkey[1])
+                lowering_deferred_sections.add(fkey[1])
+                continue
+            # A WHOLE-CHAPTER future-effective rewrite ("Chapter N of title M ... is
+            # amended to read as follows", e.g. AIA §6's Chapter 31 inter-partes-
+            # review rewrite) is deferred with a CHAPTER target — no section segment.
+            # The OLRC pre-incorporates the future chapter body into every member
+            # section, so each member the conforming each-place strike then fans onto
+            # is the SAME F3 pre-dating. Seed the chapter's before-edition member
+            # sections. GUARD: only a genuine "chapter … to read as follows" BODY
+            # rewrite qualifies — a "the item relating to section X in the table of
+            # sections" conforming finding (also chapter-scoped, deferred) touches NO
+            # section body, so it must NOT suppress a real section-body divergence.
+            chapter = _deferred_whole_chapter_rewrite(ta, f.raw_text)
+            if chapter is not None:
+                for s in before_doc.sections:
+                    if s.chapter == chapter and not s.repealed:
+                        deferred_refusal_sections.add(s.section)
+                        lowering_deferred_sections.add(s.section)
     lowered_reports.sort(key=lambda x: (x[0] or x[1], x[1]))
 
     # Unified ordering kernel (task #105). Build the flat lowered op stream in the
@@ -3170,6 +3308,12 @@ def build_us_dry_run(
         match_texts: list[str] = []
         replacements: list[str] = []
         composed_refused = False
+        # A whole-section REPEAL for this section that our section-text surface cannot
+        # represent (it deletes the section; there is no in-text edit for that). When
+        # the oracle ALSO emptied the section, the repeal EXPLAINS the oracle change —
+        # any residual left by an incidental conforming each-place strike on the (now
+        # vestigial) before-body is NOT a wrong materialization.
+        refused_structural_repeal = False
         residual_signal: tuple[str, str] | None = None
         # Tracks the CURRENT text of each sub-section node a prior op in this
         # section's composition rewrote, so several ops against the SAME node (a
@@ -3193,6 +3337,12 @@ def build_us_dry_run(
             if isinstance(outcome, USDryRunRefusal):
                 refusals.append(outcome)
                 composed_refused = True
+                if (
+                    operation.action is StructuralAction.REPEAL
+                    and outcome.rule_id
+                    == US_DRY_RUN_REFUSED_STRUCTURAL_NOT_SECTION_REPRESENTABLE_RULE_ID
+                ):
+                    refused_structural_repeal = True
                 continue
             materialized, signal_rule_id, signal_disposition = outcome
             op_ids.append(operation.op_id)
@@ -3316,6 +3466,33 @@ def build_us_dry_run(
                     oracle_changed=oracle_changed_here,
                 )
             )
+        elif refused_structural_repeal and not _norm(oracle_text):
+            # The oracle EMPTIED this section (a repeal) and the on-target REPEAL op
+            # was refused as not representable at section-text granularity (there is
+            # no in-text edit for whole-section deletion). Any residual left by an
+            # incidental conforming each-place strike on the now-vestigial before-body
+            # is NOT a wrong materialization — the oracle change is EXPLAINED by the
+            # repeal we correctly recognized but our section-text surface cannot
+            # render. This is a standing lowering CAPABILITY gap (``missing_source`` →
+            # cnf_unsupported), never a ``lawvm_wrong`` replay bug; we do NOT repair
+            # the text to the empty oracle.
+            rows.append(
+                USDryRunSectionRow(
+                    op_id=row_op_id,
+                    action=row_action,
+                    target_address=target_address,
+                    section_key=section_key,
+                    row_status=USDryRunRowStatus.RESIDUAL,
+                    rule_id=US_DRY_RUN_REFUSED_STRUCTURAL_NOT_SECTION_REPRESENTABLE_RULE_ID,
+                    disposition=DISPOSITION_MISSING_SOURCE,
+                    match_text=row_match,
+                    replacement=row_replacement,
+                    before_text=before_text,
+                    materialized_text=materialized,
+                    oracle_text=oracle_text,
+                    oracle_changed=oracle_changed_here,
+                )
+            )
         else:
             # Our composed text disagrees with the oracle after-text. We do NOT
             # repair to the oracle. Disposition lawvm_wrong; the rule id
@@ -3408,6 +3585,9 @@ def build_us_dry_run(
         sunset_findings=sunset_findings,
         target_recoveries=tuple(target_recoveries),
         same_moment_findings=same_moment_findings,
+        lowering_deferred_sections=tuple(
+            sorted(f"{title}:{s}" for s in lowering_deferred_sections)
+        ),
     )
 
 
