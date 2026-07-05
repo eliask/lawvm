@@ -23,14 +23,14 @@ set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
 DEFAULT_SHARD_GROUPS="frontends modules"
+# Static-check the WHOLE tree, not a drift-prone script allowlist. An earlier
+# allowlist (test_shard.py + 4 named uk scripts) silently exempted ~85 of the 90
+# scripts/*.py from ruff+ty, so a type error outside src/ or tests/ passed the
+# gate green (#225). A directory glob cannot drift out of coverage.
 STATIC_CHECK_PATHS=(
     src/lawvm/
     tests/
-    scripts/test_shard.py
-    scripts/fetch_uk_affecting_acts.py
-    scripts/uk_fetch_affecting_acts.py
-    scripts/uk_fetch_effects.py
-    scripts/uk_inspect_metadata_effects.py
+    scripts/
 )
 
 AFFECTED_PATHS=()
