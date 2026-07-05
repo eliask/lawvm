@@ -293,9 +293,10 @@ def _cnf_table_oracle() -> SemanticStructureNode:
 
 # Jurisdiction of the FI real corpus. FI was the first #183 touch-relation
 # attribution engine (``fi_anchor_manifest``); EE (``ee_anchor_manifest``, #205), UK
-# (``uk_anchor_manifest``, #205), and EU (``eu_anchor_manifest``, #204 — the last
-# un-gated jurisdiction, on a replay-conservation model rather than an oracle-touch
-# one) each have their own analogue and participate as the SECOND / THIRD / FOURTH
+# (``uk_anchor_manifest``, #205), and EU (``eu_anchor_manifest``, #204 — flipped to
+# the REAL oracle-touch model over published sector-0 consolidations by #221, with a
+# conserved-apply fallback lane for the one zero-consolidation base) each have their
+# own analogue and participate as the SECOND / THIRD / FOURTH
 # jurisdiction corpora below.
 # See notes_internal/CTSF_PHASE3_REALANCHORS_2026_07_03.md.
 REAL_ANCHOR_JURISDICTION = "finland"
@@ -422,55 +423,74 @@ GATE_UK_BASELINE_PATH = Path("tests/data/ctsf_gate_uk_residual_baseline.json")
 
 
 # ---------------------------------------------------------------------------
-# The REAL touch-relation corpus — EUROPEAN UNION (task #204, FOURTH jurisdiction).
+# The REAL touch-relation corpus — EUROPEAN UNION (task #204 → #221, FOURTH
+# jurisdiction).
 #
-# EU is the last un-gated jurisdiction. Its oracle model is DIFFERENT from FI/EE/UK
-# and the difference is material (documented in ``lawvm.tools.eu_anchor_manifest``):
-# the EU Cellar corpus stores NO sector-0 consolidation (every ``consolidation_date``
-# is ``enacted``; 0 consolidated CELEXes) and NO persisted dated amendment DAG. So the
-# "score the native replay against a published consolidation and type each per-unit
-# divergence via the touch relation" model FI/EE/UK use has NO oracle to run against
-# for EU today — fabricating one would be the exact ``authoritative oracle ≠ correct``
-# anti-pattern the EU honesty regime forbids (``eu_oracle_divergence``: the
-# consolidation is editorial, "no legal value", NEVER repaired toward).
+# EU joined the gate (#204) on a WEAKER surface than FI/EE/UK — the conserved
+# apply fold's own invariant over single (amender, base) windows — because the EU
+# Cellar Farchive then stored NO sector-0 consolidation and NO dated amendment
+# DAG: there was no published oracle to diff against. #221 CLOSED that gap and
+# FLIPPED EU onto the same oracle-touch surface FI/EE/UK/NZ use:
 #
-# Instead an EU "anchor" is a genuine, offline, deterministic replay WINDOW: an
-# amending act applied to its base, both stored in the Farchive, replayed network-free
-# (graft base → lower amender → order → ``apply_eu_ops_conserved``). The scored
-# property is the CONSERVED apply fold's own invariant — every op partitions into
-# ``applied_ops`` or a typed ``skipped_items`` rejection, and ``|applied| + |skipped|
-# == |ops|``. Its violation (or an apply RAISE mid-fold) is a genuine replay defect,
-# exactly the ``replay_bug`` / ``unknown`` the honest metric convicts. The
-# ``eu_anchor_manifest`` attribution engine emits typed ``TouchObservation``s whose EU
-# verdict map projects 1:1 onto the CTSF residual families (apply_raise → replay_bug,
-# conservation_violation → unknown, typed_op_skip → cnf_unsupported). The gate diffs
-# THAT set against the frozen EU baseline — the same fail-red mechanism as FI/EE/UK.
+#   * ``scripts/acquire_eu_consolidations.py`` stored the 75 PUBLISHED dated
+#     sector-0 consolidations of 8 of the 9 frozen bases offline
+#     (``cellar://celex/{base}/{YYYYMMDD}/eng/fmx4``);
+#   * the dated amendment DAG of those bases is frozen as a content-pinned edge
+#     table in ``eu_anchor_manifest`` (``REAL_ANCHOR_EU_AMENDMENT_CLOSURE``);
+#   * per stored consolidation ``(base, as_of)`` the MULTI-AMENDER PIT closure is
+#     replayed (graft base → lower every amender effective by as_of → legal
+#     ordering → conserved apply fold) and diffed per-article against the stored
+#     consolidation; Finland's NEUTRAL ``attribute_divergences`` types every
+#     divergence via the touch relation (the shared ``_VERDICT_TO_FAMILY``).
 #
-# This corpus is curated 0-BILLABLE (no replay_bug/unknown) — the honest steady state,
-# mirroring FI/EE/UK. A full corpus sweep of the 1,357 #204 ZIP-recovered acts found
-# 49 offline-replayable base+amender chains and ZERO apply-raises / conservation
-# violations (0 real billable EU replay bugs) — so nothing billable is frozen green.
-# The corpus carries 8 fully-applied clean windows plus 2 typed-op-skip windows that
-# exercise the non-billable ``cnf_unsupported`` WARN lane.
+# The consolidation stays an EDITORIAL witness ("no legal value" — the
+# ``eu_oracle_divergence`` honesty regime): divergences are TYPED, never repaired
+# toward. Anchors whose closure window is not fully replayable (missing amender
+# bytes / unlowered instructions / typed op-skips) are commensurability-marked so
+# their divergences type ``temporal_mismatch`` — replay knows it under-applied,
+# so no side is convicted there; each gap cause is ALSO a typed ``cnf_unsupported``
+# / ``temporal_mismatch`` EU observation, so the capability/acquisition frontier
+# is explicit in the residual set, never buried. Apply RAISEs and conservation
+# violations stay BILLABLE (replay_bug / unknown) over the full closure replay.
+#
+# The metric earned its keep at the flip: the very first fully-covered window
+# (32022R2309@20230216) convicted TWO genuine replay bugs the conserved-apply
+# lane had scored "clean" — an omnibus cross-target misapplication (32023R0331's
+# Regulation-356/2010 instruction landing in 2309's Article 4) and the quoted
+# payload carrying its own "Article N" heading + the instruction's trailing
+# period. All were fixed at ROOT (``fmx4_amendment_grammar``: foreign-target
+# guard, heading strip, QUOT.END payload boundary), after which that window is
+# byte-clean on the commensurable surface. The frozen baseline is 0-billable.
 # ---------------------------------------------------------------------------
 
 REAL_ANCHOR_EU_JURISDICTION = "european_union"
 
-# The frozen, content-pinned EU corpus of ``(amender, base)`` CELEX pairs (sorted by
-# amender, explicit — membership is part of the frozen input). Each is a real,
-# offline-replayable amendment window from the #204 ZIP-recovered acts; annotated with
-# the residual family it contributes at freeze time so the coverage is auditable.
+# The 8 oracle-touch bases (published consolidations stored) live in
+# ``eu_anchor_manifest.REAL_ANCHOR_EU_ORACLE_BASES`` together with the frozen
+# closure table; imported lazily inside ``score_eu_real_corpus`` (the manifest
+# module imports replay machinery the gate's unit surface must not pay for).
+
+# The conserved-apply FALLBACK lane — DOCUMENTED: ``32017R1576`` has ZERO
+# published sector-0 consolidations (verified live at #221 acquisition), so no
+# oracle-touch surface exists for it; its replay window keeps the #204
+# conserved-apply invariant scoring. The other 9 #204 chains were SUPERSEDED by
+# the oracle-touch surface (their bases' full multi-amender closures — a strict
+# superset of those single windows — are now replayed per consolidation anchor,
+# with the same apply-raise / conservation billables still enforced).
+#
+# DIRECTION CORRECTION (#221): #204 froze this window INVERTED
+# (``("32014R0540", "32017R1576")`` — 540/2014 "amending" 2017/1576). Legally
+# 2017/1576 amends 540/2014 (sound-level regulation), and the old lane's
+# ``cnf_unsupported(1)`` was a FALSE-POSITIVE op (a substantive 540/2014 article
+# mis-lowered as an amendment, then typed-skipped at apply) that the #221
+# omnibus foreign-target guard now suppresses at lowering. The corrected window
+# currently lowers 0 ops — 2017/1576 uses the multi-point single-article
+# instruction shape ("Regulation (EU) No 540/2014 is amended as follows: (1) …")
+# the grammar does not yet iterate — so it scores a typed, VISIBLE
+# ``cnf_unsupported`` curation row (an ERROR-status chain is never a silent
+# clean; see ``score_eu_real_corpus``).
 REAL_ANCHOR_EU_CORPUS_CHAINS: tuple[tuple[str, str], ...] = (
-    ("32006R1996", "32008R0402"),  # scored clean (1 op applied)
-    ("32010R0053", "32009R0754"),  # scored clean (2 ops applied)
-    ("32011R0057", "32009R0754"),  # scored clean (1 op applied)
-    ("32014R0540", "32017R1576"),  # cnf_unsupported(1) — typed-op-skip WARN lane
-    ("32015R0340", "32012R0923"),  # scored clean (1 op applied)
-    ("32017R1151", "32008R0692"),  # scored clean (1 op applied)
-    ("32022R1303", "32019R0787"),  # scored clean (1 op applied)
-    ("32023R0331", "32022R2309"),  # scored clean (2 ops applied)
-    ("32023R1114", "32010R1093"),  # cnf_unsupported(3) — typed-op-skip WARN lane
-    ("32023R2694", "32009R1284"),  # scored clean (2 ops applied)
+    ("32017R1576", "32014R0540"),  # cnf_unsupported(1) — zero-op lowering gap row
 )
 
 # The committed EU baseline artifact (frozen, sibling of the FI/EE/UK ones).
@@ -499,17 +519,30 @@ def eu_anchor_corpus_available() -> bool:
 def score_eu_real_corpus(
     chains: Iterable[tuple[str, str]] | None = None,
 ) -> dict[str, dict[str, int]]:
-    """Score the EU #204 replay-conservation corpus into its typed-residual set.
+    """Score the EU corpus (#221 oracle-touch + #204 fallback) into its residual set.
 
-    For each ``(amender, base)`` window, run the ``eu_anchor_manifest`` attribution
-    engine (offline replay-conservation) and project each ``TouchObservation`` into
-    its CTSF residual family (the EU ``_VERDICT_TO_FAMILY``). Returns the same diffable
-    ``{sid: {family: count}}`` shape as :func:`score_real_corpus`, only non-zero
-    families retained, a clean-but-scored window present with an empty family map.
-    Deterministic in sid order.
+    TWO lanes, one diffable set:
 
-    Reads the EU Cellar Farchive (per-window offline replay). Deterministic given the
-    frozen corpus bytes; NOT the wall-clock-free path — same as the FI/EE/UK corpora.
+    * ORACLE-TOUCH (primary, #221): for each base in
+      ``eu_anchor_manifest.REAL_ANCHOR_EU_ORACLE_BASES``, replay the multi-amender
+      PIT closure against every STORED published consolidation and project the
+      typed touch/gap observations into their CTSF residual families
+      (``EUOracleAttribution.family_counts`` — FI's neutral verdict map for the
+      touch relation, the EU verdict map for the closure-gap/billable extras).
+      The sid is the base CELEX.
+    * CONSERVED-APPLY FALLBACK (#204, documented): for each ``(amender, base)``
+      in ``REAL_ANCHOR_EU_CORPUS_CHAINS`` (bases with ZERO published
+      consolidations), score the apply-fold conservation invariant as before.
+      The sid stays ``amender->base``.
+
+    Returns the same diffable ``{sid: {family: count}}`` shape as
+    :func:`score_real_corpus`, only non-zero families retained, a clean-but-scored
+    unit present with an empty family map. Deterministic in sid order. Reads the
+    EU Cellar Farchive (offline replay); deterministic given the frozen corpus
+    bytes + the frozen closure table.
+
+    ``chains`` overrides the FALLBACK lane only (kept for the synthetic-set
+    callers/tests); the oracle-touch bases are always scored.
     """
     from farchive import Farchive
 
@@ -517,6 +550,8 @@ def score_eu_real_corpus(
         _VERDICT_TO_FAMILY as _EU_VERDICT_TO_FAMILY,
         _default_db as _eu_default_db,
         EUChainRef,
+        REAL_ANCHOR_EU_ORACLE_BASES,
+        attribute_base_consolidations,
         attribute_chain,
     )
 
@@ -525,12 +560,21 @@ def score_eu_real_corpus(
     archive = Farchive(str(_eu_default_db()), readonly=True)
     try:
         out: dict[str, dict[str, int]] = {}
+        for oracle_base in REAL_ANCHOR_EU_ORACLE_BASES:
+            oracle_attr = attribute_base_consolidations(oracle_base, archive=archive)
+            out[oracle_attr.sid] = oracle_attr.family_counts()
         for amender, base in corpus:
             attr = attribute_chain(EUChainRef(amender=amender, base=base), archive=archive)
             families: dict[str, int] = {}
             for obs in attr.observations:
                 family = _EU_VERDICT_TO_FAMILY[obs.verdict]
                 families[family] = families.get(family, 0) + 1
+            if attr.status != "OK" and not attr.observations:
+                # A window that could not replay at all (base not graftable /
+                # amender not stored / zero ops lowered) must NEVER project to
+                # an empty — clean-looking — row: it is a typed, visible
+                # capability/curation gap (non-billable), not an agreement.
+                families["cnf_unsupported"] = families.get("cnf_unsupported", 0) + 1
             out[attr.sid] = {fam: n for fam, n in sorted(families.items()) if n}
         return dict(sorted(out.items()))
     finally:
@@ -541,26 +585,37 @@ def _eu_baseline_payload(residuals: dict[str, dict[str, int]]) -> dict[str, Any]
     total = sum(
         count for families in residuals.values() for count in families.values()
     )
+    from lawvm.tools.eu_anchor_manifest import REAL_ANCHOR_EU_ORACLE_BASES
+
     return {
         "_doc": (
-            "CTSF residual-set-diff gate baseline — EUROPEAN UNION (#183/#204). Frozen "
-            "typed-residual set of the REAL EU replay-conservation corpus "
-            "(REAL_ANCHOR_EU_CORPUS_CHAINS), keyed {sid: {family: count}} with only "
-            "non-zero families retained. An EU anchor is an offline replay WINDOW "
-            "(amender applied to its base, both Farchive-stored) — EU stores NO "
-            "consolidation oracle and NO dated DAG, so the scored property is the "
-            "conserved apply fold's invariant (|applied|+|skipped|==|ops|), NOT an "
-            "oracle diff. The gate FAILs iff a NEW replay_bug/unknown residual appears "
-            "vs this set (an apply RAISE or a conservation violation); WARNs on a typed "
-            "cnf_unsupported op-skip move. This corpus is curated 0-BILLABLE (the "
-            "honest steady state); a full sweep of the #204 ZIP-recovered acts found 0 "
-            "billable EU replay bugs. Regenerate with `uv run python -m "
-            "lawvm.core.ctsf_gate --update-eu-baseline` (needs the EU Cellar Farchive) "
-            "after a legitimate, reviewed corpus/projection change — a preregistered "
-            "predict-then-compare event, never a silent baseline move."
+            "CTSF residual-set-diff gate baseline — EUROPEAN UNION (#183/#204/#221). "
+            "Frozen typed-residual set of the REAL EU corpus, keyed {sid: {family: "
+            "count}} with only non-zero families retained. TWO lanes: (1) the #221 "
+            "ORACLE-TOUCH lane (corpus_oracle_bases, sid = base CELEX) — per stored "
+            "PUBLISHED sector-0 consolidation the multi-amender PIT closure is "
+            "replayed offline and diffed per-article against the consolidation; "
+            "Finland's neutral touch-relation calculus types every divergence "
+            "(oracle_editorial_pathology / temporal_mismatch for commensurability-"
+            "limited gap windows), closure acquisition/lowering gaps are explicit "
+            "typed cnf_unsupported/temporal_mismatch rows, and apply RAISEs / "
+            "conservation violations stay billable; (2) the #204 conserved-apply "
+            "FALLBACK lane (corpus_chains, sid = amender->base) for the one base with "
+            "ZERO published consolidations (32017R1576). The consolidation is an "
+            "EDITORIAL witness (no legal value) — divergences are typed, never "
+            "repaired toward. The gate FAILs iff a NEW replay_bug/unknown residual "
+            "appears vs this set; WARNs on a typed non-billable move. This corpus is "
+            "0-BILLABLE at freeze: the flip itself convicted two genuine replay bugs "
+            "(omnibus cross-target misapplication + quoted-payload boundary defects "
+            "on 32022R2309@20230216) which were fixed at root in "
+            "fmx4_amendment_grammar before freezing. Regenerate with `uv run python "
+            "-m lawvm.core.ctsf_gate --update-eu-baseline` (needs the EU Cellar "
+            "Farchive) after a legitimate, reviewed corpus/projection change — a "
+            "preregistered predict-then-compare event, never a silent baseline move."
         ),
         "gate_version": GATE_VERSION,
         "jurisdiction": REAL_ANCHOR_EU_JURISDICTION,
+        "corpus_oracle_bases": list(REAL_ANCHOR_EU_ORACLE_BASES),
         "corpus_chains": [list(c) for c in REAL_ANCHOR_EU_CORPUS_CHAINS],
         "families": list(RESIDUAL_VERDICT_FAMILIES),
         "fail_families": list(FAIL_FAMILIES),
@@ -1763,11 +1818,14 @@ def _fold_eu_gate_into_rc(rc: int, *, json_mode: bool) -> int:
     eu_result = run_eu_gate_report()
     emit_verdict_signals(eu_result)
     if not json_mode:
-        print("\n--- EUROPEAN UNION (#204) corpus ---")
+        print("\n--- EUROPEAN UNION (#204/#221) corpus ---")
         print(
             format_report(
                 eu_result,
-                corpus_label="the REAL #204 EU replay-conservation anchor corpus",
+                corpus_label=(
+                    "the REAL #221 EU oracle-touch corpus "
+                    "(+ #204 conserved-apply fallback)"
+                ),
             )
         )
     return 1 if eu_result.failed else rc

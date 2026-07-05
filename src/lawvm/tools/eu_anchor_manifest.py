@@ -1,5 +1,5 @@
 """eu_anchor_manifest.py — the European Union frozen content-addressed anchor +
-replay-attribution engine (#183/#204, FOURTH jurisdiction).
+replay-attribution engine (#183/#204 → #221, FOURTH jurisdiction).
 
 This is the EU analogue of :mod:`lawvm.tools.uk_anchor_manifest` (United Kingdom),
 :mod:`lawvm.tools.ee_anchor_manifest` (Estonia), and
@@ -9,13 +9,24 @@ jurisdiction. It is ADDITIVE: it never mutates the EU corpus, the EU replay
 pipeline, or the existing ``eu_bench_unit_result`` scoring path; the EU frontend
 stays byte-identical.
 
-WHAT AN EU "ANCHOR" IS — and WHY EU DOES NOT FIT THE FI/EE/UK ORACLE-TOUCH MODEL
-(documented, load-bearing). Finland enumerates the published *consolidation
-snapshots* of one statute over its life; Estonia enumerates the Riigi Teataja
-*terviktekst* chain per ``grupi_id``; the UK models each act as an enacted→current
-replay window scored against the single revised in-force oracle. All three have, in
-the Farchive, a materialized ORACLE (a published consolidated text) to score the
-native replay AGAINST. The EU Cellar corpus, as acquired by #204, does NOT:
+#221 UPDATE (read the "#221 — the EU ORACLE-TOUCH surface" section below): the
+premise of the next paragraph — no stored consolidation, no dated DAG — was TRUE
+at #204 and is preserved here as the historical record of why the conserved-apply
+lane exists; #221 closed both gaps for the frozen corpus bases (75 published
+sector-0 consolidations stored offline + a frozen dated closure table) and the
+gate's PRIMARY EU surface is now the FI-style oracle-touch attribution
+(:func:`attribute_base_consolidations`). The conserved-apply window scoring below
+remains as the documented FALLBACK for the one base with zero published
+consolidations (``32017R1576``).
+
+WHAT AN EU "ANCHOR" WAS AT #204 — and why EU then did not fit the FI/EE/UK
+ORACLE-TOUCH MODEL (historical, load-bearing for the fallback lane). Finland
+enumerates the published *consolidation snapshots* of one statute over its life;
+Estonia enumerates the Riigi Teataja *terviktekst* chain per ``grupi_id``; the UK
+models each act as an enacted→current replay window scored against the single
+revised in-force oracle. All three have, in the Farchive, a materialized ORACLE
+(a published consolidated text) to score the native replay AGAINST. The EU Cellar
+corpus, as acquired by #204, did NOT:
 
     * NO sector-0 consolidation is stored. Every ``consolidation_date`` in
       ``eu_cellar.farchive`` is ``enacted`` (verified: 0 sector-0 CELEXes over
@@ -410,4 +421,676 @@ def observation_to_residual(obs: EUReplayObservation) -> AgreementResidual:
             "touching_amendments": list(obs.touching_amendments),
             "evidence": obs.evidence,
         },
+    )
+
+
+# ---------------------------------------------------------------------------
+# #221 — the EU ORACLE-TOUCH surface (published sector-0 consolidations).
+#
+# The header above documented WHY EU could not run the FI/EE/UK oracle-touch
+# model: the Farchive stored no sector-0 consolidation and no dated amendment
+# DAG. #221 closed BOTH gaps for the frozen corpus bases:
+#
+#   * ``scripts/acquire_eu_consolidations.py`` stored the 75 PUBLISHED dated
+#     sector-0 consolidations of 8 of the 9 frozen bases under
+#     ``cellar://celex/{base}/{YYYYMMDD}/eng/fmx4`` — real EUR-Lex consolidated
+#     FMX4 bytes, readable offline.
+#   * the dated amendment DAG of those bases (``eu_amendment_graph`` over the
+#     live CDM SPARQL endpoint) is FROZEN below as a content-pinned edge table
+#     (:data:`REAL_ANCHOR_EU_AMENDMENT_CLOSURE`) — the gate never enumerates
+#     live; a DAG refresh is a deliberate, reviewed constant change.
+#
+# An EU oracle anchor is one stored consolidation ``(base, as_of)``. The native
+# PIT body is reconstructed by the MULTI-AMENDER closure replay: graft the base,
+# lower EVERY closure amender effective by ``as_of``, order the combined op set
+# legally (``order_eu_ops`` over the threaded dates), and run the conserved
+# apply fold. The per-article diff against the stored consolidation
+# (``eu_consolidation_oracle`` / ``compare_replay_to_consolidation``) feeds
+# Finland's NEUTRAL attribution calculus (``attribute_divergences``) — the same
+# typed touch-relation verdicts FI/EE/UK/NZ emit, projected through the same
+# ``_VERDICT_TO_FAMILY``. The consolidation stays an EDITORIAL witness ("no
+# legal value" — the eu_oracle_divergence honesty regime): divergences are
+# TYPED, never repaired toward.
+#
+# CLOSURE INCLUSION RULE (documented, load-bearing): an amender is effective by
+# ``as_of`` iff its EARLIEST machine-readable date (entry-into-force or
+# date-of-application) is <= as_of. EUR-Lex suffixes a consolidation with "the
+# date of entry into force or of application" of the last incorporated act, and
+# BOTH orders occur on this corpus (32009R0754's amenders apply retroactively
+# before their entry into force; 32010R1093's 32014R0806 enters into force
+# before it applies) — the earliest-date rule is the one consistent with the
+# Office's observed incorporation practice. A residual inclusion mismatch
+# surfaces as a typed divergence (usually spontaneous-healing/appearance, an
+# oracle-commensurability artifact), never as a repair.
+#
+# HONEST GAP TYPING (the partial-closure discipline): an anchor whose closure
+# window is NOT fully replayable — an amender effective by as_of with no stored
+# bytes (acquisition gap), an amender with unlowered non-boilerplate
+# instructions (lowering capability gap), or a typed apply-fold op skip — is
+# marked commensurability-suspect (``AnchorObservation.oracle_suspect``), so
+# Finland's calculus types ALL its divergences ``temporal_mismatch`` (non-
+# billable): replay KNOWS it under-applied, so neither replay nor the oracle
+# can be convicted at that anchor. Each distinct gap cause is ALSO emitted once
+# as a typed, non-billable EU observation so the residual set carries the gap
+# explicitly (never buried). Corrigenda (undated, unstored ``…R(NN)`` edges)
+# are a standing exclusion from the closure: a corrigendum-caused text change
+# surfaces as an untouched-unit divergence the calculus types oracle-side
+# (editorial) — exactly what a corrigendum is. Billable convictions
+# (``candidate_replay_bug`` / ``untyped``) can therefore ONLY arise at
+# fully-covered anchors — the conservative, honest regime.
+#
+# #221 BACKLOG (the typed frontier, precise — every item is VISIBLE in the
+# frozen baseline as a cnf_unsupported / temporal_mismatch row, never buried):
+#
+#   1. MULTI-POINT OMNIBUS INSTRUCTION LOWERING (the dominant gap, ~all
+#      ``eu_closure_lowering_gap`` rows): the real EU amender shape
+#      "Regulation (EU) No X is amended as follows: (1) …; (2) …" carries its
+#      sub-instructions in NP point elements, which ``_instruction_text``
+#      excludes as noise tags — the grammar sees only the opening clause and
+#      lowers 0 ops (e.g. 32023R1569 → 32022R2309, 32010R0053 → 32009R0754
+#      with 25 unlowered points, every 32010R1093 amender). Iterating NP
+#      points as sub-instructions is the single highest-leverage coverage
+#      move: it would flip most of the 71 gap-marked anchors (950
+#      temporal_mismatch rows) into convictable full-coverage anchors.
+#   2. THREE AMENDERS UNACQUIRABLE AS FMX4 (``eu_closure_amender_unstored``):
+#      32016R0646 / 32017R1221 (both → 32008R0692) and 32016R1185
+#      (→ 32012R0923) — their eng fmx4 manifestation item is rejected by the
+#      acquisition lane as "not real XML" (needs item-shape investigation).
+#   3. CORRIGENDA (``…R(NN)`` edges, undated + unstored) are excluded from the
+#      closure by construction; their text effects type as
+#      ``oracle_editorial_pathology`` via the touch relation (correct for an
+#      editorial-lane instrument, but acquiring + dating them would let replay
+#      reproduce e.g. 32008R0402R(01)'s "A.TR.1"→"A.TR." fix).
+#   4. INCLUSION-RULE REFINEMENT: the earliest-date rule can include an
+#      amender one consolidation early when the Office incorporated it at its
+#      LATER date; the mismatch surfaces as non-billable spontaneous-healing /
+#      appearance rows at fully-covered anchors (none observed at freeze).
+# ---------------------------------------------------------------------------
+
+#: Anchor could not be scored against its stored consolidation (consolidation
+#: bytes unparseable / apply-fold unreachable) — a typed, non-billable PIT gap.
+VERDICT_ORACLE_ANCHOR_UNSCORABLE = "eu_oracle_anchor_unscorable"
+#: A closure amender effective by as_of has no stored FMX4 — acquisition gap.
+VERDICT_CLOSURE_AMENDER_UNSTORED = "eu_closure_amender_unstored"
+#: A closure amender carries unlowered non-boilerplate instructions — a
+#: lowering capability gap (grammar coverage), non-billable.
+VERDICT_CLOSURE_LOWERING_GAP = "eu_closure_lowering_gap"
+
+_VERDICT_TO_FAMILY.update(
+    {
+        VERDICT_ORACLE_ANCHOR_UNSCORABLE: "temporal_mismatch",
+        VERDICT_CLOSURE_AMENDER_UNSTORED: "temporal_mismatch",
+        VERDICT_CLOSURE_LOWERING_GAP: "cnf_unsupported",
+    }
+)
+_VERDICT_TO_RESIDUAL_FAMILY.update(
+    {
+        VERDICT_ORACLE_ANCHOR_UNSCORABLE: "temporal_mismatch",
+        VERDICT_CLOSURE_AMENDER_UNSTORED: "temporal_mismatch",
+        VERDICT_CLOSURE_LOWERING_GAP: "accepted_non_executable_frontier",
+    }
+)
+_VERDICT_TO_STATUS.update(
+    {
+        VERDICT_ORACLE_ANCHOR_UNSCORABLE: "blocked",
+        VERDICT_CLOSURE_AMENDER_UNSTORED: "blocked",
+        VERDICT_CLOSURE_LOWERING_GAP: "blocked",
+    }
+)
+
+
+@dataclass(frozen=True)
+class EUAmendmentEdgeRef:
+    """One frozen, dated CDM amendment edge (amender → the closure's base).
+
+    A content-pinned snapshot of ``eu_amendment_graph.AmendmentEdge`` (queried
+    live once, frozen here so the gate is offline + deterministic). Dates are
+    ISO or ``""`` (the act exposed no machine-readable date — honest gap; such
+    an edge is never included in a dated closure).
+    """
+
+    celex: str
+    relation_kind: str  # "amends" | "corrects"
+    entry_into_force: str = ""
+    date_of_application: str = ""
+
+    @property
+    def earliest_date(self) -> str:
+        dates = [d for d in (self.entry_into_force, self.date_of_application) if d]
+        return min(dates) if dates else ""
+
+    @property
+    def ordering_date(self) -> str:
+        """The legal-chronological ordering key (date-of-application, else EIF)."""
+        return self.date_of_application or self.entry_into_force
+
+    def effective_by(self, as_of_iso: str) -> bool:
+        """True iff this edge's amendment is incorporated at ``as_of_iso``.
+
+        The earliest-date inclusion rule (see the section header): EUR-Lex
+        incorporates an amending act once its first legal date (entry into
+        force or application, whichever comes first) has arrived.
+        """
+        earliest = self.earliest_date
+        return bool(earliest) and earliest <= as_of_iso
+
+
+#: The frozen corpus bases with PUBLISHED sector-0 consolidations stored in the
+#: Farchive (75 dated snapshots over these 8). The ninth frozen base,
+#: ``32017R1576``, has ZERO published consolidations (verified live) — it stays
+#: on the conserved-apply fallback lane in ``ctsf_gate``.
+REAL_ANCHOR_EU_ORACLE_BASES: tuple[str, ...] = (
+    "32008R0402",
+    "32008R0692",
+    "32009R0754",
+    "32009R1284",
+    "32010R1093",
+    "32012R0923",
+    "32019R0787",
+    "32022R2309",
+)
+
+#: The frozen dated amendment DAG per oracle base — a content-pinned snapshot
+#: of the live CDM graph (``eu_amendment_graph.build_amendment_graph``, queried
+#: 2026-07-05). Sorted per base by (ordering_date, celex) as the live module
+#: returns them. A refresh is a deliberate constant change, reviewed like any
+#: frozen-corpus move (#137 discipline) — never a silent live re-enumeration.
+REAL_ANCHOR_EU_AMENDMENT_CLOSURE: dict[str, tuple[EUAmendmentEdgeRef, ...]] = {
+    "32008R0402": (
+        EUAmendmentEdgeRef("32008R0402R(01)", "corrects", "", ""),
+        EUAmendmentEdgeRef("32013R0519", "amends", "2013-07-01", "2013-07-01"),
+    ),
+    "32008R0692": (
+        EUAmendmentEdgeRef("32008R0692R(01)", "corrects", "", ""),
+        EUAmendmentEdgeRef("32008R0692R(02)", "corrects", "", ""),
+        EUAmendmentEdgeRef("32008R0692R(03)", "corrects", "", ""),
+        EUAmendmentEdgeRef("32011R0566", "amends", "2011-06-19", "2011-06-19"),
+        EUAmendmentEdgeRef("32012R0459", "amends", "2012-06-04", "2012-06-04"),
+        EUAmendmentEdgeRef("32012R0630", "amends", "2012-08-02", "2012-08-02"),
+        EUAmendmentEdgeRef("32013R0171", "amends", "2013-03-19", "2013-03-19"),
+        EUAmendmentEdgeRef("32013R0195", "amends", "2013-03-28", "2013-07-01"),
+        EUAmendmentEdgeRef("32013R0143", "amends", "2013-01-01", "2014-01-01"),
+        EUAmendmentEdgeRef("32014R0136", "amends", "2014-03-05", "2014-03-05"),
+        EUAmendmentEdgeRef("32015R0045", "amends", "2015-02-04", "2015-02-04"),
+        EUAmendmentEdgeRef("32016R0427", "amends", "2016-01-01", "2016-04-20"),
+        EUAmendmentEdgeRef("32016R0646", "amends", "2016-05-16", "2016-05-16"),
+        EUAmendmentEdgeRef("32017R1151", "amends", "2017-07-27", "2017-07-27"),
+        EUAmendmentEdgeRef("32018R1832", "amends", "2018-12-17", "2019-01-01"),
+        EUAmendmentEdgeRef("32017R1221", "amends", "2017-07-27", "2019-09-01"),
+    ),
+    "32009R0754": (
+        EUAmendmentEdgeRef("32009R0754R(01)", "corrects", "", ""),
+        EUAmendmentEdgeRef("32010R0053", "amends", "2010-01-01", "2010-01-27"),
+        EUAmendmentEdgeRef("32010R0712", "amends", "2010-01-01", "2010-08-11"),
+        EUAmendmentEdgeRef("32011R0057", "amends", "2011-01-01", "2011-02-01"),
+        EUAmendmentEdgeRef("32011R1106", "amends", "2011-01-01", "2011-11-05"),
+        EUAmendmentEdgeRef("32012R1040", "amends", "2012-01-01", "2012-11-10"),
+        EUAmendmentEdgeRef("32013R1182", "amends", "2013-01-01", "2013-11-23"),
+        EUAmendmentEdgeRef("32014R0732", "amends", "2014-01-01", "2014-07-05"),
+    ),
+    "32009R1284": (
+        EUAmendmentEdgeRef("32009R1284R(01)", "corrects", "", ""),
+        EUAmendmentEdgeRef("32010R0279", "amends", "2010-04-02", "2010-04-02"),
+        EUAmendmentEdgeRef("32011R0269", "amends", "2011-03-22", "2011-03-22"),
+        EUAmendmentEdgeRef("32011R1295", "amends", "2011-12-14", "2011-12-14"),
+        EUAmendmentEdgeRef("32013R0049", "amends", "2013-01-24", "2013-01-24"),
+        EUAmendmentEdgeRef("32013R0517", "amends", "2013-07-01", "2013-07-01"),
+        EUAmendmentEdgeRef("32014R0380", "amends", "2014-04-16", "2014-04-16"),
+        EUAmendmentEdgeRef("32018R1604", "amends", "2018-10-27", "2018-10-27"),
+        EUAmendmentEdgeRef("32019R1163", "amends", "2019-07-09", "2019-07-09"),
+        EUAmendmentEdgeRef("32019R1778", "amends", "2019-10-26", "2019-10-26"),
+        EUAmendmentEdgeRef("32021R1301", "amends", "2021-08-07", "2021-08-07"),
+        EUAmendmentEdgeRef("32022R0595", "amends", "2022-04-13", "2022-04-13"),
+        EUAmendmentEdgeRef("32022R2042", "amends", "2022-10-26", "2022-10-26"),
+        EUAmendmentEdgeRef("32023R2694", "amends", "2023-11-29", "2023-11-29"),
+        EUAmendmentEdgeRef("32024R2465", "amends", "2024-09-13", "2024-09-13"),
+    ),
+    "32010R1093": (
+        EUAmendmentEdgeRef("32010R1093R(01)", "corrects", "", ""),
+        EUAmendmentEdgeRef("32010R1093R(02)", "corrects", "", ""),
+        EUAmendmentEdgeRef("32013R1022", "amends", "2013-10-30", "2013-10-30"),
+        EUAmendmentEdgeRef("32014L0017", "amends", "2014-03-20", "2014-03-20"),
+        EUAmendmentEdgeRef("32014R0258", "amends", "2014-01-01", "2014-04-09"),
+        EUAmendmentEdgeRef("32014L0059", "amends", "2014-07-02", "2015-01-01"),
+        EUAmendmentEdgeRef("32014R0806", "amends", "2014-08-19", "2016-01-01"),
+        EUAmendmentEdgeRef("32015L2366", "amends", "2016-01-12", "2016-01-12"),
+        EUAmendmentEdgeRef("32018R1717", "amends", "2018-11-16", "2019-03-30"),
+        EUAmendmentEdgeRef("32019R2033", "amends", "2019-12-25", "2021-06-26"),
+        EUAmendmentEdgeRef("32019R2175", "amends", "2019-12-30", "2022-01-01"),
+        EUAmendmentEdgeRef("32023R1114", "amends", "2023-06-29", "2024-12-30"),
+        EUAmendmentEdgeRef("32025R2088", "amends", "2025-11-10", "2025-11-10"),
+        EUAmendmentEdgeRef("32024R1620", "amends", "2024-06-26", "2025-12-31"),
+    ),
+    "32012R0923": (
+        EUAmendmentEdgeRef("32012R0923R(01)", "corrects", "", ""),
+        EUAmendmentEdgeRef("32012R0923R(02)", "corrects", "", ""),
+        EUAmendmentEdgeRef("32012R0923R(03)", "corrects", "", ""),
+        EUAmendmentEdgeRef("32012R0923R(04)", "corrects", "", ""),
+        EUAmendmentEdgeRef("32012R0923R(05)", "corrects", "", ""),
+        EUAmendmentEdgeRef("32012R0923R(06)", "corrects", "", ""),
+        EUAmendmentEdgeRef("32012R0923R(07)", "corrects", "", ""),
+        EUAmendmentEdgeRef("32012R0923R(08)", "corrects", "", ""),
+        EUAmendmentEdgeRef("32012R0923R(09)", "corrects", "", ""),
+        EUAmendmentEdgeRef("32012R0923R(10)", "corrects", "", ""),
+        EUAmendmentEdgeRef("32012R0923R(11)", "corrects", "", ""),
+        EUAmendmentEdgeRef("32012R0923R(12)", "corrects", "", ""),
+        EUAmendmentEdgeRef("32012R0923R(13)", "corrects", "", ""),
+        EUAmendmentEdgeRef("32012R0923R(14)", "corrects", "", ""),
+        EUAmendmentEdgeRef("32012R0923R(15)", "corrects", "", ""),
+        EUAmendmentEdgeRef("32012R0923R(16)", "corrects", "", ""),
+        EUAmendmentEdgeRef("32012R0923R(17)", "corrects", "", ""),
+        EUAmendmentEdgeRef("32012R0923R(18)", "corrects", "", ""),
+        EUAmendmentEdgeRef("32012R0923R(19)", "corrects", "", ""),
+        EUAmendmentEdgeRef("32012R0923R(20)", "corrects", "", ""),
+        EUAmendmentEdgeRef("32012R0923R(21)", "corrects", "", ""),
+        EUAmendmentEdgeRef("32012R0923R(22)", "corrects", "", ""),
+        EUAmendmentEdgeRef("32012R0923R(23)", "corrects", "", ""),
+        EUAmendmentEdgeRef("32012R0923R(24)", "amends", "", ""),
+        EUAmendmentEdgeRef("32012R0923R(25)", "corrects", "", ""),
+        EUAmendmentEdgeRef("32012R0923R(26)", "corrects", "", ""),
+        EUAmendmentEdgeRef("32012R0923R(27)", "corrects", "", ""),
+        EUAmendmentEdgeRef("32012R0923R(28)", "corrects", "", ""),
+        EUAmendmentEdgeRef("32015R0340", "amends", "2015-03-26", "2015-06-30"),
+        EUAmendmentEdgeRef("32017R0835", "amends", "2017-06-06", "2017-06-06"),
+        EUAmendmentEdgeRef("32016R1185", "amends", "2016-08-10", "2017-10-12"),
+        EUAmendmentEdgeRef("32020R0886", "amends", "2020-07-19", "2020-07-19"),
+        EUAmendmentEdgeRef("32020R0469", "amends", "2020-04-23", "2022-01-27"),
+        EUAmendmentEdgeRef("32021R0666", "amends", "2021-05-13", "2023-01-26"),
+        EUAmendmentEdgeRef("32023R1772", "amends", "2023-10-05", "2023-10-05"),
+        EUAmendmentEdgeRef("32024R0379", "amends", "2024-02-15", "2024-02-15"),
+        EUAmendmentEdgeRef("32024R0404", "amends", "2024-05-01", "2025-05-01"),
+        EUAmendmentEdgeRef("32024R1111", "amends", "2024-06-12", "2025-05-01"),
+    ),
+    "32019R0787": (
+        EUAmendmentEdgeRef("32019R0787R(01)", "corrects", "", ""),
+        EUAmendmentEdgeRef("32019R0787R(02)", "corrects", "", ""),
+        EUAmendmentEdgeRef("32019R0787R(03)", "corrects", "", ""),
+        EUAmendmentEdgeRef("32019R0787R(04)", "corrects", "", ""),
+        EUAmendmentEdgeRef("32019R0787R(05)", "corrects", "", ""),
+        EUAmendmentEdgeRef("32019R0787R(06)", "corrects", "", ""),
+        EUAmendmentEdgeRef("32019R0787R(07)", "corrects", "", ""),
+        EUAmendmentEdgeRef("32019R0787R(08)", "corrects", "", ""),
+        EUAmendmentEdgeRef("32019R0787R(09)", "corrects", "", ""),
+        EUAmendmentEdgeRef("32021R1096", "amends", "2021-05-25", "2021-07-09"),
+        EUAmendmentEdgeRef("32021R1334", "amends", "2021-05-25", "2021-08-15"),
+        EUAmendmentEdgeRef("32021R1335", "amends", "2021-05-25", "2021-08-15"),
+        EUAmendmentEdgeRef("32021R1465", "amends", "2021-05-25", "2021-09-16"),
+        EUAmendmentEdgeRef("32022R1303", "amends", "2022-08-15", "2022-08-15"),
+        EUAmendmentEdgeRef("32024R1143", "amends", "2024-05-13", "2025-01-01"),
+    ),
+    "32022R2309": (
+        EUAmendmentEdgeRef("32023R0331", "amends", "2023-02-16", "2023-02-16"),
+        EUAmendmentEdgeRef("32023R1569", "amends", "2023-08-01", "2023-08-01"),
+        EUAmendmentEdgeRef("32023R2573", "amends", "2023-11-15", "2023-11-15"),
+        EUAmendmentEdgeRef("32024R0291", "amends", "2024-01-15", "2024-01-15"),
+        EUAmendmentEdgeRef("32024R1803", "amends", "2024-06-26", "2024-06-26"),
+        EUAmendmentEdgeRef("32024R2465", "amends", "2024-09-13", "2024-09-13"),
+        EUAmendmentEdgeRef("32024R2755", "amends", "2024-10-24", "2024-10-24"),
+        EUAmendmentEdgeRef("32024R3138", "amends", "2024-12-16", "2024-12-16"),
+        EUAmendmentEdgeRef("32025R0608", "amends", "2025-03-26", "2025-03-26"),
+        EUAmendmentEdgeRef("32025R1433", "amends", "2025-07-15", "2025-07-15"),
+        EUAmendmentEdgeRef("32025R1576", "amends", "2025-07-29", "2025-07-29"),
+        EUAmendmentEdgeRef("32025R2443", "amends", "2025-12-01", "2025-12-01"),
+        EUAmendmentEdgeRef("32025R2567", "amends", "2025-12-15", "2025-12-15"),
+    ),}
+
+
+def _dated_locator(base_celex: str, date8: str, lang: str) -> str:
+    return f"cellar://celex/{base_celex}/{date8}/{lang}/fmx4"
+
+
+def enumerate_stored_consolidation_dates(archive: Any, base_celex: str) -> tuple[str, ...]:
+    """The SORTED ``YYYYMMDD`` dates of stored sector-0 consolidations of a base.
+
+    Reads the Farchive locator index (offline): every dated locator
+    ``cellar://celex/{base}/{YYYYMMDD}/…/fmx4`` is one published consolidation
+    snapshot the #221 acquisition stored. The ``enacted`` locator is the base
+    act itself, not an anchor.
+    """
+    prefix = f"cellar://celex/{base_celex}/"
+    dates: set[str] = set()
+    for locator in archive.locators(prefix + "%"):
+        rest = locator[len(prefix):]
+        date8 = rest.split("/", 1)[0]
+        if len(date8) == 8 and date8.isdigit():
+            dates.add(date8)
+    return tuple(sorted(dates))
+
+
+def _graft_dated(archive: Any, base_celex: str, date8: str):
+    """Parse a STORED dated consolidation into an ``IRStatute`` offline, or None."""
+    from lawvm.eu.grafter import parse_eu_regulation_ir
+
+    data = None
+    for lang in ("eng", "fin"):
+        data = archive.get(_dated_locator(base_celex, date8, lang))
+        if data:
+            break
+    if not data:
+        return None
+    with tempfile.NamedTemporaryFile(suffix=".xml") as tf:
+        tf.write(data)
+        tf.flush()
+        try:
+            return parse_eu_regulation_ir(Path(tf.name), celex=f"0{base_celex[1:]}-{date8}")
+        # A consolidation-parse failure is "this anchor is unscorable" (a typed,
+        # non-billable PIT gap the caller records) — not an error to raise.
+        # lawvm-failloud: graft-availability probe; failure is the answer.
+        except Exception:  # noqa: BLE001
+            return None
+
+
+#: Final-provision boilerplate ("This Regulation shall enter into force …";
+#: "shall be binding in its entirety and directly applicable …") is NOT an
+#: amendment instruction: an uncovered diagnostic over it is not a coverage gap.
+def _is_final_provision_excerpt(excerpt: str) -> bool:
+    low = excerpt.lower()
+    return "enter into force" in low or "binding in its entirety" in low
+
+
+def _typography_commensurable_equal(replay_text: str, oracle_text: str) -> bool:
+    """True iff two article renderings agree modulo WHITESPACE only.
+
+    The EU commensurable compare surface (mirrors UK's normalized-eId choice of
+    a per-key surface): FMX4 whitespace is typography, not content — the
+    grafter renders inline point markers ``by:(a)the`` while a replay-
+    materialized QUOT payload space-joins them ``by: (a) the``, and OJ signs
+    drift between ``–7 °C`` and ``– 7 °C`` across renderings of the SAME words.
+    Removing ALL whitespace from BOTH sides before the equality test is a
+    SYMMETRIC normalization of a non-semantic dimension — it never moves either
+    side toward the other's wording (``A.TR.1`` vs ``A.TR.`` stays divergent),
+    so it is a commensurability choice, not an oracle repair.
+    """
+    return "".join(replay_text.split()) == "".join(oracle_text.split())
+
+
+@dataclass(frozen=True)
+class EUOracleAttribution:
+    """The typed oracle-touch attribution of ONE base's consolidation chain.
+
+    ``observations`` are Finland's neutral :class:`TouchObservation` verdicts
+    (projected via the FI ``_VERDICT_TO_FAMILY``); ``eu_observations`` are the
+    EU-native typed extras (apply raise / conservation violation — billable;
+    acquisition/lowering/op-skip gaps — non-billable), projected via the EU
+    :data:`_VERDICT_TO_FAMILY`.
+    """
+
+    sid: str  # the base CELEX
+    anchors: tuple[Any, ...]  # fi_anchor_manifest.AnchorObservation
+    observations: tuple[Any, ...]  # fi_anchor_manifest.TouchObservation
+    eu_observations: tuple[EUReplayObservation, ...]
+    status: str = "OK"
+
+    def family_counts(self) -> dict[str, int]:
+        """Project ALL observations into their CTSF residual families."""
+        from lawvm.tools.fi_anchor_manifest import (
+            _VERDICT_TO_FAMILY as _FI_VERDICT_TO_FAMILY,
+        )
+
+        families: dict[str, int] = {}
+        for obs in self.observations:
+            fam = str(_FI_VERDICT_TO_FAMILY[obs.verdict])
+            families[fam] = families.get(fam, 0) + 1
+        for eobs in self.eu_observations:
+            fam = _VERDICT_TO_FAMILY[eobs.verdict]
+            families[fam] = families.get(fam, 0) + 1
+        return {fam: n for fam, n in sorted(families.items()) if n}
+
+
+def attribute_base_consolidations(base_celex: str, *, archive: Any) -> EUOracleAttribution:
+    """Score one base's stored consolidation chain via multi-amender PIT closure.
+
+    For each stored ``(base, as_of)`` consolidation (ascending): rebuild the
+    native PIT body (graft base → lower every closure amender effective by
+    as_of → order the combined op set → conserved apply fold), diff it
+    per-article against the stored consolidation, and build one
+    ``AnchorObservation``. Finland's neutral ``attribute_divergences`` then
+    runs the touch relation over the whole chronological chain. Gap-limited
+    anchors carry an ``oracle_suspect`` witness (→ ``temporal_mismatch``);
+    apply raises / conservation violations are typed BILLABLE EU observations.
+    Deterministic given the frozen Farchive bytes + frozen closure table.
+    """
+    from lawvm.eu.eu_oracle_divergence import (
+        _articles,
+        compare_replay_to_consolidation,
+    )
+    from lawvm.eu.eu_ordering import order_eu_ops
+    from lawvm.eu.fmx4_amendment_grammar import lower_amending_act
+    from lawvm.eu.pipeline import apply_eu_ops_conserved
+    from lawvm.tools.fi_anchor_manifest import (
+        AnchorObservation,
+        attribute_divergences,
+    )
+
+    dates = enumerate_stored_consolidation_dates(archive, base_celex)
+    if not dates:
+        return EUOracleAttribution(
+            sid=base_celex,
+            anchors=(),
+            observations=(),
+            eu_observations=(),
+            status="ERROR:no-stored-consolidations",
+        )
+    base_ir = _graft(archive, base_celex)
+    if base_ir is None:
+        return EUOracleAttribution(
+            sid=base_celex,
+            anchors=(),
+            observations=(),
+            eu_observations=(),
+            status="ERROR:base-not-graftable",
+        )
+
+    edges = REAL_ANCHOR_EU_AMENDMENT_CLOSURE.get(base_celex, ())
+    amend_edges = [e for e in edges if e.relation_kind == "amends"]
+
+    # Lower each stored amender ONCE (ops are frozen dataclasses; the apply fold
+    # never mutates its inputs, so the lowered op set is reusable per anchor).
+    lowered_cache: dict[str, Any] = {}
+
+    def _lowered(edge: EUAmendmentEdgeRef):
+        if edge.celex not in lowered_cache:
+            data = _fetch_fmx4_bytes(archive, edge.celex)
+            if not data:
+                lowered_cache[edge.celex] = None
+            else:
+                lowered_cache[edge.celex] = lower_amending_act(
+                    data,
+                    edge.celex,
+                    base_celex=base_celex,
+                    effective=edge.date_of_application or edge.entry_into_force,
+                    enacted=edge.entry_into_force,
+                )
+        return lowered_cache[edge.celex]
+
+    anchors: list[AnchorObservation] = []
+    eu_observations: list[EUReplayObservation] = []
+    seen_gap_keys: set[tuple[str, str]] = set()
+
+    def _emit_once(verdict: str, key: str, window: str, amenders: tuple[str, ...], evidence: str) -> None:
+        dedup = (verdict, key)
+        if dedup in seen_gap_keys:
+            return
+        seen_gap_keys.add(dedup)
+        eu_observations.append(
+            EUReplayObservation(
+                sid=base_celex,
+                section_key=key,
+                verdict=verdict,
+                window=window,
+                touching_amendments=amenders,
+                evidence=evidence[:300],
+            )
+        )
+
+    prev_iso = ""
+    for date8 in dates:
+        iso = f"{date8[:4]}-{date8[4:6]}-{date8[6:]}"
+        closure = [e for e in amend_edges if e.effective_by(iso)]
+        window_amenders = tuple(
+            e.celex for e in closure if not prev_iso or not e.effective_by(prev_iso)
+        )
+        witnesses: list[str] = []
+        ops: list[Any] = []
+        for edge in closure:
+            low = _lowered(edge)
+            if low is None:
+                witnesses.append(
+                    f"amender {edge.celex} effective by {iso} has no stored FMX4"
+                )
+                _emit_once(
+                    VERDICT_CLOSURE_AMENDER_UNSTORED,
+                    edge.celex,
+                    f"..{iso}",
+                    (edge.celex,),
+                    "closure amender bytes absent from the Farchive (acquisition gap)",
+                )
+                continue
+            gap_diags = [
+                d
+                for d in low.diagnostics
+                if d.family != "foreign_target"
+                and not _is_final_provision_excerpt(d.source_excerpt)
+            ]
+            if gap_diags:
+                witnesses.append(
+                    f"amender {edge.celex}: {len(gap_diags)} unlowered instruction(s)"
+                )
+                _emit_once(
+                    VERDICT_CLOSURE_LOWERING_GAP,
+                    edge.celex,
+                    f"..{iso}",
+                    (edge.celex,),
+                    "; ".join(f"{d.rule_id}: {d.source_excerpt[:80]}" for d in gap_diags[:3]),
+                )
+            ops.extend(low.ops)
+
+        version_tag = f"0{base_celex[1:]}-{date8}"
+        ordered = order_eu_ops(list(ops))
+        try:
+            result = apply_eu_ops_conserved(base_ir, list(ordered.ops))
+        # An apply RAISE is the headline BILLABLE replay crash — the raise IS
+        # the typed observation, and the anchor is unscored (excluded from the
+        # touch chain), never a swallowed error.
+        # lawvm-failloud: the raise IS the typed observation.
+        except Exception as exc:  # noqa: BLE001
+            eu_observations.append(
+                EUReplayObservation(
+                    sid=base_celex,
+                    section_key="<apply-fold>",
+                    verdict=VERDICT_APPLY_RAISE,
+                    window=f"{prev_iso or '-'}..{iso}",
+                    touching_amendments=window_amenders,
+                    evidence=f"{type(exc).__name__}: {str(exc)[:200]}",
+                )
+            )
+            anchors.append(
+                AnchorObservation(
+                    version_tag=version_tag,
+                    amendment_id=",".join(window_amenders),
+                    as_of=iso,
+                    struct_sim=-1.0,
+                    n_sections=0,
+                    n_penalized=0,
+                    penalized_keys=frozenset(),
+                    replay_text={},
+                    oracle_suspect=None,
+                    status="APPLY_RAISE",
+                )
+            )
+            prev_iso = iso
+            continue
+
+        applied = len(result.applied_ops)
+        skipped = len(result.skipped_items)
+        if applied + skipped != len(ordered.ops):
+            eu_observations.append(
+                EUReplayObservation(
+                    sid=base_celex,
+                    section_key="<conservation>",
+                    verdict=VERDICT_CONSERVATION_VIOLATION,
+                    window=f"{prev_iso or '-'}..{iso}",
+                    touching_amendments=window_amenders,
+                    evidence=(
+                        f"applied={applied} + skipped={skipped} != total={len(ordered.ops)}"
+                    ),
+                )
+            )
+        for rejected in result.skipped_items:
+            reason_code = getattr(rejected, "reason_code", "") or "eu_replay_op_skip"
+            op_id = getattr(getattr(rejected, "item", None), "op_id", "") or str(reason_code)
+            witnesses.append(f"op {op_id} typed-skipped ({reason_code})")
+            _emit_once(
+                VERDICT_TYPED_OP_SKIP,
+                str(op_id),
+                f"..{iso}",
+                window_amenders,
+                str(getattr(rejected, "reason", ""))[:200],
+            )
+
+        cons_ir = _graft_dated(archive, base_celex, date8)
+        if cons_ir is None:
+            _emit_once(
+                VERDICT_ORACLE_ANCHOR_UNSCORABLE,
+                version_tag,
+                f"{prev_iso or '-'}..{iso}",
+                window_amenders,
+                "stored consolidation bytes did not graft to an IRStatute",
+            )
+            anchors.append(
+                AnchorObservation(
+                    version_tag=version_tag,
+                    amendment_id=",".join(window_amenders),
+                    as_of=iso,
+                    struct_sim=-1.0,
+                    n_sections=0,
+                    n_penalized=0,
+                    penalized_keys=frozenset(),
+                    replay_text={},
+                    oracle_suspect=None,
+                    status="ERROR:consolidation-not-graftable",
+                )
+            )
+            prev_iso = iso
+            continue
+
+        comparison = compare_replay_to_consolidation(
+            result.statute, cons_ir, as_of=iso, base_celex=base_celex
+        )
+        # Penalized = per-article divergence on the EU commensurable compare
+        # surface: a text_divergence whose sides agree modulo whitespace is
+        # typography, not a divergence (see _typography_commensurable_equal).
+        penalized = frozenset(
+            d.article_label
+            for d in comparison.divergences
+            if not d.agrees
+            and not (
+                d.kind == "text_divergence"
+                and _typography_commensurable_equal(d.replay_text, d.oracle_text)
+            )
+        )
+        n_compared = comparison.article_count
+        struct_sim = 1.0 if not n_compared else 1.0 - len(penalized) / n_compared
+        anchors.append(
+            AnchorObservation(
+                version_tag=version_tag,
+                amendment_id=",".join(window_amenders),
+                as_of=iso,
+                struct_sim=struct_sim,
+                n_sections=n_compared,
+                n_penalized=len(penalized),
+                penalized_keys=penalized,
+                replay_text=_articles(result.statute),
+                oracle_suspect=("; ".join(witnesses) or None),
+                status="OK",
+            )
+        )
+        prev_iso = iso
+
+    observations = attribute_divergences(base_celex, anchors)
+    return EUOracleAttribution(
+        sid=base_celex,
+        anchors=tuple(anchors),
+        observations=tuple(observations),
+        eu_observations=tuple(eu_observations),
     )

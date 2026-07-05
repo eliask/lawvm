@@ -1,47 +1,21 @@
 {
-  "_doc": "CTSF residual-set-diff gate baseline — EUROPEAN UNION (#183/#204). Frozen typed-residual set of the REAL EU replay-conservation corpus (REAL_ANCHOR_EU_CORPUS_CHAINS), keyed {sid: {family: count}} with only non-zero families retained. An EU anchor is an offline replay WINDOW (amender applied to its base, both Farchive-stored) — EU stores NO consolidation oracle and NO dated DAG, so the scored property is the conserved apply fold's invariant (|applied|+|skipped|==|ops|), NOT an oracle diff. The gate FAILs iff a NEW replay_bug/unknown residual appears vs this set (an apply RAISE or a conservation violation); WARNs on a typed cnf_unsupported op-skip move. This corpus is curated 0-BILLABLE (the honest steady state); a full sweep of the #204 ZIP-recovered acts found 0 billable EU replay bugs. Regenerate with `uv run python -m lawvm.core.ctsf_gate --update-eu-baseline` (needs the EU Cellar Farchive) after a legitimate, reviewed corpus/projection change — a preregistered predict-then-compare event, never a silent baseline move.",
+  "_doc": "CTSF residual-set-diff gate baseline — EUROPEAN UNION (#183/#204/#221). Frozen typed-residual set of the REAL EU corpus, keyed {sid: {family: count}} with only non-zero families retained. TWO lanes: (1) the #221 ORACLE-TOUCH lane (corpus_oracle_bases, sid = base CELEX) — per stored PUBLISHED sector-0 consolidation the multi-amender PIT closure is replayed offline and diffed per-article against the consolidation; Finland's neutral touch-relation calculus types every divergence (oracle_editorial_pathology / temporal_mismatch for commensurability-limited gap windows), closure acquisition/lowering gaps are explicit typed cnf_unsupported/temporal_mismatch rows, and apply RAISEs / conservation violations stay billable; (2) the #204 conserved-apply FALLBACK lane (corpus_chains, sid = amender->base) for the one base with ZERO published consolidations (32017R1576). The consolidation is an EDITORIAL witness (no legal value) — divergences are typed, never repaired toward. The gate FAILs iff a NEW replay_bug/unknown residual appears vs this set; WARNs on a typed non-billable move. This corpus is 0-BILLABLE at freeze: the flip itself convicted two genuine replay bugs (omnibus cross-target misapplication + quoted-payload boundary defects on 32022R2309@20230216) which were fixed at root in fmx4_amendment_grammar before freezing. Regenerate with `uv run python -m lawvm.core.ctsf_gate --update-eu-baseline` (needs the EU Cellar Farchive) after a legitimate, reviewed corpus/projection change — a preregistered predict-then-compare event, never a silent baseline move.",
   "gate_version": "v0",
   "jurisdiction": "european_union",
+  "corpus_oracle_bases": [
+    "32008R0402",
+    "32008R0692",
+    "32009R0754",
+    "32009R1284",
+    "32010R1093",
+    "32012R0923",
+    "32019R0787",
+    "32022R2309"
+  ],
   "corpus_chains": [
     [
-      "32006R1996",
-      "32008R0402"
-    ],
-    [
-      "32010R0053",
-      "32009R0754"
-    ],
-    [
-      "32011R0057",
-      "32009R0754"
-    ],
-    [
-      "32014R0540",
-      "32017R1576"
-    ],
-    [
-      "32015R0340",
-      "32012R0923"
-    ],
-    [
-      "32017R1151",
-      "32008R0692"
-    ],
-    [
-      "32022R1303",
-      "32019R0787"
-    ],
-    [
-      "32023R0331",
-      "32022R2309"
-    ],
-    [
-      "32023R1114",
-      "32010R1093"
-    ],
-    [
-      "32023R2694",
-      "32009R1284"
+      "32017R1576",
+      "32014R0540"
     ]
   ],
   "families": [
@@ -56,21 +30,44 @@
     "replay_bug",
     "unknown"
   ],
-  "total_residuals": 4,
+  "total_residuals": 1030,
   "residuals": {
-    "32006R1996->32008R0402": {},
-    "32010R0053->32009R0754": {},
-    "32011R0057->32009R0754": {},
-    "32014R0540->32017R1576": {
+    "32008R0402": {
+      "cnf_unsupported": 1,
+      "oracle_editorial_pathology": 1,
+      "temporal_mismatch": 1
+    },
+    "32008R0692": {
+      "cnf_unsupported": 11,
+      "temporal_mismatch": 70
+    },
+    "32009R0754": {
+      "cnf_unsupported": 7,
+      "temporal_mismatch": 7
+    },
+    "32009R1284": {
+      "cnf_unsupported": 17,
+      "temporal_mismatch": 63
+    },
+    "32010R1093": {
+      "cnf_unsupported": 13,
+      "temporal_mismatch": 566
+    },
+    "32012R0923": {
+      "cnf_unsupported": 9,
+      "temporal_mismatch": 43
+    },
+    "32017R1576->32014R0540": {
       "cnf_unsupported": 1
     },
-    "32015R0340->32012R0923": {},
-    "32017R1151->32008R0692": {},
-    "32022R1303->32019R0787": {},
-    "32023R0331->32022R2309": {},
-    "32023R1114->32010R1093": {
-      "cnf_unsupported": 3
+    "32019R0787": {
+      "cnf_unsupported": 6,
+      "oracle_editorial_pathology": 2,
+      "temporal_mismatch": 27
     },
-    "32023R2694->32009R1284": {}
+    "32022R2309": {
+      "cnf_unsupported": 12,
+      "temporal_mismatch": 173
+    }
   }
 }
