@@ -3,6 +3,10 @@
 Provides a context manager for ProcessPoolExecutor that ensures worker
 processes are terminated on exit, signal (SIGTERM/SIGINT), or crash.
 Without this, workers forked from a killed parent survive as orphans.
+
+Also provides :func:`open_farchive_immutable` — a shared helper for parallel
+bench workers that need a concurrent-safe read-only Farchive handle.  See its
+docstring for the WSL2 / ``immutable=1`` rationale.
 """
 from __future__ import annotations
 
@@ -12,11 +16,81 @@ import types
 from concurrent.futures import ProcessPoolExecutor
 from contextlib import contextmanager
 from logging import getLogger
+from pathlib import Path
 from typing import Any, Callable, Iterator, Optional, cast
 
 from lawvm.core.named_swallow import named_swallow
 
 _logger = getLogger(__name__)
+
+
+def open_farchive_immutable(db_path: Path) -> Any:
+    """Open a Farchive as an ``immutable`` read-only SQLite snapshot.
+
+    Unlike ``Farchive(path, readonly=True)`` — which uses ``mode=ro`` and
+    therefore still consults the ``-wal``/``-shm`` sidecar files — this opens
+    the database with the ``immutable=1`` URI parameter.  That tells SQLite
+    the file (and any WAL) cannot change under it, so it maps the main database
+    file directly and never touches ``-wal``/``-shm``.
+
+    This matters for concurrent parallel readers on WSL2: when many worker
+    processes open the same multi-gigabyte archive simultaneously, ``mode=ro``
+    opens race on the shared ``-shm`` mapping and surface
+    ``sqlite3.OperationalError: disk I/O error`` (and read-WRITE opens surface
+    ``unable to open database file`` from WAL/writer-lock setup).
+    ``immutable=1`` sidesteps both by never engaging the WAL machinery.
+
+    Correctness contract: the caller must guarantee no writer is committing to
+    the archive during the read.  For bench replay paths that only read static
+    corpus blobs this is always true — any WAL present at open time has already
+    been checkpointed into the main file.  Use ONLY for read-only consumers
+    such as parallel bench workers — never for acquisition / write paths.
+
+    This function is the jurisdiction-neutral factoring of
+    ``lawvm.estonia.fetch.open_rt_archive_immutable``.  It is kept in lockstep
+    with ``farchive._archive.Farchive.__init__`` read-only branch — if that
+    constructor's attribute set changes, this must follow.
+    """
+    import sqlite3
+
+    from farchive import Farchive
+    from farchive._archive import (  # type: ignore[import-not-found]
+        SCHEMA_VERSION,
+        CompressionPolicy,
+        detect_schema_version,
+    )
+
+    # immutable=1: SQLite treats the DB (and any WAL) as unchanging and maps
+    # the main file directly, never opening ``-wal``/``-shm``.
+    url = db_path.resolve().as_uri() + "?immutable=1"
+    conn = sqlite3.connect(url, uri=True)
+    conn.row_factory = sqlite3.Row
+
+    version = detect_schema_version(conn)
+    if version != SCHEMA_VERSION:
+        conn.close()
+        raise RuntimeError(
+            f"Farchive DB version {version} is incompatible with current "
+            f"SCHEMA_VERSION={SCHEMA_VERSION}. Please run 'farchive migrate'."
+        )
+
+    archive = Farchive.__new__(Farchive)
+    archive._db_path = db_path
+    archive._policy = CompressionPolicy()
+    archive._readonly = True
+    archive._conn = conn
+    archive._events_enabled = (
+        conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='event'"
+        ).fetchone()
+        is not None
+    )
+    archive._dict_cache = {}
+    archive._has_dict_for_class = {}
+    archive._lock_path = db_path.with_name(db_path.name + ".writer.lock")
+    archive._lock_held = False
+    archive._supports_span_series_key = archive._has_column("locator_span", "series_key")
+    return archive
 
 
 @contextmanager

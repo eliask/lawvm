@@ -5003,10 +5003,15 @@ def test_uk_bench_records_unclassified_exception_as_typed_observation(monkeypatc
 
 
 def test_uk_bench_worker_archive_open_failure_becomes_typed_row(monkeypatch) -> None:
-    def fail_open(_path: str) -> Farchive:
+    # _score_statute_worker now uses open_farchive_immutable (from _worker_pool)
+    # instead of Farchive directly.  Patch the function at its source module so
+    # the local import inside the worker body picks up the replacement (#223).
+    from lawvm.tools import _worker_pool
+
+    def fail_open(_path: object) -> Farchive:
         raise RuntimeError("worker archive open failed")
 
-    monkeypatch.setattr(uk_bench, "Farchive", fail_open)
+    monkeypatch.setattr(_worker_pool, "open_farchive_immutable", fail_open)
     monkeypatch.setattr(uk_bench, "_WORKER_DB_PATH", "missing.farchive")
     monkeypatch.setattr(uk_bench, "_WORKER_ALLOW_METADATA_BACKFILL", False)
     monkeypatch.setattr(uk_bench, "_WORKER_ALLOW_ORACLE_ALIGNMENT", False)
@@ -5052,7 +5057,10 @@ def test_uk_bench_parallel_future_failure_becomes_typed_row(monkeypatch) -> None
     class FakePool:
         submitted: list[FakeFuture]
 
-        def __init__(self, max_workers: int):
+        def __init__(self, max_workers: int, **kwargs: object):
+            # Accept initializer/initargs forwarded by _run_bench_parallel_entries
+            # after the #223 fix that always passes the initializer for
+            # forkserver safety.
             self.max_workers = max_workers
             self.submitted = []
 
@@ -5120,7 +5128,7 @@ def test_uk_bench_parallel_submits_predicted_heavy_rows_first(monkeypatch) -> No
             return _fake_bench_result_from_entry(self.entry)
 
     class FakePool:
-        def __init__(self, max_workers: int):
+        def __init__(self, max_workers: int, **kwargs: object):
             self.max_workers = max_workers
 
         def __enter__(self) -> "FakePool":
@@ -5193,7 +5201,7 @@ def test_uk_bench_parallel_reports_row_start_on_submission(monkeypatch) -> None:
             return _fake_bench_result_from_entry(self.entry)
 
     class FakePool:
-        def __init__(self, max_workers: int):
+        def __init__(self, max_workers: int, **kwargs: object):
             self.max_workers = max_workers
 
         def __enter__(self) -> "FakePool":
@@ -5266,7 +5274,7 @@ def test_uk_bench_parallel_releases_completed_futures_before_result(monkeypatch)
             return _fake_bench_result_from_entry(self.entry)
 
     class FakePool:
-        def __init__(self, max_workers: int):
+        def __init__(self, max_workers: int, **kwargs: object):
             self.max_workers = max_workers
 
         def __enter__(self) -> "FakePool":
@@ -5319,7 +5327,7 @@ def test_uk_bench_parallel_bounds_in_flight_futures(monkeypatch) -> None:
             return _fake_bench_result_from_entry(self.entry)
 
     class FakePool:
-        def __init__(self, max_workers: int):
+        def __init__(self, max_workers: int, **kwargs: object):
             self.max_workers = max_workers
 
         def __enter__(self) -> "FakePool":
@@ -5481,7 +5489,7 @@ def test_uk_bench_worker_recycling_uses_process_pool_with_one_worker(monkeypatch
 
 def test_uk_bench_parallel_submit_failure_becomes_typed_row(monkeypatch) -> None:
     class FakePool:
-        def __init__(self, max_workers: int):
+        def __init__(self, max_workers: int, **kwargs: object):
             self.max_workers = max_workers
 
         def __enter__(self) -> "FakePool":

@@ -2923,13 +2923,20 @@ def _score_statute(
 def _score_statute_worker(entry: dict[str, Any]) -> _BenchResult:
     """Top-level picklable wrapper for parallel execution.
 
-    Opens its own Farchive per worker process using module-level globals
-    configured before fork, or by the worker initializer when recycling uses
-    spawn-backed workers.
+    Opens its own Farchive per worker process using module-level globals set
+    by the pool initializer (_configure_uk_bench_worker).  The archive is
+    opened with SQLite ``immutable=1`` so concurrent readers on WSL2 do not
+    race on the ``-wal``/``-shm`` sidecar: ``mode=ro`` still maps the sidecar
+    and surfaces ``disk I/O error`` under concurrency; a plain read-WRITE open
+    surfaces ``unable to open database file`` from the writer-lock.
+    ``immutable=1`` sidesteps both (see open_farchive_immutable in
+    _worker_pool for the full rationale; #210 / #223).
     """
+    from lawvm.tools._worker_pool import open_farchive_immutable
+
     row_t0 = time.perf_counter()
     try:
-        archive = Farchive(_WORKER_DB_PATH)
+        archive = open_farchive_immutable(Path(_WORKER_DB_PATH))
     except Exception as exc:
         result = _bench_exception_result(
             entry,
@@ -3501,19 +3508,18 @@ def _run_bench_parallel_entries(
         score_text,
         record_replay_subphases,
     )
-    # Fast fork-backed default: child workers inherit these globals.
-    _configure_uk_bench_worker(*worker_config)
+    # Always pass the initializer so worker config survives forkserver/spawn
+    # re-import (the start method on this host is forkserver on py3.14, which
+    # re-imports the module in each worker and resets module globals — relying
+    # on fork-inherited values is not safe; #210 / #223).
+    pool_kwargs: dict[str, Any] = {
+        "max_workers": workers,
+        "initializer": _configure_uk_bench_worker,
+        "initargs": worker_config,
+    }
     if worker_max_tasks_per_child is not None:
-        # max_tasks_per_child may use spawn; initializer makes worker config
-        # explicit instead of relying on fork-inherited module globals.
-        pool = ProcessPoolExecutor(
-            max_workers=workers,
-            initializer=_configure_uk_bench_worker,
-            initargs=worker_config,
-            max_tasks_per_child=worker_max_tasks_per_child,
-        )
-    else:
-        pool = ProcessPoolExecutor(max_workers=workers)
+        pool_kwargs["max_tasks_per_child"] = worker_max_tasks_per_child
+    pool = ProcessPoolExecutor(**pool_kwargs)
 
     with pool:
         future_to_entry: dict[Future[_BenchResult], dict[str, Any]] = {}

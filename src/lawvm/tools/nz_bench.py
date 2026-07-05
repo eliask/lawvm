@@ -515,12 +515,20 @@ def _worker_init(db_path_str: str) -> None:
     each archived version XML parses at most once per worker. The cache only
     memoizes pure, (locator, version_id)-addressed parses, so results stay
     byte-identical to the uncached path.
+
+    The archive is opened with SQLite ``immutable=1`` (via
+    :func:`lawvm.tools._worker_pool.open_farchive_immutable`) so concurrent
+    readers on WSL2 do not race on the ``-wal``/``-shm`` sidecar files — a
+    plain ``mode=ro`` open still maps the sidecar and surfaces
+    ``disk I/O error`` under concurrency (#210 / #223).
     """
+    from lawvm.tools._worker_pool import open_farchive_immutable
+
     global _WORKER_ARCHIVE, _WORKER_DB_PATH, _WORKER_CACHE_CM
     _WORKER_CACHE_CM = corpus_run_cache()
     _WORKER_CACHE_CM.__enter__()
     _WORKER_DB_PATH = Path(db_path_str)
-    _WORKER_ARCHIVE = open_farchive(_WORKER_DB_PATH)
+    _WORKER_ARCHIVE = open_farchive_immutable(_WORKER_DB_PATH)
 
 
 def _score_one_work_worker(work_id: str) -> _WorkResult:

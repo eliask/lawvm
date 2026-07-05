@@ -688,7 +688,24 @@ def no_bench_main(args) -> int:  # noqa: ANN001 — argparse Namespace, intentio
 # Mirrors the lawvm.tools.ee_bench pattern: each worker process resolves the
 # data_dir from this global so ProcessPoolExecutor batches do not need to
 # pickle the (heavy) archive connection per task.
+#
+# IMPORTANT: under forkserver/spawn (the default start method on py3.14
+# Linux), worker processes RE-IMPORT this module, resetting module globals to
+# their defaults. Setting _WORKER_DATA_DIR on the parent and expecting workers
+# to inherit it via fork is not safe. Pass _init_no_bench_worker as the pool
+# initializer so each worker explicitly receives the data_dir after re-import
+# (#210 / #223).
 _WORKER_DATA_DIR: "Path | None" = None
+
+
+def _init_no_bench_worker(data_dir_str: str) -> None:
+    """ProcessPoolExecutor initializer: install per-worker data_dir.
+
+    Runs once per worker process after module re-import, so the value
+    survives regardless of pool start method (fork/forkserver/spawn).
+    """
+    global _WORKER_DATA_DIR
+    _WORKER_DATA_DIR = Path(data_dir_str) if data_dir_str else None
 
 
 # Per-statute result CSV header — one row per ``BenchUnitResult`` from the
@@ -888,6 +905,7 @@ def _run_bench_sweep(
     from concurrent.futures import ProcessPoolExecutor, as_completed
     from typing import Optional, cast
 
+    # Set in the parent so the serial path (workers <= 1) can read it directly.
     _WORKER_DATA_DIR = data_dir
     try:
         if workers <= 1:
@@ -896,7 +914,14 @@ def _run_bench_sweep(
         total = len(rows)
         results: list[Optional[BenchUnitResult]] = [None] * total
         t0 = time.time()
-        with ProcessPoolExecutor(max_workers=workers) as pool:
+        # Pass _init_no_bench_worker as the pool initializer so worker processes
+        # receive the data_dir even under forkserver/spawn, where module globals
+        # set in the parent are reset on re-import (#210 / #223).
+        with ProcessPoolExecutor(
+            max_workers=workers,
+            initializer=_init_no_bench_worker,
+            initargs=(str(data_dir) if data_dir is not None else "",),
+        ) as pool:
             future_to_idx = {
                 pool.submit(_no_bench_score_one_worker, row): idx
                 for idx, row in enumerate(rows)
