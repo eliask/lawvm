@@ -99,6 +99,7 @@ from lawvm.core.ir import (
     TextSelector,
 )
 from lawvm.core.provenance import OperationSource
+from lawvm.core.regex_safety import compile_classifier_regex
 from lawvm.core.semantic_types import (
     IRNodeKind,
     StructuralAction,
@@ -299,16 +300,35 @@ _RE_ANNEX_AS_SET_OUT = re.compile(
 
 # The instruments an amendment instruction can NAME as its target: "Regulation
 # (EU) 2022/2309", "Council Regulation (EC) No 1210/2003", "Directive
-# 2009/138/EC", "Decision (CFSP) 2022/2319" … The captured ``num`` is the
-# ``A/B`` number pair (year/number in either order); the surrounding institution
-# words and the (EC)/(EU)/No decorations vary freely.
-_RE_NAMED_INSTRUMENT = re.compile(
-    r"\b(?:Regulation|Directive|Decision)\b"
-    r"(?:\s*\([A-Za-z,\s]+\))?"  # (EU) / (EC) / (EU, Euratom) / (CFSP)
-    r"(?:\s*No\.?)?"
-    r"\s*(?P<num>\d{1,4}/\d{1,4})",
+# 2009/138/EC", "Decision (CFSP) 2022/2319" … Recognition is TWO-STEP (both
+# classifiers FW-07 backtracking-bounded): find each instrument keyword, then
+# scan a short bounded window after it for the ``A/B`` number pair — the
+# decorations between them ((EU) / (EC) / (EU, Euratom) / (CFSP) / "No") vary
+# freely and a one-shot pattern over them is exactly the nested-optional-
+# quantifier shape the regex-safety lint forbids.
+_RE_INSTRUMENT_KEYWORD = compile_classifier_regex(
+    r"\b(?:Regulation|Directive|Decision)\b",
     re.I,
+    classifier_id="eu_fmx4_instrument_keyword",
 )
+_RE_INSTRUMENT_NUMBER = compile_classifier_regex(
+    r"(?<![\d/])(?P<num>\d{1,4}/\d{1,4})(?!\d)",
+    classifier_id="eu_fmx4_instrument_number",
+)
+#: How far past the instrument keyword the number pair may sit ("Regulation
+#: (EU, Euratom) No 1210/2003" needs ~26 chars of decoration).
+_INSTRUMENT_NUMBER_WINDOW = 40
+
+
+def _cited_instrument_numbers(instr: str) -> list[str]:
+    """Every ``A/B`` instrument number cited in ``instr`` (document order)."""
+    out: list[str] = []
+    for kw in _RE_INSTRUMENT_KEYWORD.finditer(instr):
+        window = instr[kw.end(): kw.end() + _INSTRUMENT_NUMBER_WINDOW]
+        nm = _RE_INSTRUMENT_NUMBER.search(window)
+        if nm:
+            out.append(nm.group("num"))
+    return out
 
 
 def _base_number_forms(base_celex: str) -> frozenset[str]:
@@ -350,7 +370,7 @@ def _foreign_target_instrument(instr: str, base_celex: str) -> str:
     base_forms = _base_number_forms(base_celex) if base_celex else frozenset()
     if not base_forms:
         return ""
-    cited = [m.group("num") for m in _RE_NAMED_INSTRUMENT.finditer(instr)]
+    cited = _cited_instrument_numbers(instr)
     if not cited:
         return ""
     if any(c in base_forms for c in cited):
@@ -555,8 +575,25 @@ def _strip_quoted_article_heading(block: str, num: str) -> str:
     heading of THIS payload's own number is stripped — never any other leading
     text — so the transform is label/text normalization, not payload rewriting.
     """
-    m = re.match(rf"\s*Article\s+{re.escape(num)}\s*[.:—–-]?\s*", block, re.I)
-    return block[m.end():] if m else block
+    m = _RE_QUOTED_ARTICLE_HEADING.match(block.lstrip())
+    if m and m.group("num").casefold() == num.casefold():
+        rest = block.lstrip()[m.end():]
+        # The heading's trailing punctuation/space is trimmed in CODE (a
+        # variable-repeat regex tail is the lint-forbidden shape).
+        return rest.lstrip(" \t\r\n\u00a0.:—–-")
+    return block
+
+
+#: A quoted whole-article body's own leading heading ("Article 5", "Article 5a").
+#: Precompiled once (no per-op f-string regex, FW-08) via the FW-07
+#: backtracking-bounded wrap; the caller verifies the captured number equals the
+#: payload's target label before stripping, so only the payload's OWN heading is
+#: ever removed.
+_RE_QUOTED_ARTICLE_HEADING = compile_classifier_regex(
+    r"Article\s+(?P<num>\d{1,4}[a-z]?)(?!\w)",
+    re.I,
+    classifier_id="eu_fmx4_quoted_article_heading",
+)
 
 
 # ---------------------------------------------------------------------------
