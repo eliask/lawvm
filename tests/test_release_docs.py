@@ -53,7 +53,9 @@ def test_canonical_ci_validates_pytest_shard_ownership() -> None:
 
     assert 'exec ./scripts/ci_sharded.sh "$@"' in canonical
     assert "./scripts/test_shard.sh validate" in sharded
-    assert "scripts/test_shard.py" in sharded
+    # test_shard.py is statically checked via the ``scripts/`` glob (#225
+    # replaced the per-script allowlist with the directory).
+    assert "\n    scripts/\n" in sharded
     assert "FAIL: pytest shard ownership is invalid." in sharded
 
 

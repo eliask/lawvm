@@ -242,15 +242,28 @@ def test_ci_default_bounded_shards_cover_frontends_and_modules() -> None:
 def test_ci_static_checks_cover_uk_acquisition_scripts() -> None:
     static_paths = set(_ci_sharded_static_check_paths())
 
-    assert {
-        "src/lawvm/",
-        "tests/",
+    # The core trees are always statically checked.
+    assert {"src/lawvm/", "tests/"} <= static_paths
+
+    # The UK acquisition scripts (and any other script) must be COVERED by some
+    # static-check path — either listed literally or by a directory prefix. #225
+    # replaced the drift-prone per-script allowlist with the ``scripts/`` glob;
+    # this assertion holds for either form and encodes the real intent (the
+    # scripts are ruff+ty-checked), not the literal path list.
+    def _covered(path: str) -> bool:
+        return any(
+            path == p or (p.endswith("/") and path.startswith(p))
+            for p in static_paths
+        )
+
+    for script in (
         "scripts/test_shard.py",
         "scripts/fetch_uk_affecting_acts.py",
         "scripts/uk_fetch_affecting_acts.py",
         "scripts/uk_fetch_effects.py",
         "scripts/uk_inspect_metadata_effects.py",
-    } <= static_paths
+    ):
+        assert _covered(script), f"{script} is not statically checked"
 
 
 def test_test_shard_new_zealand_group_expands_to_subshards() -> None:
