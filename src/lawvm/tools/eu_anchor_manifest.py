@@ -819,7 +819,9 @@ class EUOracleAttribution:
     anchors: tuple[Any, ...]  # fi_anchor_manifest.AnchorObservation
     observations: tuple[Any, ...]  # fi_anchor_manifest.TouchObservation
     eu_observations: tuple[EUReplayObservation, ...]
-    status: str = "OK"
+    # VOCAB-02: namespaced (not bare ``status``) — the attribution-computability
+    # resolution of this base's whole consolidation chain.
+    resolution_status: str = "OK"
 
     def family_counts(self) -> dict[str, int]:
         """Project ALL observations into their CTSF residual families."""
@@ -869,7 +871,7 @@ def attribute_base_consolidations(base_celex: str, *, archive: Any) -> EUOracleA
             anchors=(),
             observations=(),
             eu_observations=(),
-            status="ERROR:no-stored-consolidations",
+            resolution_status="ERROR:no-stored-consolidations",
         )
     base_ir = _graft(archive, base_celex)
     if base_ir is None:
@@ -878,7 +880,7 @@ def attribute_base_consolidations(base_celex: str, *, archive: Any) -> EUOracleA
             anchors=(),
             observations=(),
             eu_observations=(),
-            status="ERROR:base-not-graftable",
+            resolution_status="ERROR:base-not-graftable",
         )
 
     edges = REAL_ANCHOR_EU_AMENDMENT_CLOSURE.get(base_celex, ())
