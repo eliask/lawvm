@@ -12,6 +12,8 @@ from __future__ import annotations
 from lawvm.core.reference_mention import CiteConfidence, CiteKind
 from lawvm.finland.references.anaphora import (
     AnaphorStatus,
+    _downgrade_for_approximate,
+    _locate_offset,
     recognize_anaphoric_refs,
 )
 
@@ -166,3 +168,36 @@ def test_anaphor_binds_to_nearest_not_earliest_act() -> None:
 
 def test_guard_returns_empty_without_determiner() -> None:
     assert recognize_anaphoric_refs("Yleissopimus tuli voimaan vuonna 2020.") == []
+
+
+# --- HONESTY: cursor-fallback offset is signalled + downgrades EXACT ---------
+
+
+def test_locate_offset_signals_located_vs_fallback() -> None:
+    """_locate_offset reports whether the surface was really found or a fallback."""
+    text = "alpha beta gamma"
+    # found at/after cursor
+    assert _locate_offset(text, "beta", 0) == (6, True)
+    # found on whole-text re-search when cursor is past it
+    assert _locate_offset(text, "beta", 10) == (6, True)
+    # not present at all -> cursor fallback, located=False
+    assert _locate_offset(text, "zzz", 4) == (4, False)
+    # empty surface -> fallback, located=False
+    assert _locate_offset(text, "", 3) == (3, False)
+
+
+def test_downgrade_for_approximate_floors_at_exact_only() -> None:
+    """An EXACT inheritance is lowered to APPROXIMATE; lower levels are unchanged."""
+    assert (
+        _downgrade_for_approximate(CiteConfidence.EXACT)
+        is CiteConfidence.APPROXIMATE
+    )
+    # already not-parsed-exact -> left as-is (never RAISED)
+    assert (
+        _downgrade_for_approximate(CiteConfidence.STATUTE_ONLY)
+        is CiteConfidence.STATUTE_ONLY
+    )
+    assert (
+        _downgrade_for_approximate(CiteConfidence.APPROXIMATE)
+        is CiteConfidence.APPROXIMATE
+    )

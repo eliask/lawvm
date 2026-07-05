@@ -294,11 +294,18 @@ class _Antecedent:
         kind:      whether it is an ACT-level or PROVISION-level reference.
         mention:   the concrete antecedent ReferenceMention (its target is the
                    bind target).
+        offset_located: whether ``offset`` is a REAL located surface offset
+                   (``True``) or the cursor fallback used when the surface could
+                   not be found in the text (``False``). A fallback offset makes
+                   document ordering (and therefore the bound antecedent) uncertain,
+                   so a bind to such an antecedent is downgraded to APPROXIMATE
+                   rather than inheriting the antecedent's EXACT confidence.
     """
 
     offset: int
     kind: _HeadKind
     mention: ReferenceMention
+    offset_located: bool = True
 
 
 def _antecedent_kind(mention: ReferenceMention) -> _HeadKind:
@@ -318,24 +325,32 @@ def _antecedent_kind(mention: ReferenceMention) -> _HeadKind:
     return _HeadKind.ACT
 
 
-def _locate_offset(text: str, surface: str, search_from: int) -> int:
+def _locate_offset(text: str, surface: str, search_from: int) -> tuple[int, bool]:
     """Find the char offset of ``surface`` in ``text`` at or after ``search_from``.
 
     The by-name / internal lanes report ``source_span=None`` (the integration
     step re-anchors), so we recover document order by locating each antecedent's
     surface text. We search left-to-right from a running cursor so repeated
-    surfaces map to successive occurrences in order. Returns ``search_from`` as a
-    fallback when the surface cannot be located (keeps ordering monotone; never
-    raises).
+    surfaces map to successive occurrences in order.
+
+    Returns ``(offset, located)``: ``located`` is ``True`` when the surface was
+    really found (at/after the cursor, or on a whole-text re-search) and ``False``
+    when it could not be located and ``search_from`` is returned as the cursor
+    FALLBACK (keeps ordering monotone; never raises). A fallback offset makes
+    document ordering unreliable, so the caller marks the antecedent as
+    ``offset_located=False`` and any anaphor that binds to it is downgraded to
+    APPROXIMATE (the wrong antecedent may have been picked — tag-don't-guess).
     """
     if not surface:
-        return search_from
+        return search_from, False
     idx = text.find(surface, search_from)
     if idx < 0:
         # Fall back to a fresh search from the start (the lanes may normalize
         # whitespace in the surface); if still not found, keep the cursor.
         idx = text.find(surface)
-    return idx if idx >= 0 else search_from
+    if idx >= 0:
+        return idx, True
+    return search_from, False
 
 
 def _collect_antecedents(text: str, statute_id: str) -> List[_Antecedent]:
@@ -349,15 +364,19 @@ def _collect_antecedents(text: str, statute_id: str) -> List[_Antecedent]:
 
     cursor = 0
     for mention in recognize_by_name_refs(text):
-        off = _locate_offset(text, mention.surface_text, cursor)
+        off, located = _locate_offset(text, mention.surface_text, cursor)
         cursor = max(cursor, off)
-        antecedents.append(_Antecedent(off, _antecedent_kind(mention), mention))
+        antecedents.append(
+            _Antecedent(off, _antecedent_kind(mention), mention, located)
+        )
 
     cursor = 0
     for mention in recognize_internal_refs(text, statute_id):
-        off = _locate_offset(text, mention.surface_text, cursor)
+        off, located = _locate_offset(text, mention.surface_text, cursor)
         cursor = max(cursor, off)
-        antecedents.append(_Antecedent(off, _antecedent_kind(mention), mention))
+        antecedents.append(
+            _Antecedent(off, _antecedent_kind(mention), mention, located)
+        )
 
     antecedents.sort(key=lambda a: a.offset)
     return antecedents
@@ -422,8 +441,27 @@ def _self_mention(statute_id: str, surface: str, offset: int) -> ReferenceMentio
     )
 
 
+def _downgrade_for_approximate(cite_confidence: CiteConfidence) -> CiteConfidence:
+    """Lower an inherited antecedent confidence to APPROXIMATE, floor-preserving.
+
+    Used when the bound antecedent's document position was a CURSOR FALLBACK
+    (its surface could not be located), so the ordering — and therefore WHICH
+    antecedent was bound — is uncertain. An EXACT (internal-path) inheritance is
+    lowered to APPROXIMATE. A confidence already AT OR BELOW APPROXIMATE
+    (STATUTE_ONLY for a by-name act, AMBIGUOUS, …) already flags the target as
+    not-parsed-exact, so it is left as-is (never RAISED to APPROXIMATE).
+    """
+    if cite_confidence is CiteConfidence.EXACT:
+        return CiteConfidence.APPROXIMATE
+    return cite_confidence
+
+
 def _resolved_mention(
-    antecedent: ReferenceMention, target: ProvisionRef, surface: str
+    antecedent: ReferenceMention,
+    target: ProvisionRef,
+    surface: str,
+    *,
+    offset_located: bool = True,
 ) -> ReferenceMention:
     """Build a RESOLVED anaphor mention bound to an antecedent target.
 
@@ -431,12 +469,21 @@ def _resolved_mention(
     (a by-name antecedent stays ``CROSS_STATUTE`` / ``STATUTE_ONLY``; an internal
     antecedent stays ``INTERNAL`` / ``EXACT``). The anaphor adds no new
     resolution confidence of its own — it merely co-refers.
+
+    When ``offset_located`` is ``False`` the bound antecedent's document position
+    was a cursor FALLBACK (its surface could not be located), so the ordering that
+    selected it is unreliable; an EXACT inheritance is then downgraded to
+    APPROXIMATE (:func:`_downgrade_for_approximate`) so a possibly-wrong bind is
+    not laundered into the graph as an exact co-reference.
     """
+    confidence = antecedent.cite_confidence
+    if not offset_located:
+        confidence = _downgrade_for_approximate(confidence)
     return ReferenceMention(
         source_provision_ref=ProvisionRef(statute_id=""),
         target_provision_ref=target,
         cite_kind=antecedent.cite_kind,
-        cite_confidence=antecedent.cite_confidence,
+        cite_confidence=confidence,
         phrase_lemma="anaphor_ref",
         source_span=None,
         valid_at_interval=(None, None),
@@ -566,7 +613,15 @@ def recognize_anaphoric_refs(
                     char_offset=offset,
                     head_kind=head_kind,
                     anaphor_status=AnaphorStatus.RESOLVED,
-                    mention=_resolved_mention(nearest[0].mention, distinct[0], surface),
+                    mention=_resolved_mention(
+                        nearest[0].mention,
+                        distinct[0],
+                        surface,
+                        # A cursor-fallback offset on the bound antecedent makes the
+                        # ordering (and the bind) uncertain -> downgrade EXACT to
+                        # APPROXIMATE rather than laundering a possibly-wrong bind.
+                        offset_located=all(a.offset_located for a in nearest),
+                    ),
                 )
             )
         else:

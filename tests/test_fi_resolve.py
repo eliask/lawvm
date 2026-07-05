@@ -403,7 +403,10 @@ def test_fi_name_miss_falls_back_to_eu_nickname_single() -> None:
     assert rr.mention.target_provision_ref is not None
     assert rr.mention.target_provision_ref.statute_id == "celex:32009R1069"
     assert rr.mention.target_provision_ref.section_label == "3"
-    assert rr.mention.cite_confidence is CiteConfidence.EXACT
+    # A jurisdiction-flipped EU-nickname fallback is a BEST-EFFORT resolution
+    # (the statute registry missed, the EU one hit on a nickname), so it is stamped
+    # APPROXIMATE — not laundered to EXACT — to stay distinguishable downstream.
+    assert rr.mention.cite_confidence is CiteConfidence.APPROXIMATE
     assert rr.mention.phrase_lemma == "eu_nickname_fallback_from_fi_name"
 
 
@@ -768,7 +771,10 @@ def test_fi_name_content_word_set_fallback_resolves_inflection_diff() -> None:
     [rr] = resolve_mentions([m], statute_registry=reg, eu_registry=eu_nickname)
     assert rr.resolution_status is ResolutionStatus.RESOLVED
     assert rr.work_id == "1992/1330"
-    assert rr.mention.cite_confidence is CiteConfidence.EXACT
+    # An inflection-robust content-word-set match is a BEST-EFFORT resolution (the
+    # cite's premodifier inflection differed from the official title), so it is
+    # stamped APPROXIMATE — not laundered to EXACT.
+    assert rr.mention.cite_confidence is CiteConfidence.APPROXIMATE
     assert (
         rr.mention.phrase_lemma == "statute_name_content_word_set_fallback"
     )
@@ -829,3 +835,152 @@ def test_trailing_period_title_resolves_inflected_cite_through_projection() -> N
     [rr] = resolve_mentions([m], statute_registry=reg, eu_registry=eu_nickname)
     assert rr.resolution_status is ResolutionStatus.RESOLVED
     assert rr.work_id == "1960/465"
+
+
+def test_content_word_set_single_out_of_window_stays_resolved_approximate() -> None:
+    """A content-word single re-widened past an as-of window stays RESOLVED APPROXIMATE."""
+    reg = build_registry(
+        [
+            StatuteNameEntry(
+                "1992/1330",
+                "Laki maatalousyrittäjien luopumiskorvauksesta",
+                valid_from=dt.date(1992, 1, 1),
+                valid_to=dt.date(2000, 1, 1),
+            )
+        ]
+    )
+    m = _mention(
+        "fi-name:laki maatalousyrittäjien luopumiskorvauksista",
+        surface_text="maatalousyrittäjien luopumiskorvauksista annetun lain",
+    )
+    # as_of AFTER the window: exact/content lookups both miss, re-widen to whole
+    # timeline yields the single act -> resolved, but APPROXIMATE (out of window).
+    [rr] = resolve_mentions(
+        [m], statute_registry=reg, eu_registry=eu_nickname, as_of=dt.date(2010, 1, 1)
+    )
+    assert rr.resolution_status is ResolutionStatus.RESOLVED
+    assert rr.work_id == "1992/1330"
+    assert rr.mention.cite_confidence is CiteConfidence.APPROXIMATE
+
+
+# ---------------------------------------------------------------------------
+# Multi-version disambiguation (honest, APPROXIMATE, gated OFF by default)
+# ---------------------------------------------------------------------------
+
+
+def _multi_version_registry():
+    """A registry with an act repealed-and-re-enacted under the same name.
+
+    ``ympäristönsuojelulaki`` has an OLD version (closed window) and a LIVE version
+    (``valid_to=None``). A ``laki`` cite of it is multi-version over the whole
+    timeline; exactly one candidate is still in force.
+    """
+    return build_registry(
+        [
+            StatuteNameEntry(
+                statute_id="86/2000",
+                canonical_title="Ympäristönsuojelulaki",
+                valid_from=dt.date(2000, 1, 1),
+                valid_to=dt.date(2014, 9, 1),
+            ),
+            StatuteNameEntry(
+                statute_id="527/2014",
+                canonical_title="Ympäristönsuojelulaki",
+                valid_from=dt.date(2014, 9, 1),
+                valid_to=None,
+            ),
+        ]
+    )
+
+
+def test_multi_version_stays_ambiguous_by_default() -> None:
+    """Without the flag, a multi-version name stays AMBIGUOUS (never picked)."""
+    reg = _multi_version_registry()
+    [rr] = resolve_mentions(
+        [_mention("fi-name:ympäristönsuojelulaki")],
+        statute_registry=reg,
+        eu_registry=eu_nickname,
+    )
+    assert rr.resolution_status is ResolutionStatus.AMBIGUOUS
+    assert set(rr.candidates) == {"86/2000", "527/2014"}
+
+
+def test_multi_version_live_pick_resolves_approximate() -> None:
+    """With the flag, the still-in-force version is picked APPROXIMATE, others rejected."""
+    reg = _multi_version_registry()
+    [rr] = resolve_mentions(
+        [_mention("fi-name:ympäristönsuojelulaki")],
+        statute_registry=reg,
+        eu_registry=eu_nickname,
+        disambiguate_multi_version=True,
+    )
+    assert rr.resolution_status is ResolutionStatus.RESOLVED
+    assert rr.work_id == "527/2014"
+    # A heuristic pick among multiple -> APPROXIMATE, never laundered EXACT.
+    assert rr.mention.cite_confidence is CiteConfidence.APPROXIMATE
+    assert rr.mention.phrase_lemma == "statute_name_as_of_live_version_pick"
+    assert rr.rejected_candidates == ("86/2000",)
+    assert rr.finding is None
+
+
+def test_multi_version_no_unique_live_stays_ambiguous_even_with_flag() -> None:
+    """Two CLOSED versions (no live) stay AMBIGUOUS even with the flag (no guess)."""
+    reg = build_registry(
+        [
+            StatuteNameEntry(
+                "1988/517", "Radiolaki",
+                valid_from=dt.date(1988, 6, 10), valid_to=dt.date(2002, 1, 1),
+            ),
+            StatuteNameEntry(
+                "2001/1015", "Radiolaki",
+                valid_from=dt.date(2001, 11, 16), valid_to=dt.date(2015, 1, 1),
+            ),
+        ]
+    )
+    [rr] = resolve_mentions(
+        [_mention("fi-name:radiolaki")],
+        statute_registry=reg,
+        eu_registry=eu_nickname,
+        disambiguate_multi_version=True,
+    )
+    assert rr.resolution_status is ResolutionStatus.AMBIGUOUS
+    assert set(rr.candidates) == {"1988/517", "2001/1015"}
+
+
+def test_multi_version_law_vs_decree_head_filter() -> None:
+    """A ``laki`` cite drops an ``asetus`` homonym, resolving to the single law.
+
+    Both candidates are still in force, so the as-of-live signal ALONE is ambiguous
+    (two live); the cited head ``laki`` uniquely selects the law over the decree.
+    Tested directly on ``_disambiguate_multi_version`` (a real registry does not
+    collide a law and a decree under one inflected key).
+    """
+    from lawvm.finland.references.registries.statute_name import Candidate
+    from lawvm.finland.references.resolve import _disambiguate_multi_version
+
+    cands = (
+        Candidate("100/1990", "Maankäyttölaki", None, None),
+        Candidate("200/1990", "Maankäyttöasetus", None, None),
+    )
+    # cited head "laki" -> selects the law only, provenance = head pick.
+    picked = _disambiguate_multi_version("maankäyttölaki", cands)
+    assert picked is not None
+    assert picked[0] == "100/1990"
+    assert picked[1] == "statute_name_law_decree_head_pick"
+    # cited head "asetus" -> selects the decree only.
+    picked_dec = _disambiguate_multi_version("maankäyttöasetus", cands)
+    assert picked_dec is not None
+    assert picked_dec[0] == "200/1990"
+
+
+def test_disambiguate_two_live_no_head_signal_stays_none() -> None:
+    """Two live candidates with the SAME head -> no signal singles one out -> None."""
+    from lawvm.finland.references.registries.statute_name import Candidate
+    from lawvm.finland.references.resolve import _disambiguate_multi_version
+
+    cands = (
+        Candidate("100/1990", "Foolaki", None, None),
+        Candidate("200/1995", "Foolaki", None, None),
+    )
+    # both live, both laki -> neither head nor live-uniqueness picks -> ambiguous
+    assert _disambiguate_multi_version("foolaki", cands) is None

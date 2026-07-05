@@ -65,7 +65,13 @@ Resolution ladder (per mention):
 The OUTPUT for the AMBIGUOUS / OPEN cases is a re-typed mention whose
 ``cite_confidence`` is downgraded (AMBIGUOUS / UNRESOLVED), so the H1 / anaphora
 lenses transcribe the fail-loud verdict onto the graph unchanged. A RESOLVED
-mention keeps EXACT confidence with the now-complete provision path.
+mention keeps EXACT confidence with the now-complete provision path WHEN the
+materialized section structure CONFIRMS the resolved address (structural-uniqueness
+bare kohta, or a bare momentti the enclosing section enumerates); a bare momentti
+attached by drafting CONVENTION to an enclosing section whose structure does not
+enumerate that momentti number is a defensible-but-unverified inference and carries
+APPROXIMATE confidence instead (honesty over recall — the target's existence was
+not confirmed).
 """
 from __future__ import annotations
 
@@ -304,8 +310,19 @@ def _rewrite_target(
     *,
     section_label: str,
     subsection_num: Optional[int],
+    cite_confidence: CiteConfidence = CiteConfidence.EXACT,
 ) -> ReferenceMention:
-    """Return a NEW mention whose target carries the concrete section/momentti."""
+    """Return a NEW mention whose target carries the concrete section/momentti.
+
+    ``cite_confidence`` (default EXACT) is stamped on the rewritten mention: EXACT when
+    the omitted address part is VERIFIED against the materialized section structure
+    (structural-uniqueness bare kohta, or a bare momentti the enclosing section
+    actually enumerates), APPROXIMATE when the attachment is a drafting-CONVENTION
+    inference the structure could not confirm (a bare momentti attached to an
+    enclosing section whose materialized structure does not enumerate that momentti
+    number). A convention inference is defensible but not verified, so it stays
+    distinguishable from a structure-confirmed resolution.
+    """
     tgt = mention.target_provision_ref
     assert tgt is not None
     changes: dict[str, object] = {"section_label": section_label}
@@ -315,7 +332,7 @@ def _rewrite_target(
     return dataclasses.replace(
         mention,
         target_provision_ref=new_target,
-        cite_confidence=CiteConfidence.EXACT,
+        cite_confidence=cite_confidence,
     )
 
 
@@ -357,16 +374,30 @@ def resolve_elliptical_mention(
     # ── bare momentti (subsection named, section omitted) ──────────────────
     if tgt.subsection_num is not None and tgt.item_label is None:
         # CONVENTION: the bare momentti is a momentti of the enclosing section.
-        # The momentti number is the surface's; we trust it and attach the
-        # enclosing section regardless of whether the section's materialized
-        # structure happens to enumerate that exact momentti number (old
-        # consolidations carry no subsection numbering). We do not invent a
-        # momentti the surface did not name.
+        # The momentti number is the surface's; we attach the enclosing section and
+        # keep the surface's momentti number (we never invent a momentti the surface
+        # did not name).
+        #
+        # HONESTY: the attachment is EXACT only when the enclosing section's
+        # materialized structure CONFIRMS that momentti number exists. When the
+        # structure is absent (old consolidations carry no subsection numbering) or
+        # enumerates moments but NOT this one, the momentti-of-this-section
+        # attachment is an unverified drafting-convention inference -> APPROXIMATE
+        # (defensible, but the structure could not confirm the target exists).
+        momentti_confirmed = (
+            enclosing is not None
+            and tgt.subsection_num in enclosing.subsec_nums
+        )
         return EllipticalResolution(
             _rewrite_target(
                 mention,
                 section_label=enclosing_label,
                 subsection_num=tgt.subsection_num,
+                cite_confidence=(
+                    CiteConfidence.EXACT
+                    if momentti_confirmed
+                    else CiteConfidence.APPROXIMATE
+                ),
             ),
             EllipticalStatus.RESOLVED,
             enclosing_section_label=enclosing_label,

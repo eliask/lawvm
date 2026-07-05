@@ -143,6 +143,27 @@ def test_bare_momentti_resolves_to_enclosing_section() -> None:
     assert res.mention.cite_confidence is CiteConfidence.EXACT
 
 
+def test_bare_momentti_unverified_by_structure_is_approximate() -> None:
+    """A bare momentti the enclosing section does NOT enumerate resolves APPROXIMATE.
+
+    Section 5 enumerates moments 1..3; a bare ``7 momentissa`` names a momentti
+    the materialized structure does not carry. Convention still attaches the
+    enclosing section (defensible), but the momentti's existence is unverified, so
+    the confidence is APPROXIMATE — not a laundered EXACT.
+    """
+    structures = build_section_structures(_STATUTE_XML)
+    m = _mention_at(
+        subsection_num=7, item_label=None, enclosing_section="5", surface="7 momentissa"
+    )
+    res = resolve_elliptical_mention(m, structures)
+    assert res.elliptical_status is EllipticalStatus.RESOLVED
+    tgt = res.mention.target_provision_ref
+    assert tgt is not None
+    assert tgt.section_label == "5"
+    assert tgt.subsection_num == 7
+    assert res.mention.cite_confidence is CiteConfidence.APPROXIMATE
+
+
 def test_bare_kohta_with_two_kohta_carrying_moments_is_ambiguous() -> None:
     """When >1 momentti carries kohta, a bare kohta is AMBIGUOUS (never picked)."""
     # A section whose momentti 1 AND momentti 2 both carry kohta.

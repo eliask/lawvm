@@ -61,6 +61,7 @@ from lawvm.finland.references.defined_terms import (
 )
 from lawvm.finland.references.registries import eu_nickname
 from lawvm.finland.references.registries.statute_name import (
+    Candidate,
     StatuteNameRegistry,
     _normalize_key,
     build_registry,
@@ -484,20 +485,31 @@ def _rewrite_target_id(
     work_id: str,
     *,
     phrase_lemma: Optional[str] = None,
+    cite_confidence: CiteConfidence = CiteConfidence.EXACT,
 ) -> ReferenceMention:
     """Return a NEW mention with the target's statute_id rewritten to ``work_id``.
 
-    The input mention is never mutated (frozen dataclasses, ``replace``). The
-    cite_confidence is promoted to EXACT — the identity is now resolved to a
-    single real id. ``phrase_lemma`` overrides the syntactic-class label on the
-    rewritten mention when provided (used to record local-binding provenance).
+    The input mention is never mutated (frozen dataclasses, ``replace``).
+    ``cite_confidence`` is the cite_confidence stamped on the rewritten mention:
+
+    * ``EXACT`` (the default) — the identity is resolved to a single real id by an
+      EXACT registry key match or an in-statute binding that names it verbatim.
+    * ``APPROXIMATE`` — a BEST-EFFORT resolution: a heuristic pick among genuinely
+      multiple candidates (as-of-live version preference), an inflection-robust
+      content-word-set match, a jurisdiction-flipped EU-nickname fallback, or an
+      as-of re-widened out-of-window version. These are defensible but NOT parsed
+      exact, so they carry the lower APPROXIMATE confidence to keep the guess
+      distinguishable downstream (honesty over recall — §0.3 tag-don't-guess).
+
+    ``phrase_lemma`` overrides the syntactic-class label on the rewritten mention
+    when provided (used to record the resolution-path provenance).
     """
     target = mention.target_provision_ref
     assert target is not None  # guarded by caller
     new_target = dataclasses.replace(target, statute_id=work_id)
     changes: dict[str, object] = {
         "target_provision_ref": new_target,
-        "cite_confidence": CiteConfidence.EXACT,
+        "cite_confidence": cite_confidence,
     }
     if phrase_lemma is not None:
         changes["phrase_lemma"] = phrase_lemma
@@ -514,6 +526,138 @@ _LOCAL_BINDING_PHRASE_LEMMA = "defined_term_local_binding"
 # from the official title only by premodifier inflection), after the exact-surface
 # registry lookup missed.
 _CWS_FALLBACK_PHRASE_LEMMA = "statute_name_content_word_set_fallback"
+
+# Provenance tag recorded when a MULTIPLE (multi-version) registry result is
+# collapsed to one candidate by the as-of-live-version preference (exactly one
+# candidate is still in force). This is a HEURISTIC pick among genuinely multiple
+# candidates, so the rewritten mention carries APPROXIMATE confidence, never EXACT.
+_LIVE_VERSION_PHRASE_LEMMA = "statute_name_as_of_live_version_pick"
+
+# Provenance tag recorded when an as-of window that excluded every version is
+# re-widened to the whole timeline and yields a single (out-of-window) candidate.
+# The candidate's window did NOT cover the mention's as-of instant, so the pick is
+# a best-effort (APPROXIMATE), not an exact in-window resolution.
+_REWIDENED_PHRASE_LEMMA = "statute_name_as_of_rewidened_out_of_window"
+
+# Provenance tag recorded when a multi-version MULTIPLE result is collapsed to one
+# candidate by the CITED-HEAD law/decree filter (a ``laki`` cite dropped the
+# ``asetus`` homonym). A best-effort pick -> APPROXIMATE.
+_HEAD_FILTER_PHRASE_LEMMA = "statute_name_law_decree_head_pick"
+
+
+# ---------------------------------------------------------------------------
+# Multi-version disambiguation (recall lever, honesty-preserving)
+# ---------------------------------------------------------------------------
+#
+# A statute NAME commonly maps to several ids over time (an act repealed and
+# re-enacted under the same name; a chain of amending acts sharing a title). The
+# registry lands ``multiple`` and NEVER picks — the correct fail-loud default. But
+# two PRINCIPLED signals often single out one candidate WITHOUT guessing an
+# arbitrary "newest":
+#
+#   (1) LAW-vs-DECREE by the CITED HEAD. The by-name key carries the head the text
+#       used (``laki`` vs ``asetus``). A ``laki`` cite can never denote an
+#       ``asetus`` act of the same subject (a law and a decree are different
+#       statutes), so a head mismatch drops that candidate. When exactly one
+#       candidate's official-title head matches the cited head, it is the target.
+#   (2) AS-OF-LIVE VERSION. When exactly one candidate is STILL IN FORCE
+#       (``valid_to is None``) and every other candidate has a CLOSED window (it
+#       was repealed/superseded), the live version is the defensible referent of a
+#       bare name read in the consolidated present. This is NOT "pick the newest"
+#       (a re-enacted-then-also-repealed pair leaves zero or several live and is
+#       left ambiguous); it is "the one act of this name that is still the law".
+#
+# BOTH are best-effort disambiguations of a genuinely-multiple result, so the
+# resolution is stamped APPROXIMATE (not EXACT): downstream can tell a parsed-exact
+# id from a heuristically-disambiguated one. When neither signal singles out one
+# candidate the result stays AMBIGUOUS (fail-loud, no pick). Gated OFF by default
+# (``disambiguate_multi_version``) so every existing caller is byte-unchanged.
+
+
+def _title_head(canonical_title: str) -> Optional[str]:
+    """Return the closed statute head (``laki``/``asetus``/…) a title ends in.
+
+    The head is read from the title's LAST word (``Ympäristönsuojelulaki`` ->
+    ``laki``; ``Valtioneuvoston asetus …`` is head-first so its first word
+    ``asetus`` is the head). We check both the last-word suffix (compound titles)
+    and the first word (head-first descriptive titles). Returns ``None`` when no
+    known head is found (the title carries no law/decree distinction we can use).
+    """
+    low = canonical_title.strip().rstrip(".").lower()
+    if not low:
+        return None
+    words = low.split()
+    # Head-first descriptive title (``Laki …`` / ``Asetus …`` / ``Valtioneuvoston
+    # asetus …``): the head is a standalone leading word.
+    for w in words[:2]:
+        if w in ("laki", "asetus"):
+            return w
+    # Compound title: the trailing head rides the last word (``…laki`` / ``…asetus``).
+    last = words[-1]
+    for head in ("asetus", "laki"):
+        if last.endswith(head):
+            return head
+    return None
+
+
+def _cited_head(name_key: str) -> Optional[str]:
+    """Return the statute head the CITED ``fi-name:`` key carries (``laki``/``asetus``).
+
+    The by-name key is either head-first (``laki <body>``) or a trailing-head
+    compound (``ympäristönsuojelulaki``). ``None`` when neither shape names a
+    law/decree head (no head signal to filter on).
+    """
+    low = name_key.strip().lower()
+    if not low:
+        return None
+    first = low.split(" ", 1)[0]
+    if first in ("laki", "asetus"):
+        return first
+    for head in ("asetus", "laki"):
+        if low.endswith(head):
+            return head
+    return None
+
+
+def _disambiguate_multi_version(
+    name_key: str,
+    candidates: "tuple[Candidate, ...]",
+) -> Optional[tuple[str, str]]:
+    """Try to single out ONE candidate from a MULTIPLE result, honestly.
+
+    Applies, in order: (1) the cited-head law/decree filter, then (2) the
+    as-of-live-version preference (exactly one candidate still in force). Returns
+    ``(work_id, provenance_lemma)`` when exactly one candidate survives the
+    filters, else ``None`` (leave AMBIGUOUS — no guess). The returned resolution is
+    a best-effort pick and is stamped APPROXIMATE by the caller.
+    """
+    survivors = list(candidates)
+
+    # (1) LAW-vs-DECREE by cited head. Drop candidates whose title head disagrees
+    # with the head the citation used. Only apply when the cite HAS a head signal
+    # AND every candidate exposes a head (else a headless title would be dropped
+    # for lacking a signal, which is not a real mismatch).
+    cited = _cited_head(name_key)
+    if cited is not None:
+        heads = [_title_head(c.canonical_title) for c in survivors]
+        if all(h is not None for h in heads):
+            head_matched = [
+                c for c, h in zip(survivors, heads, strict=True) if h == cited
+            ]
+            if head_matched and len(head_matched) < len(survivors):
+                survivors = head_matched
+                if len({c.statute_id for c in survivors}) == 1:
+                    # The head filter alone singled out one act (a law/decree pick).
+                    return survivors[0].statute_id, _HEAD_FILTER_PHRASE_LEMMA
+
+    # (2) AS-OF-LIVE VERSION. Exactly one candidate is still in force -> it is the
+    # referent of the bare name in the consolidated present. Zero or several live
+    # candidates -> genuinely ambiguous, leave it.
+    live = [c for c in survivors if c.valid_to is None]
+    if len({c.statute_id for c in live}) == 1:
+        return live[0].statute_id, _LIVE_VERSION_PHRASE_LEMMA
+
+    return None
 
 
 def _ambiguity_finding(
@@ -564,6 +708,7 @@ def _resolve_fi_name(
     as_of: Optional[dt.date],
     defined_terms: Optional[DefinedTermTable],
     name_id_anaphora: Optional[NameIdAnaphoraTable] = None,
+    disambiguate_multi_version: bool = False,
 ) -> ResolvedReference:
     """Resolve a ``fi-name:<name>`` placeholder.
 
@@ -625,15 +770,39 @@ def _resolve_fi_name(
     # guessed instant. Re-check unfiltered: if the whole-timeline lookup still
     # yields candidates, the name stays AMBIGUOUS over those candidates (no pick,
     # fail-loud) instead of falsely reporting a coverage gap.
+    #
+    # HONESTY: a re-widened result is OUT-OF-WINDOW — the surviving candidate's
+    # window did not cover the mention's as-of instant. If the whole-timeline
+    # lookup is ``single`` we still resolve it (the name IS that act), but as a
+    # best-effort (APPROXIMATE), never a laundered EXACT: the as-of that would have
+    # confirmed the version was excluded.
+    rewidened = False
     if as_of is not None and result.registry_status == "none":
         unfiltered = statute_registry.lookup(name, None)
         if unfiltered.registry_status != "none":
             result = unfiltered
+            rewidened = True
 
     candidate_ids = tuple(c.statute_id for c in result.candidates)
 
     if result.registry_status == "single":
         work_id = candidate_ids[0]
+        # An in-window single is EXACT; a re-widened (out-of-window) single is a
+        # best-effort APPROXIMATE pick with the rewiden provenance recorded.
+        if rewidened:
+            return ResolvedReference(
+                mention=_rewrite_target_id(
+                    mention,
+                    work_id,
+                    phrase_lemma=_REWIDENED_PHRASE_LEMMA,
+                    cite_confidence=CiteConfidence.APPROXIMATE,
+                ),
+                resolution_status=ResolutionStatus.RESOLVED,
+                work_id=work_id,
+                candidates=candidate_ids,
+                rejected_candidates=(),
+                finding=None,
+            )
         return ResolvedReference(
             mention=_rewrite_target_id(mention, work_id),
             resolution_status=ResolutionStatus.RESOLVED,
@@ -643,6 +812,28 @@ def _resolve_fi_name(
             finding=None,
         )
     if result.registry_status == "multiple":
+        # A genuinely multi-version name. When enabled, try a PRINCIPLED honest
+        # disambiguation (cited-head law/decree filter, then as-of-live version);
+        # a single survivor resolves APPROXIMATE (a best-effort pick among
+        # multiple, never laundered EXACT), the others stay listed as rejected.
+        if disambiguate_multi_version:
+            picked = _disambiguate_multi_version(name, result.candidates)
+            if picked is not None:
+                work_id, provenance = picked
+                rejected = tuple(cid for cid in candidate_ids if cid != work_id)
+                return ResolvedReference(
+                    mention=_rewrite_target_id(
+                        mention,
+                        work_id,
+                        phrase_lemma=provenance,
+                        cite_confidence=CiteConfidence.APPROXIMATE,
+                    ),
+                    resolution_status=ResolutionStatus.RESOLVED,
+                    work_id=work_id,
+                    candidates=candidate_ids,
+                    rejected_candidates=rejected,
+                    finding=None,
+                )
         return ResolvedReference(
             mention=dataclasses.replace(
                 mention, cite_confidence=CiteConfidence.AMBIGUOUS
@@ -673,9 +864,17 @@ def _resolve_fi_name(
     if cws_result.registry_status != "none":
         cws_ids = tuple(c.statute_id for c in cws_result.candidates)
         if cws_result.registry_status == "single":
+            # The content-word-set match is inflection-robust but NOT an exact
+            # surface hit — the cite's premodifier inflection differed from the
+            # official title, so the identity is inferred from a stem-set match, a
+            # best-effort resolution. Stamp APPROXIMATE (not EXACT) so a guessed
+            # descriptive-title id stays distinguishable from a parsed-exact one.
             return ResolvedReference(
                 mention=_rewrite_target_id(
-                    mention, cws_ids[0], phrase_lemma=_CWS_FALLBACK_PHRASE_LEMMA
+                    mention,
+                    cws_ids[0],
+                    phrase_lemma=_CWS_FALLBACK_PHRASE_LEMMA,
+                    cite_confidence=CiteConfidence.APPROXIMATE,
                 ),
                 resolution_status=ResolutionStatus.RESOLVED,
                 work_id=cws_ids[0],
@@ -748,9 +947,18 @@ def _resolve_fi_name_via_eu(
     candidate_ids = tuple(f"celex:{celex}" for celex in result.candidates)
     if result.registry_status is eu_nickname.RegistryStatus.SINGLE:
         work_id = candidate_ids[0]
+        # A JURISDICTION FLIP: the by-name lane typed this ``fi-name:`` (a
+        # Finnish-shaped ``-asetus`` head), and only the EU-nickname registry
+        # recognizes it. Resolving it to an EU CELEX is a defensible best-effort
+        # (the statute registry missed, the EU one hit), but it re-classifies the
+        # instrument's jurisdiction on a nickname match — stamp APPROXIMATE, not
+        # EXACT, so the flip is not laundered into the graph as a parsed-exact cite.
         return ResolvedReference(
             mention=_rewrite_target_id(
-                mention, work_id, phrase_lemma=_EU_FALLBACK_PHRASE_LEMMA
+                mention,
+                work_id,
+                phrase_lemma=_EU_FALLBACK_PHRASE_LEMMA,
+                cite_confidence=CiteConfidence.APPROXIMATE,
             ),
             resolution_status=ResolutionStatus.RESOLVED,
             work_id=work_id,
@@ -857,6 +1065,7 @@ def resolve_mention(
     defined_terms: Optional[DefinedTermTable] = None,
     name_id_anaphora: Optional[NameIdAnaphoraTable] = None,
     use_mention_validity: bool = False,
+    disambiguate_multi_version: bool = False,
 ) -> ResolvedReference:
     """Resolve a single mention's placeholder identity against the registries.
 
@@ -886,6 +1095,7 @@ def resolve_mention(
             effective_as_of,
             defined_terms,
             name_id_anaphora,
+            disambiguate_multi_version=disambiguate_multi_version,
         )
     if kind == _EU_NICKNAME_PREFIX:
         return _resolve_eu_nickname(mention)
@@ -901,6 +1111,7 @@ def resolve_mentions(
     defined_terms: Optional[DefinedTermTable] = None,
     resolve_name_id_anaphora: bool = True,
     use_mention_validity: bool = False,
+    disambiguate_multi_version: bool = False,
 ) -> list[ResolvedReference]:
     """Project placeholder mentions to :class:`ResolvedReference` records.
 
@@ -940,6 +1151,18 @@ def resolve_mentions(
             repeat of the same name appearing AFTER the binding (and with no
             defined-term match) resolves to that id. A name bound to >1 distinct id
             stays AMBIGUOUS (dropped, never picked). Set ``False`` to disable.
+        disambiguate_multi_version: When ``True``, a genuinely multi-version name
+            (registry ``multiple``) that the as-of filter did NOT narrow is given a
+            PRINCIPLED honest disambiguation before being reported AMBIGUOUS: the
+            cited-head law/decree filter (a ``laki`` cite never resolves to an
+            ``asetus`` act), then the as-of-live-version preference (exactly one
+            candidate still in force). A single survivor RESOLVES with APPROXIMATE
+            confidence (a best-effort pick among multiple, never a laundered EXACT)
+            and the dropped candidates are listed in ``rejected_candidates``; when
+            neither signal singles out one candidate the result stays AMBIGUOUS
+            (fail-loud). Default ``False`` preserves the never-pick behaviour for
+            every existing caller. This is a READ/PUBLISH recall lever (the citation
+            graph / viewer), not a replay input.
         use_mention_validity: When ``True`` and no explicit ``as_of`` is given,
             resolve EACH mention against the START of its OWN ``valid_at_interval``
             — the version of the cited act in force WHILE that citing reference
@@ -966,6 +1189,7 @@ def resolve_mentions(
             defined_terms=defined_terms,
             name_id_anaphora=name_id_anaphora,
             use_mention_validity=use_mention_validity,
+            disambiguate_multi_version=disambiguate_multi_version,
         )
         for m in mentions
     ]
