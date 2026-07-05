@@ -173,6 +173,44 @@ class EdgeRow:
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
+class DerivationEdgeRow:
+    """One typed FI derivation/relation edge projected into the exported graph.
+
+    Carries the substrate ``lawvm.legal_relation_edge.v0`` identity (content-
+    addressed ``edge_id``, ``relation_kind``, ``authority_plane``) plus the
+    FI-layer ``derivation_kind`` (textual | model_code | conformance | citation)
+    so a viewer can render the four categorically-distinct relationships WITHOUT
+    re-deriving them, and can never read a textual byte-match as a lineage claim
+    (the non-conflation is carried in the row). The full edge body is stored as
+    ``edge_json`` so the checkable claim (edit-script id, text hashes, honesty
+    boundary) travels intact.
+    """
+
+    edge_id: str
+    derivation_kind: str
+    relation_kind: str
+    authority_plane: str
+    source_ref: str
+    target_ref: str
+    replay_authorized: int
+    edge_status: str
+    edge_json: str
+
+    def sql_values(self) -> tuple[object, ...]:
+        return (
+            self.edge_id,
+            self.derivation_kind,
+            self.relation_kind,
+            self.authority_plane,
+            self.source_ref,
+            self.target_ref,
+            self.replay_authorized,
+            self.edge_status,
+            self.edge_json,
+        )
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
 class EvidenceEventRow:
     event_id: str
     surface: str
@@ -1030,6 +1068,57 @@ def build_evidence_event_rows(
 
 
 # ---------------------------------------------------------------------------
+# Derivation / relation-edge projection (FI reference-edge extraction surface)
+# ---------------------------------------------------------------------------
+
+
+def build_derivation_edge_rows(edge_set: Any) -> List[DerivationEdgeRow]:
+    """Flatten a FI :class:`DerivationEdgeSet` into export rows, kind-tagged.
+
+    The FI reference-edge classifier (``lawvm.finland.references.derivation_edges``)
+    is a READ/PUBLISH projection: it types each relationship into exactly one of
+    {textual, model_code, conformance, citation} as a substrate
+    ``lawvm.legal_relation_edge.v0`` body and keeps the four kinds in SEPARATE
+    lists so the non-conflation is structural. This function carries that same
+    typing into the exported graph — it reads the kind back off each edge via
+    :meth:`DerivationEdgeSet.kind_of` (the same bytes a consumer reads), never a
+    positional guess — so the derivation table cannot silently mislabel a byte
+    match as a lineage claim. ``target_set`` is a set by name; each element
+    becomes its own row (a multi-target edge fans out) so the table is a flat
+    ``(source_ref, target_ref)`` relation keyed by the shared ``edge_id``.
+    """
+    rows: List[DerivationEdgeRow] = []
+    for edge in edge_set.all_edges():
+        derivation_kind = edge_set.kind_of(edge).value
+        relation_kind = str(edge.get("relation_kind") or "")
+        authority_plane = str(edge.get("authority_plane") or "")
+        source_ref = str(edge.get("source_ref") or "")
+        edge_id = str(edge.get("edge_id") or "")
+        edge_status = str(edge.get("edge_status") or "")
+        replay_authorized = 1 if bool(edge.get("replay_authorized")) else 0
+        edge_json = json.dumps(edge, ensure_ascii=False, sort_keys=True)
+        targets = edge.get("target_set") or []
+        target_list = list(targets) if isinstance(targets, (list, tuple)) else [targets]
+        if not target_list:
+            target_list = [""]
+        for target in target_list:
+            rows.append(
+                DerivationEdgeRow(
+                    edge_id=edge_id,
+                    derivation_kind=derivation_kind,
+                    relation_kind=relation_kind,
+                    authority_plane=authority_plane,
+                    source_ref=source_ref,
+                    target_ref=str(target),
+                    replay_authorized=replay_authorized,
+                    edge_status=edge_status,
+                    edge_json=edge_json,
+                )
+            )
+    return rows
+
+
+# ---------------------------------------------------------------------------
 # SQLite schema
 # ---------------------------------------------------------------------------
 
@@ -1111,6 +1200,18 @@ CREATE TABLE evidence_events (
     rule_id        TEXT,
     title          TEXT,
     detail_json    TEXT
+);
+CREATE TABLE derivation_edges (
+    edge_id           TEXT,   -- content-addressed relation-edge id (shared per fan-out)
+    derivation_kind   TEXT,   -- textual | model_code | conformance | citation
+    relation_kind     TEXT,   -- substrate lawvm.legal_relation_edge.v0 relation_kind
+    authority_plane   TEXT,   -- legal_state | evidence | overlay | surface
+    source_ref        TEXT,
+    target_ref        TEXT,
+    replay_authorized INTEGER,-- 1 only for byte-verified textual derivation
+    edge_status       TEXT,
+    edge_json         TEXT,   -- full edge body (checkable claim travels intact)
+    PRIMARY KEY (edge_id, target_ref)
 );
 CREATE TABLE lawvm_interlinks (
     interlink_id             TEXT PRIMARY KEY,
@@ -1207,6 +1308,7 @@ class ExportStats:
     n_lawvm_interlinks: int
     n_lawvm_interlink_targets: int
     n_lawvm_surface_overlays: int
+    n_derivation_edges: int
     db_path: str
     db_size_bytes: int
     replay_seconds: float
@@ -1279,6 +1381,7 @@ def export_transition_graph(
     overlay_provider: LawvmSurfaceOverlayExportProvider | None = None,
     replay_runner: Any | None = None,
     tree_materializer: Any | None = None,
+    derivation_provider: Any | None = None,
 ) -> ExportStats:
     """Export the certified transition graph for ``statute_id`` to ``out_path``.
 
@@ -1289,6 +1392,14 @@ def export_transition_graph(
     "section", or legacy "chapter"); see :func:`covering_units`.
     Neutral LawVM interlinks are always projected into ``lawvm_interlinks``;
     legal-reference recognition must happen in LawVM, never in the viewer.
+
+    ``derivation_provider`` (optional) is a callable
+    ``(canonical_id, corpus, lo_ops) -> DerivationEdgeSet`` that projects the
+    jurisdiction's typed reference/derivation edges (textual | model_code |
+    conformance | citation) for the statute. When supplied, its edges are flushed
+    to the ``derivation_edges`` table so the FI reference-edge extraction reaches
+    the exported product surface; when ``None`` (the default) that table is empty
+    and every other surface is unchanged.
     """
     export_profile = profile or _default_export_profile()
     canonical_id = export_profile.canonical_statute_id(statute_id)
@@ -1552,6 +1663,17 @@ def export_transition_graph(
             segments_by_date=segments_by_date,
         )
 
+        # --- derivation_edges: typed FI reference/derivation edges ---
+        # The jurisdiction's reference-edge extractor is a READ/PUBLISH surface
+        # (never a replay input). When wired, it classifies the statute's
+        # relationships into the four DISTINCT typed kinds and we carry that
+        # typing verbatim into the exported graph.
+        derivation_rows: List[DerivationEdgeRow] = []
+        if derivation_provider is not None:
+            derivation_edge_set = derivation_provider(canonical_id, corpus, bundle.lo_ops)
+            if derivation_edge_set is not None:
+                derivation_rows = build_derivation_edge_rows(derivation_edge_set)
+
         source_rows: List[SourceArtifactRow] = []
         source_ref_by_amendment: Dict[str, str] = {}
         # the base statute
@@ -1720,6 +1842,13 @@ def export_transition_graph(
             + ")",
             [overlay_row_sql_values(row) for row in overlay_rows],
         )
+        conn.executemany(
+            "INSERT OR REPLACE INTO derivation_edges"
+            "(edge_id, derivation_kind, relation_kind, authority_plane, source_ref, "
+            " target_ref, replay_authorized, edge_status, edge_json) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [row.sql_values() for row in derivation_rows],
+        )
 
         # --- meta ---
         meta_rows = {
@@ -1788,6 +1917,7 @@ def export_transition_graph(
         n_lawvm_interlinks=len(interlink_rows),
         n_lawvm_interlink_targets=len(interlink_target_rows),
         n_lawvm_surface_overlays=len(overlay_rows),
+        n_derivation_edges=len(derivation_rows),
         db_path=str(out_path),
         db_size_bytes=db_size,
         replay_seconds=replay_seconds,
@@ -1853,4 +1983,5 @@ def main(args: Any) -> None:
     print(f"  lawvm_interlinks: {stats.n_lawvm_interlinks}", flush=True)
     print(f"  interlink_targets: {stats.n_lawvm_interlink_targets}", flush=True)
     print(f"  surface_overlays: {stats.n_lawvm_surface_overlays}", flush=True)
+    print(f"  derivation_edges: {stats.n_derivation_edges}", flush=True)
     print(f"  replay seconds:   {stats.replay_seconds:.1f}", flush=True)

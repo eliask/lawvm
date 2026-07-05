@@ -1120,6 +1120,129 @@ def test_export_emits_surface_overlay_table_schema(
         conn.close()
 
 
+def test_export_emits_empty_derivation_edges_table_without_provider(
+    patched_engine: None, tmp_path: Path
+) -> None:
+    """The derivation_edges table is always created with the coded columns; with
+    no derivation provider it is empty and every other surface is unchanged."""
+    out = tmp_path / "synth_derivation_schema.db"
+    stats = etg.export_transition_graph("100/2010", out, quiet=True)
+    assert stats.n_derivation_edges == 0
+
+    conn = sqlite3.connect(str(out))
+    try:
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(derivation_edges)").fetchall()]
+        assert tuple(cols) == (
+            "edge_id",
+            "derivation_kind",
+            "relation_kind",
+            "authority_plane",
+            "source_ref",
+            "target_ref",
+            "replay_authorized",
+            "edge_status",
+            "edge_json",
+        )
+        assert conn.execute("SELECT COUNT(*) FROM derivation_edges").fetchone()[0] == 0
+    finally:
+        conn.close()
+
+
+def test_export_emits_typed_derivation_edges_when_provider_supplied(
+    patched_engine: None, tmp_path: Path
+) -> None:
+    """Wiring the FI reference-edge classifier as a derivation provider makes the
+    four DISTINCT typed kinds (textual, model_code, conformance, citation) reach
+    the exported product surface — the derivation_edges table — with their
+    substrate identity (edge_id, relation_kind, authority_plane) and the
+    non-conflation carried per-row, never re-derived by the viewer."""
+    from lawvm.finland.references.derivation_edges import (
+        FiProvision,
+        classify_relationships,
+    )
+    from lawvm.finland.references.eu_transposition import (
+        TranspositionStatus,
+        recognize_transposition_claims,
+    )
+
+    # Real FI witnesses (mirroring tests/test_fi_derivation_edges.py):
+    # a voimaantulo clause reproduced verbatim across two acts (textual), a real
+    # industrial-emissions transposition declaration (conformance pair), and a
+    # cross-reference surface (citation).
+    voimaantulo = "Tämä laki tulee voimaan 1 päivänä tammikuuta 2014."
+    transposition_prose = (
+        "Tällä lailla pannaan täytäntöön teollisuuspäästödirektiivin "
+        "III luvun säännösten täytäntöönpanemiseksi tarvittavat toimet."
+    )
+
+    def derivation_provider(
+        canonical_id: str, _corpus: Any, _lo_ops: List[Any]
+    ) -> Any:
+        claims = recognize_transposition_claims(
+            transposition_prose, citing_engine_id="2014/527"
+        )
+        conformance_claims = [
+            (c.citing_engine_id, c.directive_celex, c.directive_surface, c.transposition_status.value)
+            for c in claims
+            if c.transposition_status is TranspositionStatus.RESOLVED
+        ]
+        citing = FiProvision(work_id="2014/527", address="40 §", text=voimaantulo)
+        other = FiProvision(work_id="2014/903", address="22 §", text=voimaantulo)
+        return classify_relationships(
+            textual_candidates=[(citing, other)],
+            conformance_claims=conformance_claims,
+            citations=[(citing, "fi-provision:2014/527#5 §", True)],
+            corpus_version=f"export:{canonical_id}",
+        )
+
+    out = tmp_path / "synth_derivation_wired.db"
+    stats = etg.export_transition_graph(
+        "100/2010",
+        out,
+        quiet=True,
+        derivation_provider=derivation_provider,
+    )
+    # textual(1) + conformance(2: claim + absence) + citation(1) = 4 edges.
+    assert stats.n_derivation_edges == 4
+
+    conn = sqlite3.connect(str(out))
+    try:
+        kinds = {
+            r[0]
+            for r in conn.execute("SELECT DISTINCT derivation_kind FROM derivation_edges")
+        }
+        assert kinds == {"textual", "conformance", "citation"}
+
+        # The byte-verified textual edge is the ONLY one carrying a legal_state
+        # authority grant — the non-conflation reaches the viewer intact.
+        textual = conn.execute(
+            "SELECT authority_plane, replay_authorized, source_ref FROM derivation_edges "
+            "WHERE derivation_kind='textual'"
+        ).fetchall()
+        assert len(textual) == 1
+        assert textual[0][0] == "legal_state"
+        assert textual[0][1] == 1
+        assert textual[0][2] == "fi-provision:2014/903#22 §"
+
+        # Conformance edges are NOT legal_state and never replay-authorized.
+        conformance = conn.execute(
+            "SELECT authority_plane, replay_authorized FROM derivation_edges "
+            "WHERE derivation_kind='conformance'"
+        ).fetchall()
+        assert len(conformance) == 2
+        assert all(plane != "legal_state" and grant == 0 for plane, grant in conformance)
+
+        # The full edge body round-trips as JSON and re-carries its kind.
+        (raw,) = conn.execute(
+            "SELECT edge_json FROM derivation_edges WHERE derivation_kind='citation'"
+        ).fetchone()
+        body = json.loads(raw)
+        assert body["effective_scope"]["derivation_kind"] == "citation"
+        assert body["authority_plane"] == "surface"
+    finally:
+        conn.close()
+
+
 def test_export_places_surface_overlays_in_rendered_text(
     patched_engine: None, tmp_path: Path
 ) -> None:
