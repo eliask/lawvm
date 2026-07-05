@@ -1114,6 +1114,7 @@ class UKReplayPipeline:
                     lowering_rejections_out=lowering_rejections_out,
                     source_root=root,
                     source_authority_layer=source_context.authority_layer,
+                    source_metadata_only=source_context.source_metadata_only,
                     lower_phase_timings_out=compile_phase_timings_out,
                 )
                 if compile_phase_timings_out is None:

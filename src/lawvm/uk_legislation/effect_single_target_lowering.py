@@ -161,6 +161,10 @@ class _EffectTargetLoweringInput:
     chained_insert_anchor: _ChainedInsertAnchorState
     lowering_rejections_out: Optional[list[dict[str, Any]]]
     structured_crossheading_op_built: bool = False
+    # True when the affecting Act's XML was a PDF-only metadata stub (no
+    # extractable body); routes a resulting missing-payload rejection to the
+    # typed PDF-only affecting-source pathology instead of the generic gate.
+    source_metadata_only: bool = False
 
 
 @dataclass(frozen=True)
@@ -667,6 +671,7 @@ def _lower_effect_target(ctx: _EffectTargetLoweringInput) -> _EffectTargetLoweri
         extracted_el=extracted_el,
         extracted_text=extracted_text,
         use_metadata_fallback=ctx.use_metadata_fallback,
+        source_metadata_only=ctx.source_metadata_only,
         lowering_rejections_out=lowering_rejections_out,
     ):
         return unchanged

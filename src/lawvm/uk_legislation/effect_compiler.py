@@ -496,6 +496,7 @@ def compile_effect_to_ir_ops(
     allow_payload_identity_synthesis: bool = True,
     source_root: Optional[ET._Element] = None,
     source_authority_layer: str = "",
+    source_metadata_only: bool = False,
     lower_phase_timings_out: Optional[dict[str, float]] = None,
 ) -> list[LegalOperation]:
     """Compile a UKEffectRecord + XML element into LawVM LegalOperations.
@@ -503,6 +504,11 @@ def compile_effect_to_ir_ops(
     Word-level effects lower to typed text-patch operations. Structural effects
     lower to canonical replace/repeal/insert operations only when source and
     target evidence support that action family.
+
+    ``source_metadata_only`` is True when the affecting Act's XML was a PDF-only
+    metadata stub (no extractable body); it lets the missing-payload gate TYPE the
+    resulting zero-op structural effect as a PDF-only affecting-source gap rather
+    than a generic target-geometry miss.
     """
     ops = _compile_effect_to_ir_ops_impl(
         effect,
@@ -513,6 +519,7 @@ def compile_effect_to_ir_ops(
         allow_payload_identity_synthesis=allow_payload_identity_synthesis,
         source_root=source_root,
         source_authority_layer=source_authority_layer,
+        source_metadata_only=source_metadata_only,
         lower_phase_timings_out=lower_phase_timings_out,
     )
     ops = _withhold_repeal_table_replacement_ops(
@@ -535,6 +542,7 @@ def _compile_effect_to_ir_ops_impl(
     allow_payload_identity_synthesis: bool = True,
     source_root: Optional[ET._Element] = None,
     source_authority_layer: str = "",
+    source_metadata_only: bool = False,
     lower_phase_timings_out: Optional[dict[str, float]] = None,
 ) -> list[LegalOperation]:
     phase_t0 = time.perf_counter()
@@ -1146,6 +1154,7 @@ def _compile_effect_to_ir_ops_impl(
                 lowering_rejections_out=lowering_rejections_out,
                 target_index=target_index,
                 structured_crossheading_op_built=structured_crossheading_op_built,
+                source_metadata_only=source_metadata_only,
             )
         )
         ops.extend(target_result.ops)

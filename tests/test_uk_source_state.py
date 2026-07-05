@@ -18,8 +18,10 @@ from lawvm.uk_legislation.source_state import (
     uk_affecting_act_single_unnumbered_schedule_context_ignored,
     uk_affecting_act_xml_too_small_rejection,
     uk_enacted_blob_replay_base_usability,
+    uk_root_is_metadata_only_stub,
     uk_source_state_wire_tuple,
 )
+from lawvm.core.xml_parse import parse_corpus_xml
 
 
 def test_uk_source_state_classifies_absent_too_small_and_available() -> None:
@@ -165,6 +167,30 @@ def test_uk_enacted_blob_replay_base_usability_rejects_metadata_only() -> None:
     assert uk_source_state_wire_tuple(metadata_only)[0] == "available"
     assert usable is False
     assert status == "metadata_only"
+
+
+def test_uk_root_metadata_only_stub_detected() -> None:
+    # A PDF-only affecting act's /data.xml is a NumberOfProvisions="0" metadata
+    # envelope: well over the size floor (so the wire gate calls it "available")
+    # but structure-aware detection on the parsed root must flag it as a
+    # metadata-only stub so the missing-payload lowering gate can TYPE the gap.
+    stub = b"""<?xml version="1.0"?>
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
+    NumberOfProvisions="0">
+  <ukm:Metadata xmlns:ukm="http://www.legislation.gov.uk/namespaces/metadata"/>
+</Legislation>"""
+    assert uk_source_state_wire_tuple(stub)[0] == "available"
+    assert uk_root_is_metadata_only_stub(parse_corpus_xml(stub)) is True
+
+
+def test_uk_root_metadata_only_stub_false_for_body() -> None:
+    with_body = b"""<?xml version="1.0"?>
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
+    NumberOfProvisions="1">
+  <Body><P1 id="section-1"><Pnumber>1</Pnumber><P1para>Text.</P1para></P1></Body>
+</Legislation>"""
+    # A real body is not a stub; absent/too-small carry their own upstream typing.
+    assert uk_root_is_metadata_only_stub(parse_corpus_xml(with_body)) is False
 
 
 def test_uk_enacted_blob_replay_base_usability_accepts_body() -> None:

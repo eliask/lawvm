@@ -61,6 +61,7 @@ def reject_missing_structural_payload(
     extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     use_metadata_fallback: bool,
+    source_metadata_only: bool = False,
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> bool:
     if not (
@@ -70,6 +71,36 @@ def reject_missing_structural_payload(
         and not use_metadata_fallback
     ):
         return False
+    if source_metadata_only:
+        # The affecting Act's XML was a PDF-only metadata stub (no Body/Schedule),
+        # so there was never any affecting-source text to extract for this target.
+        # This is a MISSING-INPUT pathology (the amending Act's text is not in the
+        # archive as structured XML), not a target-geometry miss against a real
+        # body — type it distinctly so the gap is explicit and attributable to PDF
+        # acquisition rather than buried under the generic missing-payload gate.
+        _append_uk_effect_lowering_rejection(
+            lowering_rejections_out,
+            rule_id="uk_effect_pdf_only_affecting_source_missing_payload_rejected",
+            family="source_pathology_filter",
+            reason_code="pdf_only_affecting_source_no_extractable_payload",
+            reason=(
+                "UK structural effect names a PDF-only affecting Act whose XML is a "
+                "NumberOfProvisions=\"0\" metadata stub with no Body/Schedule; the "
+                "amending text is not in the archive as structured XML, so no "
+                "affecting-source payload could be extracted and the effect cannot "
+                "lower to a real op. Acquire the affecting Act's PDF text into a "
+                "replay-addressable source rather than silently emitting zero ops."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": t_str,
+                "action": action,
+                "affecting_source_lane": "pdf_only_metadata_stub",
+            },
+        )
+        return True
     _append_uk_effect_lowering_rejection(
         lowering_rejections_out,
         rule_id="uk_effect_missing_structural_payload_rejected",

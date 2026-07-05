@@ -43,6 +43,8 @@ _UK_RULE_SPECS_SUPPLEMENT: Dict[str, str] = {
         "A UK effect lowers to no replay operations because no supported action could be inferred from its type or source text.",
     "uk_effect_missing_structural_payload_rejected":
         "A structural UK effect with no extracted source payload is refused, since emitting an empty replace/insert would risk destructive replay.",
+    "uk_effect_pdf_only_affecting_source_missing_payload_rejected":
+        "A structural UK effect whose affecting Act is PDF-only (its XML is a NumberOfProvisions=\"0\" metadata stub with no Body/Schedule) is refused with a typed missing-input pathology, since the amending text is not in the archive as structured XML and cannot silently lower to zero ops.",
     "uk_effect_replay_applicability_filter_rejected":
         "A UK effect that compiled to ops but is excluded by replay applicability (e.g. temporal ceases-to-have-effect) is recorded as filtered, not replayed.",
     "uk_effect_instruction_text_payload_rejected":

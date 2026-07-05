@@ -222,7 +222,9 @@ def classify_uk_statute_xml_content(blob: bytes | None) -> UKStatuteXmlContentSt
         root,
         "Schedule",
     )
-    if number_of_provisions == "0" and not has_body and not has_schedules:
+    if _uk_root_is_metadata_only(
+        number_of_provisions, has_body=has_body, has_schedules=has_schedules
+    ):
         status = UKStatuteXmlContentStatus.METADATA_ONLY
     else:
         status = UKStatuteXmlContentStatus.AVAILABLE
@@ -232,6 +234,43 @@ def classify_uk_statute_xml_content(blob: bytes | None) -> UKStatuteXmlContentSt
         number_of_provisions=number_of_provisions,
         has_body=has_body,
         has_schedules=has_schedules,
+    )
+
+
+def _uk_root_is_metadata_only(
+    number_of_provisions: str, *, has_body: bool, has_schedules: bool
+) -> bool:
+    return number_of_provisions == "0" and not has_body and not has_schedules
+
+
+def uk_root_is_metadata_only_stub(root: ET._Element) -> bool:
+    """True iff an ALREADY-PARSED UK affecting-act root is a PDF-only stub.
+
+    A PDF-only UK Act (~7.8k upstream) admits only a ``NumberOfProvisions="0"``
+    metadata envelope with no ``<Body>``/``<Schedule>`` as its ``/data.xml`` and
+    ``/enacted/data.xml``.  The size-only :func:`classify_uk_source_blob` gate
+    reports such a stub as ``available`` (it is well over
+    ``MIN_UK_XML_SOURCE_BYTES``), so the affecting-source extraction parses it into
+    an empty tree, finds no source node, and the structural effect lowers to zero
+    ops.  This structure-aware predicate distinguishes that PDF-only-affecting-text
+    pathology (the amending Act's text is simply not in the archive as XML) from a
+    genuine target-geometry miss against a real body, so the missing-payload
+    lowering gate can TYPE the gap instead of misattributing it.
+
+    Operates on the ALREADY-PARSED root — the affecting-source builder parses the
+    blob exactly once and reuses that root here, so metadata-only detection adds no
+    second parse (the per-act single-parse invariant is preserved).  Only the
+    ``metadata_only`` shape is a stub here: ``absent``/``too_small``/``parse_error``
+    already carry their own typed affecting-source rejections upstream.
+    """
+    number_of_provisions = str(root.get("NumberOfProvisions") or "")
+    has_body = _uk_xml_has_local_name(root, "Body")
+    has_schedules = _uk_xml_has_local_name(root, "Schedules") or _uk_xml_has_local_name(
+        root,
+        "Schedule",
+    )
+    return _uk_root_is_metadata_only(
+        number_of_provisions, has_body=has_body, has_schedules=has_schedules
     )
 
 

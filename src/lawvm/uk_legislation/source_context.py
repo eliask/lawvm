@@ -48,6 +48,7 @@ from lawvm.uk_legislation.source_state import (
     uk_affecting_act_xml_missing_rejection,
     uk_affecting_act_xml_parse_rejection,
     uk_affecting_act_xml_too_small_rejection,
+    uk_root_is_metadata_only_stub,
     uk_source_state_wire_tuple,
 )
 from lawvm.uk_legislation.uk_grafter import _LEG_NS, _clean_num
@@ -112,6 +113,12 @@ class UKAffectingSourceContext:
     source_size: int
     locator: str
     authority_layer: str
+    # True when the fetched affecting XML is a PDF-only metadata stub
+    # (``source_status == "available"`` by size, but ``NumberOfProvisions="0"``
+    # with no ``<Body>``/``<Schedule>``): there is no affecting-source text to
+    # extract, so a structural effect against it types as a PDF-only gap rather
+    # than a generic missing-payload target-geometry miss.
+    source_metadata_only: bool = False
     provision_extractor: Callable[..., Optional[ET._Element]] = extract_provision_element_from_bytes
     provision_element_cache: dict[str, Optional[ET._Element]] = field(
         default_factory=dict,
@@ -478,12 +485,20 @@ def _build_affecting_source_context(
     exact_id_map: dict[str, ET._Element] = {}
     sequence_map: dict[tuple[str, ...], ET._Element] = {}
     parse_error = None
+    source_metadata_only = False
     if xml_bytes and source_status == "available":
         try:
             root = parse_corpus_xml(xml_bytes)
         except ET.ParseError as exc:
             parse_error = exc
         else:
+            # The size-only wire gate reports a PDF-only metadata stub as
+            # "available"; inspect the ALREADY-PARSED root (no second parse) to
+            # distinguish such a stub (NumberOfProvisions="0", no Body/Schedule)
+            # from a real body so the missing-payload lowering gate can TYPE the
+            # gap. Computed off ``root`` to preserve the single-parse-per-act
+            # invariant.
+            source_metadata_only = uk_root_is_metadata_only_stub(root)
             parent_map, exact_id_map, sequence_map = _build_extraction_context(root)
     return UKAffectingSourceContextBuild(
         source_context=UKAffectingSourceContext(
@@ -496,6 +511,7 @@ def _build_affecting_source_context(
             source_size=source_size,
             locator=locator,
             authority_layer=authority_layer,
+            source_metadata_only=source_metadata_only,
             provision_extractor=provision_extractor,
         ),
         parse_error=parse_error,

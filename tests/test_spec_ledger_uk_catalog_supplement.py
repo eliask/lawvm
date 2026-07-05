@@ -1,7 +1,7 @@
 """Coverage guard for the UK effect-diagnostic / lowering catalog supplement.
 
 Asserts that ``_UK_RULE_SPECS_SUPPLEMENT`` carries a non-empty, prose
-``believed_spec`` for each of the 67 ``uk_effect_*`` / ``uk_affecting_act_*``
+``believed_spec`` for each of the 68 ``uk_effect_*`` / ``uk_affecting_act_*``
 rule_ids that were the catalog gap, and (best-effort) that each keyed id still
 appears in the UK lowering / tools source — flagging any that do not as
 possibly-renamed.
@@ -20,6 +20,7 @@ _GAP_RULE_IDS = (
     "uk_effect_application_overlay_no_textual_action_observed",
     "uk_effect_lowering_no_supported_action_rejected",
     "uk_effect_missing_structural_payload_rejected",
+    "uk_effect_pdf_only_affecting_source_missing_payload_rejected",
     "uk_effect_replay_applicability_filter_rejected",
     "uk_affecting_act_compound_reference_split_fallback",
     "uk_affecting_act_missing_current_enacted_source_selected",
@@ -100,9 +101,9 @@ _SEARCH_ROOTS = (
 )
 
 
-def test_gap_list_has_exactly_67_ids() -> None:
-    assert len(_GAP_RULE_IDS) == 67
-    assert len(set(_GAP_RULE_IDS)) == 67, "duplicate id in the gap list"
+def test_gap_list_has_exactly_68_ids() -> None:
+    assert len(_GAP_RULE_IDS) == 68
+    assert len(set(_GAP_RULE_IDS)) == 68, "duplicate id in the gap list"
 
 
 def test_every_gap_id_has_nonempty_prose_spec() -> None:
