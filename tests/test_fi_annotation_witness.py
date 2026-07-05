@@ -359,8 +359,67 @@ def test_census_target_agreement_signal() -> None:
     assert eid.annotation_witnesses >= 1
     # At least one explicit-id target agreed between grammar and annotation.
     assert eid.target_agree >= 1
+    # The exact-provision agreement is NOT a provision divergence.
+    assert eid.both_same_statute_diff_provision == 0
     # A by-name reference the <ref> does not annotate is grammar_only (NEUTRAL).
     assert per_family["by_name"].grammar_only >= 1
+
+
+# The grammar text-lane recovers 2003/481 at STATUTE level (prose paren); the
+# <ref> href points at 2003/481#sec_5 (section-level). SAME statute, DIFFERENT
+# provision path — the divergence the old statute-id fallback silently counted as
+# agreement. It must now land in both_same_statute_diff_provision, NOT target_agree.
+_DIFF_PROVISION_BODY = _statute(
+    _section(
+        "1",
+        "Noudatetaan asetusta (481/2003). Viitataan "
+        '<ref href="/akn/fi/act/statute-consolidated/2003/481#sec_5">'
+        "asetuksen 5 §</ref>.",
+    )
+)
+
+
+def test_census_same_statute_diff_provision_is_not_agreement() -> None:
+    """A statute-level grammar mention vs a section-level <ref> → diff_provision.
+
+    This is the whole point of the sharper census: same statute but a different
+    provision path is a GRANULARITY DIVERGENCE, not agreement. It books the NEW
+    both_same_statute_diff_provision bucket, and target_agree EXCLUDES it. Under
+    the old statute-id fallback this pair was masked as both_same_target_diff_span
+    (i.e. counted as agree).
+    """
+    per_family = census_one_statute(_DIFF_PROVISION_BODY, "2020/100")
+    eid = per_family["explicit_id"]
+    assert eid.both_same_statute_diff_provision >= 1
+    # The divergence is NOT counted as target agreement.
+    assert eid.target_agree == 0
+    assert eid.same_statute_diff_provision == eid.both_same_statute_diff_provision
+    # It IS a matched pair (both sides present), just a divergent one.
+    assert eid.matched >= 1
+
+
+def test_census_exact_provision_agreement_when_ref_carries_same_path() -> None:
+    """Grammar and <ref> at the SAME (statute-level) target → exact agreement.
+
+    A control for the diff-provision test: when both surfaces carry the SAME
+    provision path (here both statute-level, empty path), the pair is an exact
+    agreement (both_same_target_diff_span — span not comparable), NOT a spurious
+    provision divergence. The <ref> href to 481/2003 has no #frag, so its
+    target_section is empty — matching the grammar prose paren-id's empty path.
+    """
+    body = _statute(
+        _section(
+            "1",
+            "Noudatetaan asetusta (481/2003). Viitataan "
+            '<ref href="/akn/fi/act/statute-consolidated/2003/481">'
+            "asetukseen (481/2003)</ref>.",
+        )
+    )
+    per_family = census_one_statute(body, "2020/100")
+    eid = per_family["explicit_id"]
+    # Exact-provision agreement, and NO spurious divergence.
+    assert eid.target_agree >= 1
+    assert eid.both_same_statute_diff_provision == 0
 
 
 # ── firewall ─────────────────────────────────────────────────────────────────

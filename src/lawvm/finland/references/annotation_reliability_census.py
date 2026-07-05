@@ -15,13 +15,20 @@ status tally into the two L7 artifacts:
                             the recall the markup lacks;
        annotation_exceeds — a ``<ref>`` witness the grammar does NOT cover
                             (annotation_only) — what the markup adds;
-       disagree           — both present but the targets DIVERGE
-                            (both_same_span_diff_target) OR the pair cannot be
-                            decided (both_present_noncomparable).
+       disagree           — both present but the targets DIVERGE at provision
+                            granularity: a different statute at the same span
+                            (both_same_span_diff_target), the SAME statute but a
+                            different subsection/item/version
+                            (both_same_statute_diff_provision — the divergence a
+                            bare statute-id key used to hide inside ``agree``), OR
+                            an undecidable pair (both_present_noncomparable).
 
      This is the empirical answer to "how reliable is ``<ref>`` per family" — the
      quantification of grammar7's claim that ``<ref>`` is reliable ONLY for
-     explicit paren-ids and weak elsewhere.
+     explicit paren-ids and weak elsewhere. It is CONCORDANCE at
+     ``statute#section/subsection/item`` granularity, NOT precision against a gold
+     set: agree/disagree say the surfaces name the same/different provision, never
+     which side is correct.
 
   2. a ``SourceSurfacePolicy`` MANIFEST (grammar7 §13-D) — a typed, auditable
      declaration of the role each annotation shape (family) is PERMITTED to play:
@@ -38,6 +45,13 @@ status tally into the two L7 artifacts:
      family whose ``<ref>`` is absent, or present only as an unverified one-sided
      surface, earns ``qa_only``. The manifest makes the annotation-dependence
      policy EXPLICIT instead of buried in the extractor.
+
+A tiny HAND-VERIFIED GOLD SLICE (:data:`GOLD_CASES` / :func:`measure_gold_precision`)
+sits alongside the corpus table. The corpus census is CONCORDANCE (no gold set);
+the gold slice adds honest PRECISION on a handful of synthetic cases whose correct
+target is known by construction, so grammar-vs-truth and ``<ref>``-vs-truth can be
+measured directly. It is a deliberately tiny sanity floor, NEVER a corpus-scale
+precision claim.
 
 DISCIPLINE (this lane): MEASUREMENT + POLICY only. It reads the existing census
 output; it does NOT change the parser, the witness lens, or any resolution
@@ -136,19 +150,32 @@ class FamilyReliability:
 
 
 def reliability_of(fc: FamilyComparison) -> FamilyReliability:
-    """Reduce a 7-status :class:`FamilyComparison` to the four L7 buckets.
+    """Reduce the granularity-aware status tally to the four L7 buckets.
 
       agree              = both_same_target + both_same_target_diff_span
+                           (EXACT-provision agreement only)
       grammar_exceeds    = grammar_only
       annotation_exceeds = annotation_only
-      disagree           = both_same_span_diff_target + both_present_noncomparable
+      disagree           = both_same_span_diff_target
+                           + both_same_statute_diff_provision
+                           + both_present_noncomparable
+
+    ``both_same_statute_diff_provision`` counts as DISAGREE: the two surfaces
+    name the same statute but a different subsection/item/version, so the ``<ref>``
+    does NOT corroborate the grammar's target at provision granularity. Folding it
+    into ``agree`` (the old statute-id-fallback behaviour) over-stated ``<ref>``
+    reliability; surfacing it here is the whole point of the sharper census.
     """
     return FamilyReliability(
         family=fc.family,
         agree=fc.both_same_target + fc.both_same_target_diff_span,
         grammar_exceeds=fc.grammar_only,
         annotation_exceeds=fc.annotation_only,
-        disagree=fc.both_same_span_diff_target + fc.both_present_noncomparable,
+        disagree=(
+            fc.both_same_span_diff_target
+            + fc.both_same_statute_diff_provision
+            + fc.both_present_noncomparable
+        ),
     )
 
 
@@ -301,6 +328,241 @@ def build_source_surface_policy(
 
 
 # ---------------------------------------------------------------------------
+# Tiny HAND-VERIFIED gold precision lane (honest ground-truth slice)
+# ---------------------------------------------------------------------------
+#
+# The corpus census above is CONCORDANCE, not precision: it has no gold set, so
+# it can only say grammar and <ref> agree/disagree, never which side is right.
+# This tiny lane adds the missing thing HONESTLY: a handful of hand-written cases
+# whose CORRECT target is known BY CONSTRUCTION (we authored the body and declare
+# its truth), so we can measure true precision — grammar-vs-truth and <ref>-vs-
+# truth — on that slice. It is deliberately TINY and synthetic (not scraped from
+# the corpus, where truth cannot be cheaply hand-verified); it is a sanity floor,
+# never a corpus-scale precision claim. Every case's ``gold`` was verified by
+# reading the body: the ``(statute_id, provision_path)`` is the provision the
+# citation demonstrably points at.
+
+_AKN_GOLD = 'xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0"'
+
+
+def _gold_statute(body_inner: str) -> bytes:
+    return (
+        f"<akomaNtoso {_AKN_GOLD}><act><body>{body_inner}</body></act></akomaNtoso>"
+    ).encode("utf-8")
+
+
+def _gold_section(num: str, p_inner: str) -> str:
+    return (
+        f"<section><num>{num} §</num><paragraph><content><p>{p_inner}</p>"
+        "</content></paragraph></section>"
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class GoldCase:
+    """One hand-verified precision case.
+
+    ``xml``    — a synthetic AKN body we authored (truth is knowable).
+    ``gold``   — the CORRECT ``(statute_id, provision_path)`` the citation points
+                 at, hand-verified by reading the body. ``provision_path`` is the
+                 raw AKN path (``""`` = statute-level).
+    ``note``   — why this is the truth (auditability).
+    """
+
+    name: str
+    xml: bytes
+    gold: tuple[str, str]
+    note: str
+
+
+#: The committed gold fixture: 6 hand-verified explicit-id cases. Kept tiny and
+#: synthetic ON PURPOSE — a truthful sanity floor, not a corpus precision claim.
+GOLD_CASES: tuple[GoldCase, ...] = (
+    GoldCase(
+        name="paren_id_statute_level",
+        xml=_gold_statute(
+            _gold_section(
+                "1",
+                "Sovelletaan asetusta (481/2003) tässä tapauksessa.",
+            )
+        ),
+        gold=("2003/481", ""),
+        note="prose paren-id (481/2003), no section → statute-level target 2003/481",
+    ),
+    GoldCase(
+        name="ref_matches_gold_statute_level",
+        xml=_gold_statute(
+            _gold_section(
+                "1",
+                'Viitataan <ref href="/akn/fi/act/statute-consolidated/1986/531">'
+                "(531/1986)</ref>.",
+            )
+        ),
+        gold=("1986/531", ""),
+        note="<ref> href to 1986/531, statute-level → target 1986/531",
+    ),
+    GoldCase(
+        name="ref_section_level_target",
+        xml=_gold_statute(
+            _gold_section(
+                "1",
+                'Katso <ref href="/akn/fi/act/statute/2001/2#sec_9">'
+                "toisen lain 9 §</ref>.",
+            )
+        ),
+        gold=("2001/2", "sec_9"),
+        note="<ref> href carries #sec_9 → section-level target 2001/2 sec_9",
+    ),
+    GoldCase(
+        name="ref_subsection_level_target",
+        xml=_gold_statute(
+            _gold_section(
+                "1",
+                'Sovelletaan <ref href="/akn/fi/act/statute/1999/731#sec_5_sub_2">'
+                "perustuslain 5 §:n 2 momentin</ref> mukaan.",
+            )
+        ),
+        gold=("1999/731", "sec_5_sub_2"),
+        note="<ref> href carries #sec_5_sub_2 → subsection-level target",
+    ),
+    GoldCase(
+        name="ref_diverges_from_gold_provision",
+        xml=_gold_statute(
+            _gold_section(
+                "1",
+                "Sovelletaan 7 §:n 3 momenttia lain "
+                '<ref href="/akn/fi/act/statute/2022/711#sec_7">'
+                "(711/2022)</ref> nojalla.",
+            )
+        ),
+        # Gold: the text says "7 §:n 3 momenttia" → sec_7_sub_3, but the <ref>
+        # href stops at #sec_7 — a genuine provision-level divergence where the
+        # GRAMMAR text-lane is finer. The gold is the finer, correct provision.
+        gold=("2022/711", "sec_7_sub_3"),
+        note="text names subsection 3; <ref> href only sec_7 → <ref> too coarse",
+    ),
+    GoldCase(
+        name="paren_id_two_statutes",
+        xml=_gold_statute(
+            _gold_section(
+                "1",
+                "Kumotaan laki (481/2003) ja säädetään asetus (531/1986).",
+            )
+        ),
+        gold=("2003/481", ""),
+        note="first paren-id (481/2003) is the gold subject of this case",
+    ),
+)
+
+
+@dataclass(frozen=True, slots=True)
+class GoldPrecision:
+    """Precision of each surface against the hand-verified gold slice.
+
+    Precision here = fraction of gold cases whose surface produces a mention/
+    witness whose target EXACTLY matches the gold ``(statute_id, provision_path)``.
+    This is TRUE precision (against known truth), not concordance — but only over
+    the tiny synthetic slice, so it is a sanity floor, not a corpus claim.
+    """
+
+    cases: int
+    grammar_correct: int
+    annotation_correct: int
+    #: Cases where grammar hit gold but <ref> did NOT (grammar finer/correct).
+    grammar_only_correct: int
+    #: Cases where <ref> hit gold but grammar did NOT.
+    annotation_only_correct: int
+
+    @property
+    def grammar_precision(self) -> float:
+        return self.grammar_correct / self.cases if self.cases else 0.0
+
+    @property
+    def annotation_precision(self) -> float:
+        return self.annotation_correct / self.cases if self.cases else 0.0
+
+
+def _grammar_hits_gold(xml: bytes, gold: tuple[str, str]) -> bool:
+    """True iff the grammar text-lane produces a mention with the gold target."""
+    from lawvm.finland.references.ref_mention_extractor import (
+        extract_all_reference_mentions,
+    )
+
+    res = extract_all_reference_mentions(xml, "gold/case", ignore_annotations=True)
+    g_stat, g_path = gold
+    for m in res.mentions:
+        tgt = m.target_provision_ref
+        if tgt is None or not tgt.statute_id:
+            continue
+        if tgt.statute_id == g_stat and (tgt.provision_path or "") == g_path:
+            return True
+    return False
+
+
+def _annotation_hits_gold(xml: bytes, gold: tuple[str, str]) -> bool:
+    """True iff a raw ``<ref>`` witness carries the gold target."""
+    from lawvm.finland.references.cross_refs import iter_body_annotation_refs
+
+    g_stat, g_path = gold
+    for rec in iter_body_annotation_refs(xml):
+        if not rec.parsed_ok or not rec.target_statute_id:
+            continue
+        if rec.target_statute_id == g_stat and (rec.target_section or "") == g_path:
+            return True
+    return False
+
+
+def measure_gold_precision(
+    cases: tuple[GoldCase, ...] = GOLD_CASES,
+) -> GoldPrecision:
+    """Measure grammar-vs-truth and ``<ref>``-vs-truth precision on the gold slice.
+
+    Honest ground-truth: each case's target is hand-verified by construction, so
+    a surface is CORRECT iff it produces the exact gold ``(statute, provision)``.
+    Reports both surfaces' precision plus the asymmetry (which surface is right
+    when they disagree) — the precision the concordance census cannot give.
+    """
+    g_ok = a_ok = g_only = a_only = 0
+    for case in cases:
+        gh = _grammar_hits_gold(case.xml, case.gold)
+        ah = _annotation_hits_gold(case.xml, case.gold)
+        g_ok += int(gh)
+        a_ok += int(ah)
+        g_only += int(gh and not ah)
+        a_only += int(ah and not gh)
+    return GoldPrecision(
+        cases=len(cases),
+        grammar_correct=g_ok,
+        annotation_correct=a_ok,
+        grammar_only_correct=g_only,
+        annotation_only_correct=a_only,
+    )
+
+
+def format_gold_precision_report(prec: GoldPrecision) -> str:
+    """Render the tiny gold precision slice (honest, not a corpus claim)."""
+    lines: list[str] = []
+    lines.append(
+        f"  GOLD PRECISION SLICE (hand-verified, {prec.cases} synthetic cases — "
+        "a sanity floor, NOT a corpus precision claim):"
+    )
+    lines.append(
+        f"    grammar precision    = {prec.grammar_correct}/{prec.cases} "
+        f"({100 * prec.grammar_precision:.0f}%) hit the exact gold provision"
+    )
+    lines.append(
+        f"    <ref> precision      = {prec.annotation_correct}/{prec.cases} "
+        f"({100 * prec.annotation_precision:.0f}%) hit the exact gold provision"
+    )
+    lines.append(
+        f"    grammar-only-correct = {prec.grammar_only_correct}  "
+        f"<ref>-only-correct = {prec.annotation_only_correct}  "
+        "(who is right when they disagree)"
+    )
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
 # Census → reliability table → policy
 # ---------------------------------------------------------------------------
 
@@ -384,16 +646,25 @@ def format_reliability_report(result: ReliabilityCensusResult) -> str:
     )
     lines.append("    gram_exc   = grammar_only — annotation-independent superset (markup lacks it)")
     lines.append("    annot_exc  = annotation_only — what the markup adds (grammar misses)")
-    lines.append("    disagree   = target divergence OR undecidable pair")
+    lines.append(
+        "    disagree   = diff statute at same span + SAME statute diff provision "
+        "(subsection/item/version) + undecidable pair"
+    )
     lines.append(
         "    agree%     = agree / witness-population (agree + annot_exc + disagree); "
-        "the direct <ref>-reliability signal"
+        "the direct <ref>-reliability signal, at provision granularity"
+    )
+    lines.append(
+        "    CONCORDANCE, NOT PRECISION: no gold set — agree/disagree name whether "
+        "grammar and <ref> point at the same provision, never which is correct."
     )
     lines.append("")
     lines.append("  SOURCE SURFACE POLICY (grammar7 §13-D) — derived annotation role per family:")
     for fam in order:
         entry = result.policy.entries[fam]
         lines.append(f"    {fam:<13} {entry.role.value:<13} — {entry.rationale}")
+    lines.append("")
+    lines.append(format_gold_precision_report(measure_gold_precision()))
     return "\n".join(lines)
 
 

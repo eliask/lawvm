@@ -17,13 +17,18 @@ Covers:
 from __future__ import annotations
 
 from lawvm.finland.references.annotation_reliability_census import (
+    GOLD_CASES,
     AnnotationRole,
     FamilyReliability,
     ReliabilityCensusResult,
     SourceSurfacePolicy,
+    _annotation_hits_gold,
+    _grammar_hits_gold,
     assign_role,
     build_source_surface_policy,
+    format_gold_precision_report,
     format_reliability_report,
+    measure_gold_precision,
     reliabilities_from_census,
     reliability_of,
 )
@@ -52,13 +57,14 @@ def _section(num: str, p_inner: str) -> str:
 # ── A. reliability reduction ─────────────────────────────────────────────────
 
 
-def test_reliability_of_reduces_seven_statuses_to_four_buckets() -> None:
+def test_reliability_of_reduces_statuses_to_four_buckets() -> None:
     fc = FamilyComparison(
         family="explicit_id",
         both_same_target=3,
         both_same_target_diff_span=7,         # agree (target match, span uncomparable)
-        both_same_span_diff_target=2,         # disagree
-        both_present_noncomparable=1,         # disagree
+        both_same_span_diff_target=2,         # disagree (diff statute)
+        both_same_statute_diff_provision=6,   # disagree (same statute, diff provision)
+        both_present_noncomparable=1,         # disagree (undecidable)
         grammar_only=5,                       # grammar_exceeds
         annotation_only=4,                    # annotation_exceeds
         annotation_witnesses=15,
@@ -68,15 +74,35 @@ def test_reliability_of_reduces_seven_statuses_to_four_buckets() -> None:
     assert rel.agree == 10
     assert rel.grammar_exceeds == 5
     assert rel.annotation_exceeds == 4
-    assert rel.disagree == 3
+    # disagree now includes the same_statute_diff_provision divergence (2 + 6 + 1).
+    assert rel.disagree == 9
     # compared partitions all four buckets.
-    assert rel.compared == 22
+    assert rel.compared == 28
     # witness population EXCLUDES grammar_only (no witness there).
-    assert rel.annotation_population == 10 + 4 + 3
+    assert rel.annotation_population == 10 + 4 + 9
     # agree% is over the witness population, not all compared.
-    assert abs(rel.agree_pct - (10 / 17)) < 1e-9
-    assert abs(rel.annotation_exceeds_pct - (4 / 17)) < 1e-9
-    assert abs(rel.disagree_pct - (3 / 17)) < 1e-9
+    assert abs(rel.agree_pct - (10 / 23)) < 1e-9
+    assert abs(rel.annotation_exceeds_pct - (4 / 23)) < 1e-9
+    assert abs(rel.disagree_pct - (9 / 23)) < 1e-9
+
+
+def test_same_statute_diff_provision_counts_as_disagree() -> None:
+    """A same-statute-different-provision pair is DISAGREE, never agree.
+
+    Guards the reclassification: folding provision divergences into ``agree`` (the
+    old statute-id fallback) over-stated <ref> reliability. They must count as
+    disagreement so agree% reflects EXACT-provision concordance only.
+    """
+    fc = FamilyComparison(
+        family="explicit_id",
+        both_same_statute_diff_provision=8,
+        annotation_witnesses=8,
+    )
+    rel = reliability_of(fc)
+    assert rel.agree == 0
+    assert rel.disagree == 8
+    assert rel.agree_pct == 0.0
+    assert rel.disagree_pct == 1.0
 
 
 def test_reliability_zero_witness_family_is_clean_zero() -> None:
@@ -225,3 +251,69 @@ def test_source_surface_policy_default_unknown_qa_only() -> None:
     policy = SourceSurfacePolicy(entries={})
     assert policy.role_for("anything") is AnnotationRole.QA_ONLY
     assert policy.may_corroborate("anything") is False
+
+
+# ── E. hand-verified gold precision slice (honest ground truth) ──────────────
+
+
+def test_gold_cases_targets_match_declared_gold() -> None:
+    """Every gold case's declared target is reachable by at least one surface.
+
+    The gold is hand-verified BY CONSTRUCTION; this test pins that the fixture
+    stays coherent — for each case, EITHER the grammar text-lane OR the <ref>
+    witness produces the declared ``(statute_id, provision_path)``. (Some hard
+    cases are deliberately missed by BOTH surfaces to show neither is perfect; we
+    exclude those from the reachability check by whitelisting them explicitly.)
+    """
+    # Cases where BOTH surfaces are (honestly) expected to miss the finest gold.
+    known_hard = {"ref_diverges_from_gold_provision", "paren_id_two_statutes"}
+    for case in GOLD_CASES:
+        gram = _grammar_hits_gold(case.xml, case.gold)
+        annot = _annotation_hits_gold(case.xml, case.gold)
+        if case.name in known_hard:
+            # Documented hard case: neither surface hits the exact gold provision.
+            assert not (gram and annot), case.name
+        else:
+            assert gram or annot, f"{case.name}: no surface reaches declared gold"
+
+
+def test_gold_precision_is_true_precision_not_concordance() -> None:
+    """measure_gold_precision reports grammar/<ref> precision against known truth.
+
+    Distinct from the corpus concordance census: here the target is KNOWN, so a
+    surface is scored correct only when it produces the exact gold provision.
+    """
+    prec = measure_gold_precision()
+    assert prec.cases == len(GOLD_CASES)
+    assert 0 <= prec.grammar_correct <= prec.cases
+    assert 0 <= prec.annotation_correct <= prec.cases
+    # Precisions are clean fractions in [0, 1].
+    assert 0.0 <= prec.grammar_precision <= 1.0
+    assert 0.0 <= prec.annotation_precision <= 1.0
+    # The asymmetry counters are consistent with the per-surface hit counts.
+    assert prec.grammar_only_correct <= prec.grammar_correct
+    assert prec.annotation_only_correct <= prec.annotation_correct
+
+
+def test_gold_precision_report_is_honest_about_scope() -> None:
+    """The gold report labels itself a sanity floor, not a corpus claim."""
+    report = format_gold_precision_report(measure_gold_precision())
+    assert "GOLD PRECISION SLICE" in report
+    assert "hand-verified" in report
+    assert "NOT a corpus precision claim" in report
+
+
+def test_reliability_report_includes_gold_slice() -> None:
+    """The full reliability report appends the honest gold precision slice."""
+    reliabilities = {
+        "explicit_id": FamilyReliability(
+            family="explicit_id", agree=200, grammar_exceeds=100, annotation_exceeds=70, disagree=30
+        ),
+    }
+    policy = build_source_surface_policy(reliabilities)
+    result = ReliabilityCensusResult(
+        statutes_scanned=200, reliabilities=reliabilities, policy=policy
+    )
+    report = format_reliability_report(result)
+    assert "GOLD PRECISION SLICE" in report
+    assert "CONCORDANCE, NOT PRECISION" in report

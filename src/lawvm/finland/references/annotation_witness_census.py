@@ -23,13 +23,23 @@ per-pair verdict and the one-sided leftovers are tallied PER FAMILY (the family
 is taken from the GRAMMAR mention for a matched pair / a grammar-only mention,
 and inferred from the witness target for an annotation-only witness).
 
-THE SEVEN NEUTRAL STATUSES (grammar7 §13-B / §14):
-  both_same_target / both_same_span_diff_target / both_same_target_diff_span /
+THE NEUTRAL STATUSES (grammar7 §13-B / §14), now GRANULARITY-AWARE:
+  both_same_target (exact provision + exact span) /
+  both_same_target_diff_span (exact provision, span not comparable) /
+  both_same_statute_diff_provision (same statute, provision path DIVERGES —
+    subsection/item/version; the divergence a bare statute-id key used to hide) /
+  both_same_span_diff_target (same span, different statute) /
   grammar_only / annotation_only / both_present_noncomparable.
 
+CONCORDANCE, NOT PRECISION: the comparison is grammar-vs-``<ref>`` agreement at
+``statute#section/subsection/item`` granularity. There is NO gold/annotator set,
+so a divergence says the two SURFACES name different provisions, never which one
+is correct. The sharper granularity only makes the divergence VISIBLE.
+
 CRUCIAL (§14): the statuses stay NEUTRAL. grammar_only is NOT an "annotation
-bug"; annotation_only is NOT a "parser miss". The census reports the delta; which
-side is right is a downstream per-case act.
+bug"; annotation_only is NOT a "parser miss"; both_same_statute_diff_provision is
+NOT a proven error. The census reports the delta; which side is right is a
+downstream per-case act.
 
 A THIRD recall surface (grammar7 §4): the cheap-signal anchor proxy — spans
 carrying a cheap legal signal (``§``, ``NNN/YYYY``, ``artikla``, ``CELEX``,
@@ -82,21 +92,63 @@ def _overlap(a: tuple[int, int], b: tuple[int, int]) -> bool:
     return a[0] < b[1] and b[0] < a[1]
 
 
-def _grammar_target_key(m: ReferenceMention) -> Optional[str]:
+#: A granularity-aware target key: the statute id plus the raw AKN provision
+#: path (``sec_7_sub_3`` etc). The provision component is "" when the citation is
+#: statute-level. Keeping the two components SEPARATE (instead of the old
+#: flattened ``statute#path`` string) is what lets the census tell a genuine
+#: exact-provision agreement apart from a statute-level-only fallback match — the
+#: divergence the flattened key silently folded into "agree" (see
+#: :func:`_classify_target_pair`).
+TargetKey = tuple[str, str]
+
+
+def _grammar_target_key(m: ReferenceMention) -> Optional[TargetKey]:
     tgt = m.target_provision_ref
     if tgt is None or not tgt.statute_id:
         return None
-    if tgt.provision_path:
-        return f"{tgt.statute_id}#{tgt.provision_path}"
-    return tgt.statute_id
+    return (tgt.statute_id, tgt.provision_path or "")
 
 
-def _witness_target_key(rec: AnnotationRefRecord) -> Optional[str]:
+def _witness_target_key(rec: AnnotationRefRecord) -> Optional[TargetKey]:
     if not rec.parsed_ok or not rec.target_statute_id:
         return None
-    if rec.target_section:
-        return f"{rec.target_statute_id}#{rec.target_section}"
-    return rec.target_statute_id
+    # ``target_section`` is the raw AKN provision path — the SAME coordinate the
+    # grammar side carries in ``provision_path`` (both minted by the shared href /
+    # AKN-path helpers), so the two are directly comparable component-by-component.
+    return (rec.target_statute_id, rec.target_section or "")
+
+
+# The granularity-aware relationship between a grammar target key and a witness
+# target key. Reported as distinct census buckets so a subsection/item/version
+# divergence surfaces as ``same_statute_diff_provision`` instead of being masked
+# as agreement by a statute-id fallback.
+_TGT_SAME = "same_target"                       # same statute AND same provision path
+_TGT_DIFF_PROVISION = "same_statute_diff_provision"  # same statute, provision paths diverge
+_TGT_DIFF_STATUTE = "diff_statute"              # different statute entirely
+
+
+def _classify_target_pair(gkey: TargetKey, wkey: TargetKey) -> str:
+    """Classify the granularity-aware relationship between two target keys.
+
+    * different statute id                          → ``diff_statute``
+    * same statute, IDENTICAL provision path        → ``same_target``
+    * same statute, provision paths differ (incl.
+      one side statute-level, the other section-
+      level: the case the old statute-id fallback
+      silently counted as agreement)               → ``same_statute_diff_provision``
+
+    This is CONCORDANCE at ``statute#section/subsection/item`` granularity, NOT
+    precision against a gold set — it only says whether the grammar text-lane and
+    the ``<ref>`` markup name the SAME provision, at the finest coordinate both
+    sides carry.
+    """
+    g_statute, g_path = gkey
+    w_statute, w_path = wkey
+    if g_statute != w_statute:
+        return _TGT_DIFF_STATUTE
+    if g_path == w_path:
+        return _TGT_SAME
+    return _TGT_DIFF_PROVISION
 
 
 def _witness_family(rec: AnnotationRefRecord) -> str:
@@ -127,9 +179,19 @@ class FamilyComparison:
     family: str
     grammar_mentions: int = 0
     annotation_witnesses: int = 0
+    #: Same statute AND same provision path, EXACT byte span (the strongest
+    #: concordance: grammar and <ref> name the same provision at the same span).
     both_same_target: int = 0
+    #: Same span, DIFFERENT statute (a genuine target divergence at that span).
     both_same_span_diff_target: int = 0
+    #: Same statute AND same provision path, span differs / not comparable (the
+    #: spanless explicit-id text-lane case: the target still agrees exactly).
     both_same_target_diff_span: int = 0
+    #: Same statute but the PROVISION PATH diverges (subsection/item/version), OR
+    #: one side is statute-level and the other section-level. NEW BUCKET: this was
+    #: previously MASKED as agreement by the statute-id fallback in the flattened
+    #: target key. A NEUTRAL concordance-divergence, NOT a proven annotation bug.
+    both_same_statute_diff_provision: int = 0
     grammar_only: int = 0
     annotation_only: int = 0
     both_present_noncomparable: int = 0
@@ -141,19 +203,32 @@ class FamilyComparison:
             self.both_same_target
             + self.both_same_span_diff_target
             + self.both_same_target_diff_span
+            + self.both_same_statute_diff_provision
             + self.both_present_noncomparable
         )
 
     @property
     def target_agree(self) -> int:
-        """Matched pairs whose TARGETS agree (span exact OR span-not-comparable).
+        """Matched pairs whose TARGETS agree AT PROVISION GRANULARITY.
 
-        both_same_target requires an exact byte-span match too; explicit-id text
-        mentions in measurement mode carry no recoverable span, so a genuine
-        target agreement lands in both_same_target_diff_span. Reliability is about
-        the target, so the agreement metric sums both.
+        Sums the exact-provision agreements only — ``both_same_target`` (span
+        exact) plus ``both_same_target_diff_span`` (target exact, span not
+        comparable, e.g. the spanless explicit-id text lane). It DELIBERATELY
+        excludes ``both_same_statute_diff_provision``: a pair that agrees on the
+        statute but names a different subsection/item is NOT a target agreement,
+        it is a granularity divergence — the whole point of the sharper census.
         """
         return self.both_same_target + self.both_same_target_diff_span
+
+    @property
+    def same_statute_diff_provision(self) -> int:
+        """Pairs agreeing on the statute but diverging on the provision path.
+
+        A distinct, reported concordance-divergence category (subsection / item /
+        version). Concordance, NOT precision: it says the two surfaces name the
+        same statute at DIFFERENT provisions, never which one is correct.
+        """
+        return self.both_same_statute_diff_provision
 
     @property
     def agree_pct(self) -> float:
@@ -245,15 +320,26 @@ def census_one_statute(xml_bytes: bytes, statute_id: str) -> dict[str, FamilyCom
     used_w: set[int] = set()
     matched_grammar: set[int] = set()
 
-    def _record_pair(fam: str, gkey: Optional[str], wkey: Optional[str], same_span: bool) -> None:
+    def _record_pair(
+        fam: str,
+        gkey: Optional[TargetKey],
+        wkey: Optional[TargetKey],
+        same_span: bool,
+    ) -> None:
         if gkey is None or wkey is None:
             fc(fam).both_present_noncomparable += 1
-        elif gkey == wkey:
+            return
+        rel = _classify_target_pair(gkey, wkey)
+        if rel == _TGT_SAME:
             if same_span:
                 fc(fam).both_same_target += 1
             else:
                 fc(fam).both_same_target_diff_span += 1
-        else:
+        elif rel == _TGT_DIFF_PROVISION:
+            # Same statute, provision paths diverge — previously counted as
+            # agreement by the statute-id fallback; now its OWN bucket.
+            fc(fam).both_same_statute_diff_provision += 1
+        else:  # _TGT_DIFF_STATUTE
             fc(fam).both_same_span_diff_target += 1
 
     # Phase 1: byte-span overlap.
@@ -274,29 +360,50 @@ def census_one_statute(xml_bytes: bytes, statute_id: str) -> dict[str, FamilyCom
                 )
                 break
 
-    # Phase 2: target-key fallback for STILL-unmatched grammar mentions (spanless
-    # or span-unmatched) against STILL-unmatched witnesses with the same target.
-    w_by_target: dict[str, list[int]] = {}
+    # Phase 2: target fallback for STILL-unmatched grammar mentions (spanless or
+    # span-unmatched) against STILL-unmatched witnesses on the SAME STATUTE. We
+    # pool by STATUTE ID (not the full statute#path key) and, within a statute,
+    # prefer the witness whose provision path EXACTLY matches the grammar path so
+    # a genuine exact-provision agreement is not stolen by a diff-provision
+    # witness. The pairing is then classified granularity-aware: an exact-path
+    # pairing books both_same_target_diff_span (target agrees, span not
+    # comparable); a same-statute-different-path pairing books the NEW
+    # both_same_statute_diff_provision bucket instead of masquerading as agreement.
+    w_by_statute: dict[str, list[int]] = {}
     for wi, (_w_span, rec) in enumerate(w_items):
         if wi in used_w:
             continue
         wkey = _witness_target_key(rec)
         if wkey is not None:
-            w_by_target.setdefault(wkey, []).append(wi)
+            w_by_statute.setdefault(wkey[0], []).append(wi)
     for gi, (_g_span, m) in enumerate(g_items):
         if gi in matched_grammar:
             continue
         gkey = _grammar_target_key(m)
         if gkey is None:
             continue
-        pool = w_by_target.get(gkey)
+        pool = w_by_statute.get(gkey[0])
         if not pool:
             continue
-        wi = pool.pop(0)
+        # Prefer an exact-provision-path witness within the statute pool.
+        g_path = gkey[1]
+        pick_idx = None
+        for pi, wi in enumerate(pool):
+            if _witness_target_key(w_items[wi][1]) == (gkey[0], g_path):
+                pick_idx = pi
+                break
+        if pick_idx is None:
+            pick_idx = 0
+        wi = pool.pop(pick_idx)
         used_w.add(wi)
         matched_grammar.add(gi)
-        # Same target, span not comparable → both_same_target_diff_span.
-        fc(family_of(m)).both_same_target_diff_span += 1
+        wkey = _witness_target_key(w_items[wi][1])
+        assert wkey is not None  # pooled only if the witness key parsed
+        rel = _classify_target_pair(gkey, wkey)
+        if rel == _TGT_SAME:
+            fc(family_of(m)).both_same_target_diff_span += 1
+        else:  # same statute, provision paths diverge (never _TGT_DIFF_STATUTE here)
+            fc(family_of(m)).both_same_statute_diff_provision += 1
 
     # Grammar-only: grammar mentions with no matched witness (NEUTRAL).
     for gi, (_g_span, m) in enumerate(g_items):
@@ -406,6 +513,7 @@ def run_annotation_witness_census(
             agg.both_same_target += fc.both_same_target
             agg.both_same_span_diff_target += fc.both_same_span_diff_target
             agg.both_same_target_diff_span += fc.both_same_target_diff_span
+            agg.both_same_statute_diff_provision += fc.both_same_statute_diff_provision
             agg.grammar_only += fc.grammar_only
             agg.annotation_only += fc.annotation_only
             agg.both_present_noncomparable += fc.both_present_noncomparable
@@ -430,11 +538,11 @@ def format_witness_census_report(census: WitnessCensus) -> str:
     lines.append("=" * 120)
     header = (
         f"  {'family':<13} {'gram':>7} {'annot':>7} {'b_same_t':>9} "
-        f"{'b_diff_t':>9} {'b_diff_sp':>10} {'gram_only':>10} {'annot_only':>11} "
-        f"{'noncmp':>7} {'agree%':>8} {'cheap':>7}"
+        f"{'b_diff_sp':>10} {'diff_prov':>10} {'b_diff_t':>9} {'gram_only':>10} "
+        f"{'annot_only':>11} {'noncmp':>7} {'agree%':>8} {'cheap':>7}"
     )
     lines.append(header)
-    lines.append("-" * 120)
+    lines.append("-" * 132)
     order = [f for f in CENSUS_FAMILIES if f in census.families] + [
         f for f in census.families if f not in CENSUS_FAMILIES
     ]
@@ -447,6 +555,7 @@ def format_witness_census_report(census: WitnessCensus) -> str:
             "both_same_target",
             "both_same_span_diff_target",
             "both_same_target_diff_span",
+            "both_same_statute_diff_provision",
             "grammar_only",
             "annotation_only",
             "both_present_noncomparable",
@@ -455,31 +564,45 @@ def format_witness_census_report(census: WitnessCensus) -> str:
             setattr(tot, attr, getattr(tot, attr) + getattr(fc, attr))
         lines.append(
             f"  {fam:<13} {fc.grammar_mentions:>7} {fc.annotation_witnesses:>7} "
-            f"{fc.both_same_target:>9} {fc.both_same_span_diff_target:>9} "
-            f"{fc.both_same_target_diff_span:>10} {fc.grammar_only:>10} "
+            f"{fc.both_same_target:>9} {fc.both_same_target_diff_span:>10} "
+            f"{fc.both_same_statute_diff_provision:>10} "
+            f"{fc.both_same_span_diff_target:>9} {fc.grammar_only:>10} "
             f"{fc.annotation_only:>11} {fc.both_present_noncomparable:>7} "
             f"{100 * fc.agree_pct:>7.1f}% {fc.cheap_signal_residual:>7}"
         )
-    lines.append("-" * 120)
+    lines.append("-" * 132)
     lines.append(
         f"  {'TOTAL':<13} {tot.grammar_mentions:>7} {tot.annotation_witnesses:>7} "
-        f"{tot.both_same_target:>9} {tot.both_same_span_diff_target:>9} "
-        f"{tot.both_same_target_diff_span:>10} {tot.grammar_only:>10} "
+        f"{tot.both_same_target:>9} {tot.both_same_target_diff_span:>10} "
+        f"{tot.both_same_statute_diff_provision:>10} "
+        f"{tot.both_same_span_diff_target:>9} {tot.grammar_only:>10} "
         f"{tot.annotation_only:>11} {tot.both_present_noncomparable:>7} "
         f"{100 * tot.agree_pct:>7.1f}% {tot.cheap_signal_residual:>7}"
     )
     lines.append("")
     lines.append(
-        "  agree% = (both_same_target + both_same_target_diff_span) / "
-        "annotation_witnesses: TARGET agreement when <ref> is present (span exact "
-        "OR span not comparable). b_diff_sp dominates explicit_id because its text "
-        "lane carries no recoverable byte span in measurement mode — the target "
-        "still agrees."
+        "  agree% = (b_same_t + b_diff_sp) / annotation_witnesses: EXACT-provision "
+        "target agreement when <ref> is present (statute AND provision path match; "
+        "span exact OR span not comparable). b_diff_sp dominates explicit_id "
+        "because its text lane carries no recoverable byte span in measurement "
+        "mode — the target still agrees exactly."
+    )
+    lines.append(
+        "  diff_prov = both_same_statute_diff_provision: same statute but the "
+        "provision path DIVERGES (subsection / item / version, or statute-level vs "
+        "section-level). Previously MASKED as agreement by a statute-id fallback; "
+        "now its OWN reported bucket. b_diff_t = same span, different statute."
+    )
+    lines.append(
+        "  CONCORDANCE, NOT PRECISION: this measures grammar-vs-<ref> agreement at "
+        "statute#section/subsection/item granularity — there is NO gold/annotator "
+        "set, so it says the two surfaces name the same (or a different) provision, "
+        "never which one is correct."
     )
     lines.append(
         "  STATUSES ARE NEUTRAL (grammar7 §14): grammar_only is NOT an 'annotation "
-        "bug'; annotation_only is NOT a 'parser miss'. The census reports the "
-        "delta; adjudication is a downstream per-case act."
+        "bug'; annotation_only is NOT a 'parser miss'; diff_prov is NOT a proven "
+        "error. The census reports the delta; adjudication is a downstream act."
     )
     return "\n".join(lines)
 
