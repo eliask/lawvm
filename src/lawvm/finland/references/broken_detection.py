@@ -41,6 +41,20 @@ A thin read-only adapter over the real engine is provided
 default — the as-of materialization path is the heavy ``legal_pit`` replay and
 must be opted into explicitly by the integration layer.
 
+Two granularities, two costs
+----------------------------
+* PROVISION granularity (``detect_broken``) needs the target statute's amended
+  text-state materialized as-of two dates — that is the heavy ``legal_pit``
+  replay (``default_tree_as_of``). A whole-corpus replay sweep DEADLOCKS
+  (project task #187), so the provision-level path stays gated on #187 and is
+  NOT wired for a corpus sweep here.
+* STATUTE (ACT) granularity (``detect_statute_lifecycle_broken``, below) needs
+  only each target act's in-force window (``valid_from`` / ``valid_to``), which
+  the statute-name registry exposes as a pure function of the corpus XML — NO
+  replay. That cheaper detector is made runnable end-to-end over a corpus slice
+  by ``references.statute_lifecycle_lookup`` (a registry-sourced
+  ``LifecycleLookup`` + a bounded ``scan_dangling_citations`` report).
+
 Fail-loud (AGENTS.md §1.1)
 --------------------------
 If ``tree_as_of`` returns ``None`` for a tree we must inspect, we emit a typed
@@ -86,6 +100,7 @@ __all__ = [
     "StatuteLifecycleFinding",
     "StatuteLifecycleUnverifiable",
     "detect_statute_lifecycle_broken",
+    "scan_dangling_citations",
 ]
 
 
@@ -459,6 +474,13 @@ def _has_provision_content(tree: IRNode) -> bool:
 # selection, oracle selector, strictness, caching of per-(statute, as_of)
 # materializations). Until then, prefer injecting your own ``tree_as_of`` in
 # tests and callers.
+#
+# WHY it is not wired for a corpus sweep: whole-corpus point-in-time replay
+# DEADLOCKS (project task #187). Provision-granularity dangling detection
+# therefore remains gated on #187 and is left as this seam. For the runnable,
+# no-replay ACT-granularity path, see ``references.statute_lifecycle_lookup`` (a
+# registry-sourced ``LifecycleLookup`` feeding ``detect_statute_lifecycle_broken``
+# — the cheap detector further down this module).
 
 
 def default_tree_as_of(store: "CorpusStore") -> TreeAsOf:
@@ -824,3 +846,41 @@ def detect_statute_lifecycle_broken(
         # In force on the citing date — not a finding.
 
     return findings
+
+
+# ---------------------------------------------------------------------------
+# Runnable statute-level path (the wired, no-replay corpus entry)
+# ---------------------------------------------------------------------------
+
+
+def scan_dangling_citations(
+    statute_ids: list[str],
+    store: "CorpusStore",
+    *,
+    lifecycle_of: Optional[LifecycleLookup] = None,
+    current_as_of: Optional[date] = None,
+):
+    """Runnable statute-level dangling-citation scan over a corpus slice (NO replay).
+
+    The bounded, end-to-end entry that makes ``detect_statute_lifecycle_broken``
+    runnable: it sources a ``LifecycleLookup`` from the statute-name registry
+    (corpus XML / the pre-built artifact — NO ``legal_pit`` replay) and, per citing
+    statute, extracts resolved cross-statute mentions and flags any whose TARGET
+    ACT is absent/repealed as-of the citing anchor.
+
+    The heavy lifting lives in ``references.statute_lifecycle_lookup`` (kept out of
+    this pure detector's import surface via a lazy import here, mirroring the
+    ``default_tree_as_of`` seam discipline). See that module for the registry
+    sourcing, the anchor policy, and the report shape; the provision-granularity
+    counterpart stays gated on #187 (``default_tree_as_of`` above).
+    """
+    from lawvm.finland.references.statute_lifecycle_lookup import (
+        scan_dangling_citations as _scan,
+    )
+
+    return _scan(
+        statute_ids,
+        store,
+        lifecycle_of=lifecycle_of,
+        current_as_of=current_as_of,
+    )
