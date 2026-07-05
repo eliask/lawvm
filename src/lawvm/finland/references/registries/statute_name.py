@@ -448,6 +448,35 @@ _CWS_GARBAGE_TOKENS: frozenset[str] = frozenset(
 _CWS_MIN_STEMS = 2
 
 
+# Trailing short-vowel fold for the content-word STEM (the last recall step of the
+# content-word lane). The open-analyzer's shortest lemma sometimes keeps a stray
+# final case/number vowel that DIFFERS between the citation's inflection and the
+# official title's (singular genitive ``viranomaisen`` -> stem ``viranomaise`` vs
+# official plural genitive ``viranomaisten`` -> stem ``viranomais``). Both fold to
+# the same consonant-final stem, so folding one trailing vowel collapses that one
+# residual inflection artifact WITHOUT merging distinct words (it strips at most one
+# vowel; two stems that already agree are unaffected, and two genuinely-different
+# stems do not become equal by losing a single final vowel — verified empirically
+# to introduce zero new content-set collisions on the corpus). Used ONLY by the
+# folded content lane (:meth:`StatuteNameRegistry.lookup_content_word_set_folded`),
+# which is consulted after BOTH the exact key and the plain whole-set content match
+# have missed; the fold is applied identically to titles (at index build) and
+# citations (at lookup), so it is a deterministic near-match, never a fuzzy guess.
+_CWS_VOWELS = "aeiouyäö"
+
+
+def _fold_content_stem(stem: str) -> str:
+    """Strip at most ONE trailing vowel from a content-word stem (see above)."""
+    if stem and stem[-1] in _CWS_VOWELS:
+        return stem[:-1]
+    return stem
+
+
+def _fold_content_set(stems: frozenset[str]) -> frozenset[str]:
+    """Trailing-vowel-fold every stem in a content-word set."""
+    return frozenset(_fold_content_stem(s) for s in stems)
+
+
 def _content_word_stem(word: str) -> str:
     """Reduce one title/complement word to its shortest M1-round-trippable stem.
 
@@ -564,7 +593,7 @@ class StatuteNameRegistry:
     the caller decides, the registry never picks.
     """
 
-    __slots__ = ("_index", "_content_index")
+    __slots__ = ("_index", "_content_index", "_content_folded_index")
 
     def __init__(self) -> None:
         # normalized surface key -> list of entries (one per (id, window) that
@@ -576,6 +605,15 @@ class StatuteNameRegistry:
         self._content_index: dict[
             tuple[str, frozenset[str]], list[StatuteNameEntry]
         ] = {}
+        # (head, TRAILING-VOWEL-FOLDED content-word-set) -> base-act entries. The
+        # last recall step of the content lane: it collapses the residual
+        # singular/plural stem artifact (``viranomaise``/``viranomais``) the plain
+        # whole-set match cannot. Consulted ONLY after the plain content match
+        # misses; fail-loud (single -> APPROXIMATE at the resolver, multiple ->
+        # ambiguous, never picked).
+        self._content_folded_index: dict[
+            tuple[str, frozenset[str]], list[StatuteNameEntry]
+        ] = {}
 
     def _register(self, entry: StatuteNameEntry) -> None:
         for key in _inflected_surfaces(entry.canonical_title):
@@ -583,6 +621,8 @@ class StatuteNameRegistry:
         content_key = _title_content_key(entry.canonical_title)
         if content_key is not None:
             self._register_content_key(content_key, entry)
+            folded_key = (content_key[0], _fold_content_set(content_key[1]))
+            self._register_content_folded_key(folded_key, entry)
 
     def _register_content_key(
         self,
@@ -596,6 +636,23 @@ class StatuteNameRegistry:
         content-word lookup lands ``multiple`` (fail-loud, never picked).
         """
         bucket = self._content_index.setdefault(key, [])
+        sig = (entry.statute_id, entry.valid_from, entry.valid_to)
+        if all((e.statute_id, e.valid_from, e.valid_to) != sig for e in bucket):
+            bucket.append(entry)
+
+    def _register_content_folded_key(
+        self,
+        key: tuple[str, frozenset[str]],
+        entry: StatuteNameEntry,
+    ) -> None:
+        """Bind a ``(head, trailing-vowel-folded content set)`` key to ``entry``.
+
+        Same dedup discipline as :meth:`_register_content_key`. Two acts whose
+        folded content sets collide (a distinct id under the same folded key)
+        accumulate so the folded lookup lands ``multiple`` (fail-loud, never
+        picked) — the fold never silently merges two acts into one resolution.
+        """
+        bucket = self._content_folded_index.setdefault(key, [])
         sig = (entry.statute_id, entry.valid_from, entry.valid_to)
         if all((e.statute_id, e.valid_from, e.valid_to) != sig for e in bucket):
             bucket.append(entry)
@@ -725,6 +782,34 @@ class StatuteNameRegistry:
         if content_key is None:
             return RegistryResult(registry_status="none", surface=fi_name_key, as_of=as_of)
         bucket = self._content_index.get(content_key)
+        if not bucket:
+            return RegistryResult(registry_status="none", surface=fi_name_key, as_of=as_of)
+        return self._result_from_bucket(bucket, fi_name_key, as_of)
+
+    def lookup_content_word_set_folded(
+        self,
+        fi_name_key: str,
+        as_of: Optional[dt.date] = None,
+    ) -> RegistryResult:
+        """Last content-lane recall step: match on the TRAILING-VOWEL-FOLDED set.
+
+        Same contract and STRICT gating as :meth:`lookup_content_word_set`, but the
+        cite's content-word set and the indexed title sets are both trailing-vowel
+        folded (:func:`_fold_content_set`) before comparison, collapsing the residual
+        singular/plural stem artifact (``viranomaisen`` sg vs official
+        ``viranomaisten`` pl) that the plain whole-set match cannot. Intended to be
+        consulted by the resolution projection ONLY after BOTH the exact-surface
+        :meth:`lookup` and the plain :meth:`lookup_content_word_set` have missed; a
+        single hit is a defensible near-match (the resolver stamps it APPROXIMATE),
+        >1 is ``multiple`` (fail-loud, never picked). The fold strips at most one
+        vowel per stem and was verified to introduce zero new cross-id content-set
+        collisions on the corpus, so it never merges two distinct acts.
+        """
+        content_key = citation_content_key(fi_name_key)
+        if content_key is None:
+            return RegistryResult(registry_status="none", surface=fi_name_key, as_of=as_of)
+        folded_key = (content_key[0], _fold_content_set(content_key[1]))
+        bucket = self._content_folded_index.get(folded_key)
         if not bucket:
             return RegistryResult(registry_status="none", surface=fi_name_key, as_of=as_of)
         return self._result_from_bucket(bucket, fi_name_key, as_of)

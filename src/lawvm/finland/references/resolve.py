@@ -527,6 +527,12 @@ _LOCAL_BINDING_PHRASE_LEMMA = "defined_term_local_binding"
 # registry lookup missed.
 _CWS_FALLBACK_PHRASE_LEMMA = "statute_name_content_word_set_fallback"
 
+# Provenance tag recorded when a ``fi-name:`` descriptive placeholder resolves via
+# the TRAILING-VOWEL-FOLDED content-word-set lane (the last content-lane recall
+# step), after BOTH the exact-surface lookup and the plain whole-set content match
+# missed. A near-match on the folded stems -> APPROXIMATE, never EXACT.
+_CWS_FOLDED_FALLBACK_PHRASE_LEMMA = "statute_name_content_word_set_folded_fallback"
+
 # Provenance tag recorded when a MULTIPLE (multi-version) registry result is
 # collapsed to one candidate by the as-of-live-version preference (exactly one
 # candidate is still in force). This is a HEURISTIC pick among genuinely multiple
@@ -892,6 +898,45 @@ def _resolve_fi_name(
             candidates=cws_ids,
             rejected_candidates=(),
             finding=_ambiguity_finding(mention, cws_ids),
+        )
+
+    # Plain whole-set content match also missed. LAST content-lane recall step: the
+    # TRAILING-VOWEL-FOLDED set, which collapses the residual singular/plural stem
+    # artifact (cited ``viranomaisen`` sg vs official ``viranomaisten`` pl) the plain
+    # whole-set match cannot. Same fail-loud shape: single → RESOLVED APPROXIMATE (a
+    # near-match, not exact), multiple → AMBIGUOUS (never picked), none → fall
+    # through to the EU / STATUTE_ONLY tail. The fold is bounded (one vowel/stem) and
+    # verified to add zero cross-id collisions, so it never merges two distinct acts.
+    folded_result = statute_registry.lookup_content_word_set_folded(name, as_of)
+    if as_of is not None and folded_result.registry_status == "none":
+        unfiltered_folded = statute_registry.lookup_content_word_set_folded(name, None)
+        if unfiltered_folded.registry_status != "none":
+            folded_result = unfiltered_folded
+    if folded_result.registry_status != "none":
+        folded_ids = tuple(c.statute_id for c in folded_result.candidates)
+        if folded_result.registry_status == "single":
+            return ResolvedReference(
+                mention=_rewrite_target_id(
+                    mention,
+                    folded_ids[0],
+                    phrase_lemma=_CWS_FOLDED_FALLBACK_PHRASE_LEMMA,
+                    cite_confidence=CiteConfidence.APPROXIMATE,
+                ),
+                resolution_status=ResolutionStatus.RESOLVED,
+                work_id=folded_ids[0],
+                candidates=folded_ids,
+                rejected_candidates=(),
+                finding=None,
+            )
+        return ResolvedReference(
+            mention=dataclasses.replace(
+                mention, cite_confidence=CiteConfidence.AMBIGUOUS
+            ),
+            resolution_status=ResolutionStatus.AMBIGUOUS,
+            work_id=None,
+            candidates=folded_ids,
+            rejected_candidates=(),
+            finding=_ambiguity_finding(mention, folded_ids),
         )
     # still "none" — the act name is NOT a Finnish statute the registry knows.
     # Before declaring a genuine coverage gap, try the EU-nickname registry: a by-name

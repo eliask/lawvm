@@ -303,3 +303,35 @@ def test_content_word_set_amendment_title_not_indexed() -> None:
     )
     # Even the amendment's own exact body should not be a content target.
     assert reg.lookup_content_word_set("laki virvoitusjuomaverosta").registry_status == "none"
+
+
+def test_content_word_set_folded_matches_sg_pl_stem_artifact() -> None:
+    """The folded lane matches a sg-cite onto a pl-official-title base act.
+
+    ``Laki viranomaisten toiminnan julkisuudesta`` (pl) is indexed; a singular cite
+    ``laki viranomaisen toiminnan julkisuudesta`` misses the plain whole-set (the
+    open-analyzer stems ``viranomaise``/``viranomais`` differ) but the trailing-
+    vowel-folded lane collapses that artifact to a single hit.
+    """
+    reg = build_registry(
+        [StatuteNameEntry("1999/621", "Laki viranomaisten toiminnan julkisuudesta")]
+    )
+    # plain whole-set MISSES the singular cite
+    assert (
+        reg.lookup_content_word_set(
+            "laki viranomaisen toiminnan julkisuudesta"
+        ).registry_status
+        == "none"
+    )
+    # folded lane HITS it uniquely
+    folded = reg.lookup_content_word_set_folded(
+        "laki viranomaisen toiminnan julkisuudesta"
+    )
+    assert folded.registry_status == "single"
+    assert folded.candidates[0].statute_id == "1999/621"
+
+
+def test_content_word_set_folded_non_descriptive_cite_is_none() -> None:
+    """A non-head-first (compound-nickname) cite has no folded content key."""
+    reg = build_registry([StatuteNameEntry("1999/621", "Laki viranomaisten toiminnan julkisuudesta")])
+    assert reg.lookup_content_word_set_folded("verotuslaki").registry_status == "none"

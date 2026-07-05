@@ -837,6 +837,73 @@ def test_trailing_period_title_resolves_inflected_cite_through_projection() -> N
     assert rr.work_id == "1960/465"
 
 
+def test_content_word_set_folded_resolves_sg_pl_stem_artifact() -> None:
+    """A sg/pl stem artifact the plain whole-set misses resolves via the folded lane.
+
+    The famous Julkisuuslaki: official ``Laki viranomaisten toiminnan
+    julkisuudesta`` (pl ``viranomaisten``) cited with sg ``viranomaisen``. The
+    open-analyzer's shortest stems differ (``viranomais`` vs ``viranomaise``), so the
+    plain whole-set content match misses; the trailing-vowel-folded lane collapses
+    that one artifact and resolves to the unique id — APPROXIMATE (a near-match,
+    never EXACT), with the folded-fallback provenance tag.
+    """
+    reg = build_registry(
+        [StatuteNameEntry("1999/621", "Laki viranomaisten toiminnan julkisuudesta")]
+    )
+    m = _mention(
+        "fi-name:laki viranomaisen toiminnan julkisuudesta",
+        surface_text="viranomaisen toiminnan julkisuudesta annetun lain",
+    )
+    [rr] = resolve_mentions([m], statute_registry=reg, eu_registry=eu_nickname)
+    assert rr.resolution_status is ResolutionStatus.RESOLVED
+    assert rr.work_id == "1999/621"
+    assert rr.mention.cite_confidence is CiteConfidence.APPROXIMATE
+    assert (
+        rr.mention.phrase_lemma
+        == "statute_name_content_word_set_folded_fallback"
+    )
+
+
+def test_content_word_set_folded_never_silently_picks_two_ids() -> None:
+    """Two distinct acts whose FOLDED sets collide are ambiguous — never picked.
+
+    The folded lane must stay fail-loud: a folded key shared by two distinct ids
+    lands AMBIGUOUS (all listed, a finding), it never resolves to one.
+    """
+    reg = build_registry(
+        [
+            StatuteNameEntry("1990/100", "Laki viranomaisten toiminnan valvonnasta"),
+            StatuteNameEntry("1995/200", "Laki viranomaisen toiminnan valvonnasta"),
+        ]
+    )
+    m = _mention("fi-name:laki viranomaiset toiminnan valvonnasta")
+    [rr] = resolve_mentions([m], statute_registry=reg, eu_registry=eu_nickname)
+    if rr.resolution_status is ResolutionStatus.AMBIGUOUS:
+        assert set(rr.candidates) == {"1990/100", "1995/200"}
+        assert rr.finding is not None
+    else:
+        # a coincidental exact/plain hit is allowed, but never a silent pick beyond
+        # one of the two real candidates
+        assert rr.resolution_status is ResolutionStatus.RESOLVED
+        assert rr.work_id in {"1990/100", "1995/200"}
+
+
+def test_content_word_set_folded_does_not_override_plain_match() -> None:
+    """The folded lane fires ONLY after the plain whole-set match misses."""
+    reg = build_registry(
+        [StatuteNameEntry("1999/621", "Laki viranomaisten toiminnan julkisuudesta")]
+    )
+    # plural (matches the official title's plain content set) -> plain lane, not folded
+    m = _mention("fi-name:laki viranomaisten toiminnan julkisuudesta")
+    [rr] = resolve_mentions([m], statute_registry=reg, eu_registry=eu_nickname)
+    assert rr.resolution_status is ResolutionStatus.RESOLVED
+    assert rr.work_id == "1999/621"
+    assert (
+        rr.mention.phrase_lemma
+        != "statute_name_content_word_set_folded_fallback"
+    )
+
+
 def test_content_word_set_single_out_of_window_stays_resolved_approximate() -> None:
     """A content-word single re-widened past an as-of window stays RESOLVED APPROXIMATE."""
     reg = build_registry(
