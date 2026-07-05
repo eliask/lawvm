@@ -498,8 +498,10 @@ class ReferenceExpression:
         source_span:     Provenance back to the source text, or None when the
                          expression is metadata-derived (no byte span).
         expression_kind: Coarse syntactic class of the surface: ``"single"`` /
-                         ``"range"`` / ``"coordination"`` / ``"open"``. This is
-                         the SURFACE shape, independent of resolution.
+                         ``"range"`` / ``"coordination"`` / ``"mixed"`` (a list
+                         combining coordination and range connectors, e.g.
+                         ``1, 2-4``) / ``"open"``. This is the SURFACE shape,
+                         independent of resolution.
         surface_expr_id: Content-addressed stable identity of this expression
                          (``sha256:`` + hex digest of the canonical source-keyed
                          tuple). Stable across runs given the same source facts.
