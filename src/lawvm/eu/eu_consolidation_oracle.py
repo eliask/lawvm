@@ -277,6 +277,60 @@ def fetch_consolidation_bytes(
             f"{type(exc).__name__}: {exc}"
         ) from exc
 
+    body = _unwrap_formex_body(item_bytes, item_url, cons_celex)
+    root = cellar._xml_root_local_tag(body)
+    if root in _ACCEPTABLE_CONS_ROOTS:
+        return body
+
+    # MULTI-DOC manifestation shape (the real 02008R0692-20130319 pathology):
+    # the notice-selected ``DOC_N`` item is the publication ENVELOPE (a tiny
+    # ``<DOC>`` table-of-contents pointing at the real body member) while a
+    # SIBLING ``DOC_M`` of the same manifestation carries the actual
+    # ``CONS.ACT`` (observed both ways: envelope at DOC_2 with body at DOC_1,
+    # and envelope at DOC_1 with the body higher up). Storing the envelope
+    # would be a silent empty oracle (11/75 of the first acquisition run did
+    # exactly that). Probe the siblings before failing; a manifestation with NO
+    # act-rooted member is a typed acquisition gap.
+    m = re.match(r"^(?P<stem>.+/)DOC_(?P<n>\d+)$", item_url)
+    if m:
+        selected_n = int(m.group("n"))
+        misses = 0
+        for n in range(1, _MAX_SIBLING_DOC_PROBES + 1):
+            if n == selected_n:
+                continue
+            sibling_url = f"{m.group('stem')}DOC_{n}"
+            try:
+                sibling_bytes, _ = fetch_item(sibling_url, timeout_s)
+            except (HTTPError, URLError, TimeoutError, OSError):
+                # A missing sibling index is expected (the DOC_N series is
+                # finite); two consecutive misses end the probe.
+                misses += 1
+                if misses >= 2:
+                    break
+                continue
+            misses = 0
+            sibling_body = _unwrap_formex_body(sibling_bytes, sibling_url, cons_celex)
+            if cellar._xml_root_local_tag(sibling_body) in _ACCEPTABLE_CONS_ROOTS:
+                return sibling_body
+    raise ConsolidationAcquisitionFailure(
+        f"consolidation {cons_celex} item {item_url} has root {root!r} and no "
+        "sibling DOC member carries a consolidated ACT body (recorded "
+        "acquisition gap, not an empty oracle)"
+    )
+
+
+#: XML roots that ARE a consolidated (or plain) act body the grafter can parse.
+_ACCEPTABLE_CONS_ROOTS = ("CONS.ACT", "CONS.DOC", "ACT")
+
+#: How many sibling ``DOC_N`` members to probe for the act body when the
+#: notice-selected item is a publication envelope (multi-DOC manifestations).
+_MAX_SIBLING_DOC_PROBES = 12
+
+
+def _unwrap_formex_body(item_bytes: bytes, item_url: str, cons_celex: str) -> bytes:
+    """Unwrap a fetched manifestation item to its primary Formex XML bytes."""
+    from lawvm.eu import cellar
+
     if cellar.looks_like_zip(item_bytes):
         extracted = cellar.extract_primary_formex_from_zip(
             item_bytes, archive_hint=item_url

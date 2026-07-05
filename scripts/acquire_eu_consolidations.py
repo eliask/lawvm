@@ -159,12 +159,79 @@ def acquire_base(
     return result
 
 
+def repair_stub_bases(
+    farchive: Any,
+    base_celex: str,
+    *,
+    timeout_s: int,
+) -> dict[str, Any]:
+    """Re-fetch every STORED dated consolidation whose bytes are not an act body.
+
+    The first acquisition run stored, for 11/75 anchors, the multi-DOC
+    manifestation's publication ENVELOPE (a ~1 KB ``<DOC>`` table of contents)
+    instead of the ``CONS.ACT`` body — the DOC_1-sibling pathology
+    ``fetch_consolidation_bytes`` now handles. This lane re-validates each stored
+    dated locator's root tag and re-fetches + stores the real body where the
+    stub was stored. Idempotent: an already-valid body is left untouched.
+    """
+    from lawvm.eu.cellar import _xml_root_local_tag
+    from lawvm.eu.eu_acquire import _store_if_new, celex_locator
+    from lawvm.eu.eu_consolidation_oracle import (
+        _ACCEPTABLE_CONS_ROOTS,
+        fetch_consolidation_bytes,
+    )
+
+    result: dict[str, Any] = {"base": base_celex, "checked": 0, "repaired": 0, "failed": []}
+    prefix = f"cellar://celex/{base_celex}/"
+    for locator in farchive.locators(prefix + "%"):
+        rest = locator[len(prefix):]
+        date8 = rest.split("/", 1)[0]
+        if not (len(date8) == 8 and date8.isdigit()):
+            continue
+        result["checked"] += 1
+        data = farchive.get(locator)
+        if data and _xml_root_local_tag(data) in _ACCEPTABLE_CONS_ROOTS:
+            continue
+        try:
+            raw = fetch_consolidation_bytes(base_celex, date8, timeout_s=timeout_s)
+        except Exception as exc:  # noqa: BLE001 — typed byte-lane gap, continue
+            result["failed"].append(
+                f"{date8}:REFETCH:{type(exc).__name__}:{str(exc)[:120]}"
+            )
+            continue
+        _store_if_new(
+            farchive,
+            celex_locator(base_celex, date8, _LANG, _FMT),
+            raw,
+            storage_class=_STORAGE_CLASS,
+            metadata={
+                "base_celex": base_celex,
+                "consolidated_celex": f"0{base_celex[1:]}-{date8}",
+                "consolidation_date": date8,
+                "language": _LANG,
+                "fmt": _FMT,
+                "source": "eur-lex-cellar-consolidation",
+                "note": "stub-repair: envelope replaced by CONS body (DOC_1 sibling)",
+            },
+            observed_at=_now(),
+        )
+        result["repaired"] += 1
+        print(f"  [{base_celex}] {date8} REPAIRED ({len(raw)}B)", flush=True)
+    return result
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--bases",
         default=None,
         help="comma-separated base CELEXes (default: frozen corpus bases)",
+    )
+    parser.add_argument(
+        "--repair-stubs",
+        action="store_true",
+        help="re-fetch stored dated consolidations whose bytes are a publication "
+        "envelope stub instead of the CONS body",
     )
     parser.add_argument(
         "--limit-per-base",
@@ -194,12 +261,18 @@ def main(argv: list[str] | None = None) -> int:
     try:
         for i, base in enumerate(bases, 1):
             print(f"[{i}/{len(bases)}] {base} ...", flush=True)
-            rep = acquire_base(
-                farchive,
-                base,
-                limit_per_base=args.limit_per_base,
-                timeout_s=args.timeout_s,
-            )
+            if args.repair_stubs:
+                rep = repair_stub_bases(farchive, base, timeout_s=args.timeout_s)
+                rep.setdefault("series", 0)
+                rep.setdefault("stored", rep.get("repaired", 0))
+                rep.setdefault("already", 0)
+            else:
+                rep = acquire_base(
+                    farchive,
+                    base,
+                    limit_per_base=args.limit_per_base,
+                    timeout_s=args.timeout_s,
+                )
             reports.append(rep)
             print(
                 f"  => series={rep['series']} stored={rep['stored']} "
