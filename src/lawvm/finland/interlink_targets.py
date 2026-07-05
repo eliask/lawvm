@@ -40,6 +40,7 @@ _AKN_NS = "http://docs.oasis-open.org/legaldocml/ns/akn/3.0"
 _CHAPTER_EID_RE = re.compile(r"chp_(\d{1,6})(?:__|$)", re.IGNORECASE)
 _SECTION_LOCATOR_RE = re.compile(r"(?:^|/)section:([^/]+)")
 _SUBSECTION_LOCATOR_RE = re.compile(r"(?:^|/)subsection:([^/]+)")
+_PARAGRAPH_LOCATOR_RE = re.compile(r"(?:^|/)paragraph:([^/]+)")
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -364,24 +365,37 @@ def _target_preview_payload(
         "title": matched_section.heading_text,
     })
     subsection_label = _subsection_label_from_locator(target_ref.locator)
+    paragraph_label = _paragraph_label_from_locator(target_ref.locator)
     if subsection_label:
         hierarchy.append({"kind": "subsection", "label": subsection_label, "title": ""})
+    if paragraph_label:
+        hierarchy.append({"kind": "paragraph", "label": paragraph_label, "title": ""})
+    section_fragment = _finlex_fragment_from_locator(
+        matched_section.section_key,
+        allow_bare_section=True,
+    ) or str(payload.get("target_fragment") or "")
+    target_fragment = _extend_fragment_with_provision_tail(
+        section_fragment,
+        subsection_label=subsection_label,
+        paragraph_label=paragraph_label,
+    )
+    narrowed_preview = _narrow_preview_to_provision(
+        matched_section.body_text,
+        xml_bytes=xml_bytes,
+        target_fragment=target_fragment if (subsection_label or paragraph_label) else "",
+    )
     return {
         **payload,
         "preview_status": "resolved_latest_local_oracle_preview",
         "locator_label": locator_label or matched_section.section_label,
         "hierarchy": hierarchy,
-        "preview_text": _short_preview(matched_section.body_text),
+        "preview_text": _short_preview(narrowed_preview),
         "preview_date_consolidated": (
             matched_section.valid_at_start.isoformat()
             if matched_section.valid_at_start is not None
             else str(identity.get("preview_date_consolidated") or "")
         ),
-        "target_fragment": _finlex_fragment_from_locator(
-            matched_section.section_key,
-            allow_bare_section=True,
-        )
-        or str(payload.get("target_fragment") or ""),
+        "target_fragment": target_fragment,
     }
 
 
@@ -515,6 +529,96 @@ def _section_label_from_locator(locator: str | None) -> str:
 def _subsection_label_from_locator(locator: str | None) -> str:
     match = _SUBSECTION_LOCATOR_RE.search(locator or "")
     return match.group(1) if match else ""
+
+
+def _paragraph_label_from_locator(locator: str | None) -> str:
+    match = _PARAGRAPH_LOCATOR_RE.search(locator or "")
+    return match.group(1) if match else ""
+
+
+def _extend_fragment_with_provision_tail(
+    section_fragment: str,
+    *,
+    subsection_label: str,
+    paragraph_label: str,
+) -> str:
+    """Append momentti/kohta anchor components to a section Finlex fragment.
+
+    Finlex AKN eIds nest a section's momentti (subsection) as ``subsec_N`` and a
+    kohta (item) as ``para_N`` under it, joined by ``__``
+    (e.g. ``chp_1__sec_5__subsec_2__para_3`` — see the eId convention in
+    ``finland/inline_repeal_stub.py`` and the oracle bodies). We therefore extend
+    the resolved section fragment with those components in AKN document order.
+
+    Returns ``section_fragment`` unchanged when there is no subsection/paragraph
+    (byte-identical to the section-only path) or when the base fragment is empty.
+    """
+    if not section_fragment:
+        return section_fragment
+    fragment = section_fragment
+    if subsection_label:
+        prefix = _FINLEX_FRAGMENT_KINDS["subsection"]
+        fragment = f"{fragment}__{prefix}_{subsection_label}"
+    if paragraph_label:
+        prefix = _FINLEX_FRAGMENT_KINDS["paragraph"]
+        fragment = f"{fragment}__{prefix}_{paragraph_label}"
+    return fragment
+
+
+def _narrow_preview_to_provision(
+    section_body_text: str,
+    *,
+    xml_bytes: bytes,
+    target_fragment: str,
+) -> str:
+    """Narrow the section preview to the momentti/kohta element when resolvable.
+
+    ``target_fragment`` is the full Finlex anchor of the cited provision
+    (e.g. ``chp_1__sec_5__subsec_2``); when it names a momentti/kohta element
+    present in the oracle body under an ``eId`` that starts with that anchor
+    (version suffixes such as ``v20211030`` are tolerated), its inner text is
+    returned instead of the whole section. Falls back to the full section body
+    when the narrower is empty (no fragment, element absent, or element carries
+    no visible text), preserving the section-only preview byte-for-byte.
+    """
+    if not target_fragment:
+        return section_body_text
+    root = ET.fromstring(xml_bytes)
+    for el in root.iter():
+        eid = el.get("eId", "")
+        if not eid:
+            continue
+        # Tolerate an amendment version suffix on the leaf component
+        # (e.g. ``…__subsec_2v20211030``): match the anchor as a prefix that
+        # ends at a component boundary (``__``, a version marker, or end).
+        if eid == target_fragment or eid.startswith(f"{target_fragment}__") or eid.startswith(f"{target_fragment}v"):
+            narrowed = _element_visible_text(el)
+            if narrowed:
+                return narrowed
+    return section_body_text
+
+
+def _element_visible_text(el: ET.Element) -> str:
+    """Visible inner text of an AKN element, skipping its own num/heading.
+
+    Mirrors ``section_text_extractor._element_body_text``: the immediate
+    ``<num>``/``<heading>`` children carry the label/title (surfaced elsewhere as
+    ``locator_label``/``hierarchy``), not body content, so they are omitted from
+    the preview. Nested structure (kohta, alakohta, …) is recursed into.
+    """
+    parts: list[str] = []
+    if el.text:
+        parts.append(el.text)
+    for child in el:
+        local = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+        if local in ("num", "heading"):
+            if child.tail:
+                parts.append(child.tail)
+            continue
+        parts.append("".join(child.itertext()))
+        if child.tail:
+            parts.append(child.tail)
+    return " ".join("".join(parts).split())
 
 
 _FINLEX_FRAGMENT_KINDS = {

@@ -890,6 +890,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_derivation_edges.py",
         "test_fi_graph_build.py",
         "test_fi_graph_parity.py",
+        "test_fi_interlink_target_subsection.py",
         "test_fi_interlink_targets.py",
         "test_fi_interlinks.py",
         "test_fi_internal_ref_span_boundary.py",
