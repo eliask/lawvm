@@ -142,6 +142,117 @@ def test_fi_reference_mention_adapter_resolves_internal_target_contextually() ->
     assert row["target_locator"] == "section:7"
 
 
+def test_fi_ambiguous_eu_nickname_surfaces_disambiguation_candidates() -> None:
+    """An ambiguous EU-by-nickname cite with a SMALL discrete candidate CELEX set
+    is surfaced as a one-of-K disambiguation link (candidate_work_ids), not dropped.
+
+    ``jätedirektiivi`` is a genuinely-ambiguous nickname: the registry maps it to
+    two CELEX ids and refuses to pick one. The flat mention carries only the
+    ``eu-nickname:<surface>`` placeholder; the consumer recovers the small
+    discrete candidate set and emits it as an AMBIGUOUS/HEURISTIC possibility set
+    (never a resolved single-target EXACT link).
+    """
+    from lawvm.finland.references.registries import eu_nickname
+
+    result = eu_nickname.lookup("jätedirektiivi")
+    assert result.registry_status is eu_nickname.RegistryStatus.MULTIPLE
+    assert 2 <= len(result.candidates) <= 4
+    expected = "|".join(f"celex:{c}" for c in result.candidates)
+
+    mention = ReferenceMention(
+        source_provision_ref=ProvisionRef(statute_id="711/2022", section_label="4"),
+        target_provision_ref=ProvisionRef(
+            statute_id="eu-nickname:jätedirektiivi", section_label="3"
+        ),
+        cite_kind=CiteKind.EU,
+        cite_confidence=CiteConfidence.AMBIGUOUS,
+        phrase_lemma="eu_directive_nickname_article",
+        source_span=None,
+        valid_at_interval=(None, None),
+        edge_subtype=None,
+        surface_text="jätedirektiivin 3 artiklassa",
+    )
+    row = legal_interlink_to_row(
+        fi_interlink_from_reference_mention(mention, interlink_id="amb-eu-1")
+    )
+    # One-of-K disambiguation link: the whole candidate set, no single pick.
+    assert row["candidate_work_ids"] == expected
+    assert row["resolution_status"] == "ambiguous"
+    # A POSSIBILITY set, never a definite EXACT single-target link.
+    assert row["confidence"] == "heuristic"
+    assert row["target_work_id"] is None
+    # The cited-article locator and surface are preserved for rendering.
+    assert row["target_locator"] == "section:3"
+    assert row["surface_text"] == "jätedirektiivin 3 artiklassa"
+
+
+def test_fi_ambiguous_unknown_nickname_stays_unlinked() -> None:
+    """An AMBIGUOUS cite whose nickname the registry does NOT know (no candidate
+    set) is left exactly as before — no disambiguation candidates are invented."""
+    mention = ReferenceMention(
+        source_provision_ref=ProvisionRef(statute_id="711/2022", section_label="4"),
+        target_provision_ref=ProvisionRef(
+            statute_id="eu-nickname:tuntematonasetusxyz", section_label="3"
+        ),
+        cite_kind=CiteKind.EU,
+        cite_confidence=CiteConfidence.AMBIGUOUS,
+        phrase_lemma="eu_directive_nickname_article",
+        source_span=None,
+        valid_at_interval=(None, None),
+        edge_subtype=None,
+        surface_text="tuntematon 3 artiklassa",
+    )
+    row = legal_interlink_to_row(
+        fi_interlink_from_reference_mention(mention, interlink_id="amb-eu-2")
+    )
+    assert row["candidate_work_ids"] is None
+    assert row["resolution_status"] == "ambiguous"
+
+
+def test_fi_resolved_single_target_carries_no_disambiguation_candidates() -> None:
+    """A RESOLVED (EXACT single-target) cite is byte-unchanged: no candidate set,
+    a concrete target, EXACT confidence — the disambiguation lane never fires."""
+    mention = ReferenceMention(
+        source_provision_ref=ProvisionRef(statute_id="711/2022", section_label="4"),
+        target_provision_ref=ProvisionRef(statute_id="9/2023", section_label="2"),
+        cite_kind=CiteKind.CROSS_STATUTE,
+        cite_confidence=CiteConfidence.EXACT,
+        phrase_lemma="ref_element",
+        source_span=None,
+        valid_at_interval=(None, None),
+        edge_subtype="CITES",
+    )
+    row = legal_interlink_to_row(
+        fi_interlink_from_reference_mention(mention, interlink_id="res-nocand")
+    )
+    assert row["candidate_work_ids"] is None
+    assert row["resolution_status"] == "resolved"
+    assert row["confidence"] == "exact"
+    assert row["target_work_id"] == "fi:normative_act:9/2023"
+
+
+def test_fi_open_vague_reference_stays_unlinked_with_no_candidates() -> None:
+    """An OPEN (vague ``muualla laissa``) reference names no target and no
+    candidate set — it stays unlinked exactly as before."""
+    mention = ReferenceMention(
+        source_provision_ref=ProvisionRef(statute_id="711/2022", section_label="4"),
+        target_provision_ref=None,
+        cite_kind=CiteKind.CROSS_STATUTE,
+        cite_confidence=CiteConfidence.OPEN,
+        phrase_lemma="in_prose_fi",
+        source_span=None,
+        valid_at_interval=(None, None),
+        edge_subtype=None,
+        surface_text="muualla laissa",
+    )
+    row = legal_interlink_to_row(
+        fi_interlink_from_reference_mention(mention, interlink_id="open-nocand")
+    )
+    assert row["candidate_work_ids"] is None
+    assert row["resolution_status"] == "unresolved"
+    assert row["target_work_id"] is None
+
+
 def test_fi_inline_citation_adapter_maps_statute_target() -> None:
     citation = InlineCitation(
         source_doc_id="711/2022",

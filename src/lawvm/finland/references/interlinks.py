@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Optional
+from typing import Optional, Tuple
 
 from lawvm.core.interlinks import (
     InterlinkConfidence,
@@ -31,6 +31,54 @@ _AKN_LOCATOR_PART_RE = re.compile(
     r"^(part|chp|sec|subsec|para|subpara)_([A-Za-z0-9.-]{1,40})$",
     re.IGNORECASE,
 )
+
+# Placeholder prefix an UNRESOLVED-by-identity EU-by-nickname mention carries on
+# its target (``eu-nickname:<surface>``): the by-name / eu_directive recognizer
+# lanes type an EU instrument named only by a Finnish-shaped nickname with this
+# prefix and DEFER the CELEX pick. When the nickname is genuinely AMBIGUOUS the
+# registry already computed the FULL small candidate CELEX set but the flat
+# interlink projection discards it — the mention reaches this consumer with an
+# ``eu-nickname:`` placeholder target and no single pick. This consumer recovers
+# that set (a pure registry READ, never a pick) so a small discrete ambiguity is
+# surfaced as a one-of-K DISAMBIGUATION link instead of being dropped.
+_EU_NICKNAME_PLACEHOLDER_PREFIX = "eu-nickname:"
+
+# The largest candidate set we surface as a disambiguation link. A SMALL discrete
+# alternative set ("one of these K acts") is far more useful than a dropped cite;
+# a larger set is not a helpful disambiguation and stays unlinked (as today), and
+# an OPEN/vague reference names no candidate set at all (also unchanged). Every
+# candidate is a POSSIBILITY, never a resolved fact — the link is stamped
+# AMBIGUOUS + HEURISTIC, never a definite EXACT single-target link.
+_MAX_DISAMBIGUATION_CANDIDATES = 4
+
+
+def _eu_nickname_disambiguation_candidates(target_statute_id: str) -> Tuple[str, ...]:
+    """Recover the small discrete CELEX candidate set for an ambiguous EU nickname.
+
+    ``target_statute_id`` is the mention's target id. When it is an
+    ``eu-nickname:<surface>`` placeholder, the surface is looked up in the EU
+    nickname registry (the SAME read ``references.resolve`` performs — this is a
+    pure registry READ, it invents nothing and picks nothing). Returns the
+    candidate CELEX work ids (``celex:<CELEX>``) when the nickname is genuinely
+    AMBIGUOUS (registry ``multiple``) AND the set is SMALL and discrete
+    (``<= _MAX_DISAMBIGUATION_CANDIDATES``); otherwise the empty tuple (not an
+    ``eu-nickname:`` placeholder, a single/none registry result, or a set too
+    large to be a useful disambiguation — all stay unlinked exactly as before).
+    """
+    if not target_statute_id.startswith(_EU_NICKNAME_PLACEHOLDER_PREFIX):
+        return ()
+    surface = target_statute_id[len(_EU_NICKNAME_PLACEHOLDER_PREFIX) :]
+    if not surface:
+        return ()
+    from lawvm.finland.references.registries import eu_nickname
+
+    result = eu_nickname.lookup(surface)
+    if result.registry_status is not eu_nickname.RegistryStatus.MULTIPLE:
+        return ()
+    candidates = tuple(f"celex:{celex}" for celex in result.candidates)
+    if not candidates or len(candidates) > _MAX_DISAMBIGUATION_CANDIDATES:
+        return ()
+    return candidates
 
 
 def fi_work_ref(local_id: str, work_kind: str = "normative_act") -> LegalWorkRef:
@@ -168,7 +216,8 @@ def fi_interlink_from_reference_mention(
 
     source_statute_id = str(getattr(src, "statute_id", "") or "")
     source_work = fi_work_ref(source_statute_id)
-    target_work = fi_work_ref_from_canonical_id(str(getattr(tgt, "statute_id", "") or "")) if tgt is not None else None
+    target_statute_id = str(getattr(tgt, "statute_id", "") or "") if tgt is not None else ""
+    target_work = fi_work_ref_from_canonical_id(target_statute_id) if tgt is not None else None
     if cite_kind == CiteKind.INTERNAL and target_work is None:
         target_work = source_work
 
@@ -204,6 +253,27 @@ def fi_interlink_from_reference_mention(
     if status == InterlinkResolutionStatus.UNRESOLVED and target_work is None:
         confidence = InterlinkConfidence.LEGACY_UNKNOWN
 
+    # AMBIGUOUS-but-resolvable: an EU-by-nickname cite whose nickname the registry
+    # maps to a SMALL discrete CELEX set (the registry refuses to pick one). The
+    # flat mention carries an ``eu-nickname:<surface>`` placeholder target and no
+    # single pick; recovering the candidate set here surfaces it as a one-of-K
+    # DISAMBIGUATION link ("one of: A, B, …") instead of the current dropped/garbage
+    # placeholder target. This ONLY changes the ambiguous-small-discrete case: an
+    # EXACT single-target cite (below) and an OPEN/vague/unresolved cite (no
+    # ``eu-nickname:`` placeholder or no candidate set) are byte-unchanged.
+    candidate_work_ids: Tuple[str, ...] = ()
+    if cite_confidence == CiteConfidence.AMBIGUOUS:
+        candidate_work_ids = _eu_nickname_disambiguation_candidates(target_statute_id)
+        if candidate_work_ids:
+            # A one-of-K possibility set, never a resolved single: drop the
+            # placeholder single-target work (do not launder one candidate into a
+            # definite target) and carry the whole set. Status stays AMBIGUOUS and
+            # confidence HEURISTIC — this is a disambiguation POSSIBILITY, not an
+            # EXACT link.
+            target_work = None
+            status = InterlinkResolutionStatus.AMBIGUOUS
+            confidence = InterlinkConfidence.HEURISTIC
+
     owned_surface_text = str(getattr(mention, "surface_text", "") or "")
     source_locator = _locator_from_reference_provision(src)
     target_locator = _locator_from_reference_provision(tgt) if tgt is not None else None
@@ -216,7 +286,11 @@ def fi_interlink_from_reference_mention(
         rendered_span=rendered_span,
         surface_text=surface_text or owned_surface_text or phrase_lemma or edge_subtype or "reference",
         surface_kind=surface_kind,
-        target=InterlinkTarget(work=target_work, locator=target_locator),
+        target=InterlinkTarget(
+            work=target_work,
+            locator=target_locator,
+            candidate_work_ids=candidate_work_ids,
+        ),
         role=role,
         resolution_status=status,
         confidence=confidence,
