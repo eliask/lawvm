@@ -246,3 +246,105 @@ def test_corrigendum_for_read_lowered() -> None:
     assert op.text_patch.selector.match_text == "the Council"
     assert op.text_patch.replacement == "the Commission"
     assert str(op.target) == "article:6"
+
+
+# --------------------------------------------------------------------------- #
+# #221 omnibus cross-target guard + whole-article heading normalization        #
+# --------------------------------------------------------------------------- #
+
+
+def test_foreign_target_instruction_is_typed_skip_not_misapplied() -> None:
+    """An omnibus amender instruction naming a DIFFERENT instrument must never
+    lower into this base's coordinate system (the real 32023R0331 shape: one act
+    amending seven regulations — its 356/2010 article-replace landed in
+    32022R2309's Article 4 before the guard, convicted by the consolidation
+    oracle at 32022R2309@20230216)."""
+    fmx = b"""<?xml version="1.0"?>
+<ACT><ENACTING.TERMS>
+  <ARTICLE><TI.ART>Article 1</TI.ART>
+    <ALINEA>In Council Regulation (EU) No 356/2010, Article 4 is replaced by the following:</ALINEA>
+    <QUOT.S><ARTICLE><TI.ART>Article 4</TI.ART><ALINEA>Foreign replacement body.</ALINEA></ARTICLE></QUOT.S>
+  </ARTICLE>
+  <ARTICLE><TI.ART>Article 2</TI.ART>
+    <ALINEA>Article 5 of Council Regulation (EU) 2022/2309 is replaced by the following:</ALINEA>
+    <QUOT.S><ARTICLE><TI.ART>Article 5</TI.ART><ALINEA>Base replacement body.</ALINEA></ARTICLE></QUOT.S>
+  </ARTICLE>
+</ENACTING.TERMS></ACT>"""
+    r = lower_amending_act(fmx, "32023R0331", base_celex="32022R2309")
+    # Only the base-targeted instruction lowers; the foreign one is a TYPED skip.
+    assert [str(op.target) for op in r.ops] == ["article:5"]
+    foreign = [
+        d
+        for d in r.diagnostics
+        if d.rule_id == "eu_fmx4_grammar_foreign_target_instruction"
+    ]
+    assert len(foreign) == 1
+    assert "356/2010" in foreign[0].reason
+    assert foreign[0].family == "foreign_target"
+    # Conservation of the denominator: both instructions are accounted for.
+    assert r.instruction_count == 2
+
+
+def test_foreign_target_guard_inactive_without_base_or_citation() -> None:
+    """No base_celex, or an instruction citing no instrument at all, keeps the
+    pre-guard behavior (single-target amenders elide the base after the opening
+    clause — those instructions must keep lowering)."""
+    fmx = b"""<?xml version="1.0"?>
+<ACT><ENACTING.TERMS>
+  <ARTICLE><TI.ART>Article 1</TI.ART>
+    <ALINEA>Article 7 is replaced by the following:</ALINEA>
+    <QUOT.S><ARTICLE><TI.ART>Article 7</TI.ART><ALINEA>New body.</ALINEA></ARTICLE></QUOT.S>
+  </ARTICLE>
+</ENACTING.TERMS></ACT>"""
+    # Citation-free instruction lowers under a base_celex...
+    r = lower_amending_act(fmx, "32020R0001", base_celex="32019R0787")
+    assert [str(op.target) for op in r.ops] == ["article:7"]
+    # ...and without any base_celex at all.
+    r2 = lower_amending_act(fmx, "32020R0001")
+    assert [str(op.target) for op in r2.ops] == ["article:7"]
+
+
+def test_foreign_target_guard_recognises_both_numbering_conventions() -> None:
+    """The base is recognised cited either 'No NNN/YYYY' (pre-2015) or
+    'YYYY/NNN' (post-2015), with leading zeros of the CELEX number dropped."""
+    fmx = b"""<?xml version="1.0"?>
+<ACT><ENACTING.TERMS>
+  <ARTICLE><TI.ART>Article 1</TI.ART>
+    <ALINEA>Article 2 of Commission Regulation (EC) No 692/2008 is replaced by the following:</ALINEA>
+    <QUOT.S><ARTICLE><TI.ART>Article 2</TI.ART><ALINEA>New scope body.</ALINEA></ARTICLE></QUOT.S>
+  </ARTICLE>
+</ENACTING.TERMS></ACT>"""
+    r = lower_amending_act(fmx, "32011R0566", base_celex="32008R0692")
+    assert [str(op.target) for op in r.ops] == ["article:2"]
+    assert not [
+        d
+        for d in r.diagnostics
+        if d.rule_id == "eu_fmx4_grammar_foreign_target_instruction"
+    ]
+
+
+def test_whole_article_payload_strips_own_heading() -> None:
+    """The quoted replacement body's own 'Article N' heading is the node LABEL,
+    not text: grafted renderings (enacted and consolidated) never carry it in
+    the article text, so neither may a replay-materialized payload (convicted by
+    the consolidation oracle at 32022R2309@20230216 Art 5)."""
+    fmx = b"""<?xml version="1.0"?>
+<ACT><ENACTING.TERMS>
+  <ARTICLE><TI.ART>Article 1</TI.ART>
+    <ALINEA>Article 5 of Council Regulation (EU) 2022/2309 is replaced by the following:</ALINEA>
+    <QUOT.S><ARTICLE><TI.ART>Article&#160;5</TI.ART><ALINEA>Article&#160;3(1) and (2) shall not apply to humanitarian assistance.</ALINEA></ARTICLE></QUOT.S>
+  </ARTICLE>
+  <ARTICLE><TI.ART>Article 2</TI.ART>
+    <ALINEA>The following Article 5a is inserted:</ALINEA>
+    <QUOT.S><ARTICLE><TI.ART>Article 5a</TI.ART><ALINEA>Inserted body text.</ALINEA></ARTICLE></QUOT.S>
+  </ARTICLE>
+</ENACTING.TERMS></ACT>"""
+    r = lower_amending_act(fmx, "32023R0331", base_celex="32022R2309")
+    by_target = {str(op.target): op for op in r.ops}
+    rep = by_target["article:5"]
+    assert rep.payload is not None
+    # The heading is stripped; the body's OWN cross-reference to Article 3 stays.
+    assert rep.payload.text.startswith("Article 3(1) and (2) shall not apply")
+    ins = by_target["article:5a"]
+    assert ins.payload is not None
+    assert ins.payload.text == "Inserted body text."

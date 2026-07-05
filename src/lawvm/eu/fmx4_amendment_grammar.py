@@ -297,6 +297,66 @@ _RE_ANNEX_AS_SET_OUT = re.compile(
     re.I | re.S,
 )
 
+# The instruments an amendment instruction can NAME as its target: "Regulation
+# (EU) 2022/2309", "Council Regulation (EC) No 1210/2003", "Directive
+# 2009/138/EC", "Decision (CFSP) 2022/2319" … The captured ``num`` is the
+# ``A/B`` number pair (year/number in either order); the surrounding institution
+# words and the (EC)/(EU)/No decorations vary freely.
+_RE_NAMED_INSTRUMENT = re.compile(
+    r"\b(?:Regulation|Directive|Decision)\b"
+    r"(?:\s*\([A-Za-z,\s]+\))?"  # (EU) / (EC) / (EU, Euratom) / (CFSP)
+    r"(?:\s*No\.?)?"
+    r"\s*(?P<num>\d{1,4}/\d{1,4})",
+    re.I,
+)
+
+
+def _base_number_forms(base_celex: str) -> frozenset[str]:
+    """The ``A/B`` number forms under which ``base_celex`` is cited in prose.
+
+    A sector-3 act CELEX ``3YYYY<L>NNNN`` is cited either ``No NNN/YYYY`` (the
+    pre-2015 numbering, leading zeros dropped) or ``YYYY/NNN`` (the post-2015
+    numbering). Both are returned so the foreign-target guard recognises the
+    base under either convention. An unparseable ``base_celex`` yields the empty
+    set (guard inactive — never a false skip on a malformed id).
+    """
+    m = re.match(r"^3(?P<year>\d{4})[A-Z](?P<num>\d+)$", base_celex)
+    if not m:
+        return frozenset()
+    year = m.group("year")
+    num = str(int(m.group("num")))  # drop leading zeros ("0692" → "692")
+    return frozenset({f"{num}/{year}", f"{year}/{num}"})
+
+
+def _foreign_target_instrument(instr: str, base_celex: str) -> str:
+    """The instruction's named amended instrument iff it is NOT the base act.
+
+    An omnibus amending act (e.g. the humanitarian-exemption regulation
+    32023R0331) amends MANY regulations in one ENACTING.TERMS: each instruction
+    article names ITS target ("In Council Regulation (EU) No 356/2010, Article 4
+    is replaced …"). Lowering such an instruction against a DIFFERENT base and
+    applying it there is cross-target misapplication — a corruption the
+    EU consolidation oracle convicted on 32022R2309@20230216 (356/2010's
+    Article 4 landed in 2309). Guard: if the instruction prose (QUOT payloads
+    already excluded by ``_instruction_text``) names one or more instruments and
+    NONE of them is the base act, the instruction belongs to another instrument
+    — return the first foreign citation so the caller records a typed skip.
+    Returns ``""`` (guard passes) when the base is named, when no instrument is
+    named (single-target amenders elide the base after the opening clause), or
+    when ``base_celex`` is absent/unparseable. A skip here is safe-by-default:
+    the mistake it prevents (applying a foreign amendment) corrupts the body,
+    while a false skip only surfaces as a typed, visible coverage residual.
+    """
+    base_forms = _base_number_forms(base_celex) if base_celex else frozenset()
+    if not base_forms:
+        return ""
+    cited = [m.group("num") for m in _RE_NAMED_INSTRUMENT.finditer(instr)]
+    if not cited:
+        return ""
+    if any(c in base_forms for c in cited):
+        return ""
+    return cited[0]
+
 
 def _local(tag: object) -> str:
     if isinstance(tag, str):
@@ -389,11 +449,13 @@ def _quoted_block_text(el: ET.Element) -> Optional[str]:
     # markers are NOT siblings (START sits in the nested ARTICLE's TI.ART, END
     # deep in the last PARAG), so the marker-pair logic below misses it. Treating
     # ``QUOT.S`` as a wrapper and taking its inner text captures the payload. The
-    # leading/trailing bare "Article N" heading of the quoted body is kept (it is
-    # part of the replacement text), matching the fixture's QUOT-wrapper form.
+    # quoted body's own leading "Article N" heading is returned here as-is; the
+    # whole-article REPLACE/INSERT lowerers strip it via
+    # ``_strip_quoted_article_heading`` (in the IR the heading is the node LABEL,
+    # not text — see that helper).
     for node in el.iter():
         if _local(node.tag).upper() in ("QUOT", "QUOT.S"):
-            txt = _all_text(node)
+            txt = _wrapper_text_until_quot_end(node)
             if txt:
                 return txt
 
@@ -428,9 +490,73 @@ def _all_text(el: ET.Element) -> str:
     return " ".join(t.strip() for t in el.itertext() if t and t.strip())
 
 
+def _wrapper_text_until_quot_end(wrapper: ET.Element) -> str:
+    """Text of a QUOT/QUOT.S wrapper UP TO its ``QUOT.END`` marker.
+
+    The real Formex shape closes the quoted body with an inline
+    ``<QUOT.END/>`` whose TAIL is the surrounding INSTRUCTION's own closing
+    punctuation (``…Committee.<QUOT.END/>.`` — the final ``.`` belongs to the
+    amending sentence, not the payload). ``_all_text`` swallowed that tail into
+    the payload, leaving a spurious trailing period on every replay-
+    materialized article (convicted by the consolidation oracle at
+    32022R2309@20230216 Art 5). Collect document-order text and STOP at the
+    first ``QUOT.END``/``QUOT.E`` — its tail and everything after are the
+    instruction's, not the quote's.
+    """
+    parts: list[str] = []
+    stopped = False
+
+    def _walk(node: ET.Element) -> None:
+        nonlocal stopped
+        if stopped:
+            return
+        if _local(node.tag).upper() in ("QUOT.END", "QUOT.E"):
+            stopped = True
+            return
+        if node.text and node.text.strip():
+            parts.append(node.text.strip())
+        for child in node:
+            _walk(child)
+            if stopped:
+                return
+            if child.tail and child.tail.strip():
+                parts.append(child.tail.strip())
+
+    # The wrapper's own text, then children in document order (the wrapper's
+    # tail is outside the quote by construction).
+    if wrapper.text and wrapper.text.strip():
+        parts.append(wrapper.text.strip())
+    for child in wrapper:
+        _walk(child)
+        if stopped:
+            break
+        if child.tail and child.tail.strip():
+            parts.append(child.tail.strip())
+    return " ".join(parts)
+
+
 def _payload_node(kind: IRNodeKind, label: str, text: str) -> IRNode:
     """Build a replacement/insert payload IRNode from a captured quoted block."""
     return IRNode(kind=kind, label=label, text=text)
+
+
+def _strip_quoted_article_heading(block: str, num: str) -> str:
+    """Drop the quoted body's own leading ``Article <num>`` heading from a
+    whole-article payload.
+
+    The quoted replacement body of a whole-article REPLACE/INSERT opens with the
+    article's OWN heading (``<TI.ART>Article 5</TI.ART>`` → the flattened block
+    starts ``Article 5 …``). In the IR coordinate system that heading is the
+    node's LABEL, not its text: the grafter parses both an enacted act and a
+    consolidated FMX4 into articles whose text EXCLUDES the ``Article N`` line.
+    Keeping it in the payload made every replay-materialized article carry a
+    spurious ``Article N`` text prefix that no grafted rendering has (convicted
+    by the consolidation oracle on 32022R2309@20230216 Art 5). Only the exact
+    heading of THIS payload's own number is stripped — never any other leading
+    text — so the transform is label/text normalization, not payload rewriting.
+    """
+    m = re.match(rf"\s*Article\s+{re.escape(num)}\s*[.:—–-]?\s*", block, re.I)
+    return block[m.end():] if m else block
 
 
 # ---------------------------------------------------------------------------
@@ -659,6 +785,26 @@ def _lower_one_instruction(
 ) -> Optional[LegalOperation]:
     raw = " ".join(instr.split())[:400]
     src = _source(amending_celex, base_celex, effective, enacted, raw)
+
+    # Cross-target guard FIRST (before any pattern can match): an omnibus
+    # instruction naming a different instrument than the base must never lower
+    # into the base's coordinate system (see :func:`_foreign_target_instrument`).
+    foreign = _foreign_target_instrument(instr, base_celex)
+    if foreign:
+        diagnostics.append(
+            AmendmentGrammarDiagnostic(
+                rule_id="eu_fmx4_grammar_foreign_target_instruction",
+                reason=(
+                    f"instruction names instrument {foreign!r} as its amendment "
+                    f"target, which is not the base act {base_celex}; omnibus "
+                    "cross-target instruction suppressed (applying it to this "
+                    "base would be misapplication, not coverage)"
+                ),
+                source_excerpt=raw,
+                family="foreign_target",
+            )
+        )
+        return None
 
     # Order matters (most specific first). Point-level edits are checked before
     # paragraph- and whole-article rules so "in Article N, point (b) ..." is not
@@ -984,7 +1130,11 @@ def _lower_one_instruction(
             sequence=seq,
             action=StructuralAction.INSERT,
             target=LegalAddress(path=path),
-            payload=_payload_node(IRNodeKind.SECTION, m.group("num"), block),
+            payload=_payload_node(
+                IRNodeKind.SECTION,
+                m.group("num"),
+                _strip_quoted_article_heading(block, m.group("num")),
+            ),
             source=src,
             witness_rule_id="EU_FMX4.WHOLE_ARTICLE_INSERT",
             provenance_tags=("ir_apply_class=whole_section_insert",),
@@ -1008,7 +1158,11 @@ def _lower_one_instruction(
             sequence=seq,
             action=StructuralAction.REPLACE,
             target=LegalAddress(path=path),
-            payload=_payload_node(IRNodeKind.SECTION, m.group("num"), block),
+            payload=_payload_node(
+                IRNodeKind.SECTION,
+                m.group("num"),
+                _strip_quoted_article_heading(block, m.group("num")),
+            ),
             source=src,
             witness_rule_id="EU_FMX4.WHOLE_ARTICLE_REPLACE",
             provenance_tags=("ir_apply_class=whole_section_replace",),

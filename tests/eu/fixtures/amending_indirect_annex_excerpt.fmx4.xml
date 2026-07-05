@@ -13,6 +13,11 @@
       (sole-annex form — no number)
     * the entry-into-force boilerplate (out-of-scope typed residual)
 
+  Every instruction cites the BASE act (Regulation (EU) 2016/44): since the
+  omnibus cross-target guard (eu_fmx4_grammar_foreign_target_instruction), an
+  instruction naming a DIFFERENT instrument is typed-skipped, never lowered onto
+  this base — the guard's own coverage lives in test_eu_fmx4_amendment_grammar.
+
   The replacement annex BODY frequently ships as a SEPARATE manifestation (absent
   from this main FMX4): the grammar lowers the STRUCTURAL target and records a
   typed payload-gap (eu_fmx4_grammar_annex_as_set_out_payload_separate) — never a
@@ -28,11 +33,11 @@
     </ARTICLE>
     <ARTICLE IDENTIFIER="002">
       <TI.ART>Article 2</TI.ART>
-      <ALINEA>Annex III to Council Regulation (EU) No 267/2012 is replaced by the list set out in the Annex to this Regulation.</ALINEA>
+      <ALINEA>Annex III to Council Regulation (EU) 2016/44 is replaced by the list set out in the Annex to this Regulation.</ALINEA>
     </ARTICLE>
     <ARTICLE IDENTIFIER="003">
       <TI.ART>Article 3</TI.ART>
-      <ALINEA>The Annex to Council Regulation (EC) No 2580/2001 is replaced by the list set out in the Annex to this Regulation.</ALINEA>
+      <ALINEA>The Annex to Council Regulation (EU) 2016/44 is replaced by the list set out in the Annex to this Regulation.</ALINEA>
     </ARTICLE>
     <ARTICLE IDENTIFIER="004">
       <TI.ART>Article 4</TI.ART>
