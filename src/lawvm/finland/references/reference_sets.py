@@ -38,10 +38,12 @@ from lawvm.core.reference_mention import (
 
 # A surface whose numeric list uses a dash connector ("33—35", "69 d–69 g") is a
 # RANGE; one using a word/comma connector ("33 ja 35", "1, 2 kohdassa") is a
-# COORDINATION. Both denote every listed member (ALL_VALID); the distinction is
-# only the surface ``expression_kind`` label, not the semantics. The dash class
-# covers hyphen-minus, en dash, em dash and figure dash (Finnish drafting uses
-# the en dash primarily; sources also carry hyphen-minus / em dash).
+# COORDINATION; one carrying BOTH ("1, 2—4 ja 7 §:ssä", "1—3 ja 5—7 §") is a
+# MIXED enumeration-of-ranges. All three denote every listed member (ALL_VALID);
+# the distinction is only the surface ``expression_kind`` label, not the
+# semantics. The dash class covers hyphen-minus, en dash, em dash and figure dash
+# (Finnish drafting uses the en dash primarily; sources also carry hyphen-minus /
+# em dash).
 _RANGE_DASH_RE = re.compile(r"[\dA-Za-zÅÄÖåäö]\s*[-‐‑‒–—]\s*\d")
 _COORDINATION_RE = re.compile(r"\bja\b|\bsekä\b|\btai\b|,", re.IGNORECASE)
 
@@ -63,19 +65,34 @@ def _surface_expression_kind(surface_text: str, member_count: int) -> str:
     """Classify the SURFACE shape of a citation expression.
 
     This is the syntactic class of the literal text (independent of resolution):
-    ``"single"`` (one member), ``"range"`` (dash-connected number list),
-    ``"coordination"`` (word/comma-connected list), else ``"single"`` for a
-    lone multi? — a multi-member set with no recognised connector is still a
-    coordination of some kind, so it is labelled ``"coordination"`` rather than
-    silently mis-labelled ``"single"``.
+    ``"single"`` (one member), ``"range"`` (dash-connected number list ONLY),
+    ``"coordination"`` (word/comma-connected list ONLY), ``"mixed"`` (a list that
+    carries BOTH a range dash AND a coordination connector — an enumeration of
+    ranges, ``"1, 2—4 ja 7 §:ssä"``), else ``"single"`` for a lone multi? — a
+    multi-member set with no recognised connector is still a coordination of some
+    kind, so it is labelled ``"coordination"`` rather than silently mis-labelled
+    ``"single"``.
+
+    A MIXED list must NOT be coarse-labelled ``"range"`` just because a dash
+    appears somewhere in it: ``"1, 2—4 ja 7 §"`` is an enumeration whose members
+    happen to include a sub-range, not a single contiguous span from 1 to 7. The
+    member expansion (owned by the extractor) is complete either way; this only
+    fixes the SURFACE label so a consumer reading ``expression_kind`` is not told
+    a mixed enumeration is a pure range.
     """
     if member_count <= 1:
         return "single"
     # lawvm-regex: owning_parser canonical surface-shape classifier for an already-extracted citation expression's own literal; structural class only, mints no op/target
-    if _RANGE_DASH_RE.search(surface_text):
-        return "range"
+    has_range = bool(_RANGE_DASH_RE.search(surface_text))
     # lawvm-regex: owning_parser canonical surface-shape classifier (coordination arm) over the citation expression's own literal; structural class only, mints no op/target
-    if _COORDINATION_RE.search(surface_text):
+    has_coord = bool(_COORDINATION_RE.search(surface_text))
+    if has_range and has_coord:
+        # Both a sub-range dash AND a coordination connector: an enumeration of
+        # (possibly range) members. Neither a pure range nor a pure coordination.
+        return "mixed"
+    if has_range:
+        return "range"
+    if has_coord:
         return "coordination"
     # Multiple members but no recognised connector surface (e.g. an enumeration
     # the extractor produced from a tail with no literal connector). It is still

@@ -118,6 +118,105 @@ def test_section_range_folds_to_one_all_valid_set() -> None:
 
 
 # ---------------------------------------------------------------------------
+# MIXED enumeration+range ("1, 2-4 ja 7 §:ssä") — both a dash sub-range AND a
+# coordination connector in ONE surface. The label must be "mixed" (not coarsely
+# "range" just because a dash appears), the members must be COMPLETE (1,2,3,4,7),
+# and the set is still ALL_VALID. This is the internal same-act lane's surface
+# (it carries the full numeric list), so the classifier sees the real shape.
+# ---------------------------------------------------------------------------
+
+
+def test_mixed_enumeration_range_folds_to_mixed_all_valid() -> None:
+    from lawvm.finland.references.internal_refs import recognize_internal_refs
+
+    mentions = recognize_internal_refs("1, 2-4 ja 7 §:ssä", "999/2099")
+    # Members complete: the range 2-4 expanded AND the enumerated 1, 7 kept.
+    labels = []
+    for m in mentions:
+        assert m.target_provision_ref is not None
+        labels.append(m.target_provision_ref.section_label)
+    assert labels == ["1", "2", "3", "4", "7"]
+    folded = fold_reference_set(mentions)
+    # A MIXED list is labelled "mixed", NOT "range" and NOT "coordination".
+    assert folded.expression.expression_kind == "mixed"
+    assert folded.expression.surface_text == "1, 2-4 ja 7 §:ssä"
+    # The set semantics is still ALL_VALID (every listed member denoted).
+    assert (
+        folded.resolution.target_set_semantics is ReferenceTargetSetSemantics.ALL_VALID
+    )
+    assert [t.section_label for t in folded.resolution.target_set] == [
+        "1",
+        "2",
+        "3",
+        "4",
+        "7",
+    ]
+
+
+def test_enumeration_of_ranges_folds_to_mixed() -> None:
+    # "1-3 ja 5-7 §": two sub-ranges joined by coordination — MIXED, and every
+    # member of BOTH ranges is present (no silent cap/truncation of the run).
+    surface = "1-3 ja 5-7 §:ssä"
+    span = SourceSpan(source_file="711/2022.xml", byte_offset=10, byte_len=len(surface))
+    members = ["1", "2", "3", "5", "6", "7"]
+    mentions = [
+        _mention(
+            ProvisionRef(statute_id="711/2022", section_label=label),
+            confidence=CiteConfidence.EXACT,
+            surface=surface,
+            span=span,
+        )
+        for label in members
+    ]
+    folded = fold_reference_set(mentions)
+    assert folded.expression.expression_kind == "mixed"
+    assert (
+        folded.resolution.target_set_semantics is ReferenceTargetSetSemantics.ALL_VALID
+    )
+    assert [t.section_label for t in folded.resolution.target_set] == members
+
+
+def test_cross_statute_provision_set_expands_all_members() -> None:
+    # A CROSS-STATUTE cite whose provision tail is a mixed enumeration+range
+    # ("(55/2001) 1, 2-4 ja 7 §:ssä") must yield EVERY member of the external
+    # statute as a target, folded into ONE ALL_VALID set (not just the first
+    # provision). Proves the plain-text by-id lane reuses the shared
+    # set/range tail parser, not a single-provision tail.
+    from lawvm.finland.references.ref_mention_extractor import (
+        extract_plain_text_statute_mentions,
+    )
+
+    xml = (
+        b"<akomaNtoso xmlns=\"http://docs.oasis-open.org/legaldocml/ns/akn/3.0\">"
+        b"<act><body><section><p>"
+        b"Kuten ty\xc3\xb6sopimuslain (55/2001) 1, 2-4 ja 7 \xc2\xa7:ss\xc3\xa4 "
+        b"s\xc3\xa4\xc3\xa4det\xc3\xa4\xc3\xa4n."
+        b"</p></section></body></act></akomaNtoso>"
+    )
+    res = extract_plain_text_statute_mentions(xml, "999/2099")
+    # All five provisions of the EXTERNAL statute 2001/55 are emitted.
+    sections: set[str] = set()
+    statutes: set[str] = set()
+    for m in res.mentions:
+        assert m.target_provision_ref is not None
+        sections.add(m.target_provision_ref.section_label)
+        statutes.add(m.target_provision_ref.statute_id)
+    assert sections == {"1", "2", "3", "4", "7"}
+    assert statutes == {"2001/55"}
+    folded = fold_reference_set(res.mentions)
+    assert (
+        folded.resolution.target_set_semantics is ReferenceTargetSetSemantics.ALL_VALID
+    )
+    assert {t.section_label for t in folded.resolution.target_set} == {
+        "1",
+        "2",
+        "3",
+        "4",
+        "7",
+    }
+
+
+# ---------------------------------------------------------------------------
 # Ambiguity -> CANDIDATE_AMBIGUITY
 # ---------------------------------------------------------------------------
 
