@@ -167,25 +167,23 @@ def test_generated_surface_coinciding_with_alias_stays_exact() -> None:
     assert rr.mention.cite_confidence is CiteConfidence.EXACT
 
 
-def test_fi_name_multiple_temporal_versions_is_ambiguous() -> None:
-    """Two temporal versions, no as_of filter -> ambiguous, both candidates, no pick."""
+def test_fi_name_multiple_temporal_versions_resolves_to_live_by_default() -> None:
+    """Two temporal versions, no as_of filter: the DEFAULT (disambiguate_multi_version
+    now on) picks the still-in-force version APPROXIMATE. Both candidates are still
+    reported; the opt-out (``=False``) preserving AMBIGUOUS is covered by
+    ``test_multi_version_stays_ambiguous_when_disabled``."""
     reg = _statute_registry()
     [rr] = resolve_mentions(
         [_mention("fi-name:ympäristönsuojelulaki", surface_text="ympäristönsuojelulaissa")],
         statute_registry=reg,
         eu_registry=eu_nickname,
     )
-    assert rr.resolution_status is ResolutionStatus.AMBIGUOUS
-    assert rr.work_id is None
+    assert rr.resolution_status is ResolutionStatus.RESOLVED
+    assert rr.work_id == "527/2014"
     assert set(rr.candidates) == {"86/2000", "527/2014"}
-    # Never picks: target id stays the placeholder, confidence becomes AMBIGUOUS.
-    assert rr.mention.cite_confidence is CiteConfidence.AMBIGUOUS
-    assert rr.mention.target_provision_ref is not None
-    assert rr.mention.target_provision_ref.statute_id == "fi-name:ympäristönsuojelulaki"
-    # A finding is emitted naming every candidate.
-    assert rr.finding is not None
-    assert set(rr.finding.candidate_target_ids) == {"86/2000", "527/2014"}
-    assert rr.finding.rule_id == "fi_ref_resolve_ambiguous_name"
+    # A heuristic pick among multiple -> APPROXIMATE, never laundered EXACT.
+    assert rr.mention.cite_confidence is CiteConfidence.APPROXIMATE
+    assert rr.rejected_candidates == ("86/2000",)
 
 
 def test_fi_name_as_of_filter_narrows_to_single() -> None:
@@ -1006,13 +1004,16 @@ def _multi_version_registry():
     )
 
 
-def test_multi_version_stays_ambiguous_by_default() -> None:
-    """Without the flag, a multi-version name stays AMBIGUOUS (never picked)."""
+def test_multi_version_stays_ambiguous_when_disabled() -> None:
+    """The opt-out (``disambiguate_multi_version=False``) recovers the byte-unchanged
+    behavior: a multi-version name stays AMBIGUOUS (never picked). Default-on is
+    covered by ``test_multi_version_live_pick_resolves_approximate``."""
     reg = _multi_version_registry()
     [rr] = resolve_mentions(
         [_mention("fi-name:ympäristönsuojelulaki")],
         statute_registry=reg,
         eu_registry=eu_nickname,
+        disambiguate_multi_version=False,
     )
     assert rr.resolution_status is ResolutionStatus.AMBIGUOUS
     assert set(rr.candidates) == {"86/2000", "527/2014"}

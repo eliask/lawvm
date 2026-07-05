@@ -585,8 +585,11 @@ _CURATED_ALIAS_PHRASE_LEMMA = "statute_name_curated_alias"
 # BOTH are best-effort disambiguations of a genuinely-multiple result, so the
 # resolution is stamped APPROXIMATE (not EXACT): downstream can tell a parsed-exact
 # id from a heuristically-disambiguated one. When neither signal singles out one
-# candidate the result stays AMBIGUOUS (fail-loud, no pick). Gated OFF by default
-# (``disambiguate_multi_version``) so every existing caller is byte-unchanged.
+# candidate the result stays AMBIGUOUS (fail-loud, no pick). Default-ON
+# (``disambiguate_multi_version=True``): the reference subsystem is read/publish
+# (citation graph / viewer / analysis), never a replay input, and the pick is
+# always stamped APPROXIMATE so a strict consumer can filter it. Pass ``False`` to
+# recover the byte-unchanged (fail-loud AMBIGUOUS) behavior for a specific caller.
 
 
 def _title_head(canonical_title: str) -> Optional[str]:
@@ -654,7 +657,12 @@ def _disambiguate_multi_version(
     # for lacking a signal, which is not a real mismatch).
     cited = _cited_head(name_key)
     if cited is not None:
-        heads = [_title_head(c.canonical_title) for c in survivors]
+        # ``hasattr`` guard: a duck-typed candidate stub without a title exposes
+        # no head signal, so the head filter is skipped (never a false drop).
+        heads = [
+            _title_head(c.canonical_title) if hasattr(c, "canonical_title") else None
+            for c in survivors
+        ]
         if all(h is not None for h in heads):
             head_matched = [
                 c for c, h in zip(survivors, heads, strict=True) if h == cited
@@ -668,7 +676,9 @@ def _disambiguate_multi_version(
     # (2) AS-OF-LIVE VERSION. Exactly one candidate is still in force -> it is the
     # referent of the bare name in the consolidated present. Zero or several live
     # candidates -> genuinely ambiguous, leave it.
-    live = [c for c in survivors if c.valid_to is None]
+    # ``hasattr`` guard: a candidate whose lifecycle window is unknown (a stub
+    # without ``valid_to``) is not treated as live — no unconfirmed pick.
+    live = [c for c in survivors if hasattr(c, "valid_to") and c.valid_to is None]
     if len({c.statute_id for c in live}) == 1:
         return live[0].statute_id, _LIVE_VERSION_PHRASE_LEMMA
 
@@ -723,7 +733,7 @@ def _resolve_fi_name(
     as_of: Optional[dt.date],
     defined_terms: Optional[DefinedTermTable],
     name_id_anaphora: Optional[NameIdAnaphoraTable] = None,
-    disambiguate_multi_version: bool = False,
+    disambiguate_multi_version: bool = True,
 ) -> ResolvedReference:
     """Resolve a ``fi-name:<name>`` placeholder.
 
@@ -1139,7 +1149,7 @@ def resolve_mention(
     defined_terms: Optional[DefinedTermTable] = None,
     name_id_anaphora: Optional[NameIdAnaphoraTable] = None,
     use_mention_validity: bool = False,
-    disambiguate_multi_version: bool = False,
+    disambiguate_multi_version: bool = True,
 ) -> ResolvedReference:
     """Resolve a single mention's placeholder identity against the registries.
 
@@ -1185,7 +1195,7 @@ def resolve_mentions(
     defined_terms: Optional[DefinedTermTable] = None,
     resolve_name_id_anaphora: bool = True,
     use_mention_validity: bool = False,
-    disambiguate_multi_version: bool = False,
+    disambiguate_multi_version: bool = True,
 ) -> list[ResolvedReference]:
     """Project placeholder mentions to :class:`ResolvedReference` records.
 
