@@ -265,10 +265,57 @@ def _stable_key(path: tuple[str, ...]) -> tuple[str, ...]:
     has no stable label, and those segments churn across consolidations even with
     zero real change. Collapsing them lets the anchor keys compare on the same
     stable surface the chain replay's ``combined_similarity_stable`` headline uses.
+
+    COMMENSURABILITY SEAM (the fix for the structurally-dead NZ conviction path).
+    ``_stable_path`` collapses an unlabeled ``<part>`` wrapper (``part@DLM_xml_id``
+    identity fallback, observed on the earliest act_public_1981_23 snapshot) to a
+    bare ``part`` segment. But editorial consolidation routinely DROPS that wrapper
+    entirely on the oracle side (the exact "Shape (1)" churn
+    :func:`~lawvm.new_zealand.chain_replay._resolve_oracle_node_for_target` already
+    tolerates for the op-local check): the carried replay tree keeps
+    ``part/prov:15/subprov:1`` while the oracle carries ``prov:15/subprov:1``. Under
+    the raw ``_stable_path`` key these two NEVER intersect, so (a) the whole
+    part-wrapped replay subtree is silently dropped from the penalized set (its
+    oracle lookup misses), and (b) NZ's op-local convicted keys — also carrying the
+    ``part`` head — can never intersect the penalized set, forcing every NZ
+    divergence to ``temporal_mismatch`` (false-clean). Dropping the bare unlabeled
+    ``part`` wrapper here — at the SINGLE seam every anchor key passes through
+    (penalized/oracle text map, structure map, and the op-local conviction key) —
+    makes both sides commensurable in one place. This is narrow and collision-free
+    (verified across the frozen corpus): only a BARE ``part`` head is dropped;
+    LABELED parts (``part:1``, ``part:2``) carry genuine identity, appear identically
+    on both sides, and are preserved. NZ provision numbers are act-global (not
+    part-restarting), so flattening the unlabeled wrapper introduces no ``prov:N``
+    collision — it merely mirrors the oracle's own wrapper-less shape.
     """
     from lawvm.new_zealand.chain_replay import _stable_path
 
-    return _stable_path(path)
+    return _drop_unlabeled_part_wrapper(_stable_path(path))
+
+
+def _drop_unlabeled_part_wrapper(stable: tuple[str, ...]) -> tuple[str, ...]:
+    """Drop a leading BARE (unlabeled) ``part`` wrapper segment, if present.
+
+    A stable segment equal to exactly ``part`` is NZ's unlabeled-``<part>`` identity
+    fallback (``part@DLM_xml_id`` collapsed by ``_stable_path``); the oracle drops
+    this wrapper under editorial consolidation, so it is pure cross-snapshot path
+    churn — dropping it aligns the replay-side key with the oracle-side key.
+
+    Labeled parts (``part:1``) are LEFT INTACT: they carry real structural identity
+    (part 1 vs part 2), appear identically on the replay and oracle sides (so they
+    cause no commensurability break), and collapsing them would wrongly merge two
+    distinct parts. This mirrors the single-direction, wrapper-only tolerance in
+    :func:`~lawvm.new_zealand.chain_replay._resolve_oracle_node_for_target`.
+
+    The wrapper is dropped only when a CHILD segment remains: the bare-wrapper node
+    itself (path ``('part',)``) is a text-empty structural shell, and collapsing it
+    to the empty key would merge every unlabeled part-wrapper of a document to one
+    key. Keeping the single ``('part',)`` segment leaves that shell in its own,
+    non-colliding key (it never intersects a real ``prov:N`` unit anyway).
+    """
+    if len(stable) >= 2 and stable[0] == "part":
+        return stable[1:]
+    return stable
 
 
 def _cleaned_unit_text(node: Any) -> str:

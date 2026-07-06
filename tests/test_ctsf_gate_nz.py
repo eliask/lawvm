@@ -42,6 +42,7 @@ from lawvm.tools.nz_anchor_manifest import (
     GATE_NZ_BASELINE_PATH,
     REAL_ANCHOR_NZ_CORPUS_SIDS,
     REAL_ANCHOR_NZ_JURISDICTION,
+    _stable_key,
     nz_anchor_corpus_available,
     observation_to_residual,
     score_nz_real_corpus,
@@ -189,6 +190,59 @@ def test_nz_baseline_round_trips(tmp_path):
         )
     }
     assert loaded == residuals
+
+
+# ---------------------------------------------------------------------------
+# The commensurability SEAM — op-local conviction keys and penalized keys must
+# share ONE key namespace, or the convictor is structurally dead (corpus-free).
+# ---------------------------------------------------------------------------
+
+
+def test_stable_key_drops_bare_unlabeled_part_wrapper():
+    """``_stable_key`` drops a leading BARE (unlabeled) ``part`` wrapper.
+
+    NZ's parser falls back to ``part@DLM_xml_id`` (unlabeled ``<part>`` identity),
+    which ``_stable_path`` collapses to a bare ``part``. Editorial consolidation
+    drops the wrapper entirely on the oracle side, so the replay-side carried tree
+    (``part/prov:N``) and the oracle-side (``prov:N``) live in DISJOINT key
+    namespaces unless the seam drops the bare wrapper. Dropping it aligns both
+    sides so the penalized set and the op-local conviction key can intersect.
+    """
+    assert _stable_key(("part@DLM44815", "prov:15", "subprov:1")) == (
+        "prov:15",
+        "subprov:1",
+    )
+    # A positional/identity churn segment still collapses via _stable_path first,
+    # then the bare wrapper is dropped.
+    assert _stable_key(("part#0", "prov:22")) == ("prov:22",)
+    # The bare-wrapper node ITSELF (no child) keeps its own ``part`` key rather than
+    # collapsing to the empty key (which would merge every part wrapper of a doc).
+    assert _stable_key(("part@DLM44815",)) == ("part",)
+
+
+def test_stable_key_preserves_labeled_part_identity():
+    """A LABELED part (``part:1``) is preserved — it carries real structural
+    identity and appears identically on both the replay and oracle sides, so it is
+    NOT a commensurability break and must not be flattened (that would wrongly
+    merge distinct parts, e.g. ``part:1/prov:5`` and ``part:2/prov:5``)."""
+    assert _stable_key(("part:1", "prov:5")) == ("part:1", "prov:5")
+    assert _stable_key(("part:2", "prov:5")) == ("part:2", "prov:5")
+    assert _stable_key(("part:1", "prov:5")) != _stable_key(("part:2", "prov:5"))
+
+
+def test_op_local_conviction_key_is_commensurable_with_penalized_key():
+    """The metric-integrity property this seam guarantees: an op-local conviction
+    key built from a carried-tree ``target_path`` (which keeps the unlabeled
+    ``<part>`` wrapper) lands in the SAME namespace as the penalized key built from
+    the oracle-shape path (wrapper dropped). Before the seam fix these two could
+    never intersect, forcing every NZ divergence to ``temporal_mismatch``
+    (false-clean) and leaving the convictor structurally dead.
+    """
+    # Op-local side: carried-tree path with the unlabeled part wrapper.
+    convicted_key = "/".join(_stable_key(("part@DLM44815", "prov:15", "subprov:1")))
+    # Penalized/oracle side: consolidation dropped the wrapper.
+    penalized_key = "/".join(_stable_key(("prov:15", "subprov:1")))
+    assert convicted_key == penalized_key == "prov:15/subprov:1"
 
 
 # ---------------------------------------------------------------------------

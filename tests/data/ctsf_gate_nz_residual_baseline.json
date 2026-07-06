@@ -25,7 +25,7 @@
     "replay_bug",
     "unknown"
   ],
-  "total_residuals": 523,
+  "total_residuals": 1197,
   "residuals": {
     "act_public_1871_23": {
       "temporal_mismatch": 3
@@ -38,7 +38,7 @@
       "temporal_mismatch": 266
     },
     "act_public_1981_23": {
-      "temporal_mismatch": 112
+      "temporal_mismatch": 786
     },
     "act_public_1993_110": {
       "temporal_mismatch": 1
