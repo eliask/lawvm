@@ -88,12 +88,19 @@ def test_subart_shapes_lower_to_typed_ops() -> None:
     assert str(rn.target) == "article:21"
     assert "renumber_to=article:21a" in rn.provenance_tags
 
-    # Conservation: the single residual is the out-of-scope entry-into-force clause.
-    uncovered = [
-        d for d in r.diagnostics if d.rule_id == "eu_fmx4_grammar_uncovered_instruction"
+    # Conservation: the single residual is the out-of-scope entry-into-force
+    # clause (Increment 4 types it non_amending_provision).
+    residual = [
+        d
+        for d in r.diagnostics
+        if d.rule_id
+        in (
+            "eu_fmx4_grammar_uncovered_instruction",
+            "eu_fmx4_grammar_non_amending_provision",
+        )
     ]
-    assert len(uncovered) == 1
-    assert "enter into force" in uncovered[0].source_excerpt.lower()
+    assert len(residual) == 1
+    assert "enter into force" in residual[0].source_excerpt.lower()
 
 
 def test_ordinal_normalisation_first_second_arabic() -> None:

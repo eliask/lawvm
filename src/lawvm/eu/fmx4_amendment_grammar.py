@@ -74,6 +74,34 @@ replacement annex shipped as a distinct manifestation; when it returns text the
 payload is real (``annex_payload=separate_resolved``) rather than the
 Increment-2 recorded gap.
 
+Increment 4 ADDS the OMNIBUS MULTI-POINT (NP) instruction lane (#221 backlog #1):
+the dominant real EU amender shape — *"Regulation (EU) No X is amended as
+follows: (1) Article 3 is replaced …; (2) in Article 5, paragraph 2 is replaced
+…"* — carries each sub-instruction in a numbered ``<NP>`` element (``NO.P``
+marker + ``TXT`` verb clause + the QUOT payload). The pre-Increment-4 grammar
+stripped ``NP`` wholesale as noise, so such an amender lowered to ZERO ops and
+every anchor whose closure contained one was commensurability-suspect. Now an
+"… is amended as follows:" instruction ARTICLE iterates its top-level NPs as
+SUB-INSTRUCTIONS, each lowered against a CONTEXT path accumulated from nest
+parents (*"(2) Article 3 is amended as follows: (a) paragraph 1 is replaced…"*
+recurses with ``article:3`` as context). The leaf grammar reuses the existing
+point-level rule vocabulary (``SUBART_POINT_REPLACE`` / ``SUBART_POINT_REPEAL``
+/ ``SUBART_POINT_INSERT`` / ``SUBART_PARAGRAPH_REPLACE`` /
+``SUBART_SUBPARAGRAPH_*`` / ``WHOLE_ARTICLE_*``) and adds the missing
+paragraph/subparagraph INSERT + REPEAL family. Payload text for structural
+quoted bodies is extracted GRAFTER-COMMENSURABLY (``TI.ART`` headings and
+``NO.PARAG`` markers excluded — in the IR they are labels, not text), so a
+replay-materialized unit renders exactly as a grafted consolidation does.
+
+Instruction ARTICLEs that are NOT amendment instructions at all (a directive
+amender's own substantive provisions, entry-into-force boilerplate) are typed
+``eu_fmx4_grammar_non_amending_provision`` (family ``non_amending_provision``)
+— visible, non-gap: they cannot touch the base act, so they must not
+commensurability-poison closure scoring. Annex-lane gaps (embedded
+annex-instruction indirection, annex-internal point edits) are typed with
+annex-lane families for the same reason: the EU anchor compare surface is
+article-only.
+
 Every still-unhandled instruction shape (move-without-renumber, mixed multi-edit
 prose) remains a typed :class:`AmendmentGrammarDiagnostic`
 (``eu_fmx4_grammar_uncovered_instruction``) — counted, never silently dropped.
@@ -153,9 +181,16 @@ class LoweringResult:
 # Instruction classification (the grammar)
 # ---------------------------------------------------------------------------
 
-# "Article 5 is replaced by the following" / "Article 5(2) is replaced ..."
+# "Article 5 is replaced by the following" / "Article 5 of Regulation (EU)
+# 2016/44 is replaced ...". The gap between the target and the verb admits ONLY
+# an instrument citation ("of Regulation …"), never an arbitrary tract: with a
+# free ``.*?`` this rule SWALLOWED sub-article instructions whose own rule
+# missed ("In Article 2 of Regulation 923/2012, point 104 is replaced …") and
+# nuked the whole article down to the point payload — a mis-lowering CONVICTED
+# by the #221 oracle-touch metric at 32012R0923@20150630.
 _RE_ARTICLE_REPLACE = re.compile(
-    r"\bArticle\s+(?P<num>\d+[a-z]?)\b.*?\bis\s+replaced\s+by\s+the\s+following\b",
+    r"\bArticle\s+(?P<num>\d+[a-z]?)\b(?:\s+of\s+[^,;:]{0,90}?)?\s*,?\s*"
+    r"(?:is|shall\s+be)\s+replaced\s+by\s+the\s+following\b",
     re.I | re.S,
 )
 # "in Article 5, paragraph 2 is replaced by the following"
@@ -169,21 +204,30 @@ _RE_ARTICLE_INSERT = re.compile(
     r"\bthe\s+following\s+Article\s+(?P<num>\d+[a-z]?)\b.*?\bis\s+inserted\b",
     re.I | re.S,
 )
-# "Article 5 is deleted" / "is repealed"
+# "Article 5 is deleted" / "is repealed" (same tight target-verb adjacency as
+# _RE_ARTICLE_REPLACE — a free gap swallowed sub-article repeals whole).
 _RE_ARTICLE_REPEAL = re.compile(
-    r"\bArticle\s+(?P<num>\d+[a-z]?)\b.*?\bis\s+(?:deleted|repealed)\b",
+    r"\bArticle\s+(?P<num>\d+[a-z]?)\b(?:\s+of\s+[^,;:]{0,90}?)?\s*,?\s*"
+    r"(?:is|shall\s+be)\s+(?:deleted|repealed)\b",
     re.I | re.S,
 )
-# "in Article 12, point (b) is replaced by the following" / "... is replaced by '...'"
+# "in Article 12, point (b) is replaced by the following" / "... is replaced by
+# '...'" / "In Article 2 of Regulation X, point 104 is replaced by ..." — the
+# point label may be parenthesized ("(b)"), bare ("104" — the real 32015R0340
+# shape the whole-article rule used to swallow, nuking Article 2 of 32012R0923
+# down to the single point payload: a mis-lowering CONVICTED by the #221
+# oracle-touch metric at 32012R0923@20150630), or dotted ("3.1").
 _RE_SUBART_POINT_REPLACE = re.compile(
-    r"\bin\s+Article\s+(?P<art>\d+[a-z]?)\b.*?\bpoint\s+\((?P<point>[a-z0-9]+)\)"
-    r".*?\bis\s+replaced\s+by\b",
+    r"\bin\s+Article\s+(?P<art>\d+[a-z]?)\b.*?"
+    r"\bpoint\s+\(?(?P<point>[a-z0-9]{1,4}(?:\.[a-z0-9]{1,3}){0,3})\)?"
+    r"[\s,]*\b(?:is|shall\s+be)\s+replaced\s+by\b",
     re.I | re.S,
 )
-# "in Article 12, point (b) is deleted"
+# "in Article 12, point (b) is deleted" (same label liberality as REPLACE).
 _RE_SUBART_POINT_REPEAL = re.compile(
-    r"\bin\s+Article\s+(?P<art>\d+[a-z]?)\b.*?\bpoint\s+\((?P<point>[a-z0-9]+)\)"
-    r".*?\bis\s+(?:deleted|repealed)\b",
+    r"\bin\s+Article\s+(?P<art>\d+[a-z]?)\b.*?"
+    r"\bpoint\s+\(?(?P<point>[a-z0-9]{1,4}(?:\.[a-z0-9]{1,3}){0,3})\)?"
+    r"[\s,]*\b(?:is|shall\s+be)\s+(?:deleted|repealed)\b",
     re.I | re.S,
 )
 # Increment 3 — harder sub-article shapes Increment 2 left as typed residuals.
@@ -597,8 +641,1088 @@ _RE_QUOTED_ARTICLE_HEADING = compile_classifier_regex(
 
 
 # ---------------------------------------------------------------------------
-# Lowering entry point
+# Increment 4 — OMNIBUS MULTI-POINT (NP) INSTRUCTION LOWERING (#221 backlog #1)
+#
+# Formex marks each numbered sub-instruction of an "… is amended as follows:"
+# omnibus article as an <NP> (NO.P marker "(1)" + TXT verb clause + the QUOT
+# payload). NPs NEST — "(2) Article 3 is amended as follows: (a) paragraph 1 is
+# replaced …" — and the SAME NP element also carries ordinary (non-instruction)
+# numbered prose lists inside substantive provisions AND inside quoted payload
+# bodies, so three disciplines apply:
+#
+#   1. only NPs of an instruction ARTICLE whose opening prose matches
+#      "is amended as follows" are iterated as sub-instructions;
+#   2. NPs inside QUOT payloads are NEVER instructions (quote-pruned walk);
+#   3. a nested "X is amended as follows:" NP contributes a CONTEXT path step
+#      and recurses; its children are lowered against that context.
 # ---------------------------------------------------------------------------
+
+_RE_AMENDED_AS_FOLLOWS = compile_classifier_regex(
+    r"\b(?:is|are)\s+amended\s+as\s+follows\b",
+    re.I,
+    classifier_id="eu_fmx4_amended_as_follows",
+)
+
+#: Amendment-instruction verb census for the non-amending-provision classifier.
+#: An instruction ARTICLE whose quote-free prose carries NONE of these (and no
+#: for:/read: corrigendum formula) is a substantive/final provision, not an
+#: amendment instruction.
+_RE_AMEND_VERB = compile_classifier_regex(
+    r"\b(?:replaced|inserted|added|deleted|repealed|amended|renumbered|"
+    r"substituted)\b|\bshall\s+read\b",
+    re.I,
+    classifier_id="eu_fmx4_amendment_verb",
+)
+
+#: Grammar tokens for the NP leaf/context grammar (bounded, lint-safe shapes).
+_ORD_TOKEN = (
+    r"first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|"
+    r"\d{1,2}(?:st|nd|rd|th)"
+)
+_ART_NUM = r"\d{1,4}[a-z]{0,3}"
+_PAR_NUM = r"\d{1,3}[a-z]{0,2}"
+_PT_LAB = r"[a-z0-9]{1,4}"
+_AX_NUM = r"[IVXLCDM]{1,7}[a-zA-Z]?|\d{1,3}[a-z]?"
+#: A bare label list: "6", "6 and 7", "1, 2 and 3", "15 to 18", "5a".
+_LAB_LIST = r"[0-9a-z]{1,6}(?:\s*(?:,|and|to)\s+[0-9a-z]{1,6}){0,12}"
+#: A parenthesized label list: "(a)", "(a), (b) and (c)", "(23)".
+_PLAB_LIST = r"\([0-9a-z]{1,4}\)(?:\s*(?:,|and|to)\s*\([0-9a-z]{1,4}\)){0,12}"
+
+# CONTEXT clauses — leading "in …," scopes an NP instruction names before its
+# verb clause. Most specific first ("in point (2) of Article 4," before the
+# bare point clause). The bare paragraph/point clauses REQUIRE the trailing
+# comma so "point (x) is replaced …" is never consumed as context.
+_RE_CTX_SUBPARA_OF_ART = re.compile(
+    r"^in\s+the\s+(?P<ord>" + _ORD_TOKEN + r")\s+subparagraph\s+of\s+Article\s+"
+    r"(?P<art>" + _ART_NUM + r")\s*(?:\((?P<par>" + _PAR_NUM + r")\))?"
+    r"(?:\s+of\s+[^,:;]{0,90}?)?\s*,\s*",
+    re.I,
+)
+_RE_CTX_POINT_OF_ART = re.compile(
+    r"^in\s+point\s+\((?P<pt>" + _PT_LAB + r")\)\s+of\s+(?:Article\s+"
+    r"(?P<art>" + _ART_NUM + r")\s*(?:\((?P<par>" + _PAR_NUM + r")\))?"
+    r"(?:\s+of\s+[^,:;]{0,90}?)?|Annex\s+(?P<ax>" + _AX_NUM + r"))"
+    r"\s*,?\s*",
+    re.I,
+)
+_RE_CTX_ART = re.compile(
+    r"^in\s+Article\s+(?P<art>" + _ART_NUM + r")\s*(?:\((?P<par>" + _PAR_NUM + r")\))?"
+    r"(?:\s+of\s+[^,:;]{0,90}?)?\s*,\s*",
+    re.I,
+)
+_RE_CTX_PAR = re.compile(
+    r"^in\s+paragraph\s+(?P<par>" + _PAR_NUM + r")\s*,?\s+",
+    re.I,
+)
+_RE_CTX_PT = re.compile(
+    r"^in\s+point\s+\((?P<pt>" + _PT_LAB + r")\)\s*,?\s+",
+    re.I,
+)
+_RE_CTX_ANNEX = re.compile(
+    r"^in\s+Annex\s+(?P<ax>" + _AX_NUM + r")\s*,\s*",
+    re.I,
+)
+_RE_CTX_BARE_PAR = re.compile(
+    r"^paragraph(?!s)\s+(?P<par>" + _PAR_NUM + r")\s*,\s*(?=the\s|shall\s|point\s)",
+    re.I,
+)
+_RE_CTX_BARE_PT = re.compile(
+    r"^point(?!s)\s+\((?P<pt>" + _PT_LAB + r")\)\s*,\s*(?=the\s|shall\s)",
+    re.I,
+)
+
+# NEST targets — "X is amended as follows:" contributes a context step and the
+# nested NPs are lowered against it.
+_RE_NEST_ART = re.compile(
+    r"^Article\s+(?P<art>" + _ART_NUM + r")\s*(?:\((?P<par>" + _PAR_NUM + r")\))?"
+    r"(?:\s+of\s+[^,:;]{0,90}?)?\s+is\s+amended\s+as\s+follows",
+    re.I,
+)
+_RE_NEST_PAR = re.compile(
+    r"^paragraph\s+(?P<par>" + _PAR_NUM + r")\s+is\s+amended\s+as\s+follows", re.I
+)
+_RE_NEST_PT = re.compile(
+    r"^point\s+\((?P<pt>" + _PT_LAB + r")\)\s+is\s+amended\s+as\s+follows", re.I
+)
+_RE_NEST_ANNEX = re.compile(
+    r"^Annex\s+(?P<ax>" + _AX_NUM + r")\s+is\s+amended\s+as\s+follows", re.I
+)
+_RE_NEST_SUBPARA = re.compile(
+    r"^the\s+(?P<ord>" + _ORD_TOKEN + r")\s+subparagraph\s+is\s+amended\s+as\s+follows",
+    re.I,
+)
+
+# LEAF verb clauses (anchored at the remainder start, after context stripping).
+_RE_NPL_INSERT = re.compile(
+    r"^(?:the\s+following|new)\s+"
+    r"(?:(?:" + _ORD_TOKEN + r")\s+(?:to\s+(?:" + _ORD_TOKEN + r")\s+)?)?"
+    r"(?P<kind>articles?|paragraphs?|points?|subparagraphs?|indents?|sub-points?)"
+    r"\s*(?P<list>" + _PLAB_LIST + r"|" + _LAB_LIST + r")?\s*"
+    r"(?:is|are)\s+(?:inserted|added)\b",
+    re.I,
+)
+_RE_NPL_KIND_REPLACE = re.compile(
+    r"^(?P<kind>articles?|paragraphs?|points?)\s+"
+    r"(?P<list>" + _PLAB_LIST + r"|" + _LAB_LIST + r")"
+    r"(?:\s+of\s+[^,;:]{0,90}?)?\s*,?\s+"
+    r"(?:is|are|shall\s+be)\s+replaced\s+by\s+the\s+following(?:\s+text)?",
+    re.I,
+)
+_RE_NPL_KIND_REPEAL = re.compile(
+    r"^(?P<kind>articles?|paragraphs?|points?)\s+"
+    r"(?P<list>" + _PLAB_LIST + r"|" + _LAB_LIST + r")"
+    r"(?:\s+of\s+[^,;:]{0,90}?)?\s*,?\s+"
+    r"(?:is|are|shall\s+be)\s+(?:deleted|repealed)\b",
+    re.I,
+)
+_RE_NPL_SUBPARA_REPLACE = re.compile(
+    r"^the\s+(?P<ord>" + _ORD_TOKEN + r")\s+subparagraph\s+"
+    r"(?:is|are|shall\s+be)\s+replaced\s+by\s+the\s+following",
+    re.I,
+)
+_RE_NPL_SUBPARA_REPEAL = re.compile(
+    r"^the\s+(?P<ord>" + _ORD_TOKEN + r")\s+subparagraph\s+is\s+(?:deleted|repealed)\b",
+    re.I,
+)
+_RE_NPL_BARE_REPLACE = re.compile(
+    r"^(?:is|are|shall\s+be)\s+replaced\s+by\s+the\s+following(?:\s+text)?", re.I
+)
+_RE_NPL_BARE_REPEAL = re.compile(
+    r"^(?:is|are|shall\s+be)\s+(?:deleted|repealed)\b", re.I
+)
+#: Recognized-but-unaddressable targets (title/heading/introductory wording have
+#: no coordinate in the IR system) — typed, never silently dropped.
+_RE_NPL_UNADDRESSABLE = re.compile(
+    r"^the\s+(?:title|heading|introductory\s+(?:wording|part|phrase|sentence))\s+"
+    r"is\s+replaced\b",
+    re.I,
+)
+# Annex leaf forms. "replaced by the text (set out) in Annex Y to this
+# Regulation" is a true whole-annex REPLACE with the amender's OWN annex as
+# payload; "amended in accordance with / as set out in Annex Y" means annex Y
+# carries EMBEDDED amendment instructions (an indirection the grammar does not
+# execute — typed annex-lane gap); "inserted as Annex N" / "added as laid down
+# in Annex Y" are whole-annex INSERTs.
+_RE_NPL_ANNEX_REPLACED_BY_TEXT = re.compile(
+    r"^Annex\s+(?P<num>" + _AX_NUM + r")(?:\s*\([^)]{0,40}\))?"
+    r"(?:\s+to\s+[^,;:]{0,90}?)?\s+is\s+replaced\s+by\s+the\s+text\s+"
+    r"(?:set\s+out\s+)?in\s+(?:the\s+Annex|Annex\s+(?P<own>" + _AX_NUM + r"))\s+"
+    r"to\s+this\s+Regulation",
+    re.I,
+)
+_RE_NPL_ANNEX_TEXT_INSERTED_AS = re.compile(
+    r"^the\s+text\s+set\s+out\s+in\s+the\s+Annex\s+to\s+this\s+Regulation\s+is\s+"
+    r"inserted\s+as\s+Annex\s+(?P<num>" + _AX_NUM + r")",
+    re.I,
+)
+_RE_NPL_ANNEX_ADDED_LAID_DOWN = re.compile(
+    r"^Annex\s+(?P<num>" + _AX_NUM + r")(?:\s+to\s+[^,;:]{0,90}?)?\s+is\s+added\s+as\s+"
+    r"laid\s+down\s+in\s+Annex\s+(?P<own>" + _AX_NUM + r")\s+to\s+this\s+Regulation",
+    re.I,
+)
+_RE_NPL_ANNEX_ADDED_AS_SET_OUT = re.compile(
+    r"^Annex\s+(?P<num>" + _AX_NUM + r")\s*,\s*as\s+set\s+out\s+in\s+Annex\s+"
+    r"(?P<own>" + _AX_NUM + r")\s+to\s+this\s+Regulation\s*,\s*is\s+added",
+    re.I,
+)
+_RE_NPL_ANNEX_INDIRECT = re.compile(
+    r"^(?:the\s+Annex|Annex(?:es)?\s+[IVXLCDM0-9][^,;:]{0,60}?)\s+"
+    r"(?:is|are)\s+(?:amended|replaced)\s+"
+    r"(?:in\s+accordance\s+with|as\s+set\s+out\s+in)\b",
+    re.I,
+)
+#: ARTICLE-level variant of the annex indirection (search, not anchored): the
+#: real 32022R2309 sanctions-amender shape "Annex I to Regulation (EU)
+#: 2022/2309 is amended in accordance with the Annex to this Regulation."
+_RE_ANNEX_IN_ACCORDANCE = re.compile(
+    r"\bAnnex(?:es)?\b[^;:]{0,90}?\b(?:is|are)\s+amended\s+in\s+accordance\s+"
+    r"with\b[^;:]{0,60}?\bAnnex\b",
+    re.I | re.S,
+)
+#: Act-TITLE replace ("The title of Regulation (EU) No 1284/2009 is replaced by
+#: the following:") — the act title has no unit coordinate on the article-only
+#: compare surface; typed, never silently dropped.
+_RE_ACT_TITLE_REPLACE = re.compile(
+    r"\bthe\s+title\s+of\s+[^;:]{0,90}?\bis\s+replaced\s+by\s+the\s+following\b",
+    re.I | re.S,
+)
+#: Numberless whole-article INSERT ("The following article is inserted (in
+#: Regulation (EU) No 1284/2009):") — the new article's number lives on the
+#: quoted body's own TI.ART heading, not in the instruction prose.
+_RE_ARTICLE_INSERT_NUMBERLESS = re.compile(
+    r"\bthe\s+following\s+articles?\s+(?:is|are)\s+inserted\b",
+    re.I | re.S,
+)
+
+#: Payload marker tags excluded from GRAFTER-COMMENSURABLE structural payload
+#: text: in the IR coordinate system the article heading (TI.ART) and the
+#: paragraph number marker (NO.PARAG) are the node's LABEL, not text — the EU
+#: grafter renders neither into a consolidated article's text, so neither may a
+#: replay-materialized payload. Point markers (NO.P) STAY: the grafter renders
+#: them inline (ALINEA itertext), so the payload must too.
+_PAYLOAD_MARKER_TAGS = frozenset({"TI.ART", "NO.PARAG"})
+
+
+def _top_level_nps(el: ET.Element) -> list[ET.Element]:
+    """The instruction NPs of ``el``, EXCLUDING quoted payloads and nested NPs.
+
+    Prunes QUOT wrapper subtrees AND tracks the sibling ``QUOT.START`` /
+    ``QUOT.END`` marker form (content between the markers is quoted payload,
+    not instruction structure). Does not recurse INTO an NP — a nested NP is
+    the recursion payload of :func:`_lower_np_instructions`, not a sibling.
+    """
+    out: list[ET.Element] = []
+
+    def _walk(node: ET.Element) -> None:
+        depth = 0
+        for child in node:
+            local = _local(child.tag).upper()
+            if local == "QUOT.START":
+                depth += 1
+                continue
+            if local in ("QUOT.END", "QUOT.E"):
+                depth = max(0, depth - 1)
+                continue
+            if depth > 0:
+                continue
+            if local in ("QUOT", "QUOT.S"):
+                continue
+            if local == "NP":
+                out.append(child)
+                continue
+            _walk(child)
+
+    _walk(el)
+    return out
+
+
+def _np_prose(el: ET.Element, *, keep_child_nps: bool) -> str:
+    """Instruction prose of ``el``: quote-free, marker-free, NBSP-normalized.
+
+    ``keep_child_nps=False`` prunes NP subtrees below ``el`` (they are their
+    own sub-instructions); ``True`` keeps them (the whole-article amendment-verb
+    census needs the NP clauses). The element's own NO.P marker and the
+    amending act's heading tags are always excluded; quoted payloads (wrapper
+    AND sibling-marker form) are always excluded.
+    """
+    noise = frozenset({"NO.P", "TI.ART", "STI.ART", "NO.ART"})
+    parts: list[str] = []
+
+    def _walk(node: ET.Element, inside_quote: bool) -> None:
+        local = _local(node.tag).upper()
+        if local in noise:
+            return
+        if not keep_child_nps and local == "NP" and node is not el:
+            return
+        now_quote = inside_quote or local in ("QUOT", "QUOT.S")
+        if not now_quote and node.text and node.text.strip():
+            parts.append(node.text.strip())
+        marker_quote = False
+        for child in node:
+            cl = _local(child.tag).upper()
+            if cl == "QUOT.START":
+                marker_quote = True
+                continue
+            if cl in ("QUOT.END", "QUOT.E"):
+                marker_quote = False
+                if not now_quote and child.tail and child.tail.strip():
+                    parts.append(child.tail.strip())
+                continue
+            if marker_quote:
+                continue
+            _walk(child, now_quote)
+            if not now_quote and child.tail and child.tail.strip():
+                parts.append(child.tail.strip())
+
+    _walk(el, inside_quote=False)
+    return " ".join(parts).replace(" ", " ")
+
+
+def _quoted_struct_payload_text(el: ET.Element, *, drop_own_no_p: bool = False) -> str:
+    """GRAFTER-COMMENSURABLE text of a quoted structural payload element.
+
+    Mirrors how the EU grafter renders a consolidated unit: TI.ART headings and
+    NO.PARAG markers are labels (excluded); point markers and body text are
+    kept; collection STOPS at the first ``QUOT.END`` (its tail belongs to the
+    instruction, not the payload — the 32022R2309@20230216 boundary conviction).
+    ``drop_own_no_p`` additionally excludes the element's own DIRECT ``NO.P``
+    marker — the case of a numbered paragraph quoted in NP form, whose marker
+    is the node LABEL (nested point markers stay, as the grafter keeps them).
+    """
+    parts: list[str] = []
+    stopped = False
+
+    def _walk(node: ET.Element) -> None:
+        nonlocal stopped
+        if stopped:
+            return
+        local = _local(node.tag).upper()
+        if local in ("QUOT.END", "QUOT.E"):
+            stopped = True
+            return
+        if local in _PAYLOAD_MARKER_TAGS:
+            return
+        if node.text and node.text.strip():
+            parts.append(node.text.strip())
+        for child in node:
+            _walk(child)
+            if stopped:
+                return
+            if child.tail and child.tail.strip():
+                parts.append(child.tail.strip())
+
+    if el.text and el.text.strip():
+        parts.append(el.text.strip())
+    for child in el:
+        if drop_own_no_p and _local(child.tag).upper() == "NO.P":
+            if child.tail and child.tail.strip():
+                parts.append(child.tail.strip())
+            continue
+        _walk(child)
+        if stopped:
+            break
+        if child.tail and child.tail.strip():
+            parts.append(child.tail.strip())
+    return " ".join(parts)
+
+
+def _contains_quot_start(el: ET.Element) -> bool:
+    return any(_local(n.tag).upper() == "QUOT.START" for n in el.iter())
+
+
+def _quoted_struct_elements(np: ET.Element, tag: str) -> list[ET.Element]:
+    """TOPMOST elements with local ``tag`` inside the NP's QUOT payload(s).
+
+    Wrapper form first (QUOT / QUOT.S subtree); marker-form fallback: a payload
+    element whose subtree CONTAINS the inline ``QUOT.START`` marker (the real
+    32021R1096 shape — the marker opens inside the quoted unit's own number
+    marker, so no wrapper subtree exists).
+    """
+    out: list[ET.Element] = []
+
+    def _collect(node: ET.Element, inside_quote: bool) -> None:
+        local = _local(node.tag).upper()
+        now_quote = inside_quote or local in ("QUOT", "QUOT.S")
+        if now_quote and local == tag:
+            out.append(node)
+            return  # topmost only — a nested same-tag is its sub-structure
+        for child in node:
+            _collect(child, now_quote)
+
+    for child in np:
+        _collect(child, False)
+    if out:
+        return out
+
+    def _collect_marker(node: ET.Element) -> None:
+        local = _local(node.tag).upper()
+        if local == tag and _contains_quot_start(node):
+            out.append(node)
+            return
+        for child in node:
+            _collect_marker(child)
+
+    for child in np:
+        _collect_marker(child)
+    return out
+
+
+def _quoted_article_label(art_el: ET.Element) -> str:
+    ti = art_el.find("TI.ART")
+    if ti is None:
+        return ""
+    txt = " ".join(t.strip() for t in ti.itertext() if t and t.strip())
+    m = re.search(r"Article\s+(\d{1,4}\w{0,3})", txt.replace(" ", " "), re.I)  # lawvm-regex: witness_only reads the quoted payload's own heading label for zip-matching, not a semantic recognizer
+    return m.group(1) if m else ""
+
+
+def _quoted_parag_label(parag_el: ET.Element) -> str:
+    no = parag_el.find("NO.PARAG")
+    if no is None:
+        return ""
+    txt = "".join(no.itertext()).strip().replace(" ", " ")
+    m = re.match(r"\(?(\d{1,3}[a-z]{0,2})[).]?", txt)  # lawvm-regex: witness_only reads the quoted payload's own paragraph marker for zip-matching, not a semantic recognizer
+    return m.group(1) if m else ""
+
+
+def _quoted_point_label(np_el: ET.Element) -> str:
+    no = np_el.find("NO.P")
+    if no is None:
+        return ""
+    txt = "".join(no.itertext()).strip().replace(" ", " ")
+    m = re.match(r"\(?([0-9a-z]{1,4})\)?", txt, re.I)  # lawvm-regex: witness_only reads the quoted payload's own point marker for zip-matching, not a semantic recognizer
+    return m.group(1) if m else ""
+
+
+def _parse_label_list(raw: str) -> Optional[list[str]]:
+    """Parse '6 and 7' / '1, 2 and 3' / '15 to 18' / '(a), (b)' into labels."""
+    s = raw.replace("(", " ").replace(")", " ").replace(" ", " ").strip()
+    if re.search(r"\bto\b", s):  # lawvm-regex: witness_only detects the range form inside an already-matched label-list capture, not a semantic recognizer over statute text
+        m = re.match(r"^(\d{1,4})\s+to\s+(\d{1,4})$", s)  # lawvm-regex: witness_only expands a numeric label range token already isolated by the leaf grammar
+        if not m:
+            return None  # non-numeric range ("(a) to (c)") — typed residual
+        lo, hi = int(m.group(1)), int(m.group(2))
+        if hi < lo or hi - lo > 50:
+            return None
+        return [str(i) for i in range(lo, hi + 1)]
+    toks = [t.strip() for t in re.split(r",|\band\b", s) if t.strip()]
+    if not toks or any(not re.match(r"^[0-9a-z]{1,6}$", t, re.I) for t in toks):  # lawvm-regex: witness_only validates label-token shape inside an already-matched list capture
+        return None
+    return toks
+
+
+def _extract_np_context(
+    text: str, context: tuple[tuple[str, str], ...]
+) -> tuple[tuple[tuple[str, str], ...], str]:
+    """Strip leading context clauses ('in Article 5(2),' …) off an NP clause.
+
+    Returns the extended context path steps plus the remaining verb clause.
+    """
+    rem = text.lstrip()
+    steps = list(context)
+    while True:
+        m = _RE_CTX_SUBPARA_OF_ART.match(rem)
+        if m:
+            steps.append(("article", m.group("art")))
+            if m.group("par"):
+                steps.append(("paragraph", m.group("par")))
+            steps.append(("subparagraph", _ordinal_to_index(m.group("ord"))))
+            rem = rem[m.end():]
+            continue
+        m = _RE_CTX_POINT_OF_ART.match(rem)
+        if m:
+            if m.group("ax"):
+                steps.append(("annex", m.group("ax").upper()))
+            else:
+                steps.append(("article", m.group("art")))
+                if m.group("par"):
+                    steps.append(("paragraph", m.group("par")))
+            steps.append(("point", m.group("pt")))
+            rem = rem[m.end():]
+            continue
+        m = _RE_CTX_ART.match(rem)
+        if m:
+            steps.append(("article", m.group("art")))
+            if m.group("par"):
+                steps.append(("paragraph", m.group("par")))
+            rem = rem[m.end():]
+            continue
+        m = _RE_CTX_PAR.match(rem) or _RE_CTX_BARE_PAR.match(rem)
+        if m:
+            steps.append(("paragraph", m.group("par")))
+            rem = rem[m.end():]
+            continue
+        m = _RE_CTX_PT.match(rem) or _RE_CTX_BARE_PT.match(rem)
+        if m:
+            steps.append(("point", m.group("pt")))
+            rem = rem[m.end():]
+            continue
+        m = _RE_CTX_ANNEX.match(rem)
+        if m:
+            steps.append(("annex", m.group("ax").upper()))
+            rem = rem[m.end():]
+            continue
+        break
+    return tuple(steps), rem
+
+
+def _parse_nest_target(
+    rem: str, context: tuple[tuple[str, str], ...]
+) -> Optional[tuple[tuple[str, str], ...]]:
+    """The extended context of a NEST NP ('X is amended as follows:'), or None."""
+    m = _RE_NEST_ART.match(rem)
+    if m:
+        steps = context + (("article", m.group("art")),)
+        if m.group("par"):
+            steps += (("paragraph", m.group("par")),)
+        return steps
+    m = _RE_NEST_PAR.match(rem)
+    if m:
+        return context + (("paragraph", m.group("par")),)
+    m = _RE_NEST_PT.match(rem)
+    if m:
+        return context + (("point", m.group("pt")),)
+    m = _RE_NEST_ANNEX.match(rem)
+    if m:
+        return context + (("annex", m.group("ax").upper()),)
+    m = _RE_NEST_SUBPARA.match(rem)
+    if m:
+        return context + (("subparagraph", _ordinal_to_index(m.group("ord"))),)
+    return None
+
+
+def _ctx_is_annex_lane(context: tuple[tuple[str, str], ...]) -> bool:
+    return bool(context) and context[0][0] == "annex"
+
+
+#: Instruction kind token → (path kind, payload IRNodeKind, witness stem).
+_NP_KIND_TABLE: dict[str, tuple[str, IRNodeKind, str]] = {
+    "article": ("article", IRNodeKind.SECTION, "WHOLE_ARTICLE"),
+    "paragraph": ("paragraph", IRNodeKind.PARAGRAPH, "SUBART_PARAGRAPH"),
+    "point": ("point", IRNodeKind.ITEM, "SUBART_POINT"),
+    "subparagraph": ("subparagraph", IRNodeKind.SUBPARAGRAPH, "SUBART_SUBPARAGRAPH"),
+    "indent": ("item", IRNodeKind.ITEM, "INDENT"),
+    "sub-point": ("point", IRNodeKind.ITEM, "SUBART_POINT"),
+}
+
+#: Quoted payload structural tag per instruction kind (for per-label zip).
+_NP_PAYLOAD_TAG = {"article": "ARTICLE", "paragraph": "PARAG", "point": "NP"}
+_NP_PAYLOAD_LABEL = {
+    "article": _quoted_article_label,
+    "paragraph": _quoted_parag_label,
+    "point": _quoted_point_label,
+}
+
+
+def _np_payloads_for_labels(
+    np: ET.Element, kind: str, labels: list[str]
+) -> Optional[list[tuple[str, str]]]:
+    """Match target ``labels`` to quoted payload bodies → [(label, text)].
+
+    Per-label structural zip first (the payload's own heading/marker labels are
+    matched case-insensitively to the instruction's target labels); positional
+    zip when counts agree but the payload exposes no labels; single-target flat
+    fallback via :func:`_quoted_block_text`. ``None`` = no payload resolvable
+    (the caller records the typed missing-payload diagnostic).
+    """
+    tag = _NP_PAYLOAD_TAG.get(kind)
+    elems = _quoted_struct_elements(np, tag) if tag else []
+    label_fn = _NP_PAYLOAD_LABEL.get(kind, _quoted_point_label)
+    drop_own_no_p = False
+    if not elems and kind == "paragraph":
+        # A numbered paragraph quoted in NP form (marker inside its own NO.P —
+        # the real 32021R1096 shape). The NO.P carries the paragraph number
+        # (the node label), so it is dropped from the payload text.
+        elems = _quoted_struct_elements(np, "NP")
+        label_fn = _quoted_point_label
+        drop_own_no_p = True
+
+    def _text(e: ET.Element) -> str:
+        return _quoted_struct_payload_text(e, drop_own_no_p=drop_own_no_p)
+
+    if elems:
+        by_label = {
+            label_fn(e).casefold(): e for e in elems if label_fn(e)
+        }
+        if labels and all(l.casefold() in by_label for l in labels):
+            return [(l, _text(by_label[l.casefold()])) for l in labels]
+        if labels and len(labels) == len(elems):
+            return [(l, _text(e)) for l, e in zip(labels, elems, strict=True)]
+        if not labels:
+            # Labels come FROM the payload ("the following Article is inserted:").
+            derived = [(label_fn(e), _text(e)) for e in elems]
+            if all(lbl for lbl, _ in derived):
+                return derived
+        if len(labels) == 1 and len(elems) == 1:
+            return [(labels[0], _text(elems[0]))]
+    block = _quoted_block_text(np)
+    if block is None:
+        mi = _RE_INLINE_QUOTED.search(_np_prose(np, keep_child_nps=True))
+        block = mi.group("inline").strip() if mi else None
+    if block is None:
+        return None
+    if len(labels) <= 1:
+        label = labels[0] if labels else ""
+        return [(label, block)]
+    return None  # plural target with an unsplittable payload — typed residual
+
+
+def _own_annex_payload(
+    own_annexes: Optional[list[ET.Element]], label: str
+) -> str:
+    """The amender's OWN annex body named ``label`` ('' = the sole annex)."""
+    annexes = list(own_annexes or ())
+    if label:
+        for a in annexes:
+            if (_annex_number_from_title(a) or "").casefold() == label.casefold():
+                return _quoted_block_text(a) or _all_text(a)
+    if len(annexes) == 1:
+        return _quoted_block_text(annexes[0]) or _all_text(annexes[0])
+    return ""
+
+
+def _lower_np_leaf(
+    rem: str,
+    ctx: tuple[tuple[str, str], ...],
+    np: ET.Element,
+    raw: str,
+    *,
+    op_ids: Callable[[], tuple[str, int]],
+    src: OperationSource,
+    diagnostics: list[AmendmentGrammarDiagnostic],
+    own_annexes: Optional[list[ET.Element]],
+) -> Optional[list[LegalOperation]]:
+    """Lower ONE leaf NP verb clause against its context path.
+
+    Returns the lowered op list ([] = handled, a typed diagnostic already
+    recorded), or ``None`` = the clause matched no leaf rule (the caller
+    records the uncovered-instruction diagnostic).
+    """
+
+    def _mk(
+        action: StructuralAction,
+        path: tuple[tuple[str, str], ...],
+        payload: Optional[IRNode],
+        witness: str,
+        apply_class: str,
+        *,
+        root: Optional[str] = None,
+        extra_tags: tuple[str, ...] = (),
+    ) -> LegalOperation:
+        op_id, sequence = op_ids()
+        return LegalOperation(
+            op_id=op_id,
+            sequence=sequence,
+            action=action,
+            target=LegalAddress(path=path, root=root),
+            payload=payload,
+            source=src,
+            witness_rule_id=witness,
+            provenance_tags=(f"ir_apply_class={apply_class}",) + extra_tags,
+        )
+
+    def _missing_payload(kind: str) -> list[LegalOperation]:
+        diagnostics.append(
+            AmendmentGrammarDiagnostic(
+                rule_id="eu_fmx4_grammar_np_payload_unresolved",
+                reason=(
+                    f"NP {kind} instruction had no resolvable quoted payload "
+                    "(no QUOT block / per-label structural zip failed)"
+                ),
+                source_excerpt=raw,
+                family=(
+                    "annex_extraction_gap"
+                    if _ctx_is_annex_lane(ctx)
+                    else "extraction_gap"
+                ),
+            )
+        )
+        return []
+
+    _STEM = {
+        "article": "WHOLE_ARTICLE",
+        "paragraph": "SUBART_PARAGRAPH",
+        "point": "SUBART_POINT",
+        "subparagraph": "SUBART_SUBPARAGRAPH",
+    }
+    _NODE_KIND = {
+        "article": IRNodeKind.SECTION,
+        "paragraph": IRNodeKind.PARAGRAPH,
+        "point": IRNodeKind.ITEM,
+        "subparagraph": IRNodeKind.SUBPARAGRAPH,
+    }
+
+    def _apply_class(path_kind: str, verb: str) -> str:
+        if path_kind == "article":
+            return f"whole_section_{verb}"
+        if path_kind == "point" and verb in ("replace", "repeal"):
+            return f"point_{verb}"
+        return {
+            "replace": "subsection_replace",
+            "repeal": "subsection_repeal",
+            "insert": "subsection_insert",
+        }[verb]
+
+    # ---- INSERT family ("the following … is inserted/added") ---------------
+    m = _RE_NPL_INSERT.match(rem)
+    if m:
+        kind_tok = m.group("kind").lower()
+        kind = "sub-point" if kind_tok.startswith("sub-point") else kind_tok.rstrip("s")
+        path_kind, node_kind, stem = _NP_KIND_TABLE[kind]
+        labels = _parse_label_list(m.group("list") or "") or []
+        if kind in ("subparagraph", "indent", "sub-point"):
+            # Unlabeled positional units: ONE op carrying the whole block (the
+            # article-text compare surface is insensitive to their split).
+            block = _quoted_block_text(np)
+            if block is None:
+                return _missing_payload(kind)
+            if not ctx:
+                return None  # dangling positional insert without any scope
+            return [
+                _mk(
+                    StructuralAction.INSERT,
+                    ctx + ((path_kind, ""),),
+                    _payload_node(node_kind, "", block),
+                    f"EU_FMX4.{stem}_INSERT",
+                    "subsection_insert",
+                )
+            ]
+        pairs = _np_payloads_for_labels(np, kind, labels)
+        if pairs is None:
+            return _missing_payload(kind)
+        if kind == "article":
+            ops: list[LegalOperation] = []
+            for label, text in pairs:
+                if not label:
+                    return _missing_payload(kind)
+                ops.append(
+                    _mk(
+                        StructuralAction.INSERT,
+                        (("article", label),),
+                        _payload_node(
+                            node_kind,
+                            label,
+                            _strip_quoted_article_heading(text, label),
+                        ),
+                        "EU_FMX4.WHOLE_ARTICLE_INSERT",
+                        "whole_section_insert",
+                    )
+                )
+            return ops
+        if not ctx:
+            return None  # dangling paragraph/point insert without any scope
+        return [
+            _mk(
+                StructuralAction.INSERT,
+                ctx + ((path_kind, label),),
+                _payload_node(node_kind, label, text),
+                f"EU_FMX4.{stem}_INSERT",
+                "subsection_insert",
+            )
+            for label, text in pairs
+        ]
+
+    # ---- REPLACE family -----------------------------------------------------
+    m = _RE_NPL_KIND_REPLACE.match(rem)
+    if m:
+        kind = m.group("kind").lower().rstrip("s")
+        path_kind, node_kind, stem = _NP_KIND_TABLE[kind]
+        labels = _parse_label_list(m.group("list"))
+        if labels is None:
+            return None
+        if kind != "article" and not ctx:
+            return None  # dangling sub-article replace without scope
+        pairs = _np_payloads_for_labels(np, kind, labels)
+        if pairs is None:
+            return _missing_payload(kind)
+        ops = []
+        for label, text in pairs:
+            if kind == "article":
+                payload = _payload_node(
+                    node_kind, label, _strip_quoted_article_heading(text, label)
+                )
+                path: tuple[tuple[str, str], ...] = (("article", label),)
+            else:
+                payload = _payload_node(node_kind, label, text)
+                path = ctx + ((path_kind, label),)
+            ops.append(
+                _mk(
+                    StructuralAction.REPLACE,
+                    path,
+                    payload,
+                    f"EU_FMX4.{stem}_REPLACE",
+                    _apply_class(path_kind, "replace"),
+                )
+            )
+        return ops
+
+    m = _RE_NPL_SUBPARA_REPLACE.match(rem)
+    if m:
+        if not ctx:
+            return None
+        block = _quoted_block_text(np)
+        if block is None:
+            return _missing_payload("subparagraph")
+        idx = _ordinal_to_index(m.group("ord"))
+        return [
+            _mk(
+                StructuralAction.REPLACE,
+                ctx + (("subparagraph", idx),),
+                _payload_node(IRNodeKind.SUBPARAGRAPH, idx, block),
+                "EU_FMX4.SUBART_SUBPARAGRAPH_REPLACE",
+                "subsection_replace",
+            )
+        ]
+
+    # ---- REPEAL family ------------------------------------------------------
+    m = _RE_NPL_KIND_REPEAL.match(rem)
+    if m:
+        kind = m.group("kind").lower().rstrip("s")
+        path_kind, _node_kind, stem = _NP_KIND_TABLE[kind]
+        labels = _parse_label_list(m.group("list"))
+        if labels is None:
+            return None
+        if kind != "article" and not ctx:
+            return None
+        return [
+            _mk(
+                StructuralAction.REPEAL,
+                (
+                    (("article", label),)
+                    if kind == "article"
+                    else ctx + ((path_kind, label),)
+                ),
+                None,
+                f"EU_FMX4.{stem}_REPEAL",
+                _apply_class("article" if kind == "article" else path_kind, "repeal"),
+            )
+            for label in labels
+        ]
+
+    m = _RE_NPL_SUBPARA_REPEAL.match(rem)
+    if m:
+        if not ctx:
+            return None
+        idx = _ordinal_to_index(m.group("ord"))
+        return [
+            _mk(
+                StructuralAction.REPEAL,
+                ctx + (("subparagraph", idx),),
+                None,
+                "EU_FMX4.SUBART_SUBPARAGRAPH_REPEAL",
+                "subsection_repeal",
+            )
+        ]
+
+    # ---- context-carried bare verb ("In Article 9, paragraph 7, shall be
+    # replaced by the following text:") — the target IS the context's deepest
+    # step. --------------------------------------------------------------------
+    if ctx and _RE_NPL_BARE_REPLACE.match(rem):
+        path_kind, label = ctx[-1]
+        if path_kind not in _STEM:
+            return None
+        pairs = _np_payloads_for_labels(
+            np, path_kind if path_kind in _NP_PAYLOAD_TAG else "paragraph", [label]
+        )
+        if pairs is None:
+            return _missing_payload(path_kind)
+        text = pairs[0][1]
+        if path_kind == "article":
+            text = _strip_quoted_article_heading(text, label)
+        return [
+            _mk(
+                StructuralAction.REPLACE,
+                ctx,
+                _payload_node(_NODE_KIND[path_kind], label, text),
+                f"EU_FMX4.{_STEM[path_kind]}_REPLACE",
+                _apply_class(path_kind, "replace"),
+            )
+        ]
+    if ctx and _RE_NPL_BARE_REPEAL.match(rem):
+        path_kind, _label = ctx[-1]
+        if path_kind not in _STEM:
+            return None
+        return [
+            _mk(
+                StructuralAction.REPEAL,
+                ctx,
+                None,
+                f"EU_FMX4.{_STEM[path_kind]}_REPEAL",
+                _apply_class(path_kind, "repeal"),
+            )
+        ]
+
+    # ---- annex leaf forms ----------------------------------------------------
+    m = _RE_NPL_ANNEX_REPLACED_BY_TEXT.match(rem)
+    if m:
+        num = m.group("num").upper()
+        payload_text = _own_annex_payload(own_annexes, m.group("own"))
+        if not payload_text:
+            diagnostics.append(
+                AmendmentGrammarDiagnostic(
+                    rule_id="eu_fmx4_grammar_annex_as_set_out_payload_separate",
+                    reason=(
+                        "NP annex replace names its payload annex but the body "
+                        "is not in this manifestation — structural target "
+                        "lowered, materialised payload is a recorded gap"
+                    ),
+                    source_excerpt=raw,
+                    family="annex_payload_gap",
+                )
+            )
+        return [
+            _mk(
+                StructuralAction.REPLACE,
+                (("annex", num),),
+                _payload_node(IRNodeKind.SCHEDULE, num, payload_text),
+                "EU_FMX4.ANNEX_AMENDED_AS_SET_OUT",
+                "whole_annex_replace",
+                root="supplements",
+                extra_tags=(
+                    "annex_payload=inline"
+                    if payload_text
+                    else "annex_payload=separate_manifestation",
+                ),
+            )
+        ]
+    m = (
+        _RE_NPL_ANNEX_TEXT_INSERTED_AS.match(rem)
+        or _RE_NPL_ANNEX_ADDED_LAID_DOWN.match(rem)
+        or _RE_NPL_ANNEX_ADDED_AS_SET_OUT.match(rem)
+    )
+    if m:
+        num = m.group("num").upper()
+        own = m.groupdict().get("own") or ""
+        payload_text = _own_annex_payload(own_annexes, own)
+        if not payload_text:
+            diagnostics.append(
+                AmendmentGrammarDiagnostic(
+                    rule_id="eu_fmx4_grammar_np_annex_insert_payload_unresolved",
+                    reason=(
+                        "NP annex insert names a payload annex the manifestation "
+                        "does not carry — typed annex-lane gap"
+                    ),
+                    source_excerpt=raw,
+                    family="annex_payload_gap",
+                )
+            )
+            return []
+        return [
+            _mk(
+                StructuralAction.INSERT,
+                (("annex", num),),
+                _payload_node(IRNodeKind.SCHEDULE, num, payload_text),
+                "EU_FMX4.ANNEX_INSERTED_AS_SET_OUT",
+                "whole_annex_insert",
+                root="supplements",
+            )
+        ]
+    if _RE_NPL_ANNEX_INDIRECT.match(rem):
+        # "Annex X is amended in accordance with Annex Y to this Regulation" —
+        # annex Y carries EMBEDDED amendment instructions the grammar does not
+        # execute. A typed ANNEX-LANE gap: the EU anchor compare surface is
+        # article-only, so this cannot poison article scoring, but the gap is
+        # recorded (never buried). Backlog: parse the own-annex instruction
+        # sequence as a sub-grammar.
+        diagnostics.append(
+            AmendmentGrammarDiagnostic(
+                rule_id="eu_fmx4_grammar_np_annex_indirect_instructions",
+                reason=(
+                    "annex amended 'in accordance with / as set out in' the "
+                    "amender's own annex: the own annex carries an embedded "
+                    "amendment-instruction sequence this grammar does not yet "
+                    "execute (annex-lane capability gap)"
+                ),
+                source_excerpt=raw,
+                family="annex_extraction_gap",
+            )
+        )
+        return []
+
+    # ---- recognized-but-unaddressable targets --------------------------------
+    if _RE_NPL_UNADDRESSABLE.match(rem):
+        diagnostics.append(
+            AmendmentGrammarDiagnostic(
+                rule_id="eu_fmx4_grammar_np_unaddressable_target",
+                reason=(
+                    "title/heading/introductory-wording targets have no "
+                    "coordinate in the IR system — typed residual"
+                ),
+                source_excerpt=raw,
+                family=(
+                    "annex_extraction_gap"
+                    if _ctx_is_annex_lane(ctx)
+                    else "extraction_gap"
+                ),
+            )
+        )
+        return []
+
+    return None
+
+
+def _lower_np_instructions(
+    nps: list[ET.Element],
+    context: tuple[tuple[str, str], ...],
+    *,
+    op_ids: Callable[[], tuple[str, int]],
+    amending_celex: str,
+    base_celex: str,
+    effective: str,
+    enacted: str,
+    result: LoweringResult,
+    own_annexes: Optional[list[ET.Element]],
+    depth: int = 0,
+) -> None:
+    """Lower each NP sub-instruction of an omnibus article (recursing nests)."""
+    for np in nps:
+        text = _np_prose(np, keep_child_nps=False)
+        raw = " ".join(text.split())[:400]
+        foreign = _foreign_target_instrument(text, base_celex)
+        if foreign:
+            result.instruction_count += 1
+            result.diagnostics.append(
+                AmendmentGrammarDiagnostic(
+                    rule_id="eu_fmx4_grammar_foreign_target_instruction",
+                    reason=(
+                        f"NP instruction names instrument {foreign!r} as its "
+                        f"amendment target, which is not the base act "
+                        f"{base_celex}; omnibus cross-target sub-instruction "
+                        "suppressed"
+                    ),
+                    source_excerpt=raw,
+                    family="foreign_target",
+                )
+            )
+            continue
+        ctx, rem = _extract_np_context(text, context)
+        nested = _top_level_nps(np)
+        if nested and depth < 6 and _RE_AMENDED_AS_FOLLOWS.search(rem):
+            nest_ctx = _parse_nest_target(rem, ctx)
+            if nest_ctx is not None:
+                _lower_np_instructions(
+                    nested,
+                    nest_ctx,
+                    op_ids=op_ids,
+                    amending_celex=amending_celex,
+                    base_celex=base_celex,
+                    effective=effective,
+                    enacted=enacted,
+                    result=result,
+                    own_annexes=own_annexes,
+                    depth=depth + 1,
+                )
+                continue
+            # An unparseable nest target must NOT recurse (its children would
+            # mis-target) — one typed residual covering the whole nest.
+            result.instruction_count += 1
+            result.diagnostics.append(
+                AmendmentGrammarDiagnostic(
+                    rule_id="eu_fmx4_grammar_np_nest_target_unresolved",
+                    reason=(
+                        "'… is amended as follows:' nest whose target the NP "
+                        "grammar could not resolve; its sub-instructions are "
+                        "one typed residual (never mis-targeted)"
+                    ),
+                    source_excerpt=raw,
+                    family=(
+                        "annex_extraction_gap"
+                        if _ctx_is_annex_lane(ctx)
+                        else "extraction_gap"
+                    ),
+                )
+            )
+            continue
+        result.instruction_count += 1
+        src = _source(amending_celex, base_celex, effective, enacted, raw)
+        ops = _lower_np_leaf(
+            rem,
+            ctx,
+            np,
+            raw,
+            op_ids=op_ids,
+            src=src,
+            diagnostics=result.diagnostics,
+            own_annexes=own_annexes,
+        )
+        if ops is None:
+            result.diagnostics.append(
+                AmendmentGrammarDiagnostic(
+                    rule_id="eu_fmx4_grammar_uncovered_instruction",
+                    reason=(
+                        "NP sub-instruction matched no leaf rule (context "
+                        f"{'/'.join(f'{k}:{v}' for k, v in ctx) or '-'})"
+                    ),
+                    source_excerpt=raw or "(empty NP instruction text)",
+                    family=(
+                        "annex_extraction_gap"
+                        if _ctx_is_annex_lane(ctx)
+                        else "extraction_gap"
+                    ),
+                )
+            )
+        else:
+            result.ops.extend(ops)
 
 
 def lower_amending_act(
@@ -707,8 +1831,146 @@ def lower_amending_act(
     seq = 0
     for article in _top_level_amending_articles(enacting):
         seq += 1
-        result.instruction_count += 1
         instr = _instruction_text(article)
+        nps = _top_level_nps(article)
+        if nps and _RE_AMENDED_AS_FOLLOWS.search(instr):
+            # Increment 4 — OMNIBUS MULTI-POINT instruction: the opening clause
+            # names the amended instrument; each NP is one sub-instruction.
+            foreign = _foreign_target_instrument(instr, base_celex)
+            if foreign:
+                result.instruction_count += 1
+                result.diagnostics.append(
+                    AmendmentGrammarDiagnostic(
+                        rule_id="eu_fmx4_grammar_foreign_target_instruction",
+                        reason=(
+                            f"omnibus instruction names instrument {foreign!r} "
+                            f"as its amendment target, which is not the base "
+                            f"act {base_celex}; the whole multi-point "
+                            "instruction is suppressed (applying it here would "
+                            "be misapplication, not coverage)"
+                        ),
+                        source_excerpt=" ".join(instr.split())[:400],
+                        family="foreign_target",
+                    )
+                )
+                continue
+            # Per-op id/sequence allocator: doc-ordered, unique per op even when
+            # one NP lowers several ops (a plural target), never colliding with
+            # the whole-article lane's ``{celex}-{seq}`` ids.
+            np_op_index = [0]
+            article_seq = seq
+
+            def _next_op_id(
+                _idx: list[int] = np_op_index, _seq: int = article_seq
+            ) -> tuple[str, int]:
+                _idx[0] += 1
+                return (
+                    f"{amending_celex}-{_seq}.{_idx[0]}",
+                    _seq * 1000 + _idx[0],
+                )
+
+            _lower_np_instructions(
+                nps,
+                (),
+                op_ids=_next_op_id,
+                amending_celex=amending_celex,
+                base_celex=base_celex,
+                effective=effective,
+                enacted=enacted,
+                result=result,
+                own_annexes=own_annexes,
+            )
+            continue
+        # Numberless whole-article INSERT ("The following article is inserted
+        # (in Regulation (EU) No 1284/2009):") — the new article's number lives
+        # on the quoted body's own TI.ART heading. Multi-op capable ("the
+        # following Articles are inserted:" quotes several ARTICLEs).
+        if _RE_ARTICLE_INSERT_NUMBERLESS.search(instr) and not _RE_ARTICLE_INSERT.search(
+            instr
+        ):
+            result.instruction_count += 1
+            foreign = _foreign_target_instrument(instr, base_celex)
+            if foreign:
+                result.diagnostics.append(
+                    AmendmentGrammarDiagnostic(
+                        rule_id="eu_fmx4_grammar_foreign_target_instruction",
+                        reason=(
+                            f"instruction names instrument {foreign!r} as its "
+                            f"amendment target, which is not the base act "
+                            f"{base_celex}; cross-target instruction suppressed"
+                        ),
+                        source_excerpt=" ".join(instr.split())[:400],
+                        family="foreign_target",
+                    )
+                )
+                continue
+            pairs = _np_payloads_for_labels(article, "article", [])
+            if pairs is None or any(not lbl for lbl, _ in pairs):
+                result.diagnostics.append(
+                    AmendmentGrammarDiagnostic(
+                        rule_id="eu_fmx4_grammar_insert_missing_quoted_block",
+                        reason=(
+                            "numberless article insert exposed no quoted "
+                            "ARTICLE body with its own heading number"
+                        ),
+                        source_excerpt=" ".join(instr.split())[:400],
+                    )
+                )
+                continue
+            src = _source(
+                amending_celex,
+                base_celex,
+                effective,
+                enacted,
+                " ".join(instr.split())[:400],
+            )
+            for k, (label, text) in enumerate(pairs, 1):
+                result.ops.append(
+                    LegalOperation(
+                        op_id=f"{amending_celex}-{seq}.{k}",
+                        sequence=seq * 1000 + k,
+                        action=StructuralAction.INSERT,
+                        target=LegalAddress(path=(("article", label),)),
+                        payload=_payload_node(
+                            IRNodeKind.SECTION,
+                            label,
+                            _strip_quoted_article_heading(text, label),
+                        ),
+                        source=src,
+                        witness_rule_id="EU_FMX4.WHOLE_ARTICLE_INSERT",
+                        provenance_tags=("ir_apply_class=whole_section_insert",),
+                    )
+                )
+            continue
+        # NON-AMENDING provision census (typed, non-gap): an instruction
+        # ARTICLE whose quote-free prose (NP clauses included) carries no
+        # amendment verb and no for:/read: corrigendum formula is the amending
+        # act's OWN substantive/final provision — it cannot touch the base act,
+        # so it is typed ``non_amending_provision`` rather than an extraction
+        # gap. A misclassification here cannot hide silently: an unexecuted
+        # real amendment surfaces as a divergence at a fully-covered anchor,
+        # which the oracle-touch metric convicts as billable.
+        prose_with_nps = _np_prose(article, keep_child_nps=True)
+        if (
+            not _RE_AMEND_VERB.search(prose_with_nps)
+            and not _RE_CORRIGENDUM_FOR_READ.search(prose_with_nps)
+        ):
+            result.instruction_count += 1
+            result.diagnostics.append(
+                AmendmentGrammarDiagnostic(
+                    rule_id="eu_fmx4_grammar_non_amending_provision",
+                    reason=(
+                        "instruction ARTICLE carries no amendment verb and no "
+                        "quoted payload: the amending act's own substantive or "
+                        "final provision, not an amendment instruction"
+                    ),
+                    source_excerpt=" ".join(prose_with_nps.split())[:400],
+                    family="non_amending_provision",
+                )
+            )
+            continue
+        result.instruction_count += 1
+        pre_diag_count = len(result.diagnostics)
         op = _lower_one_instruction(
             instr,
             article,
@@ -723,6 +1985,48 @@ def lower_amending_act(
         )
         if op is not None:
             result.ops.append(op)
+            continue
+        # NP-LEAF FALLBACK (Increment 4): an article-level instruction the
+        # classic rules missed may still be covered by the stricter,
+        # context-anchored NP leaf grammar ("In Article 1 of Regulation (EC)
+        # No 754/2009, the following points are added:" — a multi-op point
+        # insert the single-op classic lane cannot express). Only attempted
+        # when the classic lane's sole finding was the generic uncovered
+        # diagnostic; a leaf hit replaces that diagnostic with the lowered ops
+        # (or with the leaf's own more precise typed diagnostics).
+        new_diags = result.diagnostics[pre_diag_count:]
+        if not (
+            len(new_diags) == 1
+            and new_diags[0].rule_id == "eu_fmx4_grammar_uncovered_instruction"
+        ):
+            continue
+        flat = " ".join(instr.replace("\xa0", " ").split())
+        ctx, rem = _extract_np_context(flat, ())
+        fallback_idx = [0]
+        article_seq = seq
+
+        def _fallback_op_id(
+            _idx: list[int] = fallback_idx, _seq: int = article_seq
+        ) -> tuple[str, int]:
+            _idx[0] += 1
+            return (f"{amending_celex}-{_seq}.{_idx[0]}", _seq * 1000 + _idx[0])
+
+        leaf_diags: list[AmendmentGrammarDiagnostic] = []
+        leaf_ops = _lower_np_leaf(
+            rem,
+            ctx,
+            article,
+            flat[:400],
+            op_ids=_fallback_op_id,
+            src=_source(amending_celex, base_celex, effective, enacted, flat[:400]),
+            diagnostics=leaf_diags,
+            own_annexes=own_annexes,
+        )
+        if leaf_ops is None:
+            continue  # the classic uncovered diagnostic stands
+        result.diagnostics.pop()  # replaced by the leaf outcome
+        result.diagnostics.extend(leaf_diags)
+        result.ops.extend(leaf_ops)
 
     return result
 
@@ -774,6 +2078,34 @@ def _lower_annex_root(
     block = _quoted_block_text(annex_el) or _all_text(annex_el)
     raw = " ".join(_all_text(annex_el).split())[:400]
     if annex_num is None:
+        # An ANNEX-root body that IS a base-annex instruction sequence ("The
+        # Annexes to Regulation (EC) No 692/2008 are amended as follows: …",
+        # the real 32012R0630 shape) is annex-SCOPED by its own words: a typed
+        # ANNEX-LANE gap (the article-only compare surface is untouched by it).
+        # Any other numberless ANNEX-root manifestation stays a plain
+        # extraction gap — it may be the AMENDER's own annex stored in lieu of
+        # its act (the 32014L0059 acquisition shape), whose body amendments to
+        # the base are then unknowable, so anchor suspicion must persist.
+        if re.search(  # lawvm-regex: witness_only routes a numberless annex-root manifestation between the annex-lane and acquisition-gap diagnostic families
+            r"\bAnnex(?:es)?\s+(?:[IVXLCDM0-9][A-Za-z0-9]{0,3}\s+)?to\s+"
+            r"[^,:;]{0,90}?\b(?:is|are)\s+amended\s+as\s+follows\b",
+            raw,
+            re.I,
+        ):
+            result.diagnostics.append(
+                AmendmentGrammarDiagnostic(
+                    rule_id="eu_fmx4_grammar_annex_root_instruction_sequence",
+                    reason=(
+                        "numberless ANNEX-root manifestation is itself a "
+                        "base-annex amendment-instruction sequence this "
+                        "grammar does not yet execute (annex-lane capability "
+                        "gap)"
+                    ),
+                    source_excerpt=raw,
+                    family="annex_extraction_gap",
+                )
+            )
+            return
         result.diagnostics.append(
             AmendmentGrammarDiagnostic(
                 rule_id="eu_fmx4_grammar_annex_root_no_number",
@@ -1265,6 +2597,44 @@ def _lower_one_instruction(
             witness_rule_id="EU_FMX4.CORRIGENDUM_FOR_READ",
             provenance_tags=("ir_apply_class=corrigendum_text_replace",),
         )
+
+    # Annex indirection ("Annex I … is amended in accordance with the Annex to
+    # this Regulation") — the amender's own annex carries an EMBEDDED
+    # amendment-instruction sequence this grammar does not execute. A typed
+    # ANNEX-LANE gap: the EU anchor compare surface is article-only, so the gap
+    # is recorded (never buried) without poisoning article scoring.
+    if _RE_ANNEX_IN_ACCORDANCE.search(instr):
+        diagnostics.append(
+            AmendmentGrammarDiagnostic(
+                rule_id="eu_fmx4_grammar_annex_indirect_instructions",
+                reason=(
+                    "annex amended 'in accordance with' the amender's own "
+                    "annex: the own annex carries an embedded amendment-"
+                    "instruction sequence this grammar does not yet execute "
+                    "(annex-lane capability gap)"
+                ),
+                source_excerpt=raw,
+                family="annex_extraction_gap",
+            )
+        )
+        return None
+
+    # Act-TITLE replace — the act title has no unit coordinate on the
+    # article-only compare surface; typed metadata-lane residual.
+    if _RE_ACT_TITLE_REPLACE.search(instr):
+        diagnostics.append(
+            AmendmentGrammarDiagnostic(
+                rule_id="eu_fmx4_grammar_act_title_replace",
+                reason=(
+                    "the act's own TITLE is replaced — no unit coordinate on "
+                    "the article-only compare surface (typed metadata-lane "
+                    "residual)"
+                ),
+                source_excerpt=raw,
+                family="act_metadata_gap",
+            )
+        )
+        return None
 
     diagnostics.append(
         AmendmentGrammarDiagnostic(

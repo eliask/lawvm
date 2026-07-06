@@ -19,7 +19,7 @@
     "src/lawvm/estonia/target_resolution.py": 5,
     "src/lawvm/estonia/text_morphology.py": 1,
     "src/lawvm/eu/eu_consolidation_oracle.py": 1,
-    "src/lawvm/eu/fmx4_amendment_grammar.py": 16,
+    "src/lawvm/eu/fmx4_amendment_grammar.py": 45,
     "src/lawvm/finland/actor_mention_extractor.py": 3,
     "src/lawvm/finland/amendment_chapter_precreate.py": 1,
     "src/lawvm/finland/apply_ir_ops.py": 2,
@@ -198,5 +198,5 @@
     "src/lawvm/us_federal/table3.py": 4,
     "src/lawvm/us_federal/usc_witness.py": 4
   },
-  "total_raw_re_compile": 1236
+  "total_raw_re_compile": 1265
 }

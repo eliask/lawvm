@@ -88,8 +88,17 @@ def test_coverage_measured_honestly() -> None:
     assert r.instruction_count == 6
     assert r.covered_count == 5
     assert abs(r.coverage_fraction - (5 / 6)) < 1e-9
-    uncovered = [d.rule_id for d in r.diagnostics]
-    assert uncovered.count("eu_fmx4_grammar_uncovered_instruction") == 1
+    # Increment 4: the entry-into-force boilerplate is now TYPED as the amending
+    # act's own non-amending provision (family non_amending_provision) rather
+    # than an extraction gap — it cannot touch the base act.
+    diagnosed = [d.rule_id for d in r.diagnostics]
+    assert diagnosed.count("eu_fmx4_grammar_non_amending_provision") == 1
+    assert diagnosed.count("eu_fmx4_grammar_uncovered_instruction") == 0
+    boiler = [
+        d for d in r.diagnostics
+        if d.rule_id == "eu_fmx4_grammar_non_amending_provision"
+    ][0]
+    assert boiler.family == "non_amending_provision"
 
 
 def test_point_b_edit_lowered_increment1() -> None:
@@ -348,3 +357,208 @@ def test_whole_article_payload_strips_own_heading() -> None:
     ins = by_target["article:5a"]
     assert ins.payload is not None
     assert ins.payload.text == "Inserted body text."
+
+
+# --------------------------------------------------------------------------- #
+# Increment 4 — omnibus multi-point (NP) instruction lowering                  #
+# --------------------------------------------------------------------------- #
+
+OMNIBUS_FMX = b"""<?xml version="1.0"?>
+<ACT><ENACTING.TERMS>
+  <ARTICLE IDENTIFIER="001"><TI.ART>Article 1</TI.ART>
+    <ALINEA><P>Regulation (EU) 2022/2309 is amended as follows:</P>
+      <LIST TYPE="NDASH">
+        <ITEM><NP><NO.P>(1)</NO.P><TXT>Article 2 is replaced by the following:</TXT>
+          <P><QUOT.S LEVEL="1"><ARTICLE IDENTIFIER="002"><TI.ART><QUOT.START/>Article 2</TI.ART>
+            <PARAG><NO.PARAG>1.</NO.PARAG><ALINEA>It shall be prohibited to act.</ALINEA></PARAG>
+            <PARAG><NO.PARAG>2.</NO.PARAG><ALINEA>Second rule.<QUOT.END/></ALINEA></PARAG>
+          </ARTICLE></QUOT.S>;</P></NP></ITEM>
+        <ITEM><NP><NO.P>(2)</NO.P><TXT>the following Article is inserted:</TXT>
+          <P><QUOT.S LEVEL="1"><ARTICLE IDENTIFIER="004A"><TI.ART><QUOT.START/>Article 4a</TI.ART>
+            <ALINEA>Inserted body.<QUOT.END/></ALINEA></ARTICLE></QUOT.S>;</P></NP></ITEM>
+        <ITEM><NP><NO.P>(3)</NO.P><TXT>Article 7 is amended as follows:</TXT>
+          <P><LIST TYPE="alpha">
+            <ITEM><NP><NO.P>(a)</NO.P><TXT>paragraph 2 is replaced by the following:</TXT>
+              <P><QUOT.S LEVEL="1"><PARAG><NO.PARAG><QUOT.START/>2.</NO.PARAG><ALINEA>New paragraph two.<QUOT.END/></ALINEA></PARAG></QUOT.S>;</P></NP></ITEM>
+            <ITEM><NP><NO.P>(b)</NO.P><TXT>paragraph 3 is deleted;</TXT></NP></ITEM>
+          </LIST></P></NP></ITEM>
+        <ITEM><NP><NO.P>(4)</NO.P><TXT>in Article 9, point (b) is deleted.</TXT></NP></ITEM>
+      </LIST></ALINEA></ARTICLE>
+  <ARTICLE IDENTIFIER="002"><TI.ART>Article 2</TI.ART>
+    <ALINEA>This Regulation shall enter into force on the day following that of its publication.</ALINEA></ARTICLE>
+</ENACTING.TERMS></ACT>"""
+
+
+def test_omnibus_np_instructions_lowered_increment4() -> None:
+    """The dominant real EU amender shape -- 'Regulation X is amended as
+    follows: (1) ...; (2) ...' -- iterates its NP sub-instructions, recursing
+    the nested 'Article 7 is amended as follows:' context."""
+    r = lower_amending_act(OMNIBUS_FMX, "32023R1569", base_celex="32022R2309")
+    by_target = {str(op.target): op for op in r.ops}
+    assert set(by_target) == {
+        "article:2",
+        "article:4a",
+        "article:7/paragraph:2",
+        "article:7/paragraph:3",
+        "article:9/point:b",
+    }
+    # 5 leaf NPs + the (typed non-amending) final provision; all leaves covered.
+    assert r.instruction_count == 6
+    assert r.covered_count == 5
+    rep = by_target["article:2"]
+    assert rep.action == StructuralAction.REPLACE
+    assert rep.witness_rule_id == "EU_FMX4.WHOLE_ARTICLE_REPLACE"
+    # GRAFTER-COMMENSURABLE payload: the heading (TI.ART) and the paragraph
+    # markers (NO.PARAG) are labels in the IR system, never payload text.
+    assert rep.payload is not None
+    assert rep.payload.text == "It shall be prohibited to act. Second rule."
+    ins = by_target["article:4a"]
+    assert ins.action == StructuralAction.INSERT
+    assert ins.payload is not None and ins.payload.text == "Inserted body."
+    par = by_target["article:7/paragraph:2"]
+    assert par.action == StructuralAction.REPLACE
+    assert par.witness_rule_id == "EU_FMX4.SUBART_PARAGRAPH_REPLACE"
+    assert par.payload is not None and par.payload.text == "New paragraph two."
+    assert by_target["article:7/paragraph:3"].action == StructuralAction.REPEAL
+    assert (
+        by_target["article:7/paragraph:3"].witness_rule_id
+        == "EU_FMX4.SUBART_PARAGRAPH_REPEAL"
+    )
+    assert by_target["article:9/point:b"].action == StructuralAction.REPEAL
+    assert (
+        by_target["article:9/point:b"].witness_rule_id
+        == "EU_FMX4.SUBART_POINT_REPEAL"
+    )
+    # Every NP op id is unique and doc-ordered.
+    op_ids = [op.op_id for op in r.ops]
+    assert len(set(op_ids)) == len(op_ids)
+    assert [op.sequence for op in r.ops] == sorted(op.sequence for op in r.ops)
+
+
+def test_omnibus_foreign_opening_clause_suppresses_all_nps() -> None:
+    """An omnibus article whose opening clause names a DIFFERENT instrument is
+    ONE typed foreign-target skip -- none of its NPs may lower into this base."""
+    r = lower_amending_act(OMNIBUS_FMX, "32023R1569", base_celex="32019R0787")
+    assert r.ops == []
+    foreign = [
+        d
+        for d in r.diagnostics
+        if d.rule_id == "eu_fmx4_grammar_foreign_target_instruction"
+    ]
+    assert len(foreign) == 1 and "2309" in foreign[0].reason
+
+
+def test_bare_point_label_not_swallowed_as_whole_article_replace() -> None:
+    """The 32015R0340 regression, CONVICTED by the #221 oracle-touch metric at
+    32012R0923@20150630: 'In Article 2 of Regulation 923/2012, point 104 is
+    replaced ...' must lower as a POINT replace -- the whole-article rule's old
+    free-gap pattern swallowed it and nuked Article 2 to the point payload."""
+    fmx = b"""<?xml version="1.0"?>
+<ACT><ENACTING.TERMS>
+  <ARTICLE><TI.ART>Article 9</TI.ART>
+    <ALINEA><P>In Article 2 of Commission Implementing Regulation (EU) No 923/2012, point 104 is replaced by the following:</P>
+      <QUOT.S LEVEL="1"><NP><NO.P><QUOT.START/>104.</NO.P><TXT>psychoactive substance means alcohol and opioids;<QUOT.END/></TXT></NP></QUOT.S>
+    </ALINEA></ARTICLE>
+</ENACTING.TERMS></ACT>"""
+    r = lower_amending_act(fmx, "32015R0340", base_celex="32012R0923")
+    assert [str(op.target) for op in r.ops] == ["article:2/point:104"]
+    assert r.ops[0].witness_rule_id == "EU_FMX4.SUBART_POINT_REPLACE"
+
+
+def test_non_amending_provision_typed_not_gap() -> None:
+    """An amender's OWN substantive article (definitions, duties) is typed
+    non_amending_provision -- it cannot touch the base act."""
+    fmx = b"""<?xml version="1.0"?>
+<ACT><ENACTING.TERMS>
+  <ARTICLE><TI.ART>Article 3</TI.ART>
+    <ALINEA><P>For the purposes of this Regulation, the following definitions shall apply:</P>
+      <LIST><ITEM><NP><NO.P>(1)</NO.P><TXT>accuracy means a degree of conformance;</TXT></NP></ITEM></LIST>
+    </ALINEA></ARTICLE>
+</ENACTING.TERMS></ACT>"""
+    r = lower_amending_act(fmx, "32015R0340", base_celex="32012R0923")
+    assert r.ops == []
+    assert [d.rule_id for d in r.diagnostics] == [
+        "eu_fmx4_grammar_non_amending_provision"
+    ]
+    assert r.diagnostics[0].family == "non_amending_provision"
+
+
+def test_annex_amended_in_accordance_typed_annex_lane() -> None:
+    """'Annex I ... is amended in accordance with the Annex to this Regulation'
+    ships EMBEDDED instructions in the amender's own annex -- a typed annex-lane
+    gap (the article-only compare surface is untouched), never silently dropped
+    and never a whole-annex replace with instruction text as payload."""
+    fmx = b"""<?xml version="1.0"?>
+<ACT><ENACTING.TERMS>
+  <ARTICLE><TI.ART>Article 1</TI.ART>
+    <ALINEA>Annex I to Regulation (EU) 2022/2309 is amended in accordance with the Annex to this Regulation.</ALINEA></ARTICLE>
+</ENACTING.TERMS>
+<ANNEX><TITLE><TI><P>ANNEX</P></TI></TITLE><CONTENTS><P>In Annex I, the entry for X is replaced.</P></CONTENTS></ANNEX>
+</ACT>"""
+    r = lower_amending_act(fmx, "32023R2573", base_celex="32022R2309")
+    assert r.ops == []
+    assert [d.rule_id for d in r.diagnostics] == [
+        "eu_fmx4_grammar_annex_indirect_instructions"
+    ]
+    assert r.diagnostics[0].family == "annex_extraction_gap"
+
+
+def test_numberless_article_insert_number_from_quoted_heading() -> None:
+    """'The following article is inserted in Regulation X:' -- the number lives
+    on the quoted body's own heading (the real 32019R1778 shape)."""
+    fmx = b"""<?xml version="1.0"?>
+<ACT><ENACTING.TERMS>
+  <ARTICLE><TI.ART>Article 1</TI.ART>
+    <ALINEA><P>The following article is inserted in Regulation (EU) No 1284/2009:</P>
+      <QUOT.S LEVEL="1"><ARTICLE IDENTIFIER="001A"><TI.ART><QUOT.START/>Article 1a</TI.ART>
+        <ALINEA>Derogation body text.<QUOT.END/></ALINEA></ARTICLE></QUOT.S>
+    </ALINEA></ARTICLE>
+</ENACTING.TERMS></ACT>"""
+    r = lower_amending_act(fmx, "32019R1778", base_celex="32009R1284")
+    assert [str(op.target) for op in r.ops] == ["article:1a"]
+    op = r.ops[0]
+    assert op.action == StructuralAction.INSERT
+    assert op.payload is not None and op.payload.text == "Derogation body text."
+
+
+def test_marker_form_paragraph_insert_payload_recovered() -> None:
+    """The real 32021R1096 shape: a numbered paragraph quoted in NP form whose
+    QUOT.START opens INSIDE its own NO.P marker. The marker is the node label
+    (dropped from payload text); the payload is recovered without a wrapper."""
+    fmx = b"""<?xml version="1.0"?>
+<ACT><ENACTING.TERMS>
+  <ARTICLE><TI.ART>Article 1</TI.ART>
+    <ALINEA><P>Regulation (EU) 2019/787 is amended as follows:</P>
+      <LIST><ITEM><NP><NO.P>(1)</NO.P><TXT>in Article 13, the following paragraph is inserted:</TXT>
+        <P><LIST TYPE="OTHER"><ITEM><NP><NO.P><QUOT.START/>3a.</NO.P><TXT>In the case of a blend, the rule applies.<QUOT.END/></TXT></NP></ITEM></LIST></P>
+      </NP></ITEM></LIST></ALINEA></ARTICLE>
+</ENACTING.TERMS></ACT>"""
+    r = lower_amending_act(fmx, "32021R1096", base_celex="32019R0787")
+    assert [str(op.target) for op in r.ops] == ["article:13/paragraph:3a"]
+    op = r.ops[0]
+    assert op.action == StructuralAction.INSERT
+    assert op.witness_rule_id == "EU_FMX4.SUBART_PARAGRAPH_INSERT"
+    assert op.payload is not None
+    assert op.payload.text == "In the case of a blend, the rule applies."
+    assert op.payload.label == "3a"
+
+
+def test_np_plural_articles_replace_split_per_label() -> None:
+    """'Articles 6 and 7 are replaced by the following:' zips the quoted
+    ARTICLE bodies to the instruction labels -- one op per article."""
+    fmx = b"""<?xml version="1.0"?>
+<ACT><ENACTING.TERMS>
+  <ARTICLE><TI.ART>Article 1</TI.ART>
+    <ALINEA><P>Regulation (EU) 2019/787 is amended as follows:</P>
+      <LIST><ITEM><NP><NO.P>(1)</NO.P><TXT>Articles 6 and 7 are replaced by the following:</TXT>
+        <P><QUOT.S LEVEL="1"><ARTICLE IDENTIFIER="006"><TI.ART><QUOT.START/>Article 6</TI.ART><ALINEA>Six body.</ALINEA></ARTICLE>
+        <ARTICLE IDENTIFIER="007"><TI.ART>Article 7</TI.ART><ALINEA>Seven body.<QUOT.END/></ALINEA></ARTICLE></QUOT.S></P>
+      </NP></ITEM></LIST></ALINEA></ARTICLE>
+</ENACTING.TERMS></ACT>"""
+    r = lower_amending_act(fmx, "32024R1143", base_celex="32019R0787")
+    by_target = {str(op.target): op for op in r.ops}
+    assert set(by_target) == {"article:6", "article:7"}
+    assert by_target["article:6"].payload is not None
+    assert by_target["article:6"].payload.text == "Six body."
+    assert by_target["article:7"].payload is not None
+    assert by_target["article:7"].payload.text == "Seven body."

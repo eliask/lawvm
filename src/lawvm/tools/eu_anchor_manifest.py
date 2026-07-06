@@ -482,20 +482,34 @@ def observation_to_residual(obs: EUReplayObservation) -> AgreementResidual:
 # #221 BACKLOG (the typed frontier, precise — every item is VISIBLE in the
 # frozen baseline as a cnf_unsupported / temporal_mismatch row, never buried):
 #
-#   1. MULTI-POINT OMNIBUS INSTRUCTION LOWERING (the dominant gap, ~all
-#      ``eu_closure_lowering_gap`` rows): the real EU amender shape
-#      "Regulation (EU) No X is amended as follows: (1) …; (2) …" carries its
-#      sub-instructions in NP point elements, which ``_instruction_text``
-#      excludes as noise tags — the grammar sees only the opening clause and
-#      lowers 0 ops (e.g. 32023R1569 → 32022R2309, 32010R0053 → 32009R0754
-#      with 25 unlowered points, every 32010R1093 amender). Iterating NP
-#      points as sub-instructions is the single highest-leverage coverage
-#      move: it would flip most of the 71 gap-marked anchors (950
-#      temporal_mismatch rows) into convictable full-coverage anchors.
-#   2. THREE AMENDERS UNACQUIRABLE AS FMX4 (``eu_closure_amender_unstored``):
-#      32016R0646 / 32017R1221 (both → 32008R0692) and 32016R1185
-#      (→ 32012R0923) — their eng fmx4 manifestation item is rejected by the
-#      acquisition lane as "not real XML" (needs item-shape investigation).
+#   1. MULTI-POINT OMNIBUS INSTRUCTION LOWERING — DONE (Increment 4 in
+#      ``fmx4_amendment_grammar``): "Regulation (EU) No X is amended as
+#      follows: (1) …; (2) …" NP sub-instructions are iterated (with nest
+#      contexts, per-NP foreign-target guard, grafter-commensurable payload
+#      extraction), directive-amender substantive articles are typed
+#      ``non_amending_provision``, and annex-lane/act-metadata instructions
+#      are typed OFF-SURFACE (``eu_closure_off_surface_gap``, article-only
+#      compare surface untouched). The flip itself CONVICTED and root-fixed a
+#      standing mis-lowering: the whole-article REPLACE rule's free ``.*?``
+#      gap swallowed "In Article 2 of Regulation 923/2012, point 104 is
+#      replaced …" and nuked 32012R0923 Article 2 to the point payload
+#      (billed at 32012R0923@20150630 the moment the anchor first scored).
+#   1b. SUB-ARTICLE APPLY RESOLUTION (the NEW dominant suspicion cause, the
+#      ``eu_replay_typed_op_skip`` rows): the EU grafter lifts NO label onto
+#      paragraph/item nodes (``NO.PARAG`` is not parsed; points are flattened
+#      into ALINEA text), so every lowered sub-article REPLACE/REPEAL targets
+#      an unresolvable coordinate and typed-skips (507 skips → 32010R1093
+#      alone). Fixing this lives in ``eu/grafter.py`` + the apply seam — a
+#      separate lane from this manifest.
+#   2. AMENDERS UNACQUIRABLE AS FMX4 (``eu_closure_amender_unstored`` +
+#      the ``envelope_no_enacting_terms``/``annex_root_no_number`` lowering
+#      gaps): 32016R0646 / 32017R1221 (→ 32008R0692) and 32016R1185
+#      (→ 32012R0923) have no stored eng fmx4; ~17 more amenders are stored
+#      as a ~2KB metadata-only DOC envelope (32011R0566, 32014R0806,
+#      32015L2366, 32019R2175, 32010R0279 …) or as their own ANNEX body in
+#      lieu of the act (32014L0059) — the acquisition lane stored the wrong
+#      manifestation item (needs item-shape investigation). These are now the
+#      SECOND dominant anchor-suspicion cause.
 #   3. CORRIGENDA (``…R(NN)`` edges, undated + unstored) are excluded from the
 #      closure by construction; their text effects type as
 #      ``oracle_editorial_pathology`` via the touch relation (correct for an
@@ -505,6 +519,11 @@ def observation_to_residual(obs: EUReplayObservation) -> AgreementResidual:
 #      amender one consolidation early when the Office incorporated it at its
 #      LATER date; the mismatch surfaces as non-billable spontaneous-healing /
 #      appearance rows at fully-covered anchors (none observed at freeze).
+#   5. EMBEDDED ANNEX-INSTRUCTION SEQUENCES (``eu_closure_off_surface_gap``):
+#      "Annex I … is amended in accordance with the Annex to this Regulation"
+#      ships its amendments INSIDE the amender's own annex; executing them
+#      needs an annex-body sub-grammar (plus stored base annexes to apply to —
+#      the graft currently materialises zero ``supplements``).
 # ---------------------------------------------------------------------------
 
 #: Anchor could not be scored against its stored consolidation (consolidation
@@ -515,12 +534,32 @@ VERDICT_CLOSURE_AMENDER_UNSTORED = "eu_closure_amender_unstored"
 #: A closure amender carries unlowered non-boilerplate instructions — a
 #: lowering capability gap (grammar coverage), non-billable.
 VERDICT_CLOSURE_LOWERING_GAP = "eu_closure_lowering_gap"
+#: A closure amender carries an OFF-SURFACE gap: an ANNEX-LANE gap (embedded
+#: annex-instruction indirection, annex-internal point edits, a separate-
+#: manifestation annex payload) or an act-METADATA gap (act-title replace).
+#: Typed + visible, but it does NOT commensurability-poison the base's
+#: anchors: the EU anchor compare surface is ARTICLE-only (per-article diff
+#: against the consolidation), and an annex-/title-scoped instruction cannot
+#: change any article unit, so article scoring stays honest with the gap open.
+VERDICT_CLOSURE_OFF_SURFACE_GAP = "eu_closure_off_surface_gap"
+
+#: Lowering-diagnostic families that are NOT closure gaps: a foreign-target
+#: instruction amends a different instrument; a non-amending provision is the
+#: amending act's own substantive/final law (it cannot touch the base). Neither
+#: can make replay-vs-oracle article units incommensurable.
+_NON_GAP_DIAG_FAMILIES = frozenset({"foreign_target", "non_amending_provision"})
+#: Lowering-diagnostic families that are OFF-SURFACE gaps (typed via
+#: :data:`VERDICT_CLOSURE_OFF_SURFACE_GAP`, excluded from anchor suspicion).
+_OFF_SURFACE_DIAG_FAMILIES = frozenset(
+    {"annex_payload_gap", "annex_extraction_gap", "act_metadata_gap"}
+)
 
 _VERDICT_TO_FAMILY.update(
     {
         VERDICT_ORACLE_ANCHOR_UNSCORABLE: "temporal_mismatch",
         VERDICT_CLOSURE_AMENDER_UNSTORED: "temporal_mismatch",
         VERDICT_CLOSURE_LOWERING_GAP: "cnf_unsupported",
+        VERDICT_CLOSURE_OFF_SURFACE_GAP: "cnf_unsupported",
     }
 )
 _VERDICT_TO_RESIDUAL_FAMILY.update(
@@ -528,6 +567,7 @@ _VERDICT_TO_RESIDUAL_FAMILY.update(
         VERDICT_ORACLE_ANCHOR_UNSCORABLE: "temporal_mismatch",
         VERDICT_CLOSURE_AMENDER_UNSTORED: "temporal_mismatch",
         VERDICT_CLOSURE_LOWERING_GAP: "accepted_non_executable_frontier",
+        VERDICT_CLOSURE_OFF_SURFACE_GAP: "accepted_non_executable_frontier",
     }
 )
 _VERDICT_TO_STATUS.update(
@@ -535,6 +575,7 @@ _VERDICT_TO_STATUS.update(
         VERDICT_ORACLE_ANCHOR_UNSCORABLE: "blocked",
         VERDICT_CLOSURE_AMENDER_UNSTORED: "blocked",
         VERDICT_CLOSURE_LOWERING_GAP: "blocked",
+        VERDICT_CLOSURE_OFF_SURFACE_GAP: "blocked",
     }
 )
 
@@ -789,19 +830,36 @@ def _is_final_provision_excerpt(excerpt: str) -> bool:
 
 
 def _typography_commensurable_equal(replay_text: str, oracle_text: str) -> bool:
-    """True iff two article renderings agree modulo WHITESPACE only.
+    """True iff two article renderings agree modulo TYPOGRAPHY only.
 
     The EU commensurable compare surface (mirrors UK's normalized-eId choice of
-    a per-key surface): FMX4 whitespace is typography, not content — the
-    grafter renders inline point markers ``by:(a)the`` while a replay-
-    materialized QUOT payload space-joins them ``by: (a) the``, and OJ signs
-    drift between ``–7 °C`` and ``– 7 °C`` across renderings of the SAME words.
-    Removing ALL whitespace from BOTH sides before the equality test is a
-    SYMMETRIC normalization of a non-semantic dimension — it never moves either
-    side toward the other's wording (``A.TR.1`` vs ``A.TR.`` stays divergent),
-    so it is a commensurability choice, not an oracle repair.
+    a per-key surface). TWO typography dimensions are elided, both SYMMETRIC
+    (applied to BOTH sides — never moving either side toward the other's
+    wording, so a commensurability choice, not an oracle repair):
+
+    * WHITESPACE — FMX4 whitespace is typography, not content: the grafter
+      renders inline point markers ``by:(a)the`` while a replay-materialized
+      QUOT payload space-joins them ``by: (a) the``, and OJ signs drift between
+      ``–7 °C`` and ``– 7 °C`` across renderings of the SAME words.
+    * LIST PUNCTUATION — parentheses, semicolons and full stops. The Office's
+      consolidation re-renders list-marker/separator typography of amendment
+      payloads to the base act's own house style: 32010R0053 adds points to
+      32009R0754 Article 1 with source markers ``c)`` / ``d)`` and the
+      published consolidation renders ``(c)`` / ``(d)`` and reflows the
+      previous point's terminal ``.`` into ``;`` (verified against the raw
+      amender bytes at 32009R0754@20100101 — the same 1-D editorial-artifact
+      class Finland's oracle doctrine elides, never consumes). WORD content is
+      never elided: ``certificate A.TR.1.`` vs ``certificate A.TR.`` stays
+      divergent on the ``1``.
     """
-    return "".join(replay_text.split()) == "".join(oracle_text.split())
+    def _surface(t: str) -> str:
+        return "".join(t.translate(_LIST_TYPOGRAPHY_ELISION).split())
+
+    return _surface(replay_text) == _surface(oracle_text)
+
+
+#: The elided list-punctuation characters (see _typography_commensurable_equal).
+_LIST_TYPOGRAPHY_ELISION = str.maketrans({"(": " ", ")": " ", ";": " ", ".": " "})
 
 
 @dataclass(frozen=True)
@@ -951,7 +1009,8 @@ def attribute_base_consolidations(base_celex: str, *, archive: Any) -> EUOracleA
             gap_diags = [
                 d
                 for d in low.diagnostics
-                if d.family != "foreign_target"
+                if d.family not in _NON_GAP_DIAG_FAMILIES
+                and d.family not in _OFF_SURFACE_DIAG_FAMILIES
                 and not _is_final_provision_excerpt(d.source_excerpt)
             ]
             if gap_diags:
@@ -964,6 +1023,23 @@ def attribute_base_consolidations(base_celex: str, *, archive: Any) -> EUOracleA
                     f"..{iso}",
                     (edge.celex,),
                     "; ".join(f"{d.rule_id}: {d.source_excerpt[:80]}" for d in gap_diags[:3]),
+                )
+            # Off-surface gaps (annex lane / act metadata) are TYPED (never
+            # buried) but do not poison the article-only compare surface (see
+            # VERDICT_CLOSURE_OFF_SURFACE_GAP).
+            annex_gap_diags = [
+                d for d in low.diagnostics if d.family in _OFF_SURFACE_DIAG_FAMILIES
+            ]
+            if annex_gap_diags:
+                _emit_once(
+                    VERDICT_CLOSURE_OFF_SURFACE_GAP,
+                    edge.celex,
+                    f"..{iso}",
+                    (edge.celex,),
+                    "; ".join(
+                        f"{d.rule_id}: {d.source_excerpt[:80]}"
+                        for d in annex_gap_diags[:3]
+                    ),
                 )
             ops.extend(low.ops)
 
@@ -1020,8 +1096,18 @@ def attribute_base_consolidations(base_celex: str, *, archive: Any) -> EUOracleA
             )
         for rejected in result.skipped_items:
             reason_code = getattr(rejected, "reason_code", "") or "eu_replay_op_skip"
-            op_id = getattr(getattr(rejected, "item", None), "op_id", "") or str(reason_code)
-            witnesses.append(f"op {op_id} typed-skipped ({reason_code})")
+            op = getattr(rejected, "item", None)
+            op_id = getattr(op, "op_id", "") or str(reason_code)
+            # An ANNEX-rooted op skip cannot poison the ARTICLE-only compare
+            # surface (the same lane argument as VERDICT_CLOSURE_OFF_SURFACE_GAP):
+            # typed + visible, but not an anchor-suspicion witness.
+            annex_lane = (
+                op is not None
+                and getattr(op, "target", None) is not None
+                and op.target.root_kind() == "supplements"
+            )
+            if not annex_lane:
+                witnesses.append(f"op {op_id} typed-skipped ({reason_code})")
             _emit_once(
                 VERDICT_TYPED_OP_SKIP,
                 str(op_id),

@@ -75,11 +75,20 @@ def test_act_root_no_double_count_of_quoted_replacement_body() -> None:
     """Regression for the real-bytes double-count: only the genuine amending
     ARTICLEs are instructions; quoted replacement bodies are pruned."""
     r = lower_amending_act(_act_root(), "32017R0488", base_celex=BASE_CELEX)
-    # The single uncovered residual is the entry-into-force boilerplate, NOT a
+    # The single typed residual is the entry-into-force boilerplate (Increment 4
+    # types it non_amending_provision — it cannot touch the base act), NOT a
     # spurious "instruction" from the nested replacement article.
-    uncovered = [d for d in r.diagnostics if d.rule_id == "eu_fmx4_grammar_uncovered_instruction"]
-    assert len(uncovered) == 1
-    assert "enter into force" in uncovered[0].source_excerpt.lower()
+    residual = [
+        d
+        for d in r.diagnostics
+        if d.rule_id
+        in (
+            "eu_fmx4_grammar_uncovered_instruction",
+            "eu_fmx4_grammar_non_amending_provision",
+        )
+    ]
+    assert len(residual) == 1
+    assert "enter into force" in residual[0].source_excerpt.lower()
 
 
 # --------------------------------------------------------------------------- #
@@ -167,7 +176,11 @@ def test_corpus_coverage_denominator_over_real_act_root_shapes() -> None:
         total_eif += sum(
             1
             for d in r.diagnostics
-            if d.rule_id == "eu_fmx4_grammar_uncovered_instruction"
+            if d.rule_id
+            in (
+                "eu_fmx4_grammar_uncovered_instruction",
+                "eu_fmx4_grammar_non_amending_provision",
+            )
             and "enter into force" in d.source_excerpt.lower()
         )
     # 2 + 4 = 6 instructions; 1 + 3 = 4 lowered; 2 entry-into-force residuals.
@@ -281,7 +294,11 @@ def test_live_act_root_amender_coverage_smoke() -> None:
                 total_eif += sum(
                     1
                     for x in r.diagnostics
-                    if x.rule_id == "eu_fmx4_grammar_uncovered_instruction"
+                    if x.rule_id
+                    in (
+                        "eu_fmx4_grammar_uncovered_instruction",
+                        "eu_fmx4_grammar_non_amending_provision",
+                    )
                     and "enter into force" in x.source_excerpt.lower()
                 )
         finally:

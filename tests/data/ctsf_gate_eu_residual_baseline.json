@@ -30,44 +30,44 @@
     "replay_bug",
     "unknown"
   ],
-  "total_residuals": 1030,
+  "total_residuals": 1078,
   "residuals": {
     "32008R0402": {
       "cnf_unsupported": 1,
-      "oracle_editorial_pathology": 1,
-      "temporal_mismatch": 1
+      "oracle_editorial_pathology": 2
     },
     "32008R0692": {
-      "cnf_unsupported": 11,
+      "cnf_unsupported": 14,
       "temporal_mismatch": 70
     },
     "32009R0754": {
-      "cnf_unsupported": 7,
-      "temporal_mismatch": 7
+      "cnf_unsupported": 5,
+      "oracle_editorial_pathology": 1,
+      "temporal_mismatch": 5
     },
     "32009R1284": {
-      "cnf_unsupported": 17,
-      "temporal_mismatch": 63
+      "cnf_unsupported": 15,
+      "temporal_mismatch": 61
     },
     "32010R1093": {
-      "cnf_unsupported": 13,
+      "cnf_unsupported": 79,
       "temporal_mismatch": 566
     },
     "32012R0923": {
-      "cnf_unsupported": 9,
-      "temporal_mismatch": 43
+      "cnf_unsupported": 14,
+      "temporal_mismatch": 48
     },
     "32017R1576->32014R0540": {
       "cnf_unsupported": 1
     },
     "32019R0787": {
-      "cnf_unsupported": 6,
+      "cnf_unsupported": 19,
       "oracle_editorial_pathology": 2,
-      "temporal_mismatch": 27
+      "temporal_mismatch": 44
     },
     "32022R2309": {
-      "cnf_unsupported": 12,
-      "temporal_mismatch": 173
+      "cnf_unsupported": 23,
+      "temporal_mismatch": 108
     }
   }
 }

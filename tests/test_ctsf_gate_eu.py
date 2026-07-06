@@ -122,10 +122,16 @@ def test_eu_amendment_closure_table_is_frozen_and_well_formed():
 
 
 def test_typography_commensurable_surface_is_symmetric_and_narrow():
-    """The EU commensurable compare surface elides ONLY whitespace: point-marker
-    spacing and sign spacing agree; any wording difference stays divergent."""
+    """The EU commensurable compare surface elides ONLY typography (whitespace
+    and list punctuation): point-marker spacing/parenthesization, sign spacing
+    and list-separator reflow agree; any WORDING difference stays divergent."""
     assert _typography_commensurable_equal("by: (a) the UN", "by:(a)the UN")
     assert _typography_commensurable_equal("at –7 °C", "at – 7 °C")
+    # LIST PUNCTUATION is typography: the Office re-renders an amendment
+    # payload's marker/separator style to the base act's house style (the real
+    # 32010R0053 → 32009R0754 Article 1 point-add: source ``c)`` and terminal
+    # ``.``; consolidation ``(c)`` and ``;``).
+    assert _typography_commensurable_equal("rules b. c) the group", "rules b; (c) the group")
     # Symmetric.
     assert _typography_commensurable_equal("a b", "ab") == _typography_commensurable_equal("ab", "a b")
     # Wording differences are NEVER elided (A.TR.1 vs A.TR. stays divergent).
