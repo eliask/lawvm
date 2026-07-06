@@ -203,8 +203,21 @@ def fi_interlink_from_reference_mention(
     interlink_id: str,
     surface_text: str | None = None,
     rendered_span: RenderedTextSpan | None = None,
+    candidate_work_ids: Tuple[str, ...] = (),
 ) -> LegalInterlink:
-    """Adapt a Finnish ReferenceMention-like object into the neutral contract."""
+    """Adapt a Finnish ReferenceMention-like object into the neutral contract.
+
+    ``candidate_work_ids`` (optional) is a caller-supplied SMALL discrete set of
+    resolved candidate work ids for a mention the downstream resolution
+    (``references.resolve.resolve_mentions``) reports as AMBIGUOUS-but-resolvable
+    — e.g. a multi-version by-name cite the registry maps to more than one act
+    version, or an EU nickname mapping to more than one CELEX. When non-empty it
+    is carried verbatim onto ``target.candidate_work_ids`` and the link is stamped
+    AMBIGUOUS + HEURISTIC with NO single target (a one-of-K possibility set, never
+    a laundered EXACT single). When empty the builder falls back to the internal
+    EU-nickname registry recovery (byte-unchanged for every existing caller that
+    passes no candidates).
+    """
     from lawvm.core.reference_mention import CiteConfidence, CiteKind
 
     src = getattr(mention, "source_provision_ref", None)
@@ -261,8 +274,16 @@ def fi_interlink_from_reference_mention(
     # placeholder target. This ONLY changes the ambiguous-small-discrete case: an
     # EXACT single-target cite (below) and an OPEN/vague/unresolved cite (no
     # ``eu-nickname:`` placeholder or no candidate set) are byte-unchanged.
-    candidate_work_ids: Tuple[str, ...] = ()
-    if cite_confidence == CiteConfidence.AMBIGUOUS:
+    # A caller (the interlink export threading ``references.resolve``) may already
+    # have computed the disambiguation candidate set — for a FI multi-version
+    # by-name cite the internal EU-nickname recovery cannot see. When supplied it
+    # takes precedence; otherwise fall back to the internal EU-nickname registry
+    # recovery so no existing caller changes.
+    if candidate_work_ids:
+        target_work = None
+        status = InterlinkResolutionStatus.AMBIGUOUS
+        confidence = InterlinkConfidence.HEURISTIC
+    elif cite_confidence == CiteConfidence.AMBIGUOUS:
         candidate_work_ids = _eu_nickname_disambiguation_candidates(target_statute_id)
         if candidate_work_ids:
             # A one-of-K possibility set, never a resolved single: drop the

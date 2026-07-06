@@ -186,6 +186,41 @@ def test_fi_ambiguous_eu_nickname_surfaces_disambiguation_candidates() -> None:
     assert row["surface_text"] == "jätedirektiivin 3 artiklassa"
 
 
+def test_fi_reference_mention_adapter_carries_caller_supplied_candidates() -> None:
+    """A caller (the interlink export threading ``references.resolve``) may pass a
+    pre-computed disambiguation candidate set — e.g. a FI multi-version by-name cite
+    the internal EU-nickname recovery cannot see. The supplied set is carried
+    verbatim as a one-of-K AMBIGUOUS/HEURISTIC possibility set with no single
+    target, taking precedence over (and independent of) the EU-nickname recovery.
+    """
+    mention = ReferenceMention(
+        source_provision_ref=ProvisionRef(statute_id="711/2022", section_label="4"),
+        target_provision_ref=ProvisionRef(
+            statute_id="fi-name:sairausvakuutuslaki", section_label="2"
+        ),
+        cite_kind=CiteKind.CROSS_STATUTE,
+        cite_confidence=CiteConfidence.AMBIGUOUS,
+        phrase_lemma="in_prose_fi",
+        source_span=None,
+        valid_at_interval=(None, None),
+        edge_subtype=None,
+        surface_text="sairausvakuutuslain 2 §",
+    )
+    candidates = ("fi:normative_act:364/1963", "fi:normative_act:1224/2004")
+    row = legal_interlink_to_row(
+        fi_interlink_from_reference_mention(
+            mention, interlink_id="cand-1", candidate_work_ids=candidates
+        )
+    )
+    assert row["candidate_work_ids"] == "|".join(candidates)
+    assert row["resolution_status"] == "ambiguous"
+    assert row["confidence"] == "heuristic"
+    assert row["target_work_id"] is None
+    # The cited locator and surface are preserved for rendering.
+    assert row["target_locator"] == "section:2"
+    assert row["surface_text"] == "sairausvakuutuslain 2 §"
+
+
 def test_fi_ambiguous_unknown_nickname_stays_unlinked() -> None:
     """An AMBIGUOUS cite whose nickname the registry does NOT know (no candidate
     set) is left exactly as before — no disambiguation candidates are invented."""

@@ -12,6 +12,7 @@ consume this projection and must not parse legal prose themselves.
 from __future__ import annotations
 
 import dataclasses
+import functools
 import json
 import sys
 from pathlib import Path
@@ -33,6 +34,7 @@ from lawvm.finland.interlinks import (
     fi_interlink_from_inline_citation,
     fi_interlink_from_preparatory_reference,
     fi_interlink_from_reference_mention,
+    fi_work_ref_from_canonical_id,
 )
 from lawvm.finland.legal_surface.overlay_projection import (
     OVERLAY_ROW_COLUMNS,
@@ -133,6 +135,56 @@ def _stable_interlink_id(family: str, statute_id: str, index: int) -> str:
     return f"fi.{family}:{safe_statute_id}:{index}"
 
 
+@functools.lru_cache(maxsize=1)
+def _cached_reference_registries() -> Tuple[Any, Any]:
+    """Build (statute_name, eu_nickname) registries ONCE per process.
+
+    The interlink projector runs per-statute (and inside parallel workers). The
+    statute-name registry is a single cheap file read of the persisted full-corpus
+    artifact (:func:`references.resolve.build_default_registries`), so we cache it
+    at module level — each worker builds it once, never per statute. This is a
+    pure READ-side artifact (the citation graph), never a replay input.
+    """
+    from lawvm.finland.references.resolve import build_default_registries
+
+    return build_default_registries()
+
+
+def _candidate_work_ids_from_resolution(resolved: Any) -> Tuple[str, ...]:
+    """Map an AMBIGUOUS-but-resolvable resolution to a SMALL discrete work-id set.
+
+    A ``references.resolve.ResolvedReference`` whose ``resolution_status`` is
+    AMBIGUOUS carries the FULL discrete candidate set the registry returned but
+    refused to pick among (e.g. several versions of a multi-version by-name act,
+    or several CELEX for one EU nickname). We surface that set — normalized to the
+    same canonical work-id form the resolved single-target rows use
+    (``fi:normative_act:NNN/YYYY``, ``celex:…`` passed through) — as the published
+    ``candidate_work_ids``. Every other status (RESOLVED single, STATUTE_ONLY miss,
+    OPEN/BROKEN/UNCHANGED) carries no candidate set (empty tuple), exactly as
+    before: only the genuinely one-of-K case is surfaced, never a laundered pick.
+    """
+    from lawvm.finland.references.resolve import ResolutionStatus
+
+    if resolved.resolution_status is not ResolutionStatus.AMBIGUOUS:
+        return ()
+    work_ids: List[str] = []
+    for cid in resolved.candidates:
+        cid = str(cid or "")
+        if not cid:
+            continue
+        # EU nickname candidates already arrive as ``celex:<CELEX>`` work ids and
+        # any other already-namespaced id (``prefix:body``) is passed through
+        # untouched. A bare Finnish statute id (``NNN/YYYY``) is normalized to its
+        # canonical work id so a candidate matches the ``target_work_id`` form of a
+        # resolved row.
+        if ":" in cid:
+            work_ids.append(cid)
+            continue
+        work = fi_work_ref_from_canonical_id(cid)
+        work_ids.append(work.canonical_id if work is not None else cid)
+    return tuple(work_ids)
+
+
 def _project_interlinks_for_statute(
     statute_id: str,
     store: Any,
@@ -154,6 +206,7 @@ def _project_interlinks_for_statute(
         extract_preparatory_refs,
     )
     from lawvm.finland.references.ref_mention_extractor import extract_all_reference_mentions
+    from lawvm.finland.references.resolve import resolve_mentions
 
     xml_bytes = _get_statute_xml(statute_id, store)
     if xml_bytes is None:
@@ -182,10 +235,27 @@ def _project_interlinks_for_statute(
     diagnostics: List[Dict[str, Any]] = []
 
     ref_result = extract_all_reference_mentions(xml_bytes, statute_id)
-    for index, mention in enumerate(ref_result.mentions):
+    # RESOLUTION (read/publish only): project each raw placeholder mention through
+    # the reference-resolution projection so the disambiguation the resolver
+    # already computes is SURFACED in the published citation graph. A ``fi-name:``
+    # or ``eu-nickname:`` placeholder that resolves to a single act is rewritten to
+    # that act's real id (a resolved target on the row); one that resolves to a
+    # SMALL discrete candidate set (multi-version by-name, multi-CELEX nickname)
+    # is carried AMBIGUOUS-but-resolvable with ``candidate_work_ids`` populated
+    # rather than dropped. This is side-effect-free on replay (the resolver is a
+    # pure downstream projection) and honours fail-loud (never picks one of many).
+    statute_registry, eu_registry = _cached_reference_registries()
+    resolutions = resolve_mentions(
+        list(ref_result.mentions),
+        statute_registry=statute_registry,
+        eu_registry=eu_registry,
+    )
+    for index, resolved in enumerate(resolutions):
+        candidate_work_ids = _candidate_work_ids_from_resolution(resolved)
         link = fi_interlink_from_reference_mention(
-            mention,
+            resolved.mention,
             interlink_id=_stable_interlink_id("refs", statute_id, index),
+            candidate_work_ids=candidate_work_ids,
         )
         rows.append(legal_interlink_to_row(link))
     for diag in ref_result.diagnostics:
