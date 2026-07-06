@@ -50,6 +50,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import xml.etree.ElementTree as ET
 import zipfile
 from dataclasses import dataclass, field
@@ -317,6 +318,83 @@ def extract_corrigendum_celexes(notice_bytes: bytes) -> tuple[tuple[str, ...], b
                 if ident and "." not in ident:
                     found.add(ident)
     return tuple(sorted(found)), True
+
+
+@dataclass(frozen=True, slots=True)
+class CorrigendumResourceRef:
+    """A corrigendum Work named by a base act's ``CORRECTED_BY`` relation.
+
+    The ``celex`` is the corrigendum's ``…R(NN)`` id (a legitimate corrigendum
+    id but NOT a resolvable act-CELEX — the Cellar ``/celex/`` path 404s on it,
+    verified live). The ``cellar_uuid`` is the addressable FRBR Work resource
+    (``/cellar/{uuid}``) the byte lane MUST use to fetch the corrigendum's own
+    tree notice + Formex item. Both are harvested from the SAME relation
+    element's sibling ``<URI>`` children so the pairing is unambiguous.
+    """
+
+    celex: str
+    cellar_uuid: str
+
+
+#: A Cellar FRBR resource UUID (36-char hyphenated). The addressable Work id.
+#: A witness_only source-plane locator shape (validates an already-acquired
+#: identifier from a notice URI cell), NOT a classifier over statute prose — so
+#: it is matched inline via :func:`re.fullmatch`, not the classifier wrap.
+_CELLAR_UUID_PATTERN = (
+    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+)
+
+
+def _is_cellar_uuid(ident: str) -> bool:
+    """True iff ``ident`` is a Cellar FRBR resource UUID (source-plane locator)."""
+    return re.fullmatch(_CELLAR_UUID_PATTERN, ident) is not None  # lawvm-regex: witness_only shape-validates an already-acquired Cellar resource id from a notice URI cell (source-plane locator census), not a semantic recognizer over statute text
+
+
+def extract_corrigendum_resources(
+    notice_bytes: bytes,
+) -> tuple[tuple[CorrigendumResourceRef, ...], bool]:
+    """Extract ``(celex, cellar_uuid)`` corrigendum resources from a base notice.
+
+    Returns ``(resources, looked)``. Distinct from
+    :func:`extract_corrigendum_celexes` (which harvests bare CELEX strings across
+    ALL corrigendum/amendment/consolidation relation hints): this scans ONLY the
+    ``…CORRECTED_BY…`` relation elements and pairs each corrigendum's ``celex``
+    URI with the SIBLING ``cellar`` UUID URI in the same element — the resolvable
+    Work resource the byte lane fetches (the ``R(NN)`` CELEX is not addressable
+    via ``/celex/``; the UUID via ``/cellar/`` is). An element missing either the
+    celex or the cellar uuid is skipped (no fabricated pairing). ``looked`` is
+    True iff the notice parsed.
+    """
+    try:
+        root = ET.fromstring(notice_bytes)
+    except ET.ParseError:
+        return (), False
+
+    resources: dict[str, CorrigendumResourceRef] = {}
+    for el in root.iter():
+        tag = el.tag
+        local = tag.rsplit("}", 1)[-1] if isinstance(tag, str) and "}" in tag else str(tag)
+        if "CORRECTED_BY" not in local.upper():
+            continue
+        celex = ""
+        uuid = ""
+        for uri in el.iter("URI"):
+            type_el = uri.find("TYPE")
+            ident_el = uri.find("IDENTIFIER")
+            if type_el is None or ident_el is None:
+                continue
+            kind = (type_el.text or "").strip().lower()
+            ident = (ident_el.text or "").strip()
+            if kind == "celex" and ident and "." not in ident:
+                celex = ident
+            elif kind == "cellar" and _is_cellar_uuid(ident):
+                uuid = ident
+        # A corrigendum relation without BOTH a celex and a resolvable cellar
+        # uuid is not actionable for the byte lane — skip it (honest gap), never
+        # fabricate a pairing.
+        if celex and uuid:
+            resources[celex] = CorrigendumResourceRef(celex=celex, cellar_uuid=uuid)
+    return tuple(resources[k] for k in sorted(resources)), True
 
 
 # ---------------------------------------------------------------------------
@@ -856,6 +934,25 @@ def _acquire_into(
             extracted=extracted,
         )
 
+    # Wrong-manifestation-item upgrade (#9): the notice lists the ACT body, its
+    # ANNEX members, a DOC publication envelope, and binary attachments as
+    # sibling ``…/DOC_N`` items of ONE manifestation, and the first-with-url
+    # selection above can land on an envelope / annex / TIFF instead of the act.
+    # If the fetched item is real XML but NOT an act-body root, probe the sibling
+    # DOC_N members for the ``ACT``/``CORR`` body and store THAT instead. Purely
+    # additive: an item that is already act-rooted is untouched. Skipped when the
+    # item is not real XML (that stays a typed ITEM_NOT_XML rejection below).
+    if (
+        fmt.lower() == "fmx4"
+        and _xml_root_tag(item_bytes) not in _ACT_BODY_ROOTS
+    ):
+        upgraded, upgraded_url = resolve_act_body(
+            item_url, item_bytes, fetch_item=fetch_item, timeout_s=timeout_s
+        )
+        if upgraded is not None:
+            item_bytes = upgraded
+            item_url = upgraded_url
+
     ok, why = verify_xml_witness(item_bytes)
     if not ok:
         _record_failure(
@@ -974,3 +1071,328 @@ def _select_item_from_notice(
                 )
                 return item_url, manifestation_uri
     return None, ""
+
+
+# ---------------------------------------------------------------------------
+# ACT-body resolution across a multi-DOC manifestation
+# ---------------------------------------------------------------------------
+
+#: XML roots that ARE a self-contained act / corrigendum body worth storing at
+#: the ``enacted`` locator. ``ACT`` is an amending regulation; ``CORR`` is a
+#: corrigendum body; ``CONS.ACT`` / ``CONS.DOC`` are consolidated acts (kept for
+#: parity, though the enacted lane fetches non-consolidated Works). Deliberately
+#: EXCLUDES ``DOC`` (a publication envelope / table-of-contents) and ``ANNEX`` (a
+#: separate annex member) — the two wrong-manifestation shapes the first
+#: acquisition run stored in lieu of the act body.
+_ACT_BODY_ROOTS = ("ACT", "CORR", "CONS.ACT", "CONS.DOC")
+
+#: How many sibling ``DOC_N`` members to probe for the act body when the
+#: notice-selected item is a publication envelope / annex member (mirrors
+#: :data:`lawvm.eu.eu_consolidation_oracle._MAX_SIBLING_DOC_PROBES`).
+_MAX_SIBLING_DOC_PROBES = 12
+
+#: Match a Cellar ``…/DOC_N`` item URL so its sibling members can be derived.
+_DOC_N_PATTERN = r"(?P<stem>.+/)DOC_(?P<n>\d+)"
+
+
+def _unwrap_item_to_xml(item_bytes: bytes, item_url: str) -> bytes | None:
+    """Unwrap a fetched manifestation item to its primary Formex XML, or None.
+
+    A ZIP is unwrapped to its primary Formex member; a bare XML item is returned
+    as-is. Returns None when the item is a ZIP with no parseable Formex member
+    (the caller records a typed gap — never a silent store).
+    """
+    if cellar.looks_like_zip(item_bytes):
+        try:
+            extracted = cellar.extract_primary_formex_from_zip(
+                item_bytes, archive_hint=item_url
+            )
+        except zipfile.BadZipFile:
+            return None
+        if extracted is None:
+            return None
+        return extracted.primary_xml
+    return item_bytes
+
+
+def resolve_act_body(
+    item_url: str,
+    item_bytes: bytes,
+    *,
+    fetch_item: Any,
+    timeout_s: int,
+    accept_roots: tuple[str, ...] = _ACT_BODY_ROOTS,
+) -> tuple[bytes | None, str]:
+    """Resolve the notice-selected item to a self-contained ACT-body XML.
+
+    The wrong-manifestation-item fix (#9): a consolidated- OR multi-DOC
+    non-consolidated notice bundles the act's ``ACT`` body, its ``ANNEX``
+    members, a ``DOC`` publication envelope and (for corrigenda) a ``CORR`` body
+    across sibling ``…/DOC_N`` items of ONE manifestation, and
+    ``_select_item_from_notice`` returns the FIRST item with a URL — often an
+    annex, an envelope, or even a binary TIFF attachment (verified live:
+    32016R0646 selected ``DOC_9``, a TIFF; the ``ACT`` body was ``DOC_2``). This
+    walks the sibling ``DOC_N`` members and returns the first that unwraps to a
+    root in ``accept_roots``.
+
+    ``accept_roots`` narrows the acceptable body for a specialised lane — a
+    corrigendum acquisition passes ``("CORR",)`` so a co-bundled ``CONS.ACT``
+    sibling in the corrigendum's notice is NOT stored under the corrigendum's
+    locator (a wrong-manifestation store the general set would admit).
+
+    Returns ``(body_xml, selected_url)`` — the resolved XML bytes and the URL it
+    came from — or ``(None, "")`` if no sibling carries an accepted body.
+    Idempotent / network-cheap: probes stop after two consecutive missing DOC
+    indices.
+    """
+    body = _unwrap_item_to_xml(item_bytes, item_url)
+    if body is not None and cellar._xml_root_local_tag(body) in accept_roots:
+        return body, item_url
+
+    m = re.match(_DOC_N_PATTERN + r"$", item_url)  # lawvm-regex: witness_only shape-parses an already-acquired Cellar item URL (source-plane locator census) to derive sibling DOC member URLs, not a semantic recognizer over statute text
+    if not m:
+        return None, ""
+    stem = m.group("stem")
+    selected_n = int(m.group("n"))
+    misses = 0
+    for n in range(1, _MAX_SIBLING_DOC_PROBES + 1):
+        if n == selected_n:
+            continue
+        sibling_url = f"{stem}DOC_{n}"
+        try:
+            sibling_bytes, _ = fetch_item(sibling_url, timeout_s)
+        except (HTTPError, URLError, TimeoutError, OSError):
+            # A missing sibling index is expected (the DOC_N series is finite);
+            # two consecutive misses end the probe.
+            misses += 1
+            if misses >= 2:
+                break
+            continue
+        misses = 0
+        sibling_body = _unwrap_item_to_xml(sibling_bytes, sibling_url)
+        if (
+            sibling_body is not None
+            and cellar._xml_root_local_tag(sibling_body) in accept_roots
+        ):
+            return sibling_body, sibling_url
+    return None, ""
+
+
+# ---------------------------------------------------------------------------
+# Amender + corrigendum byte acquisition (durable, ACT-body-correct)
+# ---------------------------------------------------------------------------
+
+
+def acquire_amender_act(
+    farchive: Any,
+    celex: str,
+    *,
+    fetched_at: datetime,
+    language: str = "eng",
+    timeout_s: int = cellar.DEFAULT_TIMEOUT_S,
+    _fetch_notice: Any = None,
+    _fetch_item: Any = None,
+) -> dict[str, Any]:
+    """Acquire an amending act's ACT-body FMX4 into the ``enacted`` locator.
+
+    Fixes the two acquisition classes of #9 at their root: (1) a truly-missing
+    amender (never fetched) and (2) a wrong-manifestation-item store (a ``DOC``
+    envelope / ``ANNEX`` member / binary attachment stored in lieu of the act).
+    Fetches the amender's tree notice, selects the ``(language, fmx4)`` item,
+    then routes it through :func:`resolve_act_body` so the sibling ``DOC_N``
+    that actually carries the ``ACT`` body is stored — overwriting any prior
+    wrong-manifestation state at the same locator (``_store_if_new`` records the
+    new digest). Returns a typed status dict; never silently stores a non-act.
+    """
+    fetch_notice = _fetch_notice or _live_fetch_notice
+    fetch_item = _fetch_item or _live_fetch_item
+    locator = celex_locator(celex, "enacted", language, "fmx4")
+    result: dict[str, Any] = {"celex": celex, "locator": locator, "acquire_status": "", "root": ""}
+
+    try:
+        notice_bytes, _ = fetch_notice(celex, language, timeout_s)
+    except (HTTPError, URLError, TimeoutError, OSError) as exc:
+        result["acquire_status"] = f"NOTICE_FETCH_FAILED:{type(exc).__name__}:{exc}"
+        return result
+
+    ok, why = verify_xml_witness(notice_bytes)
+    if not ok:
+        result["acquire_status"] = f"NOTICE_NOT_XML:{why}"
+        return result
+
+    item_url, manifestation_uri = _select_item_from_notice(notice_bytes, language, "fmx4")
+    if not item_url:
+        result["acquire_status"] = f"NO_MANIFESTATION:no {language} fmx4 item in notice"
+        return result
+
+    try:
+        item_bytes, _ = fetch_item(item_url, timeout_s)
+    except (HTTPError, URLError, TimeoutError, OSError) as exc:
+        result["acquire_status"] = f"ITEM_FETCH_FAILED:{type(exc).__name__}:{exc}"
+        return result
+
+    body, selected_url = resolve_act_body(
+        item_url, item_bytes, fetch_item=fetch_item, timeout_s=timeout_s
+    )
+    if body is None:
+        result["acquire_status"] = (
+            f"NO_ACT_BODY:no sibling DOC member under {item_url} carries an "
+            "ACT-rooted body"
+        )
+        return result
+
+    root = cellar._xml_root_local_tag(body) or ""
+    eli, work_uri = ("", "")
+    try:
+        eli, work_uri = _notice_work_ids(notice_bytes)
+    except ET.ParseError:
+        pass
+    corrigendum_celexes, corrigenda_extracted = extract_corrigendum_celexes(notice_bytes)
+
+    meta = CelexAcquisitionMetadata(
+        celex=celex,
+        work_canonical_id=celex_to_canonical_id(celex),
+        work_uri=work_uri,
+        expression_language=language,
+        manifestation_uri=manifestation_uri,
+        item_uri=selected_url,
+        fmt="fmx4",
+        consolidation_date="enacted",
+        fetched_at=fetched_at,
+        source_sha256=hashlib.sha256(body).hexdigest(),
+        eli=eli,
+        corrigendum_celexes=corrigendum_celexes,
+        corrigenda_extracted=corrigenda_extracted,
+    )
+    stored = _store_if_new(
+        farchive,
+        locator,
+        body,
+        storage_class="xml",
+        metadata=meta.to_metadata_dict(),
+        observed_at=fetched_at,
+    )
+    result["acquire_status"] = "STORED" if stored else "RE_OBSERVED"
+    result["root"] = root
+    result["bytes"] = len(body)
+    result["item_url"] = selected_url
+    return result
+
+
+def acquire_corrigendum(
+    farchive: Any,
+    resource: CorrigendumResourceRef,
+    *,
+    fetched_at: datetime,
+    language: str = "eng",
+    timeout_s: int = cellar.DEFAULT_TIMEOUT_S,
+    _fetch_notice: Any = None,
+    _fetch_item: Any = None,
+) -> dict[str, Any]:
+    """Acquire a corrigendum's ``CORR`` body via its Cellar UUID resource.
+
+    Implements #9 class 3 — the corrigendum BYTE acquisition the module only
+    *detected* before. The corrigendum ``…R(NN)`` CELEX is not resolvable via
+    ``/celex/`` (verified: 404), so this fetches the corrigendum's own tree
+    notice by its addressable Cellar UUID (``/cellar/{uuid}``), selects the
+    ``(language, fmx4)`` item, and routes it through :func:`resolve_act_body`
+    (the ``CORR`` root is an :data:`_ACT_BODY_ROOTS` member). Stored at the
+    identity locator keyed on the corrigendum's OWN CELEX so the replay/touch
+    lane can find it: ``cellar://celex/{R(NN)-celex}/enacted/{lang}/fmx4``.
+    Idempotent + never a silent non-corrigendum store.
+    """
+    fetch_notice = _fetch_notice or _live_fetch_notice_by_uuid
+    fetch_item = _fetch_item or _live_fetch_item
+    locator = celex_locator(resource.celex, "enacted", language, "fmx4")
+    result: dict[str, Any] = {
+        "celex": resource.celex,
+        "cellar_uuid": resource.cellar_uuid,
+        "locator": locator,
+        "acquire_status": "",
+        "root": "",
+    }
+
+    try:
+        notice_bytes, _ = fetch_notice(resource.cellar_uuid, language, timeout_s)
+    except (HTTPError, URLError, TimeoutError, OSError) as exc:
+        result["acquire_status"] = f"NOTICE_FETCH_FAILED:{type(exc).__name__}:{exc}"
+        return result
+
+    ok, why = verify_xml_witness(notice_bytes)
+    if not ok:
+        result["acquire_status"] = f"NOTICE_NOT_XML:{why}"
+        return result
+
+    item_url, manifestation_uri = _select_item_from_notice(notice_bytes, language, "fmx4")
+    if not item_url:
+        result["acquire_status"] = f"NO_MANIFESTATION:no {language} fmx4 item in notice"
+        return result
+
+    try:
+        item_bytes, _ = fetch_item(item_url, timeout_s)
+    except (HTTPError, URLError, TimeoutError, OSError) as exc:
+        result["acquire_status"] = f"ITEM_FETCH_FAILED:{type(exc).__name__}:{exc}"
+        return result
+
+    # A corrigendum's own body is ``CORR``; a co-bundled ``CONS.ACT``/``ACT``
+    # sibling in the corrigendum notice is a DIFFERENT Work — never store it
+    # under the corrigendum's locator. Restrict the accepted root to ``CORR``.
+    body, selected_url = resolve_act_body(
+        item_url,
+        item_bytes,
+        fetch_item=fetch_item,
+        timeout_s=timeout_s,
+        accept_roots=("CORR",),
+    )
+    if body is None:
+        result["acquire_status"] = (
+            f"NO_ACT_BODY:no sibling DOC member under {item_url} carries a "
+            "CORR-rooted body"
+        )
+        return result
+
+    root = cellar._xml_root_local_tag(body) or ""
+    meta = {
+        "celex": resource.celex,
+        "cellar_uuid": resource.cellar_uuid,
+        "expression_language": language,
+        "manifestation_uri": manifestation_uri,
+        "item_uri": selected_url,
+        "format": "fmx4",
+        "consolidation_date": "enacted",
+        "fetched_at": fetched_at.isoformat(),
+        "source_sha256": hashlib.sha256(body).hexdigest(),
+        "relation_kind": "corrects",
+        "source_surface": "eu-cellar-frbr-corrigendum",
+    }
+    stored = _store_if_new(
+        farchive,
+        locator,
+        body,
+        storage_class="xml",
+        metadata=meta,
+        observed_at=fetched_at,
+    )
+    result["acquire_status"] = "STORED" if stored else "RE_OBSERVED"
+    result["root"] = root
+    result["bytes"] = len(body)
+    result["item_url"] = selected_url
+    return result
+
+
+def _live_fetch_notice_by_uuid(
+    cellar_uuid: str, language: str, timeout_s: int
+) -> tuple[bytes, dict[str, Any]]:
+    """Fetch a FRBR tree notice by its Cellar resource UUID (read-only reuse).
+
+    A corrigendum's ``…R(NN)`` CELEX is not resolvable via the ``/celex/`` path;
+    the Cellar UUID (from the base act's ``CORRECTED_BY`` relation) IS, via
+    ``NoticeRequest``'s UUID branch (``/cellar/{uuid}``).
+    """
+    notice = cellar.NoticeRequest(
+        celex=cellar_uuid,
+        notice_format="xml",
+        notice_type="tree",
+        decode_language=language,
+    )
+    return cellar._request_notice(notice, timeout_s=timeout_s)

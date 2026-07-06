@@ -501,20 +501,34 @@ def observation_to_residual(obs: EUReplayObservation) -> AgreementResidual:
 #      an unresolvable coordinate and typed-skips (507 skips → 32010R1093
 #      alone). Fixing this lives in ``eu/grafter.py`` + the apply seam — a
 #      separate lane from this manifest.
-#   2. AMENDERS UNACQUIRABLE AS FMX4 (``eu_closure_amender_unstored`` +
-#      the ``envelope_no_enacting_terms``/``annex_root_no_number`` lowering
-#      gaps): 32016R0646 / 32017R1221 (→ 32008R0692) and 32016R1185
-#      (→ 32012R0923) have no stored eng fmx4; ~17 more amenders are stored
-#      as a ~2KB metadata-only DOC envelope (32011R0566, 32014R0806,
-#      32015L2366, 32019R2175, 32010R0279 …) or as their own ANNEX body in
-#      lieu of the act (32014L0059) — the acquisition lane stored the wrong
-#      manifestation item (needs item-shape investigation). These are now the
-#      SECOND dominant anchor-suspicion cause.
-#   3. CORRIGENDA (``…R(NN)`` edges, undated + unstored) are excluded from the
-#      closure by construction; their text effects type as
-#      ``oracle_editorial_pathology`` via the touch relation (correct for an
-#      editorial-lane instrument, but acquiring + dating them would let replay
-#      reproduce e.g. 32008R0402R(01)'s "A.TR.1"→"A.TR." fix).
+#   2. AMENDERS UNACQUIRABLE AS FMX4 — ACQUISITION-RESOLVED (#9): the 3
+#      truly-missing amenders (32016R0646 / 32017R1221 → 32008R0692, 32016R1185
+#      → 32012R0923) and the 34 wrong-manifestation-item stores (a ~2KB DOC
+#      publication envelope, an ANNEX member, or even a binary TIFF attachment
+#      stored in lieu of the ACT body — e.g. 32011R0566/32014R0806/32015L2366/
+#      32019R2175/32010R0279 as DOC, 32014L0059/32012R0459/32012R0630 as ANNEX)
+#      are now ALL stored ACT-rooted. Root cause: the notice bundles the ACT
+#      body, its ANNEX members, a DOC envelope and binary attachments as sibling
+#      ``…/DOC_N`` items of ONE manifestation, and the first-with-url selection
+#      landed on the wrong one. ``eu_acquire.resolve_act_body`` walks the sibling
+#      DOC_N members for the ACT body; ``scripts/acquire_eu_amenders.py`` drives
+#      the durable re-fetch. Every newly-graftable amender's still-unlowered
+#      instructions now surface as VISIBLE typed ``cnf_unsupported`` (lowering
+#      gap) / ``temporal_mismatch`` rows — 0 new billable — and several windows
+#      moved TOWARD the oracle (temporal_mismatch dropped at 32010R1093 /
+#      32012R0923). The residual dominant cause is now the sub-article apply
+#      resolution (1b) + the lowering-grammar gaps, not amender acquisition.
+#   3. CORRIGENDA (``…R(NN)`` edges, undated) are excluded from the closure BY
+#      CONSTRUCTION (the closure iterates ``amends`` edges only; undated edges
+#      never satisfy ``effective_by``); their text effects type as
+#      ``oracle_editorial_pathology`` via the touch relation. Their BYTES are
+#      now acquirable (#9): the ``…R(NN)`` CELEX is not resolvable via
+#      ``/celex/`` (404), so ``eu_acquire.acquire_corrigendum`` fetches the
+#      corrigendum's own tree notice by the Cellar UUID the base notice's
+#      ``CORRECTED_BY`` relation carries, and stores its ``CORR`` body. Most EU
+#      corrigenda expose no eng fmx4 manifestation (an honest source-shape gap);
+#      the acquired ones (e.g. 32008R0402R(01), 32008R0692R(01)) let a future
+#      DATED-corrigendum lane reproduce e.g. the "A.TR.1"→"A.TR." fix.
 #   4. INCLUSION-RULE REFINEMENT: the earliest-date rule can include an
 #      amender one consolidation early when the Office incorporated it at its
 #      LATER date; the mismatch surfaces as non-billable spontaneous-healing /
