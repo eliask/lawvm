@@ -30,6 +30,14 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
     "boundary": (
         "test_fi_conformance.py",
     ),
+    # Distributable-substrate tests (tests/substrate/).
+    # These live under the tests/substrate/ subdirectory; their shard patterns
+    # use the "substrate/" prefix so _all_test_files() + run_shard resolve them
+    # correctly.  The wildcard catches all existing substrate unit tests plus
+    # the committed prototype-pack acceptance test (§17).
+    "substrate": (
+        "substrate/test_*.py",
+    ),
     "estonia_sources": (
         "test_clause_ast_ee_validation.py",
         "test_ee_act_identity_registry.py",
@@ -204,6 +212,8 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
     ),
     "eu": (
         "test_eu_*.py",
+        # Tests nested under tests/eu/ subdirectory.
+        "eu/test_eu_*.py",
     ),
     "starter": (
         # Generic scaffold/starter frontend tests. The U.S. federal jurisdiction
@@ -1178,7 +1188,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
 
 SHARD_GROUPS: dict[str, tuple[str, ...]] = {
     "frontends": ("estonia", "eu", "finland", "new_zealand", "norway", "starter", "sweden", "uk"),
-    "modules": ("core", "evidence", "properties", "properties_timeline", "tools"),
+    "modules": ("core", "evidence", "properties", "properties_timeline", "substrate", "tools"),
     "evidence": ("evidence_claims", "evidence_core", "evidence_reports"),
     "core": (
         "core_discipline_gates",
@@ -1250,6 +1260,7 @@ SOURCE_SHARD_PREFIXES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("notes/UK_", ("uk", "tools_cli_debug")),
     ("src/lawvm/core/", ("all",)),
     ("src/lawvm/jurisdiction_starter/", ("starter",)),
+    ("src/lawvm/substrate/", ("substrate",)),
 )
 
 TOOLING_SHARD_PREFIXES = (
@@ -1261,7 +1272,19 @@ ALL_SHARDS = ("all",)
 
 
 def _all_test_files() -> list[str]:
-    return sorted(path.name for path in TEST_DIR.glob("test_*.py"))
+    flat = sorted(path.name for path in TEST_DIR.glob("test_*.py"))
+    # Also include tests nested one level deep under named subdirectories
+    # (e.g. tests/substrate/test_*.py).  These are returned as
+    # "<subdir>/test_name.py" so that SHARD_PATTERNS can reference them with
+    # the subdir prefix and run_shard resolves them via TEST_DIR / filename.
+    sub: list[str] = []
+    for subdir in sorted(TEST_DIR.iterdir()):
+        if subdir.is_dir() and not subdir.name.startswith(".") and not subdir.name.startswith("_"):
+            sub.extend(
+                f"{subdir.name}/{path.name}"
+                for path in sorted(subdir.glob("test_*.py"))
+            )
+    return flat + sub
 
 
 def _matches(patterns: tuple[str, ...], filename: str) -> bool:
