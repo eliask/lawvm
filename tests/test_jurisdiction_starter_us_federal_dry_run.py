@@ -43,6 +43,7 @@ from lawvm.us_federal.dry_run import (
     US_DRY_RUN_RESIDUAL_ORACLE_CHANGED_NOT_CLAIMED_RULE_ID,
     US_DRY_RUN_RESIDUAL_SOURCE_TRUNCATED_PAYLOAD_RULE_ID,
     US_DRY_RUN_RESIDUAL_SUBSECTION_NODE_NOT_LOCATED_RULE_ID,
+    US_DRY_RUN_RESIDUAL_PARTIAL_COMPOSITION_MID_CHAIN_GAP_RULE_ID,
     US_DRY_RUN_RESIDUAL_SOURCE_TREE_PARSE_AMBIGUOUS_RULE_ID,
     US_DRY_RUN_RESIDUAL_TARGET_ANCESTOR_ABSENT_IN_SOURCE_TREE_RULE_ID,
     US_DRY_RUN_RESIDUAL_TARGET_LEVEL_ABSENT_IN_SOURCE_TREE_RULE_ID,
@@ -121,6 +122,41 @@ def test_replace_token_in_text_last_occurrence_replaces_rightmost_match_once():
     assert _replace_token_in_text(
         single, match_text=".", replacement="X", count=-1, last_occurrence=True
     ) == _replace_token_in_text(single, match_text=".", replacement="X", count=-1)
+
+
+def test_terminal_period_strike_inserts_olrc_courtesy_space_before_word_clause():
+    """F3 §50:3919: "strike the period at the end and insert 'or as a member of the
+    Space Force.'" removes the sentence-terminal period that directly abutted the
+    preceding word (``reserve component.``). Mechanically concatenating the inserted
+    continuation yields ``reserve componentor``; the OLRC renders ``reserve component
+    or …`` with a single separating space. A bare-``.`` last-occurrence strike whose
+    removed period joined a word to a WORD-INITIAL MULTI-WORD continuation clause gets
+    the courtesy space so the materialization matches the enacted continuation.
+    """
+    from lawvm.us_federal.dry_run import _replace_token_in_text
+
+    before = "or a reserve component. (6) A change."
+    patched = _replace_token_in_text(
+        before,
+        match_text=".",
+        replacement="or as a member of the Space Force.",
+        count=-1,
+        last_occurrence=True,
+    )
+    # The struck terminal period of the LAST sentence joined ``change`` to the
+    # continuation; the earlier ``component.`` period is untouched (Last-occurrence).
+    assert patched == "or a reserve component. (6) A change or as a member of the Space Force."
+
+    # NARROWNESS 1: a single-token replacement (no internal space) is NOT a clause —
+    # no courtesy space (keeps the punctuation/list-conjunction shapes byte-stable).
+    assert _replace_token_in_text(
+        "First. Second.", match_text=".", replacement="X", count=-1, last_occurrence=True
+    ) == "First. SecondX"
+    # NARROWNESS 2: a punctuation-led insert (``; and``) is a list conjunction, never a
+    # word continuation — no courtesy space (the leading char is not alnum).
+    assert _replace_token_in_text(
+        "law. taxes", match_text=".", replacement="; and more", count=-1, last_occurrence=True
+    ) == "law; and more taxes"
 
 
 def test_s0_length_ratio_invariant_defends_against_silent_state_corruption() -> None:
@@ -1003,6 +1039,77 @@ def test_real_title11_pl118_42_window_507d_insert_after_anchor_materializes_in_a
     assert report.replay_authorized is False
 
 
+@pytest.mark.skipif(
+    not _canonical_archive_available(),
+    reason="canonical us_federal.farchive not linked (LAWVM_CANONICAL_DATA_ROOT unset)",
+)
+def test_shared_mid_chain_resolver_does_not_tank_compound_chain_sections() -> None:
+    """F2 shared mid-chain resolver (DEFERRED_ROADMAP §F, title23:2020->2022, IIJA).
+
+    A compound amendment chain (insert+replace+renumber+repeal in source order) can
+    carry ONE mid-chain op whose sub-section target cannot be located against the
+    running composition — its foundation RENUMBER/strike was refused as absent from
+    this window's before edition (an un-lowered foundation op). Historically that op's
+    empty ("") return BROKE the per-section loop, DISCARDING every correctly-composed
+    sibling op and tanking the whole section to an empty ``lawvm_wrong`` residual.
+
+    The shared resolver instead SKIPS the single unresolvable op and CONTINUES composing
+    the rest of the chain. This regression pins that §133/§148/§515 (title23) and §41
+    (title35) no longer materialize an EMPTY, section-tanking ``lawvm_wrong``: the
+    surviving composition is preserved and the section is a typed non-billable residual
+    (a partial-composition capability gap ``missing_source``, or the source-truncated /
+    deferred_op class the composed text legitimately falls into), never a wrong empty.
+    """
+    from lawvm.us_federal.bench import (
+        DEFAULT_CORPUS_PATH,
+        evaluate_window,
+        load_corpus,
+        open_us_federal_farchive,
+    )
+    from lawvm.tools.us_anchor_manifest import _repo_root
+
+    corpus = {w.key: w for w in load_corpus(_repo_root() / DEFAULT_CORPUS_PATH)}
+    archive = open_us_federal_farchive(readonly=True)
+    try:
+        checks = {
+            "title23:2020->2022": ("23:133", "23:148", "23:515"),
+            "title35:2010->2012": ("35:41",),
+        }
+        for window_key, sections in checks.items():
+            report = evaluate_window(archive, corpus[window_key]).report
+            assert report is not None, f"{window_key} did not evaluate to a report"
+            rows = {r.section_key: r for r in report.rows}
+            for sec in sections:
+                assert sec in rows, f"{window_key} {sec} not composed at all"
+                row = rows[sec]
+                # NEVER an empty section-tanking lawvm_wrong: the composed text is
+                # preserved and the disposition is non-billable.
+                assert not (
+                    row.materialized_text == ""
+                    and row.disposition == DISPOSITION_LAWVM_WRONG
+                ), f"{window_key} {sec} still tanks to an empty lawvm_wrong"
+                assert row.disposition != DISPOSITION_LAWVM_WRONG, (
+                    f"{window_key} {sec} is billable lawvm_wrong; the shared mid-chain "
+                    f"resolver should have diverted it to a non-billable typed residual"
+                )
+    finally:
+        archive.close()
+
+
+def test_partial_composition_mid_chain_gap_rule_id_is_cataloged() -> None:
+    """The shared-resolver capability-gap rule id is registered in the US spec ledger
+    (its emit site is convicted by the AST catalog-completeness test; this pins the
+    description entry exists so the producer/consumer sets stay reconciled)."""
+    from lawvm.tools.spec_ledger_us_catalog import _US_RULE_SPECS
+
+    assert (
+        US_DRY_RUN_RESIDUAL_PARTIAL_COMPOSITION_MID_CHAIN_GAP_RULE_ID in _US_RULE_SPECS
+    )
+    assert _US_RULE_SPECS[
+        US_DRY_RUN_RESIDUAL_PARTIAL_COMPOSITION_MID_CHAIN_GAP_RULE_ID
+    ].strip()
+
+
 _WINDOW_2018_2020_LAWS = (51, 52, 54, 92, 136, 189, 260, 325)
 
 
@@ -1245,8 +1352,19 @@ def test_real_title7_3222a_markerless_node_stays_a_typed_residual_not_a_sibling_
     # paragraph enumerators are NOT printed in the body (the structure is carried by
     # indent depth alone). An op targeting (a)(3) therefore cannot locate a clean node
     # — and we must NOT fuzzy-match onto a sibling paragraph. The section stays a typed
-    # source-footing-gap residual with no (wrong) materialization, exactly the
-    # Prime-Directive-safe refusal.
+    # source-footing-gap residual, exactly the Prime-Directive-safe refusal.
+    #
+    # SHARED MID-CHAIN RESOLVER (this session): §3222a is a partial-composition chain —
+    # its op1 (a clean text_patch on the (a)(3) paragraph) lands, then op2/op3 (an
+    # amend-to-read + insert on (b)(1)) carry the ``target_ancestor_absent_in_source_tree``
+    # source-footing signal (the (b) ancestor is elided). Historically op2's empty return
+    # BROKE the loop and DISCARDED op1's legitimate composition, emptying the section. The
+    # shared resolver now SKIPS op2/op3 and PRESERVES op1's composition. The residual keeps
+    # its PRECISE source-footing rule id (``target_ancestor_absent``, more informative than
+    # the generic mid-chain gap) and the honest ``missing_source`` disposition; the guard
+    # this test exists for — no fuzzy sibling match onto a guessed node — still holds. The
+    # materialized text is now op1's non-empty composition (over-retention is the §0-safe
+    # wrong), not the old empty tank.
     #
     # RESIDUAL RE-TYPING (was ``subsection_target_node_not_located`` /
     # ``lawvm_wrong``): the refusal is unchanged — still a residual, still empty
@@ -1282,10 +1400,17 @@ def test_real_title7_3222a_markerless_node_stays_a_typed_residual_not_a_sibling_
     assert "7:3222a" in rows
     row = rows["7:3222a"]
     assert row.row_status == "residual"
+    # The precise source-footing diagnosis is preserved through the shared mid-chain
+    # resolver (the ancestor-absent signal is missing_source-typed, so its exact rule id
+    # survives rather than collapsing to the generic mid-chain gap).
     assert row.rule_id == US_DRY_RUN_RESIDUAL_TARGET_ANCESTOR_ABSENT_IN_SOURCE_TREE_RULE_ID
     assert row.disposition == DISPOSITION_MISSING_SOURCE
-    # No wrong materialization: we did not splice "4" onto a guessed sibling node.
-    assert row.materialized_text == ""
+    # No wrong materialization: we did not splice a guessed sibling node. The composed
+    # text is op1's legitimate (a)(3) text_patch, preserved by the shared resolver rather
+    # than discarded to an empty tank (the unresolvable (b)(1) ops were skipped, not
+    # fuzzy-matched). The section still diverges from the oracle (a genuine source gap).
+    assert row.materialized_text != ""
+    assert row.materialized_text != row.oracle_text
 
 
 def test_committed_synthetic_fixtures_round_trip_through_source_tree() -> None:

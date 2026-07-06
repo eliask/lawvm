@@ -502,6 +502,17 @@ _US_RULE_SPECS: Dict[str, str] = {
         "before-section split does not expose, or whose text an earlier op already "
         "mutated — surfaced as a typed residual rather than an unscoped string replace."
     ),
+    "us_dry_run_residual_partial_composition_mid_chain_target_unresolved": (
+        "Capability gap: a compound amendment chain (insert+replace+renumber+repeal in "
+        "source order) carried ONE mid-chain op whose sub-section target could not be "
+        "located against the running composition — typically because an earlier "
+        "RENUMBER/strike that would have created/relabelled that node was itself refused "
+        "as absent from this window's before edition (an un-lowered foundation op). The "
+        "shared mid-chain resolver SKIPS that single unresolvable op and CONTINUES "
+        "composing the rest of the chain, rather than tanking the whole section to an "
+        "empty ``lawvm_wrong``. The surviving composition is preserved; the section is a "
+        "missing_source (cnf_unsupported) resolver gap, never a wrong materialization."
+    ),
     "us_dry_run_recovered_bare_leaf_target_via_unique_suffix_match": (
         "A sub-section-scoped op whose target address has a bare-leaf path (paragraph/"
         "subparagraph/clause without its parent subsection prefix) was recovered by "

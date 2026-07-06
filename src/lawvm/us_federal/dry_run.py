@@ -142,6 +142,22 @@ US_DRY_RUN_RESIDUAL_MATCH_TEXT_NOT_FOUND_RULE_ID = "us_dry_run_residual_match_te
 US_DRY_RUN_RESIDUAL_SUBSECTION_NODE_NOT_LOCATED_RULE_ID = (
     "us_dry_run_residual_subsection_target_node_not_located_in_before_section"
 )
+# A compound amendment chain (insert+replace+renumber+repeal, source order) carried
+# ONE mid-chain op whose sub-section target could not be located against the running
+# composition — typically because an earlier RENUMBER/strike that would have
+# created/relabelled that node was itself refused as absent from this window's before
+# edition (an un-lowered foundation op). Historically the empty ("") return from that
+# one op set ``residual_signal`` and BROKE the per-section loop, DISCARDING every
+# correctly-composed sibling op and tanking the whole section to an empty materialized
+# text billed ``lawvm_wrong``. The shared mid-chain resolver instead SKIPS the single
+# unresolvable op (recording this partial-composition gap) and CONTINUES composing the
+# remaining ops on the running text. When the surviving composition does not fully
+# agree, the section is a CAPABILITY GAP (our resolver cannot place a mid-chain node
+# after its foundation op was refused) — ``missing_source`` (cnf_unsupported), never a
+# ``lawvm_wrong`` empty. We never repair to the oracle and never discard composed text.
+US_DRY_RUN_RESIDUAL_PARTIAL_COMPOSITION_MID_CHAIN_GAP_RULE_ID = (
+    "us_dry_run_residual_partial_composition_mid_chain_target_unresolved"
+)
 # A structural-redesignation payload introduced a clause whose body is a bare
 # prefix in the source XML (e.g., USLM quotedContent ended after "(i) any member"),
 # while the oracle shows the full clause body.  The materialization is source-faithful;
@@ -1931,7 +1947,29 @@ def _replace_token_in_text(
             if not isinstance(matches[-1], tuple)
             else matches[-1]
         )
-        return text[:last_start] + (replacement or "") + text[last_end:]
+        insert = replacement or ""
+        # OLRC terminal-period-strike courtesy space (F3, §50:3919
+        # ``componentor`` -> ``component or``). "Strike the period at the end and
+        # insert 'or as a member of the Space Force.'" removes a sentence-terminal
+        # period that directly abutted the preceding word (``reserve component.``);
+        # mechanically concatenating the inserted continuation yields ``reserve
+        # componentor``. When the STRUCK token is exactly a bare period, it directly
+        # follows a word character, and the inserted continuation is a WORD-INITIAL
+        # multi-word CLAUSE (contains an internal space), the enacted continuation is a
+        # new clause of the same sentence and the OLRC renders a single separating
+        # space. Insert it. NARROW by construction: only a bare-``.`` last-occurrence
+        # strike whose removed period joined a word to a multi-word continuation clause
+        # — never a phrase strike, a punctuation-led insert (``; and``, ``, or``), or a
+        # single-token replacement (§0: no mutation beyond the struck terminal period).
+        if (
+            match_text == "."
+            and last_start > 0
+            and text[last_start - 1].isalnum()
+            and insert[:1].isalnum()
+            and " " in insert.strip()
+        ):
+            insert = " " + insert
+        return text[:last_start] + insert + text[last_end:]
     if match_text.isalpha():
         pattern = _word_boundary_pattern(match_text)
         new_text = pattern.sub(replacement or "", text, count=count if count != -1 else 0)
@@ -3321,13 +3359,24 @@ def build_us_dry_run(
         match_texts: list[str] = []
         replacements: list[str] = []
         composed_refused = False
+        # Set when the shared mid-chain resolver skipped an unresolvable compound-chain
+        # op (empty node-not-located signal) and continued composing the rest. The
+        # surviving composition is real; if it does not fully agree, the section is a
+        # partial-composition CAPABILITY GAP (missing_source), never a lawvm_wrong empty.
+        partial_composition_gap = False
+        # The FIRST skipped signal's (rule_id, disposition). When NO op ever landed
+        # (every op was skipped — a single unresolvable op, not a compound chain), the
+        # section never composed anything: we preserve the original per-op signal
+        # semantics EXACTLY (empty materialization + the specific source-footing rule id)
+        # rather than the generic mid-chain gap rule, so a single-op source-tree-footing
+        # gap (e.g. target-ancestor-absent) keeps its precise diagnosis byte-identically.
+        first_skipped_signal: tuple[str, str] | None = None
         # A whole-section REPEAL for this section that our section-text surface cannot
         # represent (it deletes the section; there is no in-text edit for that). When
         # the oracle ALSO emptied the section, the repeal EXPLAINS the oracle change —
         # any residual left by an incidental conforming each-place strike on the (now
         # vestigial) before-body is NOT a wrong materialization.
         refused_structural_repeal = False
-        residual_signal: tuple[str, str] | None = None
         # Tracks the CURRENT text of each sub-section node a prior op in this
         # section's composition rewrote, so several ops against the SAME node (a
         # multi-patch instruction, or two SAME-anchor patches on different
@@ -3358,6 +3407,24 @@ def build_us_dry_run(
                     refused_structural_repeal = True
                 continue
             materialized, signal_rule_id, signal_disposition = outcome
+            if signal_rule_id:
+                # SHARED MID-CHAIN RESOLVER. Every signal from ``_materialize_one``
+                # carries an EMPTY materialization (the op did not land): the targeted
+                # sub-section node could not be located in the running composition —
+                # in a compound chain this is the one op whose foundation RENUMBER/
+                # strike was refused as absent from the before edition. Rather than
+                # BREAK the loop (discarding every correctly-composed sibling op and
+                # tanking the section to an empty ``lawvm_wrong``), SKIP this single op
+                # and CONTINUE composing the remaining ops on the running text. Record
+                # the partial-composition gap; the section's final disposition is
+                # decided after the whole chain composes (agreement wins; otherwise a
+                # missing_source capability gap). Both the lawvm_wrong-typed and the
+                # source-tree-footing (``missing_source``) node-not-located signals are
+                # the same empty-materialization skip class here.
+                partial_composition_gap = True
+                if first_skipped_signal is None:
+                    first_skipped_signal = (signal_rule_id, signal_disposition)
+                continue
             op_ids.append(operation.op_id)
             actions.append(operation.action.value)
             patch = operation.text_patch
@@ -3376,12 +3443,6 @@ def build_us_dry_run(
                         after_text=_normalize_text(materialized),
                     )
                 )
-            if signal_rule_id:
-                # match_text-not-found against the running text: a residual for the
-                # whole section (we refuse to fuzzy-match and cannot faithfully
-                # continue composing past an anchor the source does not carry).
-                residual_signal = (signal_rule_id, signal_disposition)
-                break
             running = _normalize_text(materialized)
 
         if not op_ids and composed_refused:
@@ -3396,8 +3457,15 @@ def build_us_dry_run(
         row_replacement = " | ".join(r for r in replacements if r)
         target_address = str(operations[0].target)
 
-        if residual_signal is not None:
-            rule_id, disposition = residual_signal
+        if not op_ids and first_skipped_signal is not None:
+            # TOTAL non-composition: every op for this section was a node-not-located
+            # SIGNAL (not a compound chain — a single unresolvable op, or several all
+            # unresolvable). Nothing composed, so this is NOT a partial-composition gap
+            # — preserve the FIRST signal's ORIGINAL typing byte-identically (empty
+            # materialization + its specific source-footing / node-not-located rule id
+            # and disposition), so e.g. a single ``target_ancestor_absent_in_source_tree``
+            # gap keeps its precise diagnosis rather than the generic mid-chain rule.
+            skip_rule_id, skip_disposition = first_skipped_signal
             rows.append(
                 USDryRunSectionRow(
                     op_id=row_op_id,
@@ -3405,8 +3473,8 @@ def build_us_dry_run(
                     target_address=target_address,
                     section_key=section_key,
                     row_status=USDryRunRowStatus.RESIDUAL,
-                    rule_id=rule_id,
-                    disposition=disposition,
+                    rule_id=skip_rule_id,
+                    disposition=skip_disposition,
                     match_text=row_match,
                     replacement=row_replacement,
                     before_text=before_text,
@@ -3539,6 +3607,32 @@ def build_us_dry_run(
                 # not apply, not (provably) by a wrong materialization.
                 rule_id = US_DRY_RUN_RESIDUAL_TEXT_MISMATCH_RULE_ID
                 disposition = DISPOSITION_DEFERRED_OP
+            elif partial_composition_gap:
+                # SHARED MID-CHAIN RESOLVER outcome. One compound-chain op could not
+                # resolve its sub-section target against the running composition (its
+                # foundation RENUMBER/strike was refused as absent from the before
+                # edition, or its ancestor level is absent from the source tree) and was
+                # SKIPPED; the surviving composition does not fully agree. This is a
+                # resolver CAPABILITY GAP — not a wrong materialization of a landed op.
+                # Type ``missing_source`` (cnf_unsupported), never ``lawvm_wrong``. The
+                # composed text is PRESERVED (§0: over-retention is the safe wrong); we
+                # never repair to the oracle and never discard the correctly-composed
+                # sibling ops. When the skipped op carried a SPECIFIC source-tree-footing
+                # diagnosis (``target_ancestor_absent_in_source_tree`` etc. — a
+                # ``missing_source``-typed signal), keep that PRECISE rule id (it is more
+                # informative than the generic mid-chain gap); only the plain
+                # node-not-located (``lawvm_wrong``-typed) skip uses the generic mid-chain
+                # rule. Either way the disposition is the honest ``missing_source``.
+                if (
+                    first_skipped_signal is not None
+                    and first_skipped_signal[1] == DISPOSITION_MISSING_SOURCE
+                ):
+                    rule_id = first_skipped_signal[0]
+                else:
+                    rule_id = (
+                        US_DRY_RUN_RESIDUAL_PARTIAL_COMPOSITION_MID_CHAIN_GAP_RULE_ID
+                    )
+                disposition = DISPOSITION_MISSING_SOURCE
             else:
                 rule_id = US_DRY_RUN_RESIDUAL_TEXT_MISMATCH_RULE_ID
                 disposition = DISPOSITION_LAWVM_WRONG

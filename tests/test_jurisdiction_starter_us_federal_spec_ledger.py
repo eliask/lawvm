@@ -443,12 +443,24 @@ def test_real_corpus_builds_a_ranked_ledger_with_every_fired_rule_cataloged() ->
     assert agrees["firings"] >= 1
     assert agrees["contradicted"] == 0
 
-    # Rules are ranked contradicted-desc: the first row's contradicted is the max.
-    contradicted = [r["contradicted"] for r in art["rules"]]
-    assert contradicted == sorted(contradicted, reverse=True)
+    # Rules are ranked by the §8(7) FRONTIER SCORE descending (blast_radius × suspicion
+    # × expected_information_gain — see ``SpecLedger.ranked_entries``), NOT by raw
+    # contradicted count: a rare rule with wide blast radius or a suspicious agree/disagree
+    # history legitimately outranks a frequent high-contradicted one. (An earlier
+    # assertion that pinned ``contradicted``-descending was coincidental to a particular
+    # corpus snapshot and did not match the code's ranking contract — it went RED whenever
+    # the frontier ranking and the contradicted ordering diverged, which is by design.)
+    # Pin the actual contract: the ranked list is monotone-non-increasing in the frontier
+    # score (the PRIMARY key). The exposed ``frontier_score`` is rounded to 9 places for
+    # the artifact, so ties within an equal-rounded-score group are resolved by the
+    # UNROUNDED score and the (contradicted, divergences, firings, rule_id) tie-breaks —
+    # not reconstructable from the rounded artifact — so we assert only the primary-key
+    # monotonicity, which is the non-brittle, corpus-snapshot-independent invariant.
+    frontier = [r["frontier_score"] for r in art["rules"]]
+    assert frontier == sorted(frontier, reverse=True)
 
-    # The text-mismatch residual is the most-contradicted lowering hypothesis (the
-    # highest-value fix target). Pin it as a non-brittle, monotone-ish floor.
+    # The text-mismatch residual is a high-value contradicted lowering hypothesis (a
+    # real fix target). Pin it as a non-brittle floor (contradicted at least once).
     assert by_id[US_DRY_RUN_RESIDUAL_TEXT_MISMATCH_RULE_ID]["contradicted"] >= 1
 
     # The amendatory lowering family is visible (firings from compiled ops), so the
