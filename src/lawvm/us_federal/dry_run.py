@@ -70,6 +70,7 @@ from lawvm.us_federal.amendatory import (
     USAmendatoryReport,
     lower_plaw_amendatory,
 )
+from lawvm.us_federal.label_algebra import US_LABEL_ALGEBRA
 from lawvm.us_federal.us_ordering import order_us_ops
 from lawvm.us_federal.sources import (
     UsArchiveReader,
@@ -2844,10 +2845,34 @@ def _materialize_one(
                 payload_catchline_num = _insert_payload_catchline_section_number(
                     payload_text
                 )
-                if (
+                # The catchline-vs-target decision is a US section-label IDENTITY
+                # (collision) question: does the payload's leading catchline name
+                # the SAME section as the op's target, or a DIFFERENT one (a
+                # mis-routed op that would materialize another section's text under
+                # the wrong address)? Route that identity decision through the US
+                # label algebra (#186) — the frontend datum that OWNS the US
+                # section-label calculus — rather than a raw string ``!=``. The
+                # algebra's ``collides`` is normalized-identity equality over the
+                # shared kernel collision key (``normalized_label_key``): two labels
+                # denote the same section iff their ``collision_key`` s are equal.
+                # This is the honest US analogue of EE dispatching insert-ordering
+                # through ``EE_LABEL_ALGEBRA`` and UK sibling ORDER through
+                # ``UK_LABEL_ALGEBRA``; US never mints/positions labels (its inserted
+                # sections carry explicit anchor labels), so its load-bearing wire is
+                # label IDENTITY, not order/successor. Byte-preserving: the algebra
+                # is BUILT from the same kernel ``normalized_label_key`` this guard
+                # compared implicitly, and ``test_label_algebra_us.py`` pins that
+                # equality (a catchline num and a target section number for the same
+                # section are drawn from the same USC numbering, so their normalized
+                # identity keys agree exactly when the raw labels do).
+                catchline_mismatch = (
                     payload_catchline_num is not None
-                    and payload_catchline_num != section_number
-                ):
+                    and not US_LABEL_ALGEBRA.collides(
+                        US_LABEL_ALGEBRA.parse(payload_catchline_num),
+                        (US_LABEL_ALGEBRA.parse(section_number),),
+                    )
+                )
+                if catchline_mismatch:
                     return USDryRunRefusal(
                         op_id=op_id,
                         rule_id=US_DRY_RUN_REFUSED_INSERT_CATCHLINE_MISMATCH_RULE_ID,

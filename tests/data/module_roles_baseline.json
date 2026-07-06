@@ -2,7 +2,7 @@
   "_doc": "Monotone module-role baseline. The `dead` and `test_only_live` sets may only SHRINK: a module born dead must be wired or deleted, never added to the population. The `replay_exercised` map is a SNAPSHOT: a module flipping replay-exercised status (either direction) fails the ratchet until re-baselined. Regenerate with `uv run python scripts/inventory_module_roles.py --update-baseline` after legitimately retiring (deleting) a dead/test-only module, wiring it to a production consumer, or refreshing the replay-coverage snapshot (tests/data/replay_coverage_snapshot.json — see its provenance.refresh_command).",
   "counts": {
     "dead": 82,
-    "live": 1099,
+    "live": 1125,
     "test_only_live": 40
   },
   "replay_counts": {
@@ -83,8 +83,8 @@
     "lawvm.tools.spec_ledger_glue",
     "lawvm.tools.spec_ledger_nz_catalog",
     "lawvm.tools.spec_ledger_report",
+    "lawvm.tools.temporal_holdout",
     "lawvm.uk_legislation.acquisition_frontier",
-    "lawvm.uk_legislation.replay_conserved",
     "lawvm.uk_legislation.si_commencement_audit",
     "lawvm.uk_legislation.si_source_semantics",
     "lawvm.uk_legislation.uk_assumptions",
@@ -189,6 +189,7 @@
     "lawvm.finland.johtolause.provenance_span",
     "lawvm.finland.johtolause.rule_registry",
     "lawvm.finland.johtolause.totality",
+    "lawvm.finland.label_algebra",
     "lawvm.finland.legal_surface",
     "lawvm.finland.legal_surface.annotation_compare",
     "lawvm.finland.legal_surface.bitemporal",
@@ -299,6 +300,7 @@
     "lawvm.finland.references.sanction",
     "lawvm.finland.references.sections",
     "lawvm.finland.references.shared_reference_orchestrator",
+    "lawvm.finland.references.statute_lifecycle_lookup",
     "lawvm.finland.references.temporal",
     "lawvm.finland.references.term_use",
     "lawvm.finland.references.token_actor_match",
@@ -341,6 +343,7 @@
     "lawvm.finland.telos_section_flag",
     "lawvm.finland.temporal_arithmetic",
     "lawvm.finland.timeline_version_dedupe",
+    "lawvm.finland.totalization_table",
     "lawvm.finland.transition_graph_profile",
     "lawvm.finland.transition_graph_replay",
     "lawvm.finland.tree_invariant_allowances",
