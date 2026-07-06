@@ -431,7 +431,9 @@ def test_build_chain_replay_over_fixture_chain(monkeypatch: pytest.MonkeyPatch) 
 
     # One authorized repeal on prov:2 effective on the V1 date.
     transition = NZChainTransition("2011-01-01", (_op("r1", "2011-01-01", ("prov:2",)),))
-    monkeypatch.setattr(mod, "build_nz_chain", lambda _pf, _surface, families=None: (transition,))
+    monkeypatch.setattr(
+        mod, "build_nz_chain", lambda _pf, _surface, families=None: ((transition,), ())
+    )
 
     report = build_chain_replay(
         archive,
@@ -847,7 +849,7 @@ def test_build_nz_chain_orders_families_within_a_transition(monkeypatch: pytest.
 
     monkeypatch.setattr(mod, "_enumerate_structural_ops", _fake_struct)
 
-    transitions = build_nz_chain(
+    transitions, _same_moment_findings = build_nz_chain(
         cast(NZEffectCandidatePreflightReport, object()),
         _Surface(),
         families=frozenset(CHAIN_FAMILY_ORDER),
@@ -869,7 +871,7 @@ def test_build_nz_chain_respects_family_filter(monkeypatch: pytest.MonkeyPatch) 
         lambda _pf: [_op("txt", "2010-01-01", ("prov:2",), family="text_replace")],
     )
 
-    transitions = build_nz_chain(
+    transitions, _same_moment_findings = build_nz_chain(
         cast(NZEffectCandidatePreflightReport, object()),
         None,
         families=frozenset({"repeal"}),
@@ -936,7 +938,9 @@ def test_build_chain_replay_multi_family_transition(monkeypatch: pytest.MonkeyPa
             _op("ins", "2011-01-01", ("prov:18A",), family="insert", amending_provision_href="h"),
         ),
     )
-    monkeypatch.setattr(mod, "build_nz_chain", lambda _pf, _surface, families=None: (transition,))
+    monkeypatch.setattr(
+        mod, "build_nz_chain", lambda _pf, _surface, families=None: ((transition,), ())
+    )
 
     report = build_chain_replay(
         archive,
@@ -990,7 +994,9 @@ def test_divergence_flagged_when_op_produces_wrong_content(monkeypatch: pytest.M
         "2011-01-01",
         (_op("rpl", "2011-01-01", ("prov:3",), family="replace", amending_provision_href="h"),),
     )
-    monkeypatch.setattr(mod, "build_nz_chain", lambda _pf, _surface, families=None: (transition,))
+    monkeypatch.setattr(
+        mod, "build_nz_chain", lambda _pf, _surface, families=None: ((transition,), ())
+    )
 
     report = build_chain_replay(
         archive,

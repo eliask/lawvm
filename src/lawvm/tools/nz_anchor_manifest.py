@@ -614,7 +614,9 @@ def _materialize_anchor_scores(
             preflight = build_archived_work_effect_candidate_preflight(
                 db_path, work_id, operation_surface=surface
             )
-            transitions = build_nz_chain(preflight, surface, families=_ALL_FAMILIES)
+            transitions, _same_moment_findings = build_nz_chain(
+                preflight, surface, families=_ALL_FAMILIES
+            )
 
             versions = archived_xml_versions_for_work(archive, work_id)
             versions_asc = tuple(reversed(versions))

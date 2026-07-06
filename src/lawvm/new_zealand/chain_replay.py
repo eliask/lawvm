@@ -56,6 +56,8 @@ from lawvm.core.evidence_support import (
     section_similarity,
     section_similarity_cleaned,
 )
+from lawvm.core.op_ordering import OrderingProfile, order_ops
+from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.new_zealand.acquisition import open_farchive
 from lawvm.new_zealand.dry_run import (
     _amending_act_root,
@@ -409,6 +411,12 @@ class NZChainReplayReport:
     families_requested: tuple[str, ...] = CHAIN_FAMILY_ORDER
     truth_claim: str = NZ_CHAIN_REPLAY_TRUTH_CLAIM
     replay_claims: bool = NZ_CHAIN_REPLAY_REPLAY_CLAIMS
+    # Same-moment cross-act §1.7 findings from the unified ordering kernel
+    # (``order_ops`` + shared ``detect_cross_act_same_moment_conflicts``). ADDITIVE
+    # — the apply order is unchanged; these surface any genuine same-moment
+    # cross-act incompatible-payload collision so strict mode can reject it. Empty
+    # on today's corpus (latent no-op guarantee — see ``nz_ordering_profile``).
+    same_moment_findings: tuple[CompileAdjudication, ...] = ()
 
     def skip_bucket_counts(self) -> dict[str, int]:
         counts: dict[str, int] = {}
@@ -454,6 +462,7 @@ class NZChainReplayReport:
             "families_requested": list(self.families_requested),
             "per_family_stats": [stat.to_jsonable() for stat in self.per_family_stats],
             "n_divergences": len(self.divergences),
+            "n_same_moment_findings": len(self.same_moment_findings),
         }
 
     def to_jsonable(self, *, summary_only: bool = False) -> dict[str, Any]:
@@ -465,6 +474,10 @@ class NZChainReplayReport:
             "summary": self.summary(),
             "similarity_curve": [point.to_jsonable() for point in self.similarity_curve],
             "divergences": [div.to_jsonable() for div in self.divergences],
+            "same_moment_findings": [
+                dict(finding.detail) if finding.detail else {"kind": finding.kind}
+                for finding in self.same_moment_findings
+            ],
         }
         if not summary_only:
             payload["transitions"] = [
@@ -574,7 +587,83 @@ def _enumerate_structural_ops(surface: Any, family: str) -> list[NZChainOp]:
     return ops
 
 
-def _bucket_ops_into_transitions(ops: list[NZChainOp]) -> tuple[NZChainTransition, ...]:
+def nz_ordering_profile() -> OrderingProfile:
+    """The NZ jurisdiction ordering profile fed to the unified kernel.
+
+    NZ is the last frontend to enact cross-act same-moment routing (EE/NO/EU/SE/US
+    already do). Like SE, NZ's within-moment tiebreak is deterministic and
+    sequence-driven, so the profile is the SE shape:
+
+    - ``finder_kind_prefix="nz"`` — the per-frontend prefix that stamps the
+      finding ``kind`` and any claim validation/rejection ``rule_id``s (already
+      reserved at the shared-detector level; see
+      ``tests/test_core_cross_act_same_moment.py``).
+    - ``incompatible_payload_predicate=None`` — the detector's *default*
+      conservative predicate. NZ ops carry ``StructuralAction`` enum actions
+      (``REPEAL`` for the repeal family, ``TEXT_PATCH`` for text_replace), which
+      the default predicate classifies directly.
+    - ``temporal_key=default_temporal_key`` (implicit) — NZ's transitions are
+      already partitioned by ``amendment_date_iso`` before ``order_ops`` runs, so
+      each call sees one effective moment; the temporal sort is a no-op.
+    - ``lex_posterior=False`` / no ``precedence_claims`` — NZ has no validated
+      precedence-rule registry yet, so every detected collision emits
+      ``resolution: "sequence_order_unproven"``.
+
+    The routing is a LATENT no-op guarantee on today's corpus: the default
+    predicate only flags whole-target REPEAL-vs-REPLACE / REPLACE-vs-REPLACE
+    across distinct acts, but only NZ's repeal (``REPEAL``) and text_replace
+    (``TEXT_PATCH``) families carry a ``LegalOperation`` — replace/insert
+    ``NZChainOp``s carry ``operation=None`` and never enter the detector. Two
+    cross-act ``REPEAL``s are redundant (not order-determining) and ``TEXT_PATCH``
+    is fragment-level, so no collision fires. The wire still closes the capability
+    gap (a genuine cross-act REPEAL-vs-REPLACE collision, once replace ops carry
+    ops, would surface a §1.7 finding rather than being silently
+    ``amending_work_id``-order-resolved).
+    """
+    return OrderingProfile(finder_kind_prefix="nz")
+
+
+def _detect_nz_same_moment_findings(
+    by_date: dict[str, list[NZChainOp]],
+) -> tuple[CompileAdjudication, ...]:
+    """Same-moment cross-act §1.7 pre-pass over the op-carrying chain ops.
+
+    Runs the unified ordering kernel (``order_ops`` + the shared
+    ``detect_cross_act_same_moment_conflicts`` delegate) per amendment-date bucket
+    — each bucket is one effective moment, so a collision within it is a
+    same-moment cross-act collision. Only ``NZChainOp``s that carry a
+    ``LegalOperation`` (repeal / text_replace) participate; replace/insert carry
+    ``operation=None`` and are outside the detector's op vocabulary.
+
+    ADDITIVE, mirroring EE/NO/SE/US: the detector never reorders or drops an op,
+    so the NZChainOp apply order below is byte-unchanged. It only emits blocking
+    findings for genuine same-moment cross-act incompatible-payload collisions
+    (there are none in today's corpus — see :func:`nz_ordering_profile`), closing
+    the capability gap latently.
+    """
+    from lawvm.core.ir import LegalOperation
+
+    profile = nz_ordering_profile()
+    findings: list[CompileAdjudication] = []
+    for amendment_date_iso in sorted(by_date):
+        # Only genuine ``LegalOperation`` payloads enter the shared detector: the
+        # repeal/text_replace families carry one, replace/insert carry ``None``,
+        # and the detector's op accessors (``.source``/``.action``/``.sequence``)
+        # are defined only for ``LegalOperation``.
+        moment_ops = [
+            op.operation
+            for op in by_date[amendment_date_iso]
+            if isinstance(op.operation, LegalOperation)
+        ]
+        if len(moment_ops) < 2:
+            continue
+        findings.extend(order_ops(moment_ops, profile).findings)
+    return tuple(findings)
+
+
+def _bucket_ops_into_transitions(
+    ops: list[NZChainOp],
+) -> tuple[tuple[NZChainTransition, ...], tuple[CompileAdjudication, ...]]:
     """Bucket enumerated ops by ISO amendment date into ordered transitions.
 
     Within a date the ops are ordered by ``CHAIN_FAMILY_ORDER`` first (so the
@@ -582,12 +671,19 @@ def _bucket_ops_into_transitions(ops: list[NZChainOp]) -> tuple[NZChainTransitio
     order), then by ``(amending_work_id, row_id)`` for determinism. An op with no
     effective date lands in a degenerate empty-date transition so the census still
     counts it (a real gap, never a silent drop).
+
+    Returns the ordered transitions AND the same-moment cross-act §1.7 findings
+    (:func:`_detect_nz_same_moment_findings`) — the ADDITIVE detection pre-pass
+    that gives NZ its cross-act same-moment routing without perturbing the apply
+    order.
     """
 
     family_rank = {family: index for index, family in enumerate(CHAIN_FAMILY_ORDER)}
     by_date: dict[str, list[NZChainOp]] = {}
     for op in ops:
         by_date.setdefault(op.amendment_date_iso, []).append(op)
+
+    same_moment_findings = _detect_nz_same_moment_findings(by_date)
 
     transitions: list[NZChainTransition] = []
     for amendment_date_iso in sorted(by_date):
@@ -598,7 +694,7 @@ def _bucket_ops_into_transitions(ops: list[NZChainOp]) -> tuple[NZChainTransitio
         transitions.append(
             NZChainTransition(amendment_date_iso=amendment_date_iso, ops=tuple(ordered))
         )
-    return tuple(transitions)
+    return tuple(transitions), same_moment_findings
 
 
 def build_nz_chain(
@@ -606,7 +702,7 @@ def build_nz_chain(
     surface: Any | None,
     *,
     families: frozenset[str] = _ALL_FAMILIES,
-) -> tuple[NZChainTransition, ...]:
+) -> tuple[tuple[NZChainTransition, ...], tuple[CompileAdjudication, ...]]:
     """Enumerate a base work's authorized ops across the requested families.
 
     Repeal + text_replace ops come from the preflight's replayable rows; replace +
@@ -614,6 +710,10 @@ def build_nz_chain(
     (``surface`` may be ``None`` when only preflight-sourced families are
     requested). Ops are bucketed by ``amendment_date_iso`` into ISO-date-ordered
     transitions; within a date they follow :data:`CHAIN_FAMILY_ORDER`.
+
+    Returns the date-ordered transitions AND the same-moment cross-act §1.7
+    findings from the unified ordering kernel (see
+    :func:`_bucket_ops_into_transitions`).
     """
 
     ops: list[NZChainOp] = []
@@ -638,9 +738,17 @@ def build_nz_repeal_chain(
     authorization comes from the preflight's replayable repeal rows
     (:func:`_replayable_repeal_rows`) — the SAME set the per-op dry-run consumes,
     but NOT gated on the whole-work ``ready_for_dry_run_replay`` readiness.
+
+    Repeal-only enumeration cannot produce a same-moment cross-act
+    incompatible-payload collision (two same-target ``REPEAL``s are redundant, not
+    order-determining — see the shared detector's default predicate), so the
+    findings are dropped and only the transitions are returned for back-compat.
     """
 
-    return build_nz_chain(preflight, None, families=frozenset({"repeal"}))
+    transitions, _same_moment_findings = build_nz_chain(
+        preflight, None, families=frozenset({"repeal"})
+    )
+    return transitions
 
 
 # --- Sequential apply on one evolving tree ---
@@ -1879,7 +1987,9 @@ def build_chain_replay(
     families: str | frozenset[str] | None = None,
 ) -> NZChainReplayReport:
     resolved = resolve_families(families)
-    transitions = build_nz_chain(preflight, surface, families=resolved)
+    transitions, same_moment_findings = build_nz_chain(
+        preflight, surface, families=resolved
+    )
     family_label = "+".join(family for family in CHAIN_FAMILY_ORDER if family in resolved)
 
     versions = archived_xml_versions_for_work(archive, work_id)
@@ -1914,6 +2024,7 @@ def build_chain_replay(
             if family in resolved
         ),
         families_requested=tuple(f for f in CHAIN_FAMILY_ORDER if f in resolved),
+        same_moment_findings=same_moment_findings,
     )
     if not versions_asc:
         return empty_report
@@ -2054,6 +2165,7 @@ def build_chain_replay(
         per_family_stats=per_family_stats,
         divergences=tuple(divergences),
         families_requested=tuple(f for f in CHAIN_FAMILY_ORDER if f in resolved),
+        same_moment_findings=same_moment_findings,
     )
 
 
