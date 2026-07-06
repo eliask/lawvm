@@ -239,11 +239,23 @@ def test_grafter_recovers_parag_alinea_article_text() -> None:
     art2 = _section(st.body, "2")
     assert art2 is not None
     # No duplication: the section node's OWN text stays empty (text lives on the
-    # paragraph children); consumers recurse children to read the full body.
+    # paragraph children); consumers recurse children to read the full body. The
+    # NO.PARAG sub-article lowering additionally pushes a paragraph's prose onto
+    # ordered ``p`` grandchildren (so ``point`` / ``subparagraph`` amendment
+    # coordinates resolve), so the body text is read by a full descendant recurse.
     assert (art2.text or "") == ""
-    para_texts = [c.text or "" for c in art2.children]
-    assert any("prohibited to export" in t for t in para_texts)  # ALINEA-direct
-    assert any("derogation" in t for t in para_texts)  # ALINEA>P
+
+    def _descendant_text(node: IRNode) -> str:
+        parts = [node.text or ""]
+        for c in node.children:
+            parts.append(_descendant_text(c))
+        return " ".join(p for p in parts if p)
+
+    # Paragraph coordinates are lifted from the NO.PARAG markers.
+    assert {c.label for c in art2.children} == {"1", "2"}
+    body = _descendant_text(art2)
+    assert "prohibited to export" in body  # ALINEA-direct
+    assert "derogation" in body  # ALINEA>P
 
 
 # --------------------------------------------------------------------------- #

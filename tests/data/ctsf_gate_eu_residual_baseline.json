@@ -30,15 +30,15 @@
     "replay_bug",
     "unknown"
   ],
-  "total_residuals": 1078,
+  "total_residuals": 963,
   "residuals": {
     "32008R0402": {
       "cnf_unsupported": 1,
       "oracle_editorial_pathology": 2
     },
     "32008R0692": {
-      "cnf_unsupported": 14,
-      "temporal_mismatch": 70
+      "cnf_unsupported": 13,
+      "temporal_mismatch": 67
     },
     "32009R0754": {
       "cnf_unsupported": 5,
@@ -50,24 +50,24 @@
       "temporal_mismatch": 61
     },
     "32010R1093": {
-      "cnf_unsupported": 79,
-      "temporal_mismatch": 566
+      "cnf_unsupported": 50,
+      "temporal_mismatch": 572
     },
     "32012R0923": {
-      "cnf_unsupported": 14,
+      "cnf_unsupported": 13,
       "temporal_mismatch": 48
     },
     "32017R1576->32014R0540": {
       "cnf_unsupported": 1
     },
     "32019R0787": {
-      "cnf_unsupported": 19,
+      "cnf_unsupported": 12,
       "oracle_editorial_pathology": 2,
       "temporal_mismatch": 44
     },
     "32022R2309": {
-      "cnf_unsupported": 23,
-      "temporal_mismatch": 108
+      "cnf_unsupported": 13,
+      "temporal_mismatch": 38
     }
   }
 }

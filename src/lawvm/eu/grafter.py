@@ -63,6 +63,76 @@ def _get_kind(tag: str) -> str:
     return t.lower()
 
 
+def _point_items(el: ET.Element[str]) -> list[tuple[str, str]]:
+    """The ``(label, text)`` of every list-point directly under ``el``'s LISTs.
+
+    A real FMX4 point is ``<LIST><ITEM><NP><NO.P>(a)</NO.P><TXT>…</TXT></NP>``.
+    The point label is the ``NO.P`` marker head ("(a)" → "a", "1." → "1"); the
+    point text is the whole NP rendered GRAFTER-COMMENSURABLY (marker excluded,
+    itertext joined by single spaces — mirroring the amendment payload
+    extractor). Only the TOPMOST list level is lowered to coordinates here (a
+    nested sub-list stays inside the point's own text), matching the article-only
+    resolution surface. ``el`` may be a ``<LIST>`` itself or a block (``<P>`` /
+    ``<ALINEA>``) that CONTAINS a direct-child ``<LIST>``.
+    """
+    lists: list[ET.Element[str]]
+    if el.tag == "LIST":
+        lists = [el]
+    else:
+        lists = [c for c in el if c.tag == "LIST"]
+    out: list[tuple[str, str]] = []
+    for lst in lists:
+        for item in lst.findall("ITEM"):
+            np = item.find("NP")
+            if np is None:
+                continue
+            no = np.find("NO.P")
+            marker = _normalize_text("".join(no.itertext())) if no is not None else ""
+            m = re.match(r"^\(?([0-9]{1,3}[a-z]{0,2}|[a-z]{1,3}|[ivxlcdm]{1,6})\)?[).]?", marker, re.IGNORECASE)  # lawvm-regex: witness_only reads the list point's own NO.P marker for the point coordinate, not a semantic recognizer over statute text
+            label = m.group(1) if m else ""
+            # Render the point text: the marker STAYS in the flattened text (the
+            # grafter renders it inline, itertext-order), so include NO.P.
+            text = _element_text(np)
+            if not label:
+                continue
+            out.append((label, text))
+    return out
+
+
+def _intro_text(el: ET.Element[str]) -> str:
+    """Text of ``el`` BEFORE its first ``<LIST>`` (a point-list's lead-in prose)."""
+    parts: list[str] = []
+    if el.text and el.text.strip():
+        parts.append(el.text.strip())
+    for child in el:
+        if child.tag == "LIST":
+            break
+        parts.append(_element_text(child))
+        if child.tail and child.tail.strip():
+            parts.append(child.tail.strip())
+    return _normalize_text(" ".join(p for p in parts if p))
+
+
+def _trailing_text(el: ET.Element[str]) -> str:
+    """Text of ``el`` AFTER its last ``<LIST>`` (post-list wrap-up prose)."""
+    children = list(el)
+    last_list = -1
+    for i, child in enumerate(children):
+        if child.tag == "LIST":
+            last_list = i
+    if last_list < 0:
+        return ""
+    parts: list[str] = []
+    tail = children[last_list].tail
+    if tail and tail.strip():
+        parts.append(tail.strip())
+    for child in children[last_list + 1:]:
+        parts.append(_element_text(child))
+        if child.tail and child.tail.strip():
+            parts.append(child.tail.strip())
+    return _normalize_text(" ".join(p for p in parts if p))
+
+
 # ---------------------------------------------------------------------------
 # Core Parser
 # ---------------------------------------------------------------------------
@@ -229,6 +299,129 @@ class EUIRGrafter:
                 return m.group(1)
         return None
 
+    @staticmethod
+    def _parag_label(el: ET.Element[str], eid: Optional[str]) -> Optional[str]:
+        """Resolve a ``<PARAG>``'s coordinate (the ``paragraph:M`` label).
+
+        Preference order (real CELLAR paragraph shapes):
+          1. the ``<NO.PARAG>`` marker head — "1.", "2.", "5a." → "1"/"2"/"5a";
+          2. the legacy inline "N." shape at the start of the first ``<P>``;
+          3. the trailing dotted segment of ``IDENTIFIER`` ("001.005" → "5").
+        """
+        no = el.find("NO.PARAG")
+        if no is not None:
+            txt = _normalize_text("".join(no.itertext()))
+            m = re.match(r"^\(?(\d{1,3}[a-z]{0,2})[).]?", txt)  # lawvm-regex: witness_only reads the PARAG's own NO.PARAG marker for the paragraph coordinate, not a semantic recognizer over statute text
+            if m:
+                return m.group(1)
+        first_p = el.find("P")
+        if first_p is not None and first_p.text:
+            m = re.match(r"^(\d+)\.", _normalize_text(first_p.text))  # lawvm-regex: witness_only reads the legacy inline "N." paragraph marker for the coordinate, not a semantic recognizer over statute text
+            if m:
+                return m.group(1)
+        if eid and "." in eid:
+            tail = eid.rsplit(".", 1)[-1].lstrip("0") or eid.rsplit(".", 1)[-1]
+            if re.match(r"^\d{1,3}[a-z]{0,2}$", tail):  # lawvm-regex: witness_only validates the IDENTIFIER's trailing coordinate segment shape, not a semantic recognizer over statute text
+                return tail
+        return None
+
+    def _parse_paragraph_body(
+        self, el: ET.Element[str], label: Optional[str], eid: Optional[str]
+    ) -> IRNode:
+        """Lower a ``<PARAG>`` into a paragraph node with resolvable coordinates.
+
+        The paragraph body is a sequence of block units: intro ``<P>`` prose,
+        list-point items (``<LIST><ITEM><NP><NO.P>(a)</NO.P><TXT>…</TXT></NP>``)
+        and — when a PARAG carries more than one prose block — successive
+        SUBPARAGRAPHs (each ``<ALINEA>``/``<P>`` a 1-based ordinal). The pre-fix
+        grafter collapsed the whole body to one flat ``_element_text`` string, so
+        ``point`` / ``subparagraph`` amendment coordinates (``article:N/
+        paragraph:M/point:b``, ``…/subparagraph:2``) had no node to resolve
+        against. This lowers those coordinates into child ``item`` (point) /
+        ``subparagraph`` nodes carrying their own text, so ``tree_ops.find``
+        (which matches the target's LAST path step scoped to the article) locates
+        them and the sub-article REPLACE/REPEAL applies.
+
+        Text stays GRAFTER-COMMENSURABLE with the amendment payload extractor
+        (``fmx4_amendment_grammar._quoted_struct_payload_text``): block units are
+        rendered by joining stripped ``itertext`` parts with single spaces, and
+        the same rendering runs on BOTH the replay base and the oracle
+        consolidation (both grafted here), so any spacing normalisation is
+        symmetric across the compare surface.
+
+        DOCUMENT ORDER is load-bearing: the flattened article text
+        (``eu_oracle_divergence._node_text`` = own ``text`` THEN each descendant's
+        ``text``, depth-first in child order) is compared per-article. To keep the
+        flatten byte-commensurable with the pre-fix flat rendering, the paragraph
+        carries NO own ``text`` — EVERY body unit becomes a child in SOURCE order:
+        intro/wrap-up prose → a plain ``p`` child, each list point → an ``item``
+        (point) child, and — when the PARAG has more than one plain prose block —
+        each such block → a 1-based ``subparagraph`` child. That way a point /
+        subparagraph amendment coordinate resolves against a real node while the
+        depth-first flatten still yields the units in document order.
+        """
+        children: List[IRNode] = []
+        # Count plain prose blocks (ALINEA/P with no point-list) up front: a PARAG
+        # whose body is a single prose block is NOT sub-divided (the common case);
+        # only a multi-prose-block paragraph mints ``subparagraph`` coordinates.
+        prose_blocks = [
+            c for c in el if c.tag in ("ALINEA", "P") and not _point_items(c)
+        ]
+        multi_block = len(prose_blocks) > 1
+        subpara_ord = 0
+
+        def _emit_prose(text: str) -> None:
+            if text:
+                children.append(IRNode(kind=cast(IRNodeKind, "p"), text=text))
+
+        def _emit_points(block: ET.Element[str]) -> None:
+            for pt_label, pt_text in _point_items(block):
+                children.append(
+                    IRNode(kind=cast(IRNodeKind, "item"), label=pt_label, text=pt_text)
+                )
+
+        for child in el:
+            if child.tag == "NO.PARAG":
+                continue
+            if child.tag in ("ALINEA", "P"):
+                if _point_items(child):
+                    # Lead-in prose, then the points, then any wrap-up prose — all
+                    # as children in document order.
+                    _emit_prose(_intro_text(child))
+                    _emit_points(child)
+                    _emit_prose(_trailing_text(child))
+                    continue
+                block_text = _element_text(child)
+                if not block_text:
+                    continue
+                if multi_block:
+                    subpara_ord += 1
+                    children.append(
+                        IRNode(
+                            kind=cast(IRNodeKind, "subparagraph"),
+                            label=str(subpara_ord),
+                            text=block_text,
+                        )
+                    )
+                else:
+                    _emit_prose(block_text)
+            elif child.tag == "LIST":
+                if _point_items(child):
+                    _emit_points(child)
+                else:
+                    _emit_prose(_element_text(child))
+
+        attrs = {}
+        if eid:
+            attrs["eId"] = eid
+        return IRNode(
+            kind=cast(IRNodeKind, "paragraph"),
+            label=label,
+            text="",
+            children=tuple(children),
+            attrs=attrs,
+        )
+
     def _parse_structural_node(self, el: ET.Element[str], parent_eid: str = "") -> Optional[IRNode]:
         """Recursively parse articles, chapters, divisions, annexes."""
         tag = el.tag
@@ -245,11 +438,20 @@ class EUIRGrafter:
             if label_el is not None:
                 label = _normalize_text(label_el.text or "").replace("Article", "").strip()
         elif kind == "paragraph":
-            first_p = el.find("P")
-            if first_p is not None and first_p.text:
-                m = re.match(r"^(\d+)\.", _normalize_text(first_p.text))
-                if m:
-                    label = m.group(1)
+            # Real FMX4 numbers a <PARAG> with a <NO.PARAG> marker ("1.", "2.",
+            # "5a." …) — the paragraph number lives in that marker, NOT inline in
+            # the first <P>'s text. The pre-fix grafter only read the inline
+            # "N." shape, so every real <PARAG> (NO.PARAG form) got ``label=None``
+            # and an amendment op targeting ``article:N/paragraph:M`` resolved to
+            # a labelless node — ``tree_ops.find(kind='paragraph', label='M')``
+            # missed, and the whole sub-article edit typed-skipped
+            # (``eu_replay_target_not_found``). Read the NO.PARAG marker first
+            # (the coordinate is its numeric/letter-suffix head), then fall back
+            # to the inline "N." shape, then to the IDENTIFIER's trailing segment
+            # ("001.005" → "5"). This is the NO.PARAG sub-article coordinate that
+            # 32010R1093's closure amenders (32013R1022 …) address.
+            label = self._parag_label(el, eid)
+            return self._parse_paragraph_body(el, label, eid)
         elif kind == "annex":
             # An ``annex:N`` op (``fmx4_amendment_grammar``) targets the base
             # annex by its coordinate — the Roman/arabic numeral after "ANNEX"
