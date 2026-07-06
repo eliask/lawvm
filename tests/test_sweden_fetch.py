@@ -70,6 +70,7 @@ from lawvm.sweden.fetch import (
     probe_se_public_source_status,
     rebuild_se_older_base_from_official_chain,
     scan_se_official_replay_act,
+    SE_REPLAY_OUTCOME_OLDER_BASE_REQUIRED,
     search_se_legacy_pdf_url,
     se_official_act_locator,
     se_official_base_ir_locator,
@@ -7645,3 +7646,51 @@ def test_check_se_official_replay_propagates_partial_adjudications_on_apply_rais
     assert result["outcome_detail"]["exception_type"] == "ValueError"
     assert result["outcome_detail"]["exception"] == raise_message
     assert result["outcome_detail"]["clause_text"] == raise_message
+
+
+def test_scan_se_official_replay_types_capability_gap_as_nonbillable(monkeypatch) -> None:
+    """A :class:`SeCapabilityGap` surfacing from ``check_se_official_replay``
+    must be typed by the scan lane as the non-billable ``older_base_required``
+    outcome (bench → SOURCE_UNAVAILABLE), NOT the billable ``error`` (CRASH)
+    that a bare ``NotImplementedError`` propagating through the generic catch
+    would produce. Guards against Sweden's weak single-version anchor surface
+    charging a coverage gap as a correctness bug."""
+    from lawvm.sweden.grafter import SeCapabilityGap
+
+    def fake_check(archive, amending_sfs_id, **kwargs):
+        raise SeCapabilityGap(
+            "se_capability_gap__older_base_rebuild_prerequisites_unmet",
+            f"older-base rebuild prerequisites not met for {amending_sfs_id}: no archived historical base IR seed",
+        )
+
+    monkeypatch.setattr("lawvm.sweden.fetch.check_se_official_replay", fake_check)
+    summary = scan_se_official_replay_act(_FakeArchive(), "1999:1")
+
+    assert summary["outcome"] == "older_base_required"
+    assert summary["error_type"] == "SeCapabilityGap"
+    assert summary["gap_code"] == "se_capability_gap__older_base_rebuild_prerequisites_unmet"
+    assert summary["billable"] is False
+    assert summary["typed_outcome"] == SE_REPLAY_OUTCOME_OLDER_BASE_REQUIRED
+
+
+def test_rebuild_se_older_base_raises_typed_gap_when_not_ready() -> None:
+    """The public rebuild entry point, invoked directly with a non-ready plan
+    (the guard the production caller enforces), raises the typed capability gap
+    rather than a bare NotImplementedError."""
+    from lawvm.sweden.grafter import SeCapabilityGap
+
+    not_ready_plan = {
+        "rebuild_ready": False,
+        "seed_ready": False,
+        "base_sfs_id": "2000:1",
+        "chain": [],
+        "missing_official_count": 0,
+        "unsupported_count": 0,
+        "invalid_count": 0,
+    }
+    with pytest.raises(SeCapabilityGap) as excinfo:
+        rebuild_se_older_base_from_official_chain(_FakeArchive(), "1999:1", plan=not_ready_plan)
+    assert excinfo.value.gap_code == "se_capability_gap__older_base_rebuild_prerequisites_unmet"
+    assert excinfo.value.billable is False
+    assert "no archived historical base IR seed" in str(excinfo.value)
+    assert isinstance(excinfo.value, NotImplementedError)

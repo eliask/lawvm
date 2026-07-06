@@ -4,9 +4,14 @@ import json
 import subprocess
 from typing import Any, Mapping, cast
 
+import pytest
+
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.sweden.grafter import (
+    SeCapabilityGap,
+    SEOfficialEffectPlanItem,
     SESourceConfidence,
+    _lower_se_official_effect_plan_item,
     enrich_se_source_record_with_doc_page,
     parse_se_amendment_register,
     parse_se_official_pdf_url,
@@ -330,3 +335,58 @@ def test_se_pdf_bytes_to_text_uses_pdftotext_subprocess(monkeypatch) -> None:
     assert calls
     assert calls[0][0] == "pdftotext"
     assert calls[0][-1] == "-"
+
+
+def test_se_capability_gap_is_named_nonbillable_notimplemented_subclass() -> None:
+    """A capability gap must subclass NotImplementedError (so existing
+    ``except NotImplementedError`` catchers keep typing it as
+    ``SeOpsStatus.UNSUPPORTED``) while carrying a greppable ``gap_code`` and a
+    ``billable=False`` flag so the gate types it as a non-billable coverage
+    frontier rather than a billable CRASH."""
+    gap = SeCapabilityGap("se_capability_gap__example", "because the data is absent")
+    assert isinstance(gap, NotImplementedError)
+    assert gap.gap_code == "se_capability_gap__example"
+    assert gap.billable is False
+    assert gap.reason == "because the data is absent"
+    # Message embeds the greppable code so log/report scans find it.
+    assert "se_capability_gap__example" in str(gap)
+    assert "because the data is absent" in str(gap)
+
+
+def test_se_official_lowering_unsupported_kind_raises_typed_capability_gap() -> None:
+    """The effect-plan lowering fallthrough (a NEW builder kind with no
+    op-emitter) is a typed schema-drift capability gap, not a bare crash."""
+    from lawvm.core.provenance import OperationSource
+    from lawvm.sweden.grafter import (
+        SEOfficialClauseSurface,
+        SEOfficialElaboratedIntent,
+        SEOfficialEffectsPlan,
+        SEOfficialPayloadSurface,
+    )
+
+    clause_surface = SEOfficialClauseSurface(
+        sfs_id="2099:1",
+        title="Lag om ändring",
+        amended_act_sfs_id="2000:1",
+        is_amending_act=True,
+    )
+    intent = SEOfficialElaboratedIntent(
+        clause_surface=clause_surface,
+        payload_surface=SEOfficialPayloadSurface(),
+    )
+    plan = SEOfficialEffectsPlan(
+        sfs_id="2099:1",
+        title="Lag om ändring",
+        amended_act_sfs_id="2000:1",
+        is_amending_act=True,
+        elaboration=intent,
+    )
+    source = OperationSource(statute_id="2099:1", title="Lag om ändring")
+    # A kind the builder never emits and the lowerer has no branch for.
+    item = SEOfficialEffectPlanItem(kind="quantum_entangle", target_label="1")
+    with pytest.raises(SeCapabilityGap) as excinfo:
+        _lower_se_official_effect_plan_item(plan, item, source, 1)
+    assert excinfo.value.gap_code == "se_capability_gap__unsupported_effect_plan_item_kind"
+    assert excinfo.value.billable is False
+    # Still a NotImplementedError subclass for back-compat catchers.
+    assert isinstance(excinfo.value, NotImplementedError)

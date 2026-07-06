@@ -977,7 +977,14 @@ def _hydrate_se_bulk(
             row["after"] = _se_archive_presence_row(archive, sfs_id)
             row["frontier_classification"] = ""
             row["frontier_detail"] = ""
-            if row["error_kind"] == "NotImplementedError":
+            # An effect-plan lowering capability gap is raised as
+            # :class:`SeCapabilityGap` (a ``NotImplementedError`` subclass), so
+            # match on the class rather than the exact ``__name__`` — otherwise
+            # the typed capability gap would keep its bare ``SeCapabilityGap``
+            # error_kind instead of being re-classified into the persisted
+            # ``frontier_classification`` bucket (missing_base_act /
+            # empty_effect_plan_* / …) the backfill coverage report keys on.
+            if isinstance(exc, NotImplementedError):
                 effects_plan = load_se_official_effects_plan_from_archive(archive, sfs_id)
                 if isinstance(effects_plan, dict):
                     frontier_classification = str(effects_plan.get("frontier_classification") or "")

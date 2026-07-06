@@ -96,6 +96,16 @@ _SE_RULE_SPECS: Dict[str, str] = {
     "se_official_effect_text_patch_incomplete": "A text-patch planned effect with a selector but no replacement is a typed lowering diagnostic, not a silent no-op.",
     "se_official_effect_text_patch_missing": "A text-patch planned effect with no structured text_patch is a typed lowering diagnostic, not a silent default.",
 
+    # --- Effect-plan lowering capability gaps (typed non-billable frontier) ---------------
+    # These are ``SeCapabilityGap`` (a ``NotImplementedError`` subclass) raises:
+    # the amendment's effect shape cannot be lowered to replay ops given the
+    # available data, so the gate types the row as a SOURCE/coverage frontier
+    # (SeOpsStatus.UNSUPPORTED / older_base_required), never a billable replay
+    # bug. Sweden's single-version anchor surface makes these edges reachable.
+    "se_capability_gap__effect_plan_missing_base_act": "An amending official act whose clause surface names no base act to graft onto is an extraction/coverage frontier — a typed non-billable capability gap, not a replay bug; the outcome carries the gap rather than crashing.",
+    "se_capability_gap__effect_plan_empty": "An amending official act that coerces to zero planned canonical effects (no repeal/renumber/replace/insert/text target extractable) is a typed non-billable coverage frontier, not a replay bug; the outcome carries the gap rather than crashing.",
+    "se_capability_gap__unsupported_effect_plan_item_kind": "An effect-plan item kind with no lowering op-emitter (schema drift: a new builder kind added without a handler) is a typed non-billable capability gap surfaced at the exhaustive lowering fallthrough, not a silent drop or bare crash.",
+
     # --- Effective-date inference (manual-compilation frontier) ---------------------------
     "se_official_effective_date_inferred_from_issued_date": "An effective-date inferred from the cached ``issued_date`` (vs the legal publication + 7 days default) is a typed assumption, not silent substitution.",
     "se_official_effective_date_inferred_from_published_date": "An effective-date inferred from the cached ``published_date`` (vs the legal publication + 7 days default) is a typed assumption, not silent substitution.",
@@ -108,6 +118,8 @@ _SE_RULE_SPECS: Dict[str, str] = {
     "se_official_rebuild_chain_missing_official_act": "A prior chain-step act whose official-act surface is not archived is a typed rebuild-chain row, the chain is incomplete, not silently skipped.",
     "se_official_rebuild_chain_ops_unsupported": "A prior chain-step act whose compiled ops are unsupported is a typed rebuild-chain row, the chain is partial, not silently dropped.",
     "se_official_rebuild_chain_unknown_ops_status": "A prior chain-step act whose ops-status is unknown to the rebuild chain is a typed schema-drift row, not a silent default.",
+    "se_capability_gap__older_base_rebuild_prerequisites_unmet": "An older-base rebuild invoked without its prerequisites (no archived historical base IR seed, or one/more prior-amendment chain steps did not compile) is a typed non-billable coverage frontier of Sweden's single-version anchor surface, surfaced with the precise plan-carried blocker rather than a bare crash.",
+    "se_capability_gap__older_base_chain_step_not_compiled": "An older-base rebuild whose folded prior-amendment chain contains a step not compiled to replayable ops (missing act / unsupported shape / unparseable) cannot reconstruct the historical base; this is a typed non-billable coverage frontier naming the offending step, not a silent partial fold.",
 
     # --- Unclaimed payload ---------------------------------------------------------------
     "se_official_unclaimed_payload_skipped": "A payload row that the effect-plan did not claim during lowering is a typed surface residual, not a silent drop.",

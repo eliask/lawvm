@@ -68,6 +68,7 @@ from lawvm.sweden.fetch import (
     se_sfs_id_from_doc_url,
 )
 from lawvm.sweden.grafter import (
+    SeCapabilityGap,
     SEAmendmentRegisterEntry,
     SEOfficialActText,
     SEOfficialAppendixText,
@@ -102,6 +103,7 @@ from lawvm.sweden.grafter import (
 )
 
 __all__ = [
+    "SeCapabilityGap",
     "SEAmendmentRegisterEntry",
     "SEOfficialActText",
     "SEOfficialArtifacts",

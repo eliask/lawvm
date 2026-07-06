@@ -109,6 +109,45 @@ from lawvm.core.totalization import (
 )
 from lawvm.sweden.totalization_table import SE_TOTALIZATION_TABLE
 
+
+class SeCapabilityGap(NotImplementedError):
+    """A named, non-billable Sweden replay/rebuild capability gap.
+
+    Sweden has the fleet's weakest anchor surface (single-version, latest-only
+    RK consolidations), so a handful of older-base-rebuild / effect-lowering
+    edges are guard rails rather than fully-implementable capability: the data
+    to satisfy them may simply be absent (no historical base IR seed, an
+    uncompiled prior-amendment chain step, an effect shape the lowerer does not
+    yet emit an op for). §1.10 forbids letting such a gap propagate as a bare
+    ``NotImplementedError`` that the top-level scan lane would swallow into an
+    uncaught CRASH (billable) — a genuine *capability gap* must be typed as a
+    non-scored SOURCE_UNAVAILABLE row, not a correctness failure LawVM is
+    charged for.
+
+    Subclasses :class:`NotImplementedError` so every existing
+    ``except NotImplementedError`` catcher (the analyze/compile lanes at
+    ``fetch.py`` that map the raise to :class:`SeOpsStatus.UNSUPPORTED`) keeps
+    working byte-for-byte, while the structured ``gap_code`` gives the bench /
+    scan lane a typed field to route on instead of substring-matching the
+    message. ``gap_code`` values are greppable ``se_capability_gap__*`` tokens;
+    ``billable`` is ``False`` by construction — a capability gap is a
+    source/coverage frontier, never a replay bug.
+    """
+
+    #: Stable, greppable capability-gap code (``se_capability_gap__*``).
+    gap_code: str
+    #: Human-facing reason (also the exception ``args[0]`` message).
+    reason: str
+    #: A capability gap is a coverage frontier, never a billable replay bug.
+    billable: bool = False
+
+    def __init__(self, gap_code: str, reason: str) -> None:
+        self.gap_code = gap_code
+        self.reason = reason
+        self.billable = False
+        super().__init__(f"[{gap_code}] {reason}")
+
+
 _SFS_ID_RE = re.compile(r"\b(\d{4}:\d+)\b")
 _DATE_RE = re.compile(r"(\d{4}-\d{2}-\d{2})")
 _CHAPTER_RE = re.compile(r"^(?P<label>\d+[a-z]?|[IVXLC]+)\s{1,5}kap\.\s{0,5}(?P<title>.{0,500})$", re.IGNORECASE)
@@ -3221,7 +3260,19 @@ def _lower_se_official_effect_plan_item(
             group_id=f"se_official_act::{surface.sfs_id}",
         )
         return [op], sequence + 1
-    raise NotImplementedError(f"unsupported Sweden official act plan item kind: {item.kind}")
+    # Defensive schema-drift guard: the effect-plan builder
+    # (:func:`_build_se_official_effect_plan_items`) emits exactly the seven
+    # kinds handled above (repeal / renumber / replace_section / insert_section
+    # / insert_heading / insert_appendix / text_replace); every one has a
+    # branch. An unhandled ``item.kind`` reaching here therefore means a NEW
+    # effect kind was added to the builder without a lowering branch — a typed
+    # capability gap (§1.10 named-failure), not a billable replay bug. Surface
+    # it as a named ``SeCapabilityGap`` so the analyze/compile lane types the
+    # act ``SeOpsStatus.UNSUPPORTED`` (non-scored) rather than crashing.
+    raise SeCapabilityGap(
+        "se_capability_gap__unsupported_effect_plan_item_kind",
+        f"Sweden official-act lowering has no op-emitter for effect-plan item kind {item.kind!r}",
+    )
 
 
 def _extract_footnotes(lines: list[str]) -> tuple[list[str], tuple[str, ...]]:
@@ -3512,9 +3563,16 @@ def _lower_se_official_effects_plan(
             phase="lowering",
             blocking=True,
         )
-        raise NotImplementedError(
+        # The amending act's clause surface names no base act to graft onto —
+        # an extraction/coverage frontier (the "vilken lag ändras" target was
+        # not recoverable), not a billable replay bug. A blocking adjudication
+        # was already recorded above; raise the typed capability gap so the
+        # analyze/compile lane types it ``SeOpsStatus.UNSUPPORTED`` (non-scored)
+        # instead of an uncaught CRASH.
+        raise SeCapabilityGap(
+            "se_capability_gap__effect_plan_missing_base_act",
             f"Sweden official act {sid} does not identify a base act "
-            f"[{plan.frontier_classification or 'missing_base_act'}]"
+            f"[{plan.frontier_classification or 'missing_base_act'}]",
         )
     if not plan.planned_items:
         _append_se_official_plan_adjudication(
@@ -3527,9 +3585,16 @@ def _lower_se_official_effects_plan(
             phase="lowering",
             blocking=True,
         )
-        raise NotImplementedError(
+        # The amending act coerced to zero planned canonical effects — the
+        # extractor recovered no repeal/renumber/replace/insert/text targets
+        # from the enacting clause + payload. A coverage frontier (the act's
+        # effect shape is not yet extractable), not a billable replay bug. The
+        # blocking adjudication above records it; raise the typed capability gap
+        # so the lane types it ``SeOpsStatus.UNSUPPORTED`` (non-scored).
+        raise SeCapabilityGap(
+            "se_capability_gap__effect_plan_empty",
             f"Sweden official act {sid} has no planned canonical effects "
-            f"[{plan.frontier_classification or 'empty_effect_plan_without_targets'}]"
+            f"[{plan.frontier_classification or 'empty_effect_plan_without_targets'}]",
         )
 
     _append_se_official_unclaimed_payload_adjudications(adjudications_out, plan=plan)

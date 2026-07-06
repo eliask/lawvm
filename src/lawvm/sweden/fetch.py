@@ -43,6 +43,7 @@ from lawvm.sweden.se_overwrite_event_ledger import (
     se_store_with_overwrite_event,
 )
 from lawvm.sweden.grafter import (
+    SeCapabilityGap,
     apply_se_ops,
     apply_se_ops_conserved,
     build_se_official_base_statute,
@@ -2896,7 +2897,30 @@ def rebuild_se_older_base_from_official_chain(
             as_of=as_of,
         )
     if not bool(plan.get("rebuild_ready")):
-        raise NotImplementedError(f"older-base rebuild prerequisites not met for {amending_sfs_id}")
+        # The production replay caller (``check_se_official_replay``) only
+        # invokes this after gating on ``plan['rebuild_ready']``; reaching here
+        # means a direct/external caller passed a non-ready plan. ``rebuild_ready``
+        # is False either because there is no archived historical base IR seed
+        # (``official_base_ir_available`` False) or because one or more
+        # prior-amendment chain steps did not compile — both are SOURCE/coverage
+        # frontiers for Sweden's single-version anchor surface, not billable
+        # replay bugs. Surface the precise plan-carried blocker as a typed
+        # capability gap (§1.10 named-failure) rather than a bare
+        # NotImplementedError the scan lane would swallow into an uncaught CRASH.
+        seed_ready = bool(plan.get("seed_ready"))
+        blocker = (
+            "no archived historical base IR seed"
+            if not seed_ready
+            else (
+                f"{int(plan.get('missing_official_count') or 0)} missing / "
+                f"{int(plan.get('unsupported_count') or 0)} unsupported / "
+                f"{int(plan.get('invalid_count') or 0)} invalid prior-amendment chain step(s)"
+            )
+        )
+        raise SeCapabilityGap(
+            "se_capability_gap__older_base_rebuild_prerequisites_unmet",
+            f"older-base rebuild prerequisites not met for {amending_sfs_id}: {blocker}",
+        )
 
     resolved_base_sfs_id = str(plan.get("base_sfs_id") or base_sfs_id or "")
     base_ir_json = load_se_official_base_ir_from_archive(archive, resolved_base_sfs_id)
@@ -2908,7 +2932,19 @@ def rebuild_se_older_base_from_official_chain(
     for item in chain_rows:
         sfs_id = str(item.get("sfs_id") or "")
         if str(item.get("ops_status") or "") != "compiled" or not sfs_id:
-            raise NotImplementedError(f"older-base chain for {amending_sfs_id} is not fully compiled")
+            # A prior-amendment chain step is not compiled to replayable ops
+            # (missing official act / unsupported effect shape / unparseable),
+            # so the historical base cannot be reconstructed by folding the
+            # chain forward. This is defensive vs a hand-crafted plan — the
+            # ``rebuild_ready`` gate above already requires every step compiled
+            # — and is a coverage frontier, not a billable replay bug. Name the
+            # offending step in the typed capability gap.
+            raise SeCapabilityGap(
+                "se_capability_gap__older_base_chain_step_not_compiled",
+                f"older-base chain for {amending_sfs_id} is not fully compiled: "
+                f"step {sfs_id or '<unknown>'} has ops_status "
+                f"{str(item.get('ops_status') or 'missing')!r}",
+            )
         ops_json = load_se_official_ops_from_archive(archive, sfs_id)
         if ops_json is None:
             # Same readonly-archive bridge as the analyze path uses: persist
@@ -4025,6 +4061,26 @@ def scan_se_official_replay_act(
     """
     try:
         result = check_se_official_replay(archive, amending_sfs_id)
+    except SeCapabilityGap as gap:
+        # A NAMED, non-billable Sweden capability gap (older-base rebuild
+        # prerequisite unmet / uncompiled chain step / unsupported effect-plan
+        # kind / missing base act / empty effect plan). These are SOURCE /
+        # coverage frontiers of Sweden's single-version anchor surface, NOT
+        # correctness failures LawVM is charged for. Route to the non-scored
+        # ``older_base_required`` outcome (bench → SOURCE_UNAVAILABLE) carrying
+        # the typed ``gap_code`` / ``billable=False``, so the gate types it as a
+        # capability gap rather than the billable CRASH a bare
+        # ``NotImplementedError`` would produce via the generic catch below.
+        return {
+            "amending_sfs_id": amending_sfs_id,
+            "outcome": "older_base_required",
+            "error_type": "SeCapabilityGap",
+            "error_detail": str(gap),
+            "typed_outcome": SE_REPLAY_OUTCOME_OLDER_BASE_REQUIRED,
+            "reason_code": gap.gap_code,
+            "gap_code": gap.gap_code,
+            "billable": False,
+        }
     except (FileNotFoundError, ValueError, KeyError, AssertionError) as exc:
         return {
             "amending_sfs_id": amending_sfs_id,
