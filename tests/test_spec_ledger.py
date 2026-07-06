@@ -85,7 +85,12 @@ def test_unattributed_falsifying_divergence_is_a_blind_spot():
     assert led.unattributed[0]["section"] == "section:1"
 
 
-def test_ranking_puts_most_contradicted_first():
+def test_ranking_frontier_prefers_uncertain_over_more_contradicted():
+    # Post-§8(7): the rank is B × S × EIG, not raw contradicted count. With equal blast
+    # radius (both fire once in the same statute), r.high has MORE contradicted (2 vs 1)
+    # but its suspicion is already near-certain, so its expected-information-gain (Beta
+    # variance) is lower; r.low sits closer to the s≈0.5 frontier and outranks it — the
+    # active-learning point of the redesign.
     inputs = [
         StatuteLedgerInput(
             "a/1",
@@ -99,8 +104,20 @@ def test_ranking_puts_most_contradicted_first():
     ]
     led = _ledger(inputs)
     ranked = led.ranked_entries()
-    assert ranked[0].rule_id == "r.high"  # 2 contradicted > 1
-    assert ranked[0].contradicted == 2
+    assert ranked[0].rule_id == "r.low"
+    assert ranked[0].expected_information_gain > led.rules["r.high"].expected_information_gain
+
+
+def test_blast_radius_counts_distinct_statutes_not_firings():
+    inputs = [
+        # r.wide fires once in each of two statutes; r.deep fires 50× in one statute.
+        StatuteLedgerInput("a/1", {"r.wide": 1, "r.deep": 50}, []),
+        StatuteLedgerInput("b/2", {"r.wide": 1}, []),
+    ]
+    led = _ledger(inputs)
+    assert led.rules["r.wide"].blast_radius == 2
+    assert led.rules["r.deep"].blast_radius == 1
+    assert led.rules["r.deep"].firings == 50
 
 
 def test_catalog_populates_believed_spec_and_cataloged_flag():

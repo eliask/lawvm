@@ -983,6 +983,8 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_oracle_defect_confirmation.py",
         "test_spec_ledger.py",
         "test_spec_ledger_discovery.py",
+        # §8(7) frontier ranking: B × S × EIG replaces raw firing-count as the rank key.
+        "test_spec_ledger_frontier.py",
         "test_spec_ledger_uk.py",
         "test_spec_ledger_uk_catalog.py",
         "test_spec_ledger_uk_catalog_supplement.py",

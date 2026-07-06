@@ -40,10 +40,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Callable, Dict, Iterable, List, Literal, Mapping, Optional
+from typing import Callable, Dict, Iterable, List, Literal, Mapping, Optional, Set, Tuple
 
 # ---------------------------------------------------------------------------
 # Jurisdiction-neutral core
@@ -63,6 +64,97 @@ WitnessDisposition = Literal[
 
 # Dispositions that count as falsifying evidence against a rule.
 _FALSIFYING = ("lawvm_wrong", "structural")
+
+# ---------------------------------------------------------------------------
+# Frontier ranking:  score = B × S × EIG   (FABLE_SPEC_RECONSTRUCTION §8(7))
+# ---------------------------------------------------------------------------
+# The pre-frontier ledger ranked witness rules by *raw firing count* (or, in
+# ``ranked_entries``, by contradicted-count), which over-weights high-frequency
+# benign rules and buries rare rules with wide blast radius or a suspicious
+# agree/disagree history. Fable's design replaces that with an active-learning
+# frontier score, the product of three independent factors:
+#
+#   B  blast radius   — how much of the corpus a rule's firing touches. A rare rule
+#                       that reaches many statutes should outrank a frequent one
+#                       confined to a single statute. We have no per-rule *provision*
+#                       fan-out in the ledger (that would need a replay-path change,
+#                       out of scope), so the proxy is the count of DISTINCT STATUTES
+#                       the rule fired in (``affected_statutes``), log-damped so raw
+#                       repetition inside one statute cannot dominate a rule that
+#                       spans the corpus:  B = 1 + ln(1 + distinct_statutes).
+#
+#   S  suspicion      — the Beta-Bernoulli posterior mean that the rule is DEFECTIVE,
+#                       from its falsifying-vs-corroborating history. Each firing is a
+#                       Bernoulli trial: a falsifying (``contradicted``) divergence is a
+#                       "defect" success; a firing not implicated in any divergence
+#                       (``corroborated_est``) is a "clean" failure. With a uniform
+#                       Beta(1, 1) (Laplace) prior — documented, symmetric, adds one
+#                       pseudo-observation of each outcome so a never-fired or
+#                       all-agree rule sits at 0.5 → shrinks toward 0 with evidence —
+#                       the posterior mean is
+#                           S = (contradicted + α) / (contradicted + corroborated + α + β).
+#                       A rule that fires 1000× and always agrees → S≈0; one that fires
+#                       10× and disagrees 6× → S≈0.58.
+#
+#   EIG expected info  — how much adjudicating this rule's next firing would reduce our
+#       gain           uncertainty about S. This is the posterior VARIANCE of the same
+#                       Beta, Var = αβ / ((α+β)²(α+β+1)); it is maximal near S≈0.5 with a
+#                       LOW sample count (the classic active-learning frontier) and
+#                       collapses as evidence piles up on either side. Rules we are
+#                       already confident about (very clean or very broken) yield little
+#                       information from another look and sink.
+#
+# The product means a rule must be non-trivial on ALL THREE axes to top the queue:
+# wide-reaching AND plausibly-defective AND still-uncertain. Deterministic (pure
+# arithmetic over integer counts); raw firing count is retained as a secondary key and
+# emitted in the output for side-by-side comparison with the legacy rank.
+_SUSPICION_PRIOR_ALPHA = 1.0  # Beta prior: pseudo-count of "defect" outcomes
+_SUSPICION_PRIOR_BETA = 1.0   # Beta prior: pseudo-count of "clean"  outcomes
+
+
+def _beta_posterior(contradicted: int, corroborated: int) -> Tuple[float, float]:
+    """Return the Beta(α, β) posterior parameters for a rule's defect rate.
+
+    ``contradicted`` (falsifying divergences) are "defect" successes; ``corroborated``
+    (firings not implicated in any divergence) are "clean" failures. The uniform
+    Beta(1, 1) prior is added so a rule with no evidence sits at the maximally-uncertain
+    p=0.5 rather than an undefined 0/0.
+    """
+    alpha = _SUSPICION_PRIOR_ALPHA + max(0, contradicted)
+    beta = _SUSPICION_PRIOR_BETA + max(0, corroborated)
+    return alpha, beta
+
+
+def blast_radius(distinct_statutes: int) -> float:
+    """B: log-damped count of distinct statutes a rule's firing reaches (≥ 1.0)."""
+    return 1.0 + math.log1p(max(0, distinct_statutes))
+
+
+def suspicion(contradicted: int, corroborated: int) -> float:
+    """S: Beta-Bernoulli posterior mean that the rule is defective (in (0, 1))."""
+    alpha, beta = _beta_posterior(contradicted, corroborated)
+    return alpha / (alpha + beta)
+
+
+def expected_information_gain(contradicted: int, corroborated: int) -> float:
+    """EIG: posterior variance of the defect-rate Beta — the active-learning frontier.
+
+    Maximal near S≈0.5 with a low sample count; → 0 as evidence accumulates either way.
+    """
+    alpha, beta = _beta_posterior(contradicted, corroborated)
+    total = alpha + beta
+    return (alpha * beta) / (total * total * (total + 1.0))
+
+
+def frontier_score(
+    distinct_statutes: int, contradicted: int, corroborated: int
+) -> float:
+    """The B × S × EIG frontier score used to rank witness rules (deterministic)."""
+    return (
+        blast_radius(distinct_statutes)
+        * suspicion(contradicted, corroborated)
+        * expected_information_gain(contradicted, corroborated)
+    )
 
 # §3.5 of notes_internal/FABLE_SPEC_RECONSTRUCTION.md: every catalogued rule is one of
 # two sorts, and conflating them is the main way a published "reconstructed spec" smuggles
@@ -150,6 +242,11 @@ class RuleLedgerEntry:
     firings: int = 0
     by_disposition: Dict[str, int] = field(default_factory=lambda: defaultdict(int))
     exemplars: List[Dict[str, str]] = field(default_factory=list)
+    # Distinct statutes this rule fired in — the blast-radius proxy for the frontier
+    # score (§8(7)). Read-only, populated by ``build_ledger``; a rule that fires once in
+    # each of 50 statutes has blast radius 50 even though its firing count is 50, whereas
+    # a rule firing 50× inside one statute has blast radius 1.
+    affected_statutes: Set[str] = field(default_factory=set)
     believed_spec: str = ""
     # §3.5 S/P one-bit annotation and §3.2(4) named falsifier. Both are read-only
     # catalog metadata (populated by ``build_ledger`` from the adapter's role/falsifier
@@ -177,6 +274,28 @@ class RuleLedgerEntry:
         """A compiler-survival policy (P), not a hypothesis about the law (S)."""
         return self.rule_role == "P"
 
+    @property
+    def blast_radius(self) -> int:
+        """B (raw): distinct statutes this rule's firing reached."""
+        return len(self.affected_statutes)
+
+    @property
+    def suspicion(self) -> float:
+        """S: Beta-Bernoulli posterior mean that the rule is defective."""
+        return suspicion(self.contradicted, self.corroborated_est)
+
+    @property
+    def expected_information_gain(self) -> float:
+        """EIG: posterior variance — how much the next adjudication would inform S."""
+        return expected_information_gain(self.contradicted, self.corroborated_est)
+
+    @property
+    def frontier_score(self) -> float:
+        """The B × S × EIG frontier score used as the primary ranking key (§8(7))."""
+        return frontier_score(
+            self.blast_radius, self.contradicted, self.corroborated_est
+        )
+
     def to_dict(self) -> Dict[str, object]:
         return {
             "rule_id": self.rule_id,
@@ -188,6 +307,12 @@ class RuleLedgerEntry:
             "corroborated_est": self.corroborated_est,
             "contradicted": self.contradicted,
             "divergences": self.divergences,
+            # Frontier score (§8(7)) and its three factors, alongside firings so the
+            # legacy firing-count rank stays visible for side-by-side comparison.
+            "blast_radius": self.blast_radius,
+            "suspicion": round(self.suspicion, 6),
+            "expected_information_gain": round(self.expected_information_gain, 6),
+            "frontier_score": round(self.frontier_score, 9),
             "by_disposition": dict(self.by_disposition),
             "exemplars": self.exemplars[:8],
         }
@@ -223,10 +348,27 @@ class SpecLedger:
         return self.rules[rule_id]
 
     def ranked_entries(self) -> List[RuleLedgerEntry]:
-        # Rank by contradicted (falsifying evidence), then total divergences.
+        """Rank witness rules by the B × S × EIG frontier score (§8(7)).
+
+        Primary key is the frontier score (blast-radius × suspicion × expected
+        information gain — see ``frontier_score``), so a rare rule with wide blast radius
+        or a suspicious agree/disagree history rises and a frequent-benign rule falls.
+        Ties (e.g. every clean rule scores ~identically once EIG dominates) fall back to
+        the legacy signals — contradicted count, then total divergences, then raw firing
+        count — with rule_id as a final deterministic tie-break.
+        """
+        # Two-stage stable sort: first by rule_id ascending (the final tie-break), then
+        # by the descending numeric keys. Python's sort is stable, so equal-numeric rows
+        # retain the ascending-id order — fully deterministic without negating a string.
+        by_id = sorted(self.rules.values(), key=lambda e: e.rule_id)
         return sorted(
-            self.rules.values(),
-            key=lambda e: (e.contradicted, e.divergences),
+            by_id,
+            key=lambda e: (
+                e.frontier_score,
+                e.contradicted,
+                e.divergences,
+                e.firings,
+            ),
             reverse=True,
         )
 
@@ -302,7 +444,12 @@ def build_ledger(
     for inp in inputs:
         ledger.statutes += 1
         for rule_id, count in inp.rule_firings.items():
-            ledger._rule(rule_id, catalog, roles, falsifiers).firings += count
+            entry = ledger._rule(rule_id, catalog, roles, falsifiers)
+            entry.firings += count
+            # Blast-radius proxy: a rule fires *in* this statute (count>0) → it reaches
+            # one more distinct statute. Zero-count entries do not widen blast radius.
+            if count:
+                entry.affected_statutes.add(inp.sid)
         for div in inp.divergences:
             if div.disposition in _FALSIFYING:
                 ledger.statute_real_bugs[div.sid] += 1
@@ -327,8 +474,14 @@ def render_markdown(ledger: SpecLedger) -> str:
         f"P-rules (compiler-survival policy)={rc['P']} "
         f"uncataloged={rc['uncataloged']}",
         "",
-        "| rule_id | cat | S/P | firings | corrob~ | contradicted | dispositions |",
-        "|---------|-----|-----|---------|---------|--------------|--------------|",
+        "Rank key: B × S × EIG frontier score (§8(7)); firings kept for comparison.",
+        "B=blast radius (distinct statutes), S=suspicion (Beta posterior mean), "
+        "EIG=expected info gain (posterior variance).",
+        "",
+        "| rule_id | cat | S/P | score | B | S | EIG | firings | corrob~ | "
+        "contradicted | dispositions |",
+        "|---------|-----|-----|-------|---|---|-----|---------|---------|"
+        "--------------|--------------|",
     ]
     for e in ledger.ranked_entries():
         cat = "Y" if e.believed_spec else "·"
@@ -336,8 +489,9 @@ def render_markdown(ledger: SpecLedger) -> str:
         sort = e.rule_role if e.believed_spec else "·"
         disp = " ".join(f"{k}:{v}" for k, v in sorted(e.by_disposition.items()))
         lines.append(
-            f"| {e.rule_id} | {cat} | {sort} | {e.firings} | {e.corroborated_est} "
-            f"| {e.contradicted} | {disp} |"
+            f"| {e.rule_id} | {cat} | {sort} | {e.frontier_score:.4g} "
+            f"| {e.blast_radius} | {e.suspicion:.3f} | {e.expected_information_gain:.4g} "
+            f"| {e.firings} | {e.corroborated_est} | {e.contradicted} | {disp} |"
         )
     density = ledger.p_rule_density()
     if density:
