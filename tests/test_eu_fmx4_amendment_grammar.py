@@ -562,3 +562,53 @@ def test_np_plural_articles_replace_split_per_label() -> None:
     assert by_target["article:6"].payload.text == "Six body."
     assert by_target["article:7"].payload is not None
     assert by_target["article:7"].payload.text == "Seven body."
+
+
+def test_omnibus_head_with_hereby_adverb_iterates_nps() -> None:
+    """Real CELLAR omnibus heads carry an intervening adverb — "Regulation X is
+    HEREBY amended as follows:" (32012R0630, 32011R0269, 32013R0049, 32011R1106).
+
+    The pre-widening ``_RE_AMENDED_AS_FOLLOWS`` required the copula and "amended"
+    to be adjacent, so an adverb-carrying head FAILED the omnibus branch: its
+    sub-instruction NPs (already discovered by ``_top_level_nps``) were never
+    iterated, the multi-point instruction lowered to ZERO ops, and the head fell
+    through to a FALSE ``eu_fmx4_grammar_uncovered_instruction`` lowering-gap.
+    Widening to allow an optional "hereby"/"further" adverb routes those NPs
+    through the UNCHANGED ``_lower_np_instructions`` machinery. This asserts the
+    adverb head lowers its sub-instruction identically to the adverbless form and
+    emits NO uncovered-instruction diagnostic for the head."""
+    fmx = b"""<?xml version="1.0"?>
+<ACT><ENACTING.TERMS>
+  <ARTICLE><TI.ART>Article 1</TI.ART>
+    <ALINEA><P>Regulation (EU) 2019/787 is hereby amended as follows:</P>
+      <LIST><ITEM><NP><NO.P>(1)</NO.P><TXT>in Article 13, the following paragraph is inserted:</TXT>
+        <P><LIST TYPE="OTHER"><ITEM><NP><NO.P><QUOT.START/>3a.</NO.P><TXT>In the case of a blend, the rule applies.<QUOT.END/></TXT></NP></ITEM></LIST></P>
+      </NP></ITEM></LIST></ALINEA></ARTICLE>
+</ENACTING.TERMS></ACT>"""
+    r = lower_amending_act(fmx, "32021R1096", base_celex="32019R0787")
+    assert [str(op.target) for op in r.ops] == ["article:13/paragraph:3a"]
+    op = r.ops[0]
+    assert op.action == StructuralAction.INSERT
+    assert op.witness_rule_id == "EU_FMX4.SUBART_PARAGRAPH_INSERT"
+    assert op.payload is not None
+    assert op.payload.text == "In the case of a blend, the rule applies."
+    # The head is NOT a false uncovered-instruction gap once the adverb is allowed.
+    assert not any(
+        d.rule_id == "eu_fmx4_grammar_uncovered_instruction" for d in r.diagnostics
+    )
+
+
+def test_omnibus_head_adverbless_form_still_matches() -> None:
+    """The widening is strictly ADDITIVE: the adverbless "is amended as follows:"
+    head that already matched must keep lowering its NPs unchanged (guards against
+    an over-tight rewrite that would drop the base case)."""
+    fmx = b"""<?xml version="1.0"?>
+<ACT><ENACTING.TERMS>
+  <ARTICLE><TI.ART>Article 1</TI.ART>
+    <ALINEA><P>Regulation (EU) 2019/787 is amended as follows:</P>
+      <LIST><ITEM><NP><NO.P>(1)</NO.P><TXT>in Article 13, the following paragraph is inserted:</TXT>
+        <P><LIST TYPE="OTHER"><ITEM><NP><NO.P><QUOT.START/>3a.</NO.P><TXT>In the case of a blend, the rule applies.<QUOT.END/></TXT></NP></ITEM></LIST></P>
+      </NP></ITEM></LIST></ALINEA></ARTICLE>
+</ENACTING.TERMS></ACT>"""
+    r = lower_amending_act(fmx, "32021R1096", base_celex="32019R0787")
+    assert [str(op.target) for op in r.ops] == ["article:13/paragraph:3a"]

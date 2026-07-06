@@ -657,8 +657,30 @@ _RE_QUOTED_ARTICLE_HEADING = compile_classifier_regex(
 #      and recurses; its children are lowered against that context.
 # ---------------------------------------------------------------------------
 
+# The omnibus head verb clause routinely carries an intervening ADVERB — real
+# CELLAR bytes say "is HEREBY amended as follows:" (32012R0630, 32011R0269,
+# 32013R0049, 32011R1106) and "is FURTHER amended as follows:" — between the
+# "is"/"are" copula and "amended". The pre-widening pattern required the two to
+# be adjacent, so every adverb-carrying omnibus head FAILED to match: its NPs
+# (already correctly discovered by ``_top_level_nps``, which recurses through the
+# ALINEA/LIST/ITEM wrappers) were never iterated, the whole multi-point
+# instruction lowered to ZERO ops, and the head fell through to
+# ``eu_fmx4_grammar_uncovered_instruction`` — a FALSE lowering-gap masking real,
+# fully-recognisable sub-instructions. Allowing an optional "hereby"/"further"
+# adverb is strictly ADDITIVE: every head the narrow pattern
+# matched still matches (the adverb group is optional), and the newly-matched
+# heads route through the UNCHANGED ``_lower_np_instructions`` machinery (the
+# foreign-target guard inside the omnibus branch still suppresses a head whose
+# named instrument is not the base act). No new lowering logic is introduced.
+# The adverb group is a single OPTIONAL non-nested clause with a LITERAL trailing
+# space (not ``\s+``) — the regex-safety linter rejects a variable ``\s+`` inside
+# an optional group adjacent to the following ``\s``/token (nested backtracking).
+# The match runs on ``_instruction_text`` output, which is NBSP-normalised and
+# single-space-joined (``" ".join(instr.split())``), so a literal space is the
+# correct separator and cannot mis-fire on tab/NBSP runs. Real bytes never stack
+# two of these adverbs, so a single optional adverb suffices.
 _RE_AMENDED_AS_FOLLOWS = compile_classifier_regex(
-    r"\b(?:is|are)\s+amended\s+as\s+follows\b",
+    r"\b(?:is|are)\s+(?:hereby |further )?amended\s+as\s+follows\b",
     re.I,
     classifier_id="eu_fmx4_amended_as_follows",
 )
