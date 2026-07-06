@@ -57,6 +57,12 @@ from lawvm.substrate.manifest import (
     PackManifest,
     PackProvenance,
 )
+from lawvm.substrate.codec import (
+    IDENTITY_CODEC,
+    decode as _codec_decode,
+    encode as _codec_encode,
+    storage_suffix as _storage_suffix,
+)
 from lawvm.substrate.relation_edge import SCHEMA_RELATION_EDGE
 from lawvm.substrate.roots import (
     leaf_hash,
@@ -492,14 +498,21 @@ class _LayerWriter:
     without holding all dates in memory.
     """
 
-    def __init__(self, path: Path, root_fn: str) -> None:
+    def __init__(self, path: Path, root_fn: str, codec: str = IDENTITY_CODEC) -> None:
+        # ``path`` is the CANONICAL (uncompressed) JSONL path. Rows stream here as
+        # plaintext; on close a non-identity codec re-frames the file on disk to
+        # ``path + storage_suffix(codec)`` (e.g. ``base.jsonl.zst``). The canonical
+        # byte digest (``uncompressed_sha256``) is accumulated over the plaintext
+        # so the content address is codec-independent (OBJECT_MODEL §3).
         self.path = path
         self.root_fn = root_fn
+        self.codec = codec
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._fh = self.path.open("w", encoding="utf-8")
         self._hashes: list[str] = []
         self._seen: set[str] = set()
         self._byte_hasher = hashlib.sha256()
+        self._storage_sha256: str | None = None
         self.row_count = 0
 
     def write(self, body: dict[str, JsonValue]) -> str:
@@ -540,8 +553,31 @@ class _LayerWriter:
     def uncompressed_sha256(self) -> str:
         return "sha256:" + self._byte_hasher.hexdigest()
 
+    def storage_rel_name(self, canonical_rel: str) -> str:
+        """The manifest ``path`` for this layer (canonical rel + codec suffix)."""
+        return canonical_rel + _storage_suffix(self.codec)
+
+    def storage_sha256(self) -> str:
+        """sha256 of the on-disk (post-codec) bytes; equals uncompressed for identity."""
+        if self._storage_sha256 is None:
+            raise RuntimeError("storage_sha256 available only after close()")
+        return self._storage_sha256
+
     def close(self) -> None:
         self._fh.close()
+        if self.codec == IDENTITY_CODEC:
+            # Identity: on-disk bytes ARE the canonical bytes.
+            self._storage_sha256 = self.uncompressed_sha256()
+            return
+        # Non-identity: re-frame the plaintext file into its storage bytes,
+        # write them to ``path + suffix``, drop the plaintext, and hash the blob.
+        raw = self.path.read_bytes()
+        storage_bytes = _codec_encode(self.codec, raw)
+        storage_path = self.path.with_name(self.path.name + _storage_suffix(self.codec))
+        storage_path.write_bytes(storage_bytes)
+        if storage_path != self.path:
+            self.path.unlink()
+        self._storage_sha256 = "sha256:" + hashlib.sha256(storage_bytes).hexdigest()
 
 
 # --------------------------------------------------------------------------- #
@@ -592,6 +628,7 @@ def export_work_pack(
     slice_prefix: str = "",
     granularity: str = "subsection",
     quiet: bool = False,
+    storage_codec: str = STORAGE_CODEC,
 ) -> ExporterResult:
     """Replay one work and emit its sparse certified pack under ``out_dir``.
 
@@ -695,7 +732,7 @@ def export_work_pack(
     # -- open layer writers -------------------------------------------------- #
     writers: dict[str, _LayerWriter] = {}
     for kind, fname, root_fn in _FILLED_LAYERS:
-        writers[kind] = _LayerWriter(out / fname, root_fn)
+        writers[kind] = _LayerWriter(out / fname, root_fn, codec=storage_codec)
     for reserved in _RESERVED_DIRS:
         (out / reserved).mkdir(parents=True, exist_ok=True)
 
@@ -1121,37 +1158,44 @@ def export_work_pack(
     edges_layer: PackLayer | None = None
     if edge_bodies:
         edges_rel = f"edges/{corpus_version}/edges.jsonl"
-        edges_path = out / edges_rel
-        edges_path.parent.mkdir(parents=True, exist_ok=True)
+        # Accumulate the canonical (uncompressed) JSONL in memory, then re-frame it
+        # through the storage codec exactly as ``_LayerWriter.close`` does, so the
+        # ``edges`` layer honours ``storage_codec`` too (address stays codec-free).
         edges_hashes: list[str] = []
         edges_seen: set[str] = set()
         edges_byte_hasher = hashlib.sha256()
-        with edges_path.open("w", encoding="utf-8") as fh:
-            for body in edge_bodies:
-                row = wrap_row(body)
-                object_hash = str(row["object_hash"])
-                # SetRoot semantics: a duplicate edge (same content) is the same
-                # content-addressed object — written once, counted once.
-                if object_hash in edges_seen:
-                    continue
-                edges_seen.add(object_hash)
-                line = json.dumps(
-                    row, ensure_ascii=True, sort_keys=True, separators=(",", ":")
-                )
-                fh.write(line)
-                fh.write("\n")
-                edges_byte_hasher.update((line + "\n").encode("utf-8"))
-                edges_hashes.append(object_hash)
+        edges_canonical = bytearray()
+        for body in edge_bodies:
+            row = wrap_row(body)
+            object_hash = str(row["object_hash"])
+            # SetRoot semantics: a duplicate edge (same content) is the same
+            # content-addressed object — written once, counted once.
+            if object_hash in edges_seen:
+                continue
+            edges_seen.add(object_hash)
+            line = json.dumps(
+                row, ensure_ascii=True, sort_keys=True, separators=(",", ":")
+            )
+            encoded = (line + "\n").encode("utf-8")
+            edges_canonical += encoded
+            edges_byte_hasher.update(encoded)
+            edges_hashes.append(object_hash)
+        edges_storage_bytes = _codec_encode(storage_codec, bytes(edges_canonical))
+        edges_storage_rel = edges_rel + _storage_suffix(storage_codec)
+        edges_storage_path = out / edges_storage_rel
+        edges_storage_path.parent.mkdir(parents=True, exist_ok=True)
+        edges_storage_path.write_bytes(edges_storage_bytes)
         edges_root = set_root(_DOMAIN_EDGES, edges_hashes)
         edges_uncompressed = "sha256:" + edges_byte_hasher.hexdigest()
+        edges_storage_sha256 = "sha256:" + hashlib.sha256(edges_storage_bytes).hexdigest()
         edges_layer = PackLayer(
             kind="edges",
-            path=edges_rel,
+            path=edges_storage_rel,
             row_schema=SCHEMA_RELATION_EDGE,
-            codec=STORAGE_CODEC,
+            codec=storage_codec,
             dict_id="",
             uncompressed_sha256=edges_uncompressed,
-            storage_sha256=edges_uncompressed,
+            storage_sha256=edges_storage_sha256,
             root=edges_root,
             root_fn="SetRoot",
             row_count=len(edges_hashes),
@@ -1235,7 +1279,7 @@ def export_work_pack(
         work_ids=(work_id,),
         corpus_version=corpus_version,
         identity_encoding=IDENTITY_ENCODING,
-        storage_codec=STORAGE_CODEC,
+        storage_codec=storage_codec,
         dict_id="",
         profiles=(CANON_PROFILE,),
         selection_profiles=(_PROFILE_ID,),
@@ -1542,16 +1586,18 @@ def _build_layer_descriptors(
         w = writers[kind]
         domain = layer_domain[kind]
         root = w.root(domain)
-        fname = f"{kind}/{kind}.jsonl"
+        # The canonical layer path is ``kind/kind.jsonl``; the manifest ``path``
+        # carries the codec suffix so the reader knows exactly what is on disk.
+        canonical_rel = f"{kind}/{kind}.jsonl"
         descriptors.append(
             PackLayer(
                 kind=kind,
-                path=fname,
+                path=w.storage_rel_name(canonical_rel),
                 row_schema=f"lawvm.layer.{kind}.v0",
-                codec=STORAGE_CODEC,
+                codec=w.codec,
                 dict_id="",
                 uncompressed_sha256=w.uncompressed_sha256(),
-                storage_sha256=w.uncompressed_sha256(),
+                storage_sha256=w.storage_sha256(),
                 root=root,
                 root_fn=w.root_fn,
                 row_count=w.row_count,
@@ -1602,12 +1648,22 @@ def load_pack_for_check(pack_dir: str | Path) -> Any:
         rows: list[dict[str, JsonValue]] = []
         layer_file = pack_path / layer.path
         if layer_file.exists():
-            with layer_file.open("r", encoding="utf-8") as fh:
-                for line in fh:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    rows.append(json.loads(line))
+            # Read the on-disk (post-codec) bytes and decode them back to the
+            # canonical JSONL. The codec is a PURE storage transform: ``decode``
+            # only undoes the framing (identity = passthrough, zstd = inflate) so
+            # the rows can be parsed. It deliberately does NOT re-assert
+            # ``uncompressed_sha256`` — that would move byte-integrity detection
+            # from the checker (which recomputes the layer root over parsed rows,
+            # catching an on-disk tamper) into the loader, changing the integrity
+            # model. The address stays codec-independent because the checker
+            # re-roots the SAME canonical rows regardless of codec.
+            storage_bytes = layer_file.read_bytes()
+            canonical_bytes = _codec_decode(layer.codec, storage_bytes)
+            for line in canonical_bytes.decode("utf-8").splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                rows.append(json.loads(line))
         layers[kind] = PackLayerData(
             kind=kind,
             domain=layer_domain.get(kind, kind),
