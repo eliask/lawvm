@@ -384,14 +384,15 @@ def test_real_formex_parses_to_addressable_nodes() -> None:
 
 
 @pytest.mark.skipif(not _REAL_FORMEX.exists(), reason="acquired GDPR Formex not present")
-def test_grafter_raises_on_consolidated_root() -> None:
-    # STEP 0: the FMX4 grafter expects an ``ACT`` root; a CONSLEG ``CONS.ACT``
-    # manifestation is not an ACT descendant, so it RAISES — documenting why the
-    # direct consolidated parse is required.
+@pytest.mark.skipif(not _REAL_FORMEX.exists(), reason="acquired GDPR Formex not present")
+def test_grafter_grafts_consolidated_root() -> None:
+    # The FMX4 grafter now grafts a CONSLEG ``CONS.ACT``/``CONS.DOC`` consolidated
+    # manifestation DIRECTLY (the EU consolidation-oracle path, #221): the
+    # consolidated shape is a first-class graftable root, no longer rejected.
     from lawvm.eu.grafter import parse_eu_regulation_ir
 
-    with pytest.raises(ValueError, match="CONS.ACT"):
-        parse_eu_regulation_ir(_REAL_FORMEX, celex=_CELEX)
+    ir = parse_eu_regulation_ir(_REAL_FORMEX, celex=_CELEX)
+    assert ir is not None
 
 
 # --------------------------------------------------------------------------- #
