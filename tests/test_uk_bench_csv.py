@@ -5821,7 +5821,9 @@ def test_uk_bench_build_corpus_index_suppresses_repaired_multiple_choice_aliases
 
 
 def test_uk_bench_replay_regime_threads_compile_and_skips_oracle_adapter(monkeypatch, tmp_path) -> None:
-    from lawvm.uk_legislation import oracle_align, uk_amendment_replay
+    from lawvm.uk_legislation import oracle_align, replay_conserved, uk_amendment_replay
+    from lawvm.uk_legislation.replay_conserved import UKApplyResult
+    from lawvm.core.filter_result import FilterResult
     from lawvm.uk_legislation.effects import UKEffectRecord
 
     class FakeArchive:
@@ -5900,7 +5902,11 @@ def test_uk_bench_replay_regime_threads_compile_and_skips_oracle_adapter(monkeyp
                 )
             return []
 
-    def fake_replay_uk_ops(
+    # Production routes replay through the §1.8 conserved wrapper
+    # (``replay_uk_ops_conserved``), consuming its ``.statute``. The fake mirrors
+    # that wrapper's signature (it forwards the SAME replay kwargs) and returns a
+    # ``UKApplyResult`` so the bench's ``.statute`` unwrap is exercised.
+    def fake_replay_uk_ops_conserved(
         ir: IRStatute,
         ops: list[object],
         *,
@@ -5909,7 +5915,7 @@ def test_uk_bench_replay_regime_threads_compile_and_skips_oracle_adapter(monkeyp
         allow_oracle_alignment: bool,
         adjudications_out: list[object],
         replay_phase_timings_out: dict[str, float] | None = None,
-    ) -> IRStatute:
+    ) -> UKApplyResult:
         replay_seen["ir"] = ir
         replay_seen["ops"] = ops
         replay_seen["eid_map"] = eid_map
@@ -5929,7 +5935,10 @@ def test_uk_bench_replay_regime_threads_compile_and_skips_oracle_adapter(monkeyp
                 detail={"target": "section:1"},
             )
         )
-        return ir
+        return UKApplyResult(
+            statute=ir,
+            filter_result=FilterResult(accepted_items=(), rejected_items=()),
+        )
 
     def fail_align(*_args: object, **_kwargs: object) -> object:
         raise AssertionError("post-replay oracle adapter must be disabled")
@@ -5973,7 +5982,9 @@ def test_uk_bench_replay_regime_threads_compile_and_skips_oracle_adapter(monkeyp
         ),
     )
     monkeypatch.setattr(uk_amendment_replay, "UKReplayPipeline", FakePipeline)
-    monkeypatch.setattr(uk_amendment_replay, "replay_uk_ops", fake_replay_uk_ops)
+    monkeypatch.setattr(
+        replay_conserved, "replay_uk_ops_conserved", fake_replay_uk_ops_conserved
+    )
     monkeypatch.setattr(oracle_align, "align_uk_replay_to_oracle_with_report", fail_align)
 
     archive = cast(Farchive, FakeArchive())

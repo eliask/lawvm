@@ -300,6 +300,66 @@ def test_uk_apply_seam_matches_conserved_wrapper_statute_and_lo_ops() -> None:
         )
 
 
+def test_uk_apply_seam_conserved_tolerates_duplicate_op_ids() -> None:
+    """PRODUCTION FLIP prerequisite: real UK lowering emits same-op_id sibling
+    ops (an effect's structural + text legs share a ``key-…`` op_id). The bare
+    ``replay_uk_ops`` fold applies ops POSITIONALLY (never by op_id), so a
+    duplicate is harmless to replay output. The conserved wrapper must therefore
+    TOLERATE duplicate op_ids (not raise), stay byte-identical to the bare fold's
+    materialized statute, and keep a TOTAL accepted/rejected partition — otherwise
+    routing production through the wrapper would crash the duplicate-op_id
+    statutes the corpus actually carries. (An EMPTY op_id is still rejected: it
+    cannot be attributed to any lane.)"""
+    # Two applying ops sharing an op_id, plus a genuine apply-skip sharing a
+    # SECOND op_id — the multiset partition must place two of "dup" in accepted
+    # and split "skipdup" across accepted (the applying leg) + rejected (the
+    # unresolved-target leg).
+    ops = [
+        _replace("dup", 1, "5"),
+        _insert("dup", 2, "8"),
+        _replace("skipdup", 3, "4"),
+        _repeal("skipdup", 4, "999"),  # unresolved target → apply-skip
+    ]
+    lo_bare: list[LegalOperation] = []
+    bare = replay_uk_ops(_statute(), list(ops), lo_ops_out=lo_bare)
+    lo_cons: list[LegalOperation] = []
+    conserved = replay_uk_ops_conserved(_statute(), list(ops), lo_ops_out=lo_cons)
+
+    # (1) byte-identical materialized statute + lo_ops (the OUTPUT-PRESERVING
+    #     superset contract the production flip depends on).
+    assert _statute_fingerprint(bare) == _statute_fingerprint(conserved.statute), (
+        "duplicate-op_id conserved statute diverged from the bare fold"
+    )
+    assert bare.body == conserved.statute.body
+    assert _lo_ops_fingerprint(lo_bare) == _lo_ops_fingerprint(lo_cons)
+
+    # (2) the partition is TOTAL and multiset-faithful: 4 input ops → 3 applied
+    #     (both "dup" legs + the "skipdup" REPLACE) + 1 apply-skipped (the
+    #     "skipdup" unresolved REPEAL).
+    fr = conserved.filter_result
+    assert len(fr.accepted_items) + len(fr.rejected_items) == len(ops)
+    from collections import Counter as _Counter
+
+    assert _Counter(op.op_id for op in fr.accepted_items) == _Counter(
+        {"dup": 2, "skipdup": 1}
+    ), "accepted lane did not preserve duplicate-op_id multiplicity"
+    assert len(fr.rejected_items) == 1
+    assert fr.rejected_items[0].item.op_id == "skipdup"
+    assert fr.rejected_items[0].reason_code == "uk_apply_no_write"
+
+
+def test_uk_apply_seam_conserved_still_rejects_empty_op_id() -> None:
+    """The empty-op_id guard survives the duplicate-tolerance relaxation: an
+    empty op_id genuinely cannot be attributed to any conservation lane, so it is
+    still a hard ``ValueError`` (unlike a duplicate, which is positionally
+    well-defined)."""
+    import pytest
+
+    ops = [_replace("", 1, "5")]
+    with pytest.raises(ValueError, match="non-empty op_id"):
+        replay_uk_ops_conserved(_statute(), ops)
+
+
 def test_uk_apply_seam_conserved_rejects_unresolved_target() -> None:
     """GATE (b) sharper: an op whose seam apply lands no write surfaces in the
     conserved REJECTED lane with a typed witness, never silently in accepted. A

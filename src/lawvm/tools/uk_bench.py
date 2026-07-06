@@ -2367,8 +2367,8 @@ def _score_statute(
             try:
                 from lawvm.uk_legislation.uk_amendment_replay import (
                     UKReplayPipeline,
-                    replay_uk_ops,
                 )
+                from lawvm.uk_legislation.replay_conserved import replay_uk_ops_conserved
                 from lawvm.uk_legislation.oracle_align import align_uk_replay_to_oracle_with_report
 
                 pipeline = UKReplayPipeline(repo_root)
@@ -2406,7 +2406,15 @@ def _score_statute(
                 replay_phase_timings: dict[str, float] | None = (
                     {} if record_replay_subphases else None
                 )
-                replayed_ir = replay_uk_ops(
+                # §1.8 / §2.1 #4-#5 (CORE_PIPELINE_UNIFICATION_DESIGN): route UK
+                # production replay through the CONSERVED wrapper so it emits a
+                # typed accepted/rejected conservation partition per op (and is the
+                # reachable production site for the per-op WriteReceipt lane), not
+                # the bare fold. The wrapper mirrors ``replay_uk_ops`` exactly and
+                # returns its statute (byte-identical replay output — an additive
+                # instrumentation superset); we consume ``.statute`` here so the
+                # downstream oracle comparison is unchanged.
+                uk_apply_result = replay_uk_ops_conserved(
                     enacted_ir,
                     ops,
                     eid_map=eid_map,
@@ -2415,6 +2423,7 @@ def _score_statute(
                     adjudications_out=replay_adjudications,
                     replay_phase_timings_out=replay_phase_timings,
                 )
+                replayed_ir = uk_apply_result.statute
                 if replay_phase_timings:
                     _mark_external_phases(replay_phase_timings)
                 else:

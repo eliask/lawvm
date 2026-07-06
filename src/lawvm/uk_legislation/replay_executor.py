@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing_extensions import override
 
 import time
+from collections import Counter
 from dataclasses import replace as dc_replace
 from typing import Any, List, Optional
 
@@ -470,6 +471,7 @@ def replay_uk_ops(
     write_receipts_out: Optional[list[WriteReceipt]] = None,
     replay_phase_timings_out: Optional[dict[str, float]] = None,
     applied_op_ids_out: Optional[set[str]] = None,
+    applied_op_id_counts_out: Optional["Counter[str]"] = None,
     seam_observations_out: Optional[list[Finding]] = None,
 ) -> IRStatute:
     """Apply compiled UK legal operations to enacted base, return amended statute.
@@ -518,6 +520,18 @@ def replay_uk_ops(
                     ~70 adjudication kinds. Additive: passing the sink does NOT
                     change the replayed statute (the §2.7 grounding-neutral
                     invariant); with it absent ``replay_uk_ops`` is byte-identical.
+        applied_op_id_counts_out:
+                    Optional ``Counter`` accumulating, per ``op_id``, HOW MANY
+                    prepared ops carrying that ``op_id`` landed a write. Unlike
+                    ``applied_op_ids_out`` (a set that collapses duplicates), this
+                    preserves multiplicity so the §1.8 conserved wrapper can build
+                    a MULTISET accepted/rejected partition that is faithful even
+                    when the compiled op set carries duplicate ``op_id`` values
+                    (real UK lowering emits same-op_id sibling ops, e.g. an
+                    effect's structural + text repeal legs). Additive: passing the
+                    sink does NOT change the replayed statute (the §2.7
+                    grounding-neutral invariant); with it absent
+                    ``replay_uk_ops`` is byte-identical.
 
     Returns:
         A new IRStatute with all ops applied (deep copy — base is not mutated).
@@ -573,8 +587,11 @@ def replay_uk_ops(
     if replay_phase_timings_out is None:
         for op in prepared_ops.accepted_ops:
             applied = executor.seam_apply_op(op)
-            if applied_op_ids_out is not None and applied.applied:
-                applied_op_ids_out.add(op.op_id)
+            if applied.applied:
+                if applied_op_ids_out is not None:
+                    applied_op_ids_out.add(op.op_id)
+                if applied_op_id_counts_out is not None:
+                    applied_op_id_counts_out[op.op_id] += 1
             # ── B-enforcement (LS-01): drain the seam's OBSERVE lane. The seam's
             # always-on per-op mutation-boundary audit routes any
             # ``APPLY.MUTATION_BOUNDARY_FINDING_AT_OP`` escape witness to
@@ -600,8 +617,11 @@ def replay_uk_ops(
         for op in prepared_ops.accepted_ops:
             op_t0 = time.perf_counter()
             applied = executor.seam_apply_op(op)
-            if applied_op_ids_out is not None and applied.applied:
-                applied_op_ids_out.add(op.op_id)
+            if applied.applied:
+                if applied_op_ids_out is not None:
+                    applied_op_ids_out.add(op.op_id)
+                if applied_op_id_counts_out is not None:
+                    applied_op_id_counts_out[op.op_id] += 1
             if seam_observations_out is not None and applied.observations:
                 seam_observations_out.extend(applied.observations)
             _uk_drain_seam_boundary_observations(

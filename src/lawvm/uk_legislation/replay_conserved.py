@@ -104,6 +104,7 @@ def replay_uk_ops_conserved(
     lo_ops_out: Optional[List[LegalOperation]] = None,
     adjudications_out: Optional[List[CompileAdjudication]] = None,
     mutation_events_out: Optional[list[MutationEvent]] = None,
+    replay_phase_timings_out: Optional[dict[str, float]] = None,
     emit_receipts: bool = False,
 ) -> UKApplyResult:
     """Apply a UK op set with a typed conservation receipt (§1.8).
@@ -117,15 +118,22 @@ def replay_uk_ops_conserved(
     apply-skipped, with a witness carrying the reason). The contract is monotone:
     every input op ends up either accepted or rejected, never silently dropped.
 
-    Identity. Conservation requires a robust op identity for the partition. The
-    ``op_id`` string is NOT a safe identity key on its own — it defaults to ""
-    and is not guaranteed unique — so empty or duplicate ``op_id`` values are
-    rejected with a ``ValueError`` rather than silently dropped or mis-bucketed,
-    mirroring the EE/EU/NO/SE conserved wrappers. Once that bijectivity holds, an
-    op is rejected iff (a) it was filtered at prepare time (``replay_prepare``
-    moved it to the rejected lane with a typed adjudication) OR (b) it was a
-    prepared op whose seam apply landed NO write (``applied_op_ids_out`` did not
-    record it).
+    Identity. The ``op_id`` string is NOT a safe identity key on its own — it
+    defaults to "" and is not guaranteed unique. An EMPTY ``op_id`` is rejected
+    with a ``ValueError`` (it cannot be attributed to any lane). DUPLICATE
+    ``op_id`` values are TOLERATED: real UK lowering emits same-op_id sibling ops
+    (an effect's structural + text legs share a ``key-…`` op_id), and the bare
+    ``replay_uk_ops`` fold applies ops POSITIONALLY (never by op_id), so a
+    duplicate is harmless to replay output. To remain an OUTPUT-PRESERVING
+    superset of that fold over the production corpus, the conserved partition is
+    a MULTISET partition keyed on op_id COUNTS: for each op_id, the number of
+    input ops equals the number prepare-rejected plus the number prepared, and
+    among the prepared exactly ``applied_op_id_counts[op_id]`` (the seam's
+    landed-write count) are accepted with the rest apply-skipped. In the common
+    unique-op_id case this is byte-identical to a set-keyed partition. An op is
+    rejected iff (a) it was filtered at prepare time (``replay_prepare`` moved it
+    to the rejected lane with a typed adjudication) OR (b) it was a prepared op
+    whose seam apply landed NO write.
 
     When ``emit_receipts=True``, per-op landed-write receipts are also produced
     via :func:`uk_replay_write_receipts` and surfaced on
@@ -142,14 +150,22 @@ def replay_uk_ops_conserved(
             "(the conservation partition keys on op_id and an empty op_id would be "
             f"silently dropped from the skipped lane). Empty op_id at positions {empty_positions}."
         )
-    if len(set(op_ids)) != len(op_ids):
-        counts = Counter(op_ids)
-        duplicates = sorted(op_id for op_id, n in counts.items() if n > 1)
-        raise ValueError(
-            "replay_uk_ops_conserved requires op_ids to be unique (the conservation "
-            "partition keys on op_id and duplicate op_ids would mis-partition). "
-            f"Duplicate op_ids: {duplicates}."
-        )
+
+    # DUPLICATE op_ids are TOLERATED, not rejected. Real UK lowering emits
+    # same-op_id sibling ops (an effect whose structural + text legs share a
+    # ``key-…`` op_id; ``prepare`` itself keys on op_id via set membership and so
+    # the bare ``replay_uk_ops`` fold — which applies ops POSITIONALLY, never by
+    # op_id — is unaffected by the collision). To stay an OUTPUT-PRESERVING
+    # superset of the bare fold over the production corpus, the conserved
+    # partition is therefore a MULTISET partition keyed on op_id COUNTS rather
+    # than op_id identity: for each op_id, (# input ops) == (# prepare-rejected)
+    # + (# prepared); among the prepared, (# landed a write) are accepted and the
+    # rest are apply-skipped. Totality still holds (accepted + rejected == input)
+    # and, in the common unique-op_id case, this is byte-identical to a set-keyed
+    # partition. A specific duplicate leg's accepted-vs-skipped lane is inherently
+    # ambiguous — the bare positional fold does not distinguish same-op_id
+    # siblings either — so the multiset attribution is the faithful reflection of
+    # the fold, not a lossy approximation of it.
 
     # Recover the prepare partition: prepare-filtered ops are rejected at
     # prepare time with a typed adjudication carrying the witness. The prepare
@@ -161,15 +177,20 @@ def replay_uk_ops_conserved(
         verbose=verbose,
         adjudications_out=None,  # don't double-emit; the apply run below emits
     )
-    prepare_rejected_by_op_id: dict[str, RejectedItem[LegalOperation]] = {}
-    for rejected in prepared.filter_result.rejected_items:
-        prepare_rejected_by_op_id[rejected.item.op_id] = rejected
+    # Per-op_id FIFO queue of prepare-rejection witnesses (a list, not a dict, so
+    # duplicate op_ids each retain their own witness).
+    prepare_rejected_by_op_id: dict[str, list[RejectedItem[LegalOperation]]] = {}
+    for rejected_item in prepared.filter_result.rejected_items:
+        prepare_rejected_by_op_id.setdefault(rejected_item.item.op_id, []).append(
+            rejected_item
+        )
 
-    # Drive the bare apply fold, recording every PREPARED op whose seam apply
-    # landed a write. ``adjudications_out`` (when the caller passed one) is
-    # routed directly so the caller's accumulator gets the full descriptive
-    # stream AND a mid-fold raise preserves the witnesses emitted before it.
-    applied_op_ids: set[str] = set()
+    # Drive the bare apply fold, recording — per op_id — HOW MANY prepared ops
+    # landed a write (a multiset, so duplicate op_ids keep their multiplicity).
+    # ``adjudications_out`` (when the caller passed one) is routed directly so the
+    # caller's accumulator gets the full descriptive stream AND a mid-fold raise
+    # preserves the witnesses emitted before it.
+    applied_op_id_counts: Counter[str] = Counter()
     applied_statute = replay_uk_ops(
         base,
         ops_list,
@@ -180,20 +201,27 @@ def replay_uk_ops_conserved(
         lo_ops_out=lo_ops_out,
         adjudications_out=adjudications_out,
         mutation_events_out=mutation_events_out,
-        applied_op_ids_out=applied_op_ids,
+        replay_phase_timings_out=replay_phase_timings_out,
+        applied_op_id_counts_out=applied_op_id_counts,
     )
 
     accepted: list[LegalOperation] = []
     rejected: list[RejectedItem[LegalOperation]] = []
+    # Consume the accepted (landed-write) budget per op_id as we walk input order,
+    # so exactly ``applied_op_id_counts[op_id]`` ops per op_id land in accepted and
+    # the surplus fall through to the rejected lanes.
+    remaining_applied: Counter[str] = Counter(applied_op_id_counts)
     for op in ops_list:
-        if op.op_id in applied_op_ids:
-            # The seam landed a write for this op — accepted.
+        if remaining_applied[op.op_id] > 0:
+            # A seam apply landed a write for an op carrying this op_id — accept
+            # this one and consume one unit of the op_id's landed-write budget.
+            remaining_applied[op.op_id] -= 1
             accepted.append(op)
             continue
-        prepare_rejected = prepare_rejected_by_op_id.get(op.op_id)
-        if prepare_rejected is not None:
+        prepare_rejected_queue = prepare_rejected_by_op_id.get(op.op_id)
+        if prepare_rejected_queue:
             # Filtered at prepare time — carry the prepare adjudication witness.
-            rejected.append(prepare_rejected)
+            rejected.append(prepare_rejected_queue.pop(0))
             continue
         # Prepared but landed no write (target not found / no-op / unsupported
         # action that the dispatch skipped). The descriptive adjudication (when
