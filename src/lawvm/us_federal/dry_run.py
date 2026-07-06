@@ -328,6 +328,18 @@ _EDITORIAL_DASH_PAREN_SPACE_RE = re.compile(r"([—–:])\s+\(")
 # erases the difference when that anchor-adjacent space is the SOLE divergence — it
 # never invents agreement between texts that differ in any other character.
 _EDITORIAL_INSERT_AFTER_ANCHOR_SPACE_RE = re.compile(r"([),])\s+(?=[\w“”‘’\"'])")
+# OLRC hyphenated-compound line-wrap space (F1, ``non- Federal`` -> ``non-Federal``):
+# the enacted USLM ``quotedText`` payload preserves a line-wrap space after an
+# intra-word hyphen (``the non- Federal cost share`` — the PL text broke
+# ``non-Federal`` across a line), which the materializer faithfully reproduces; the
+# OLRC consolidated Code re-joins the hyphenated compound (``non-Federal``). Collapse
+# ONLY a space that sits BETWEEN two word characters joined by a hyphen (``\w-\s+\w``)
+# — the hyphenated-compound wrap — never a space after a standalone dash/em-dash
+# introducer (those are handled by :data:`_EDITORIAL_DASH_PAREN_SPACE_RE`). Applied to
+# BOTH sides symmetrically: it only erases the difference when this intra-word
+# hyphen-wrap space is the SOLE divergence; it never invents agreement between texts
+# that differ in any other character.
+_EDITORIAL_HYPHEN_WRAP_SPACE_RE = re.compile(r"(?<=\w-)\s+(?=\w)")
 
 # Detect a payload that opens with a new-section catchline (possibly after the USLM
 # quotedContent wrapper's leading quote). Used to decide when a whole-section INSERT
@@ -395,6 +407,7 @@ def _norm_editorial(text: str) -> str:
     stripped = text.translate({ord(ch): None for ch in _EDITORIAL_QUOTE_CHARS})
     respaced = _EDITORIAL_DASH_PAREN_SPACE_RE.sub(r"\1(", stripped)
     respaced = _EDITORIAL_INSERT_AFTER_ANCHOR_SPACE_RE.sub(r"\1", respaced)
+    respaced = _EDITORIAL_HYPHEN_WRAP_SPACE_RE.sub("", respaced)
     return _norm(respaced)
 
 

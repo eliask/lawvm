@@ -186,7 +186,7 @@
     "src/lawvm/us_federal/act_name_registry.py": 2,
     "src/lawvm/us_federal/amendatory.py": 63,
     "src/lawvm/us_federal/classification_tables.py": 13,
-    "src/lawvm/us_federal/dry_run.py": 7,
+    "src/lawvm/us_federal/dry_run.py": 8,
     "src/lawvm/us_federal/import_release.py": 1,
     "src/lawvm/us_federal/import_statute.py": 1,
     "src/lawvm/us_federal/import_table3.py": 3,
@@ -198,5 +198,5 @@
     "src/lawvm/us_federal/table3.py": 4,
     "src/lawvm/us_federal/usc_witness.py": 4
   },
-  "total_raw_re_compile": 1235
+  "total_raw_re_compile": 1236
 }

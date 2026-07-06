@@ -2248,6 +2248,32 @@ def test_norm_editorial_undoes_insert_after_anchor_courtesy_space() -> None:
     assert _norm_editorial(faithful) != _norm_editorial(other)
 
 
+def test_norm_editorial_undoes_hyphenated_compound_line_wrap_space() -> None:
+    # F1 case: the enacted USLM quotedText payload preserved a line-wrap space after
+    # an intra-word hyphen (``the non- Federal cost share`` — the PL broke
+    # ``non-Federal`` across a line); the OLRC consolidated Code re-joins the
+    # hyphenated compound (``non-Federal``). Real conviction: title23:2020->2022 §176.
+    from lawvm.core.comparison_normalization import normalize_inline_comparison_text
+
+    faithful = "to meet the non- Federal cost share requirement for a project"
+    published = "to meet the non-Federal cost share requirement for a project"
+    # Plain inline normalization keeps them apart; the editorial projection unifies.
+    assert normalize_inline_comparison_text(faithful) != normalize_inline_comparison_text(
+        published
+    )
+    assert _norm_editorial(faithful) == _norm_editorial(published)
+    # The fold requires a hyphen with a word char on BOTH sides (``\w-\s+\w``). A
+    # space after a standalone dash (no leading word char) is NOT the hyphen-wrap
+    # pattern, so a genuine ``word - word`` spaced dash survives distinct from a
+    # concatenated ``word-word`` compound (the fold never masks that difference).
+    spaced_dash = "the cost - share requirement"
+    joined = "the cost-share requirement"
+    assert _norm_editorial(spaced_dash) != _norm_editorial(joined)
+    # And it never masks a genuine content divergence.
+    other = "to meet the non- State cost share requirement for a project"
+    assert _norm_editorial(faithful) != _norm_editorial(other)
+
+
 def test_norm_editorial_folds_straight_and_curly_quote_shapes() -> None:
     # The enacted USLM amendment wraps a defined term in curly quotes; the OLRC
     # consolidated Code re-renders it with straight quotes. Folding quote SHAPE
