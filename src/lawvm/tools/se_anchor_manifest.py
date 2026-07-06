@@ -102,6 +102,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from lawvm.core.agreement_residual import AgreementResidual
+from lawvm.core.ctsf_corpus_cache import memoize_default_corpus
 
 # The touch relation is jurisdiction-neutral: reuse Finland's engine wholesale.
 # These operate on a ``sid`` string + generic replay text maps; none of them import
@@ -518,6 +519,7 @@ REAL_ANCHOR_SE_CORPUS_SIDS: tuple[str, ...] = (
 GATE_SE_BASELINE_PATH = Path("tests/data/ctsf_gate_se_residual_baseline.json")
 
 
+@memoize_default_corpus
 def score_se_real_corpus(
     sids: Any | None = None,
 ) -> dict[str, dict[str, int]]:

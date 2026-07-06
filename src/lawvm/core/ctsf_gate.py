@@ -103,6 +103,7 @@ from typing import Any, Iterable, Literal, Optional
 
 _LOG = logging.getLogger(__name__)
 
+from lawvm.core.ctsf_corpus_cache import memoize_default_corpus
 from lawvm.core.ctsf_residual_report import (
     RESIDUAL_VERDICT_FAMILIES,
     CTSFResidualReport,
@@ -516,6 +517,7 @@ def eu_anchor_corpus_available() -> bool:
         return False
 
 
+@memoize_default_corpus
 def score_eu_real_corpus(
     chains: Iterable[tuple[str, str]] | None = None,
 ) -> dict[str, dict[str, int]]:
@@ -887,6 +889,7 @@ def ee_anchor_corpus_available() -> bool:
         return False
 
 
+@memoize_default_corpus
 def score_ee_real_corpus(
     sids: Iterable[str] | None = None,
 ) -> dict[str, dict[str, int]]:
@@ -948,6 +951,7 @@ def real_anchor_corpus_available() -> bool:
         return False
 
 
+@memoize_default_corpus
 def score_real_corpus(
     sids: Iterable[str] | None = None,
 ) -> dict[str, dict[str, int]]:
@@ -1276,6 +1280,7 @@ def uk_anchor_corpus_available() -> bool:
         return False
 
 
+@memoize_default_corpus
 def score_uk_real_corpus(
     sids: Iterable[str] | None = None,
 ) -> dict[str, dict[str, int]]:

@@ -116,6 +116,7 @@ from lawvm.core.agreement_residual import (
     AgreementResidualFamily,
     AgreementResidualStatus,
 )
+from lawvm.core.ctsf_corpus_cache import memoize_default_corpus
 
 MANIFEST_SCHEMA = "lawvm.us_anchor_manifest.v1"
 
@@ -419,6 +420,7 @@ REAL_ANCHOR_US_CORPUS_WINDOWS: tuple[str, ...] = (
 GATE_US_BASELINE_PATH = Path("tests/data/ctsf_gate_us_residual_baseline.json")
 
 
+@memoize_default_corpus
 def score_us_real_corpus(
     windows: Any | None = None,
 ) -> dict[str, dict[str, int]]:

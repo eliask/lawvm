@@ -112,6 +112,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from lawvm.core.agreement_residual import AgreementResidual
+from lawvm.core.ctsf_corpus_cache import memoize_default_corpus
 
 # The touch relation is jurisdiction-neutral: reuse Finland's engine wholesale.
 # These operate on a ``sid`` string + generic replay text/structure maps; none of
@@ -776,6 +777,7 @@ def nz_anchor_corpus_available() -> bool:
     return _default_db().exists()
 
 
+@memoize_default_corpus
 def score_nz_real_corpus(
     sids: Any = None,
 ) -> dict[str, dict[str, int]]:

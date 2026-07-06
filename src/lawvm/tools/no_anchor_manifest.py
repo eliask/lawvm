@@ -99,6 +99,7 @@ from pathlib import Path
 from typing import Any, Iterable, Optional
 
 from lawvm.core.agreement_residual import AgreementResidual
+from lawvm.core.ctsf_corpus_cache import memoize_default_corpus
 
 # The touch relation is jurisdiction-neutral: reuse Finland's engine wholesale.
 # These operate on a ``sid`` string + generic replay text maps; none of them import
@@ -775,6 +776,7 @@ def no_anchor_corpus_available() -> bool:
         return False
 
 
+@memoize_default_corpus
 def score_no_real_corpus(
     corpus: Iterable[tuple[str, str]] | None = None,
     *,
