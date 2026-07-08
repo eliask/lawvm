@@ -1417,6 +1417,18 @@ def test_real_title23_insert_after_subsection_tail_is_oracle_suspect_when_archiv
     assert _norm_editorial(row.materialized_text) == _norm_editorial(row.oracle_text)
 
 
+def test_real_title23_section102_structural_payload_phrase_swap_agrees_when_archive_present() -> None:
+    report = _build_real_title23_2020_2022_report_or_skip()
+
+    row = {r.section_key: r for r in report.rows}["23:102"]
+    assert row.row_status == "agree"
+    assert row.rule_id == US_DRY_RUN_SECTION_AGREES_RULE_ID
+    assert row.disposition == ""
+    assert "(a) (b) Savings Provision" not in row.materialized_text
+    assert "(a) Access of Motorcycles" in row.materialized_text
+    assert "(b) Savings Provision" in row.materialized_text
+
+
 # ---------------------------------------------------------------------------
 # Real Title 11 / PL 118-42 / 2023->2024 window (archive-gated, no network)
 # ---------------------------------------------------------------------------

@@ -4560,9 +4560,31 @@ def _lower_instruction(
                 extra_provenance_tags=_selector_provenance(),
             )
             witness_rule_id = RULE_STRIKE_INSERT
+        elif payload_node is not None and quoted and structural_target is None:
+            # A quoted OLD phrase plus a <quotedContent> NEW block is still a
+            # phrase swap when the prose did not name a struck structural unit.
+            # The block may open with a legal label (PL 117-58 §11310 inserts
+            # "(b) Savings Provision..." after striking "Nothing in this
+            # subsection"), but the quoted OLD text is the authorization
+            # boundary. Replacing the enclosing subsection would silently delete
+            # text outside the quoted match.
+            old = quoted[0]
+            op = _make_op(
+                StructuralAction.TEXT_PATCH,
+                rule_id=RULE_STRIKE_INSERT,
+                text_patch=TextPatchSpec(
+                    kind=TextPatchKindEnum.REPLACE,
+                    selector=_text_selector(old),
+                    replacement=payload_node.text or "",
+                ),
+                target=_text_strike_target,
+                extra_provenance_tags=_selector_provenance(),
+            )
+            witness_rule_id = RULE_STRIKE_INSERT
         elif payload_node is not None and quoted:
             # strike <label> and insert <block> -> whole-node REPLACE of the struck unit.
-            replace_target = structural_target if structural_target is not None else address
+            assert structural_target is not None
+            replace_target = structural_target
             normalized_payload_text, reconstituted = _reconstitute_target_label(
                 payload_node.text, replace_target
             )

@@ -50,6 +50,7 @@ from lawvm.us_federal.amendatory import (
     RULE_REDESIGNATE_SECTION,
     RULE_REDESIGNATE_CHAPTER,
     RULE_REDESIGNATE_SUCH,
+    RULE_RECONSTITUTED_TARGET_LABEL,
     RULE_STRIKE_INSERT,
     RULE_STRIKE_INSERT_END_PUNCT,
     RULE_STRIKE_INSERT_PUNCT_WORD,
@@ -3940,6 +3941,39 @@ def test_sentence_scoped_punct_word_insert_lowers_to_typed_finding():
     assert instr.finding.rule_id == SENTENCE_ANCHOR_INSERT_FINDING_RULE_ID
     assert instr.finding.rule_id != INSERT_AFTER_MISSING_OPERANDS_FINDING_RULE_ID
     assert not report.operations()
+
+
+def test_strike_insert_structural_payload_after_quoted_phrase_stays_text_patch():
+    # PL 117-58 §11310 / 23 U.S.C. §102: the inserted operand opens with a
+    # structural label "(b)", but the source instruction is still "in subsection
+    # (a), in the second sentence, by striking 'Nothing in this subsection' and
+    # inserting the following". The quoted phrase, not subsection (a), is the
+    # mutation boundary.
+    body = (
+        '<section identifier="/us/pl/117/58/dA/tI/stC/s11310/a/2" role="instruction">'
+        "<num>(2)</num><content>"
+        '<ref href="/us/usc/t23/s102/a">Section 102(a) of title 23, United States Code</ref>, '
+        "in the second sentence, is amended by "
+        '<amendingAction type="delete">striking</amendingAction> '
+        "“<quotedText>Nothing in this subsection</quotedText>” and "
+        '<amendingAction type="insert">inserting</amendingAction> the following: '
+        '<quotedContent><subsection><num value="b">“(b) </num>'
+        "<heading>Savings Provision</heading>"
+        "<content>.—Nothing in this section”</content></subsection></quotedContent>."
+        "</content></section>"
+    )
+    instr = _accepted_instr(lower_plaw_amendatory(_synthetic_plaw(body), proof_title="23"))
+
+    assert instr.witness_rule_id == RULE_STRIKE_INSERT
+    op = instr.operation
+    assert op is not None
+    assert op.action is StructuralAction.TEXT_PATCH
+    assert str(op.target) == "title:23/section:102/subsection:a"
+    assert op.payload is None
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == "Nothing in this subsection"
+    assert op.text_patch.replacement == "(b) Savings Provision.—Nothing in this section"
+    assert RULE_RECONSTITUTED_TARGET_LABEL not in op.provenance_tags
 
 
 @pytest.mark.skip(reason="agent feature incomplete")
