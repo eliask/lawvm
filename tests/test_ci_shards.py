@@ -914,9 +914,14 @@ def test_test_shard_maps_shared_non_core_modules_to_bounded_shards() -> None:
         "tools_cli_debug",
     ]
     assert module.affected_shards(["src/lawvm/us_federal/bootstrap.py"]) == ["us_federal"]
+    assert set(module.affected_shards(["src/lawvm/us_federal/us_ordering.py"])).isdisjoint({
+        "eu",
+        "sweden_fetch",
+        "sweden_misc",
+    })
 
 
-def test_test_shard_affected_plan_ignores_generic_notes_paths() -> None:
+def test_test_shard_affected_plan_ignores_documentation_paths() -> None:
     module = _load_test_shard_module()
 
     assert _without_path_expanded_shards(module.affected_plan(["notes/ARCHITECTURE.md"])) == {
@@ -933,6 +938,10 @@ def test_test_shard_affected_plan_ignores_generic_notes_paths() -> None:
     }
     assert module.affected_shards(["docs/getting-started.md"]) == []
     assert module.affected_shards(["notes/EU_STRUCTURAL_INGESTION_ROADMAP.md"]) == []
+    assert module.affected_shards(["README.md"]) == []
+    assert module.affected_shards(["AGENTS.md"]) == []
+    assert module.affected_shards(["CHANGELOG.md"]) == []
+    assert module.affected_shards(["LICENSE"]) == []
     assert module.affected_shards(
         [
             "src/lawvm/us_federal/dry_run.py",
@@ -1338,3 +1347,23 @@ def test_ci_sharded_accepts_explicit_shard_flags_and_rejects_affected_mix() -> N
     assert bare_affected_result.returncode == 2
     assert "--affected requires at least one path" in bare_affected_result.stderr
     assert "run ./scripts/ci.sh" in bare_affected_result.stderr
+
+
+def test_ci_sharded_docs_only_affected_is_noop_green() -> None:
+    root = Path(__file__).resolve().parents[1]
+    script = root / "scripts" / "ci_sharded.sh"
+
+    result = subprocess.run(
+        [str(script), "--affected", "notes/DEFERRED_ROADMAP.md", "README.md", "AGENTS.md"],
+        check=False,
+        cwd=root,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0
+    assert "=== [affected docs-only] no CI execution required ===" in result.stdout
+    assert "Selected shards: (none)" in result.stdout
+    assert "=== SHARDED CI GREEN ===" in result.stdout
+    assert "=== [1/6] ruff check ===" not in result.stdout
+    assert "=== [6/6] release hygiene ===" not in result.stdout

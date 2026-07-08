@@ -36,6 +36,7 @@ STATIC_CHECK_PATHS=(
 AFFECTED_PATHS=()
 AFFECTED_REQUESTED=0
 REQUESTED_SHARDS=()
+DOCS_ONLY_AFFECTED=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --affected)
@@ -125,6 +126,16 @@ if [[ -n "$SHARDS" ]]; then
 else
     SHARDS=""
 fi
+if [[ ${#AFFECTED_PATHS[@]} -gt 0 && -z "$SHARDS" ]]; then
+    DOCS_ONLY_AFFECTED=1
+    for path in "${AFFECTED_PATHS[@]}"; do
+        normalized="${path//\\//}"
+        if [[ ! "$normalized" =~ ^(docs|notes)/ && ! "$normalized" =~ ^[^/]+\.md$ && "$normalized" != "LICENSE" ]]; then
+            DOCS_ONLY_AFFECTED=0
+            break
+        fi
+    done
+fi
 PYTEST_SELECTORS=()
 if [[ ${#AFFECTED_PATHS[@]} -gt 0 ]]; then
     only_test_paths=1
@@ -139,6 +150,14 @@ if [[ ${#AFFECTED_PATHS[@]} -gt 0 ]]; then
     if [[ "$only_test_paths" -eq 1 && "$SHARDS" != *" "* && "$SHARDS" != "all" ]]; then
         PYTEST_SELECTORS=("${AFFECTED_PATHS[@]}")
     fi
+fi
+if [[ "$DOCS_ONLY_AFFECTED" -eq 1 ]]; then
+    echo "=== [affected docs-only] no CI execution required ==="
+    echo "Affected paths: ${AFFECTED_PATHS[*]}"
+    echo "Selected shards: (none)"
+    echo ""
+    echo "=== SHARDED CI GREEN ==="
+    exit 0
 fi
 TIMING_JSONL="${LAWVM_CI_TIMING_JSONL:-.tmp/ci-shard-timings/latest.jsonl}"
 if [[ "$TIMING_JSONL" == "0" || "$TIMING_JSONL" == "none" ]]; then
