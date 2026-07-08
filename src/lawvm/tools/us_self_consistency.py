@@ -212,9 +212,15 @@ def _nonpositive_holdouts(data: bytes) -> List[Tuple[str, str, str]]:
         sec_phrase, sec_href = ("", "")
         if section_content is not None:
             sec_phrase, sec_href = _first_usc_ref(section_content)
-        for _uid, unit, _inherited, _effective, _expires, _via_class in _iter_instruction_units(
-            section
-        ):
+        for (
+            _uid,
+            unit,
+            _inherited,
+            _effective,
+            _expires,
+            _via_class,
+            _scope_text,
+        ) in _iter_instruction_units(section):
             if not _amending_actions(unit):
                 continue
             unit_phrase, _unit_href = _first_usc_ref(unit)

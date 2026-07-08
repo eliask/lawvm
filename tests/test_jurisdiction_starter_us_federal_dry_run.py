@@ -34,6 +34,7 @@ from lawvm.core.semantic_types import IRNodeKind, StructuralAction, TextPatchKin
 from lawvm.us_federal.amendatory import (
     SENTENCE_ANCHOR_INSERT_FINDING_RULE_ID,
     SENTENCE_STRIKE_FINDING_RULE_ID,
+    UNDESIGNATED_PARAGRAPH_OCCURRENCE_PROVENANCE,
     US_EACH_PLACE_STRIKE_EXCEPTION_DIMENSION,
     lower_plaw_amendatory,
 )
@@ -198,6 +199,111 @@ def test_terminal_period_strike_inserts_olrc_courtesy_space_before_word_clause()
     assert _replace_token_in_text(
         "law. taxes", match_text=".", replacement="; and more", count=-1, last_occurrence=True
     ) == "law; and more taxes"
+
+
+def test_undesignated_paragraph_scope_patches_paragraph_not_global_match() -> None:
+    # 35:112 AIA witness shape: repeated anchors in several undesignated
+    # paragraphs. The parent source scope is a paragraph ordinal; applying it as
+    # an nth global text occurrence would put headings in the wrong paragraph
+    # once earlier sibling edits mutate the same repeated phrase.
+    before_htm = (
+        '<html xmlns="http://www.w3.org/1999/xhtml"><body><div>'
+        "<!-- expcite:TITLE 35-SYNTHETIC!@!CHAPTER 1-PROVISIONS!@!Sec. 112 -->"
+        "<!-- field-start:head -->"
+        '<h3 class="section-head">&sect;112. Specification</h3>'
+        "<!-- field-end:head --><!-- field-start:statute -->"
+        '<p class="statutory-body">The specification shall contain a written '
+        "description of the invention.</p>"
+        '<p class="statutory-body">The specification shall conclude with one '
+        "or more claims.</p>"
+        '<p class="statutory-body">A claim may be written in independent form.</p>'
+        '<p class="statutory-body">Subject matter may be claimed.</p>'
+        '<p class="statutory-body">A claim in dependent form shall contain a '
+        "reference.</p>"
+        '<p class="statutory-body">An element in a claim may be expressed as a '
+        "means.</p>"
+        "<!-- field-end:statute -->"
+        "</div></body></html>"
+    ).encode("utf-8")
+    section = (
+        parse_usc_title_document(before_htm, title=35, year="2010")
+        .section_by_number("112")
+    )
+    assert section is not None
+    running = section.statutory_text
+    node_overrides: dict[tuple[tuple[str, str], ...], str] = {}
+    target = LegalAddress(path=(("title", "35"), ("section", "112")))
+
+    def patch_op(
+        op_id: str,
+        *,
+        paragraph_index: int,
+        old: str,
+        new: str,
+    ) -> LegalOperation:
+        return LegalOperation(
+            op_id=op_id,
+            sequence=1,
+            action=StructuralAction.TEXT_PATCH,
+            target=target,
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text=old, occurrence=paragraph_index),
+                replacement=new,
+            ),
+            provenance_tags=(
+                "us_amendatory",
+                UNDESIGNATED_PARAGRAPH_OCCURRENCE_PROVENANCE,
+            ),
+        )
+
+    ops = [
+        patch_op(
+            "p0",
+            paragraph_index=0,
+            old="The specification",
+            new="(a) In General.—The specification",
+        ),
+        patch_op(
+            "p1",
+            paragraph_index=1,
+            old="The specification",
+            new="(b) Conclusion.—The specification",
+        ),
+        patch_op(
+            "p2",
+            paragraph_index=2,
+            old="A claim",
+            new="(c) Form.—A claim",
+        ),
+        patch_op(
+            "p4",
+            paragraph_index=4,
+            old="A claim",
+            new="(e) Reference in Dependent Forms.—A claim",
+        ),
+    ]
+
+    for op in ops:
+        outcome = _materialize_one(
+            op,
+            running,
+            before_section=section,
+            node_overrides=node_overrides,
+        )
+        assert not isinstance(outcome, USDryRunRefusal)
+        running, rule_id, disposition = outcome
+        assert rule_id == ""
+        assert disposition == ""
+
+    assert running == (
+        "(a) In General.—The specification shall contain a written description "
+        "of the invention. (b) Conclusion.—The specification shall conclude "
+        "with one or more claims. (c) Form.—A claim may be written in "
+        "independent form. Subject matter may be claimed. "
+        "(e) Reference in Dependent Forms.—A claim in dependent form shall "
+        "contain a reference. An element in a claim may be expressed as a means."
+    )
 
 
 def test_s0_length_ratio_invariant_defends_against_silent_state_corruption() -> None:

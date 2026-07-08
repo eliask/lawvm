@@ -69,6 +69,7 @@ from lawvm.us_federal.amendatory import (
     RULE_STRIKE_INSERT_THROUGH_TAIL,
     SENTENCE_ANCHOR_INSERT_FINDING_RULE_ID,
     SENTENCE_STRIKE_FINDING_RULE_ID,
+    UNDESIGNATED_PARAGRAPH_OCCURRENCE_PROVENANCE,
     US_EACH_PLACE_STRIKE_EXCEPTION_DIMENSION,
     USAmendatoryReport,
     lower_plaw_amendatory,
@@ -2249,6 +2250,112 @@ def _apply_text_patch_with_tail_dispatch(
     )
 
 
+def _undesignated_paragraph_segments(index: int) -> tuple[tuple[str, str], ...]:
+    return (("undesignated_paragraph", str(index)),)
+
+
+def _apply_text_patch_to_undesignated_paragraph(
+    operation: LegalOperation,
+    before_text: str,
+    *,
+    before_section: UscSection | None,
+    node_overrides: NodeOverrides | None,
+    match_text: str,
+    replacement: str,
+) -> tuple[str, str, str] | USDryRunRefusal:
+    """Apply a provenance-tagged patch inside the named undesignated paragraph.
+
+    The selector occurrence carries the statutory paragraph ordinal emitted from
+    source prose such as "in the second undesignated paragraph"; it is not a
+    global occurrence of ``match_text``. Patching is confined to that paragraph's
+    current text and remains visible through ``node_overrides`` for subsequent
+    sibling ops in the same paragraph.
+    """
+    patch = operation.text_patch
+    if patch is None:
+        return USDryRunRefusal(
+            op_id=operation.op_id,
+            rule_id=US_DRY_RUN_REFUSED_NO_TEXT_PATCH_RULE_ID,
+            message="text op carries no text_patch; cannot materialize",
+            target_address=str(operation.target),
+        )
+    if before_section is None:
+        return USDryRunRefusal(
+            op_id=operation.op_id,
+            rule_id=US_DRY_RUN_REFUSED_STRUCTURAL_NOT_SECTION_REPRESENTABLE_RULE_ID,
+            message=(
+                "undesignated-paragraph scoped text patch has no parsed before "
+                "section; refusing rather than applying a section-wide string patch"
+            ),
+            target_address=str(operation.target),
+        )
+    paragraphs = before_section.paragraphs
+    if not paragraphs:
+        return USDryRunRefusal(
+            op_id=operation.op_id,
+            rule_id=US_DRY_RUN_REFUSED_TEXT_TARGET_NODE_ABSENT_RULE_ID,
+            message=(
+                "undesignated-paragraph scoped text patch found no parsed "
+                "statutory paragraphs in the before section"
+            ),
+            target_address=str(operation.target),
+        )
+    if patch.selector.occurrence_mode == "Last":
+        paragraph_index = len(paragraphs) - 1
+    else:
+        paragraph_index = patch.selector.occurrence
+    if paragraph_index < 0 or paragraph_index >= len(paragraphs):
+        return USDryRunRefusal(
+            op_id=operation.op_id,
+            rule_id=US_DRY_RUN_REFUSED_TEXT_TARGET_NODE_ABSENT_RULE_ID,
+            message=(
+                f"undesignated paragraph ordinal {paragraph_index} outside "
+                f"parsed before-section paragraph count {len(paragraphs)}"
+            ),
+            target_address=str(operation.target),
+        )
+    segments = _undesignated_paragraph_segments(paragraph_index)
+    paragraph_text = (
+        node_overrides.get(segments)
+        if node_overrides is not None
+        else None
+    ) or paragraphs[paragraph_index].text
+    if not _token_in_text(paragraph_text, match_text):
+        return _refuse_absent_text_target(
+            operation,
+            absent_kind="match anchor in undesignated paragraph",
+            absent_text=match_text,
+        )
+    new_paragraph_text = _apply_text_patch_with_tail_dispatch(
+        operation,
+        paragraph_text,
+        match_text=match_text,
+        replacement=replacement or "",
+        count=1,
+    )
+    if new_paragraph_text is None:
+        end_match = patch.selector.end_match_text or match_text
+        return _refuse_absent_text_target(
+            operation,
+            absent_kind="through end anchor in undesignated paragraph",
+            absent_text=end_match,
+        )
+    if paragraph_text not in before_text:
+        return USDryRunRefusal(
+            op_id=operation.op_id,
+            rule_id=US_DRY_RUN_REFUSED_TEXT_TARGET_NODE_ABSENT_RULE_ID,
+            message=(
+                "current undesignated paragraph text is not locatable in the "
+                "running section composition"
+            ),
+            target_address=str(operation.target),
+        )
+    materialized = before_text.replace(paragraph_text, new_paragraph_text, 1)
+    if node_overrides is not None:
+        node_overrides[segments] = new_paragraph_text
+    return (materialized, "", "")
+
+
 def _subtree_overrides(
     node_overrides: NodeOverrides,
     target_segments: tuple[tuple[str, str], ...],
@@ -2583,6 +2690,19 @@ def _materialize_one(
         # occurrence: -1 (each place) -> replace all; 0 or 1 -> first occurrence.
         count = -1 if patch.selector.occurrence == -1 else 1
         last_occurrence = patch.selector.occurrence_mode == "Last"
+
+        if (
+            UNDESIGNATED_PARAGRAPH_OCCURRENCE_PROVENANCE
+            in operation.provenance_tags
+        ):
+            return _apply_text_patch_to_undesignated_paragraph(
+                operation,
+                before_text,
+                before_section=before_section,
+                node_overrides=node_overrides,
+                match_text=match_text,
+                replacement=replacement or "",
+            )
 
         if is_subsection:
             # Sub-section-scoped text patch: confine the match/replace to the

@@ -37,7 +37,7 @@ from dataclasses import replace as _dc_replace
 from datetime import date, datetime, timedelta
 from enum import StrEnum
 from functools import lru_cache
-from typing import Any, Iterable, List, Mapping, assert_never
+from typing import Any, Iterable, List, Literal, Mapping, assert_never
 
 from lawvm.core.ir import (
     IRNode,
@@ -113,6 +113,9 @@ RULE_REDESIGNATE_TABLE = "us_amend_redesignate_table"
 # ("the second paragraph (6)"), so the ordinal tiebreaker is dropped for
 # matching and a witness finding is emitted (§1.1). Strict-mode rejectable.
 RULE_REDESIGNATE_ORDINAL_DROPPED = "us_amend_redesignate_ordinal_dropped"
+UNDESIGNATED_PARAGRAPH_OCCURRENCE_PROVENANCE = (
+    "undesignated_paragraph_occurrence"
+)
 # 'redesignating clauses (i) and (ii) and subclauses (I) and (II) as subclauses
 # (I) and (II) and items (aa) and (bb), respectively' — a compound of two paired
 # relabel groups whose source/destination kinds cycle within a single
@@ -2891,6 +2894,46 @@ _INSERT_TERM_ANCHOR_RE = re.compile(
     + _STRUCTURAL_ACTION_TRAIL,
     re.IGNORECASE,
 )
+_UNDESIGNATED_PARAGRAPH_SCOPE_RE = re.compile(
+    r"\bin\s+the\s+"
+    r"(?P<ordinal>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|last|final)\s+"
+    r"undesignated\s+paragraph\b",
+    re.IGNORECASE,
+)
+_ORDINAL_WORD_TO_INDEX = {
+    "first": 0,
+    "second": 1,
+    "third": 2,
+    "fourth": 3,
+    "fifth": 4,
+    "sixth": 5,
+    "seventh": 6,
+    "eighth": 7,
+    "ninth": 8,
+    "tenth": 9,
+}
+
+
+_UndesignatedParagraphOccurrenceMode = Literal["Auto", "Last"]
+
+
+def _undesignated_paragraph_occurrence(
+    raw_text: str,
+    scope_text: str = "",
+) -> tuple[int, _UndesignatedParagraphOccurrenceMode, bool]:
+    """Return selector occurrence/mode for an undesignated-paragraph scope.
+
+    The occurrence value is a statutory-paragraph ordinal, not a global match
+    occurrence. It is only meaningful when paired with
+    ``UNDESIGNATED_PARAGRAPH_OCCURRENCE_PROVENANCE``.
+    """
+    m = _UNDESIGNATED_PARAGRAPH_SCOPE_RE.search(f"{scope_text} {raw_text}")
+    if m is None:
+        return (0, "Auto", False)
+    ordinal = m.group("ordinal").lower()
+    if ordinal in {"last", "final"}:
+        return (-1, "Last", True)
+    return (_ORDINAL_WORD_TO_INDEX[ordinal], "Auto", True)
 # "inserting '<X>' after the subsection/paragraph designation" — a structural
 # sub-unit *designator* anchor. The designator is the "(a)" / "(1)" label
 # OUTSIDE the running prose; LawVM's TEXT_REPLACE matches against body text
@@ -4110,6 +4153,7 @@ def _lower_instruction(
     payload_node: IRNode | None,
     inherited_address: LegalAddress | None = None,
     inherited_via_classification: bool = False,
+    scope_text: str = "",
     plaw_title_scope: str = "",
     proof_title: str = "11",
     table_redesignate_pairs: tuple[tuple[str, str], ...] = (),
@@ -4199,6 +4243,36 @@ def _lower_instruction(
     _metadata_provenance = (
         (TARGET_TITLE_FROM_PLAW_METADATA,) if resolution_status == "metadata_title" else ()
     )
+    (
+        undesignated_occurrence,
+        undesignated_occurrence_mode,
+        has_undesignated_occurrence,
+    ) = _undesignated_paragraph_occurrence(raw_text, scope_text)
+
+    def _text_selector(
+        match_text: str,
+        *,
+        end_match_text: str | None = None,
+        each_place: bool | None = None,
+    ) -> TextSelector:
+        each = _is_each_place_instruction(raw_text) if each_place is None else each_place
+        if each:
+            return TextSelector(
+                match_text=match_text,
+                occurrence=-1,
+                end_match_text=end_match_text,
+            )
+        return TextSelector(
+            match_text=match_text,
+            occurrence=undesignated_occurrence,
+            end_match_text=end_match_text,
+            occurrence_mode=undesignated_occurrence_mode,
+        )
+
+    def _selector_provenance(extra: tuple[str, ...] = ()) -> tuple[str, ...]:
+        if has_undesignated_occurrence:
+            return (*extra, UNDESIGNATED_PARAGRAPH_OCCURRENCE_PROVENANCE)
+        return extra
 
     def _make_op(
         action: StructuralAction,
@@ -4373,15 +4447,13 @@ def _lower_instruction(
                         rule_id=RULE_STRIKE_INSERT_THROUGH_TAIL,
                         text_patch=TextPatchSpec(
                             kind=TextPatchKindEnum.REPLACE,
-                            selector=TextSelector(
-                                match_text=old,
-                                occurrence=-1 if _is_each_place_instruction(raw_text) else 0,
-                                end_match_text=end,
-                            ),
+                            selector=_text_selector(old, end_match_text=end),
                             replacement=new,
                         ),
                         target=_text_strike_target,
-                        extra_provenance_tags=(RULE_STRIKE_INSERT_THROUGH_TAIL,),
+                        extra_provenance_tags=_selector_provenance(
+                            (RULE_STRIKE_INSERT_THROUGH_TAIL,)
+                        ),
                     )
                     witness_rule_id = RULE_STRIKE_INSERT_THROUGH_TAIL
                 elif through_match is None and len(quoted) >= 2:
@@ -4391,14 +4463,13 @@ def _lower_instruction(
                         rule_id=RULE_STRIKE_INSERT_TAIL,
                         text_patch=TextPatchSpec(
                             kind=TextPatchKindEnum.REPLACE,
-                            selector=TextSelector(
-                                match_text=old,
-                                occurrence=-1 if _is_each_place_instruction(raw_text) else 0,
-                            ),
+                            selector=_text_selector(old),
                             replacement=new,
                         ),
                         target=_text_strike_target,
-                        extra_provenance_tags=(RULE_STRIKE_INSERT_TAIL,),
+                        extra_provenance_tags=_selector_provenance(
+                            (RULE_STRIKE_INSERT_TAIL,)
+                        ),
                     )
                     witness_rule_id = RULE_STRIKE_INSERT_TAIL
                 elif (
@@ -4440,14 +4511,13 @@ def _lower_instruction(
                         rule_id=RULE_STRIKE_INSERT_TAIL,
                         text_patch=TextPatchSpec(
                             kind=TextPatchKindEnum.REPLACE,
-                            selector=TextSelector(
-                                match_text=old,
-                                occurrence=-1 if _is_each_place_instruction(raw_text) else 0,
-                            ),
+                            selector=_text_selector(old),
                             replacement=new,
                         ),
                         target=_text_strike_target,
-                        extra_provenance_tags=(RULE_STRIKE_INSERT_TAIL,),
+                        extra_provenance_tags=_selector_provenance(
+                            (RULE_STRIKE_INSERT_TAIL,)
+                        ),
                     )
                     witness_rule_id = RULE_STRIKE_INSERT_TAIL
                 else:
@@ -4464,13 +4534,11 @@ def _lower_instruction(
                 rule_id=RULE_STRIKE_INSERT,
                 text_patch=TextPatchSpec(
                     kind=TextPatchKindEnum.REPLACE,
-                    selector=TextSelector(
-                        match_text=old,
-                        occurrence=-1 if _is_each_place_instruction(raw_text) else 0,
-                    ),
+                    selector=_text_selector(old),
                     replacement=new,
                 ),
                 target=_text_strike_target,
+                extra_provenance_tags=_selector_provenance(),
             )
             witness_rule_id = RULE_STRIKE_INSERT
         elif payload_node is not None and quoted:
@@ -4703,14 +4771,12 @@ def _lower_instruction(
                 rule_id=RULE_STRIKE_INSERT_THROUGH_TAIL,
                 text_patch=TextPatchSpec(
                     kind=TextPatchKindEnum.DELETE,
-                    selector=TextSelector(
-                        match_text=old,
-                        occurrence=-1 if _is_each_place_instruction(raw_text) else 0,
-                        end_match_text=end,
-                    ),
+                    selector=_text_selector(old, end_match_text=end),
                 ),
                 target=_text_strike_target,
-                extra_provenance_tags=(RULE_STRIKE_INSERT_THROUGH_TAIL,),
+                extra_provenance_tags=_selector_provenance(
+                    (RULE_STRIKE_INSERT_THROUGH_TAIL,)
+                ),
             )
             witness_rule_id = RULE_STRIKE_INSERT_THROUGH_TAIL
         elif _TAIL_STRIKE_RE.search(raw_text):
@@ -4724,12 +4790,10 @@ def _lower_instruction(
                 rule_id=RULE_STRIKE,
                 text_patch=TextPatchSpec(
                     kind=TextPatchKindEnum.DELETE,
-                    selector=TextSelector(
-                        match_text=quoted[0],
-                        occurrence=-1 if _is_each_place_instruction(raw_text) else 0,
-                    ),
+                    selector=_text_selector(quoted[0]),
                 ),
                 target=_text_strike_target,
+                extra_provenance_tags=_selector_provenance(),
             )
             witness_rule_id = RULE_STRIKE
         else:
@@ -4806,12 +4870,10 @@ def _lower_instruction(
                     rule_id=RULE_STRIKE,
                     text_patch=TextPatchSpec(
                         kind=TextPatchKindEnum.DELETE,
-                        selector=TextSelector(
-                            match_text=payload_node.text or "",
-                            occurrence=-1 if _is_each_place_instruction(raw_text) else 0,
-                        ),
+                        selector=_text_selector(payload_node.text or ""),
                     ),
                     target=_text_strike_target,
+                    extra_provenance_tags=_selector_provenance(),
                 )
                 witness_rule_id = RULE_STRIKE
             else:
@@ -4928,9 +4990,10 @@ def _lower_instruction(
                 rule_id=rule_id,
                 text_patch=TextPatchSpec(
                     kind=TextPatchKindEnum.REPLACE,
-                    selector=TextSelector(match_text=anchor_text),
+                    selector=_text_selector(anchor_text),
                     replacement=replacement,
                 ),
+                extra_provenance_tags=_selector_provenance(),
             )
             witness_rule_id = rule_id
         elif node_anchor is not None and payload_node is not None:
@@ -5044,16 +5107,10 @@ def _lower_instruction(
                     rule_id=RULE_INSERT_PUNCT_WORD_ANCHOR,
                     text_patch=TextPatchSpec(
                         kind=TextPatchKindEnum.REPLACE,
-                        selector=TextSelector(
-                            match_text=anchor_text,
-                            occurrence=-1 if _is_each_place_instruction(raw_text) else 0,
-                            # `occurrence_mode="All"` is invalid; the existing each-place
-                            # convention is `occurrence=-1` + `occurrence_mode="Auto"`, which
-                            # the materializer treats as all-occurrence for TEXT_REPLACE.
-                            occurrence_mode="Auto",
-                        ),
+                        selector=_text_selector(anchor_text),
                         replacement=replacement,
                     ),
+                    extra_provenance_tags=_selector_provenance(),
                 )
                 # Use the punct-word rule id so the audit trail identifies the
                 # construction family (a punct-word anchor differs from a quoted
@@ -5082,13 +5139,10 @@ def _lower_instruction(
                 rule_id=rule_id,
                 text_patch=TextPatchSpec(
                     kind=TextPatchKindEnum.REPLACE,
-                    selector=TextSelector(
-                        match_text=anchor_text,
-                        occurrence=-1 if _is_each_place_instruction(raw_text) else 0,
-                        occurrence_mode="Auto",
-                    ),
+                    selector=_text_selector(anchor_text),
                     replacement=replacement,
                 ),
+                extra_provenance_tags=_selector_provenance(),
             )
             witness_rule_id = rule_id
         else:
@@ -5969,8 +6023,8 @@ def _inherited_title_from_section_classification(section: ET.Element, raw_text: 
 
 def _iter_instruction_units(
     section: ET.Element,
-) -> Iterable[tuple[str, ET.Element, LegalAddress | None, str, str, bool]]:
-    """Yield ``(unit_id, element, inherited_address, effective_text, expires_text, inherited_via_classification)`` for each amendatory unit.
+) -> Iterable[tuple[str, ET.Element, LegalAddress | None, str, str, bool, str]]:
+    """Yield ``(unit_id, element, inherited_address, effective_text, expires_text, inherited_via_classification, scope_text)`` for each amendatory unit.
 
     A unit is either the section's own direct ``<content>`` (flat instruction) or
     each nested ``<paragraph>/<subparagraph>`` that carries its own amendingAction
@@ -6083,6 +6137,7 @@ def _iter_instruction_units(
             # top→down onto the inherited section so the leaf's own "(i) in clause
             # (ii)" lands on the FULL ladder, not a truncated section/clause path.
             intermediate_anchors: list[str] = []
+            intermediate_scope_texts: list[str] = []
             # Title-only chapeau ("(a) Title 11.—") gives the enacted title for any
             # nested relative "in section X" reference that appears on an ancestor.
             scope_title = _ancestor_title_only_scope(section, elem, parent_of)
@@ -6099,6 +6154,9 @@ def _iter_instruction_units(
                     )
                 if inherited is None:
                     intermediate_anchors.append(_text_of(ancestor))
+                    intermediate_scope_texts.append(
+                        _shallow_text(ancestor, exclude=exclusions)
+                    )
                 else:
                     # The ancestor that furnishes the inherited address may itself
                     # introduce a sub-unit anchor in its chapeau (e.g. "Section X ...
@@ -6177,7 +6235,16 @@ def _iter_instruction_units(
                 # scope); each refinement descends from the prior frontier.
                 for anchor_text in reversed(intermediate_anchors):
                     inherited = _refine_with_leading_subunit_anchor(inherited, anchor_text)
-            yield uid, elem, inherited, effective_text, expires_text, inherited_via_classification
+            scope_text = " ".join(reversed([s for s in intermediate_scope_texts if s]))
+            yield (
+                uid,
+                elem,
+                inherited,
+                effective_text,
+                expires_text,
+                inherited_via_classification,
+                scope_text,
+            )
         return
     # Flat instruction: the section's own content blocks. A flat head "Section X(...)
     # is amended" with no "of title" inherits the title from the section's own OLRC
@@ -6200,6 +6267,7 @@ def _iter_instruction_units(
         flat_effective,
         "",
         False,
+        "",
     )
 
 
@@ -6672,6 +6740,7 @@ def _lower_plaw_amendatory_body(
             bool,
             str,
             str,
+            str,
             ET.Element,
         ]
     ] = []
@@ -6693,6 +6762,7 @@ def _lower_plaw_amendatory_body(
             effective_text,
             expires_text,
             inherited_via_classification,
+            scope_text,
         ) in _iter_instruction_units(section):
             actions = _amending_actions(unit)
             if not actions:
@@ -6726,6 +6796,7 @@ def _lower_plaw_amendatory_body(
                     effective_text,
                     expires_text,
                     inherited_via_classification,
+                    scope_text,
                     sec_phrase,
                     sec_href,
                     section,
@@ -6759,7 +6830,7 @@ def _lower_plaw_amendatory_body(
                 (
                     rec
                     if rec[3]
-                    else (rec[0], rec[1], rec[2], _act_scope_for(rec[8]), *rec[4:])
+                    else (rec[0], rec[1], rec[2], _act_scope_for(rec[9]), *rec[4:])
                 )
                 for rec in unit_records
             ]
@@ -6780,7 +6851,18 @@ def _lower_plaw_amendatory_body(
         )
         plaw_title_scope = ""
 
-    for unit_id, unit, inherited_address, effective_text, expires_text, inherited_via_classification, sec_phrase, sec_href, section in unit_records:
+    for (
+        unit_id,
+        unit,
+        inherited_address,
+        effective_text,
+        expires_text,
+        inherited_via_classification,
+        scope_text,
+        sec_phrase,
+        sec_href,
+        section,
+    ) in unit_records:
         actions = _amending_actions(unit)
         unit_phrase, unit_href = _first_usc_ref(unit)
         # The leaf's OWN ref/prose is canonical; the section-level ref is only a
@@ -6832,6 +6914,7 @@ def _lower_plaw_amendatory_body(
                     payload_node=payload_node,
                     inherited_address=None,
                     inherited_via_classification=False,
+                    scope_text=scope_text,
                     plaw_title_scope=plaw_title_scope,
                     proof_title=proof_title,
                     table_redesignate_pairs=table_redesignate_pairs,
@@ -6859,6 +6942,7 @@ def _lower_plaw_amendatory_body(
             payload_node=payload_node,
             inherited_address=inherited_address,
             inherited_via_classification=inherited_via_classification,
+            scope_text=scope_text,
             plaw_title_scope=plaw_title_scope,
             proof_title=proof_title,
             table_redesignate_pairs=table_redesignate_pairs,

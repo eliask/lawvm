@@ -403,17 +403,16 @@ REAL_ANCHOR_US_JURISDICTION = "us_federal"
 REAL_ANCHOR_US_CORPUS_WINDOWS: tuple[str, ...] = (
     "title11:2023->2024",  # clean (agr=1) + temporal_mismatch (sunset=2) — bankruptcy
     "title20:2018->2020",  # pure clean (0 residual) — education (non-positive)
-    "title21:2023->2024",  # clean (agr=1) + cnf_unsupported (missing_source=10) — food/drugs
-    "title23:2016->2018",  # clean (agr=1) + oracle_editorial_pathology(3) + cnf_unsupported(2) — highways
-    "title28:2014->2016",  # clean (agr=2) + oracle_editorial(2) + cnf_unsupported(2) + temporal(deferred=1) — judiciary
-    "title28:2016->2018",  # clean (agr=4) + cnf_unsupported(2) — judiciary
+    "title21:2023->2024",  # clean (agr=1) + oracle_editorial(1) + cnf_unsupported(9) — food/drugs
+    "title23:2016->2018",  # clean (agr=1) + oracle_editorial_pathology(3) — highways
+    "title28:2016->2018",  # clean (agr=4) + oracle_editorial(1) + cnf_unsupported(1) — judiciary
+    "title35:2010->2012",  # clean (agr=33) + oracle_editorial(16) + cnf_unsupported(17) + temporal(deferred=42) — patents/AIA
     "title35:2020->2022",  # clean (agr=3) + oracle_editorial_pathology(1) — patents
     "title39:2022->2023",  # pure clean (0 residual) — postal service
-    "title40:2018->2020",  # clean (agr=4) + cnf_unsupported(5) — public buildings
     "title40:2022->2023",  # pure clean (agr=1, 0 residual) — public buildings
     "title47:2023->2024",  # pure clean (agr=1, 0 residual) — telecommunications (non-positive)
     "title48:2022->2023",  # clean (agr=1) + cnf_unsupported(1) — territories (non-positive)
-    "title8:2016->2018",   # clean (agr=2) + cnf_unsupported(5) + temporal(deferred=2) — aliens
+    "title8:2016->2018",   # clean (agr=2) + oracle_editorial(2) + cnf_unsupported(3) + temporal(deferred=2) — aliens
 )
 
 # The committed US baseline artifact (frozen, sibling of the FI/EE/UK/EU/NZ/SE/NO ones).

@@ -67,6 +67,7 @@ from lawvm.us_federal.amendatory import (
     TAIL_STRIKE_FINDING_RULE_ID,
     TAIL_STRIKE_INSERT_MISSING_OPERANDS_FINDING_RULE_ID,
     TARGET_UNRESOLVED_FINDING_RULE_ID,
+    UNDESIGNATED_PARAGRAPH_OCCURRENCE_PROVENANCE,
     UNLOWERED_FINDING_RULE_ID,
     _first_usc_ref,
     _join_insert_after,
@@ -310,6 +311,93 @@ def test_plaw_116_51_each_place_text_replace():
     assert op.text_patch.selector.occurrence == -1
     # §101(18) -> title:11/section:101/paragraph:18 (pinned convention).
     assert op.target == LegalAddress(path=(("title", "11"), ("section", "101"), ("paragraph", "18")))
+
+
+def test_undesignated_paragraph_scope_lowers_as_paragraph_ordinal_provenance():
+    # AIA §4(c) / 35 U.S.C. §112 witness shape: parent paragraphs say
+    # "in the first/second/third undesignated paragraph" while leaf clauses only
+    # carry the strike/insert text. The selector occurrence is the statutory
+    # paragraph ordinal, not a global occurrence of the quoted anchor.
+    body = (
+        '<section identifier="/us/pl/116/900/s2" role="instruction">'
+        "<num>2.</num>"
+        "<chapeau>"
+        '<ref href="/us/usc/t35/s112">Section 112 of title 35, United States Code</ref>, '
+        '<amendingAction type="amend">is amended</amendingAction>—'
+        "</chapeau>"
+        '<paragraph identifier="/us/pl/116/900/s2/1" role="instruction">'
+        "<num>(1)</num><chapeau>in the first undesignated paragraph—</chapeau>"
+        '<subparagraph identifier="/us/pl/116/900/s2/1/A" role="instruction">'
+        "<num>(A)</num><content>by "
+        '<amendingAction type="delete">striking</amendingAction> '
+        "“<quotedText>The specification</quotedText>” and "
+        '<amendingAction type="insert">inserting</amendingAction> '
+        "“<quotedText>(a) In General.—The specification</quotedText>”</content>"
+        "</subparagraph>"
+        "</paragraph>"
+        '<paragraph identifier="/us/pl/116/900/s2/2" role="instruction">'
+        "<num>(2)</num><chapeau>in the second undesignated paragraph—</chapeau>"
+        '<subparagraph identifier="/us/pl/116/900/s2/2/A" role="instruction">'
+        "<num>(A)</num><content>by "
+        '<amendingAction type="delete">striking</amendingAction> '
+        "“<quotedText>The specification</quotedText>” and "
+        '<amendingAction type="insert">inserting</amendingAction> '
+        "“<quotedText>(b) Conclusion.—The specification</quotedText>”</content>"
+        "</subparagraph>"
+        "</paragraph>"
+        '<paragraph identifier="/us/pl/116/900/s2/3" role="instruction">'
+        "<num>(3)</num><content>in the third undesignated paragraph, by "
+        '<amendingAction type="delete">striking</amendingAction> '
+        "“<quotedText>A claim</quotedText>” and "
+        '<amendingAction type="insert">inserting</amendingAction> '
+        "“<quotedText>(c) Form.—A claim</quotedText>”</content>"
+        "</paragraph>"
+        "</section>"
+    )
+
+    report = lower_plaw_amendatory(_synthetic_plaw(body), proof_title="35")
+    accepted = [i for i in report.instructions if i.instruction_status == "accepted"]
+    ops = [i.operation for i in accepted]
+    assert len(ops) == 3
+    selectors = [op.text_patch.selector for op in ops if op is not None and op.text_patch]
+    assert [(s.match_text, s.occurrence) for s in selectors] == [
+        ("The specification", 0),
+        ("The specification", 1),
+        ("A claim", 2),
+    ]
+    assert all(
+        op is not None
+        and UNDESIGNATED_PARAGRAPH_OCCURRENCE_PROVENANCE in op.provenance_tags
+        for op in ops
+    )
+
+
+def test_undesignated_paragraph_insert_after_lowers_as_paragraph_ordinal():
+    # AIA §3(i)(2) / 35 U.S.C. §251 witness shape: insert-after anchor under a
+    # leaf-level "in the third undesignated paragraph" scope. The ordinal scopes
+    # the statutory paragraph; it is not the third occurrence of the anchor text.
+    body = (
+        '<section identifier="/us/pl/116/900/s2" role="instruction">'
+        "<num>2.</num><content>"
+        '<ref href="/us/usc/t35/s251">Section 251 of title 35, United States Code</ref>, '
+        '<amendingAction type="amend">is amended</amendingAction> in the third '
+        "undesignated paragraph by "
+        '<amendingAction type="insert">inserting</amendingAction> '
+        "“<quotedText>or the application was assigned</quotedText>” after "
+        "“<quotedText>claims of the original patent</quotedText>”."
+        "</content></section>"
+    )
+
+    report = lower_plaw_amendatory(_synthetic_plaw(body), proof_title="35")
+    accepted = [i for i in report.instructions if i.instruction_status == "accepted"]
+    assert len(accepted) == 1
+    op = accepted[0].operation
+    assert op is not None
+    assert op.text_patch is not None
+    assert op.witness_rule_id == RULE_INSERT_AFTER
+    assert op.text_patch.selector.match_text == "claims of the original patent"
+    assert op.text_patch.selector.occurrence == 2
+    assert UNDESIGNATED_PARAGRAPH_OCCURRENCE_PROVENANCE in op.provenance_tags
 
 
 def test_precise_text_strike_with_roman_ambiguous_subsection_head_is_section_scoped():
