@@ -168,6 +168,11 @@ _US_RULE_SPECS: Dict[str, str] = {
         "A 'strike <text>' instruction deletes the first (or every, for 'each place') "
         "occurrence of the quoted text from the target section."
     ),
+    "us_amend_strike_quoted_at_end": (
+        "A 'striking <text> at the end' instruction deletes the rightmost occurrence "
+        "of the quoted text from the target node, rather than the first matching "
+        "token in the node body."
+    ),
     "us_amend_insert_after_anchor": (
         "An 'insert <new> after <anchor>' instruction places the new text immediately "
         "after the quoted anchor text in the target section."
@@ -912,6 +917,7 @@ _US_RULE_CONFIDENCE: Dict[str, str] = {
     "us_amend_strike_insert_tail": US_CONFIDENCE_HEURISTIC,
     "us_amend_strike_insert_through_tail": US_CONFIDENCE_HEURISTIC,
     "us_amend_strike": US_CONFIDENCE_HEURISTIC,
+    "us_amend_strike_quoted_at_end": US_CONFIDENCE_HEURISTIC,
     "us_amend_insert_after_anchor": US_CONFIDENCE_HEURISTIC,
     "us_amend_insert_before_anchor": US_CONFIDENCE_HEURISTIC,
     "us_amend_target_title_from_plaw_metadata": US_CONFIDENCE_HEURISTIC,

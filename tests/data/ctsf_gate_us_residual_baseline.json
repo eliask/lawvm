@@ -7,6 +7,7 @@
     "title20:2018->2020",
     "title21:2023->2024",
     "title23:2016->2018",
+    "title28:2014->2016",
     "title28:2016->2018",
     "title35:2010->2012",
     "title35:2020->2022",
@@ -28,7 +29,7 @@
     "replay_bug",
     "unknown"
   ],
-  "total_residuals": 101,
+  "total_residuals": 105,
   "residuals": {
     "title11:2023->2024": {
       "temporal_mismatch": 2
@@ -40,6 +41,11 @@
     },
     "title23:2016->2018": {
       "oracle_editorial_pathology": 3
+    },
+    "title28:2014->2016": {
+      "cnf_unsupported": 1,
+      "oracle_editorial_pathology": 2,
+      "temporal_mismatch": 1
     },
     "title28:2016->2018": {
       "cnf_unsupported": 1,

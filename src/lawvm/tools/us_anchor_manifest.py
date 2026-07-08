@@ -405,6 +405,7 @@ REAL_ANCHOR_US_CORPUS_WINDOWS: tuple[str, ...] = (
     "title20:2018->2020",  # pure clean (0 residual) — education (non-positive)
     "title21:2023->2024",  # clean (agr=1) + oracle_editorial(1) + cnf_unsupported(9) — food/drugs
     "title23:2016->2018",  # clean (agr=1) + oracle_editorial_pathology(3) — highways
+    "title28:2014->2016",  # clean (agr=3) + oracle_editorial(2) + cnf_unsupported(1) + temporal(deferred=1) — judiciary
     "title28:2016->2018",  # clean (agr=4) + oracle_editorial(1) + cnf_unsupported(1) — judiciary
     "title35:2010->2012",  # clean (agr=33) + oracle_editorial(16) + cnf_unsupported(17) + temporal(deferred=42) — patents/AIA
     "title35:2020->2022",  # clean (agr=3) + oracle_editorial_pathology(1) — patents

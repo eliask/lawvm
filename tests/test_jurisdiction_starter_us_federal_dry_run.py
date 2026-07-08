@@ -201,6 +201,55 @@ def test_terminal_period_strike_inserts_olrc_courtesy_space_before_word_clause()
     ) == "law; and more taxes"
 
 
+def test_quoted_strike_at_end_deletes_terminal_word_inside_target_node() -> None:
+    # PL 114-22 §605 / 28:566 witness shape: "by striking 'and' at the end" of
+    # subparagraph (B). The end-position selector deletes the list-conjunction
+    # tail, not the first body occurrence in "within and outside".
+    section = synthetic_usc_section(
+        title=28,
+        section="566",
+        text=(
+            "(e)(1) The Service may— "
+            "(A) protect officials; "
+            "(B) investigate such fugitive matters, both within and outside the "
+            "United States, as directed by the Attorney General; and "
+            "(C) issue subpoenas."
+        ),
+    )
+    op = LegalOperation(
+        op_id="strike-terminal-and",
+        sequence=1,
+        action=StructuralAction.TEXT_PATCH,
+        target=LegalAddress(
+            path=(
+                ("title", "28"),
+                ("section", "566"),
+                ("subsection", "e"),
+                ("paragraph", "1"),
+                ("subparagraph", "B"),
+            )
+        ),
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.DELETE,
+            selector=TextSelector(
+                match_text="and",
+                occurrence=-1,
+                occurrence_mode="Last",
+            ),
+        ),
+    )
+
+    outcome = _materialize_one(op, section.statutory_text, before_section=section)
+
+    assert not isinstance(outcome, USDryRunRefusal)
+    materialized, signal_rule_id, disposition = outcome
+    assert signal_rule_id == ""
+    assert disposition == ""
+    assert "within and outside the United States" in materialized
+    assert "Attorney General; and (C)" not in materialized
+    assert "Attorney General;  (C)" in materialized
+
+
 def test_undesignated_paragraph_scope_patches_paragraph_not_global_match() -> None:
     # 35:112 AIA witness shape: repeated anchors in several undesignated
     # paragraphs. The parent source scope is a paragraph ordinal; applying it as

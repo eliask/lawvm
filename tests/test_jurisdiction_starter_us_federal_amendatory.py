@@ -55,6 +55,7 @@ from lawvm.us_federal.amendatory import (
     RULE_STRIKE_INSERT_PUNCT_WORD,
     RULE_STRIKE_INSERT_TAIL,
     RULE_STRIKE_INSERT_THROUGH_TAIL,
+    RULE_STRIKE_QUOTED_AT_END,
     RULE_STRIKE_UNIT,
     RULE_STRIKE_UNIT_LIST,
     RULE_STRIKE_UNIT_RANGE,
@@ -1894,6 +1895,43 @@ def test_end_punct_strike_insert_with_quoted_anchor_and_word_insert():
     # The op anchors on the named sub-unit (paragraph (2)), one level below the
     # resolved target (subsection (b)).
     assert str(op.target) == "title:11/section:364/subsection:b/paragraph:2"
+
+
+def test_quoted_strike_at_end_lowers_to_last_occurrence_delete():
+    # PL 114-22 §605 witness shape: "by striking 'and' at the end" of a
+    # subparagraph. The quoted token is positional; deleting the first "and" in
+    # the node can corrupt body text such as "within and outside".
+    body = (
+        '<section identifier="/us/pl/114/22/s605"><num value="605">SEC. 605. </num>'
+        "<chapeau>"
+        '<ref href="/us/usc/t28/s566/e/1/B">Section 566(e)(1)(B) of title 28, '
+        "United States Code</ref>, "
+        '<amendingAction type="amend">is amended</amendingAction>—'
+        "</chapeau>"
+        "<content>by "
+        '<amendingAction type="delete">striking</amendingAction> '
+        "“<quotedText>and</quotedText>” at the end;</content>"
+        "</section>"
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body), proof_title="28")
+    instr = report.instructions[0]
+    assert instr.witness_rule_id == RULE_STRIKE_QUOTED_AT_END
+    op = instr.operation
+    assert op is not None
+    assert op.target == LegalAddress(
+        path=(
+            ("title", "28"),
+            ("section", "566"),
+            ("subsection", "e"),
+            ("paragraph", "1"),
+            ("subparagraph", "B"),
+        )
+    )
+    patch = op.text_patch
+    assert patch is not None
+    assert patch.selector.match_text == "and"
+    assert patch.selector.occurrence == -1
+    assert patch.selector.occurrence_mode == "Last"
 
 
 def test_end_punct_strike_insert_with_the_following_connector():

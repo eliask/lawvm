@@ -179,6 +179,10 @@ RULE_INSERT_PUNCT_WORD_ANCHOR = "us_amend_insert_punct_word_anchor"
 # a first-occurrence string replace that could hit mid-text punctuation.
 RULE_STRIKE_INSERT_END_PUNCT = "us_amend_strike_insert_end_punctuation"
 RULE_INSERT_END_PUNCT = "us_amend_insert_end_punctuation"
+# Pure quoted strike whose location is positional: "striking 'and' at the end".
+# The quoted token is deleted from the target node's rightmost occurrence, not
+# the first matching word in the node body.
+RULE_STRIKE_QUOTED_AT_END = "us_amend_strike_quoted_at_end"
 # "striking '<old>' and inserting a semicolon/comma/period" — the insertion is
 # given as a punctuation word, not a quoted literal.  Lowered to a last-occurrence
 # text_replace of the old quoted text with the punctuation character.
@@ -2726,6 +2730,10 @@ _END_PUNCT_STRIKE_INSERT_RE = re.compile(
     + _STRUCTURAL_ACTION_TRAIL,
     re.IGNORECASE,
 )
+_QUOTED_STRIKE_AT_END_RE = re.compile(
+    r"\bstriking\s+[\"“”'][^\"“”']{1,300}[\"“”']\s+at\s+the\s+end\b",
+    re.IGNORECASE,
+)
 # Terminal punctuation insert: covers the two drafting word orders.
 # Form A (existing): "inserting '<X>' before/after the period [at the end]".
 # Form B (new): "inserting before/after the period [at the end] [the following:]
@@ -4785,17 +4793,31 @@ def _lower_instruction(
                 "open-ended tail strike ('... and all that follows') not section-representable",
             )
         elif quoted:
+            rule_id = (
+                RULE_STRIKE_QUOTED_AT_END
+                if _QUOTED_STRIKE_AT_END_RE.search(raw_text) is not None
+                else RULE_STRIKE
+            )
+            selector = (
+                TextSelector(
+                    match_text=quoted[0],
+                    occurrence=-1,
+                    occurrence_mode="Last",
+                )
+                if rule_id == RULE_STRIKE_QUOTED_AT_END
+                else _text_selector(quoted[0])
+            )
             op = _make_op(
                 StructuralAction.TEXT_PATCH,
-                rule_id=RULE_STRIKE,
+                rule_id=rule_id,
                 text_patch=TextPatchSpec(
                     kind=TextPatchKindEnum.DELETE,
-                    selector=_text_selector(quoted[0]),
+                    selector=selector,
                 ),
                 target=_text_strike_target,
                 extra_provenance_tags=_selector_provenance(),
             )
-            witness_rule_id = RULE_STRIKE
+            witness_rule_id = rule_id
         else:
             # Named non-materializable structural strikes are classified before the
             # bare structural-unit path so they produce typed findings, not generic

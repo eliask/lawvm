@@ -243,21 +243,21 @@ def test_us_excluded_billable_windows_convict():
     are rightly kept OUT of the 0-billable corpus (not frozen green).
 
     These are ``us_dry_run_lawvm_wrong`` (replay_bug) windows the #205 US metric
-    surfaces: title23:2020->2022 (8, down from 13 after §176's ``non- Federal``
+    surfaces: title23:2020->2022 (7, down from 13 after §176's ``non- Federal``
     hyphen-wrap ``oracle_suspect``, then 12, then 8 after the shared resolver diverted
     §133/§148/§515's compound-chain empty-materializations to source-truncated
-    oracle_suspect / missing_source), title50:2022->2023 (8 after §3919's
-    terminal-period-strike courtesy space was materialized and later F3 cleanup),
-    and the currently-demoted zero-corpus anchors title28:2014->2016 and
-    title40:2018->2020. The residual counts are the DEFERRED_ROADMAP F2-F3 backlog
-    plus demoted corpus-frontier windows; they still convict (billable > 0), which
-    is what this test pins. If a window's replay was fully fixed (0 billable),
-    promote it into REAL_ANCHOR_US_CORPUS_WINDOWS (a preregistered move)."""
+    oracle_suspect / missing_source, then 7 after §151's quoted strike-at-end),
+    title50:2022->2023 (8 after §3919's terminal-period-strike courtesy space was
+    materialized and later F3 cleanup),
+    and the currently-demoted zero-corpus anchor title40:2018->2020. The residual
+    counts are the DEFERRED_ROADMAP F2-F3 backlog plus demoted corpus-frontier
+    windows; they still convict (billable > 0), which is what this test pins. If
+    a window's replay was fully fixed (0 billable), promote it into
+    REAL_ANCHOR_US_CORPUS_WINDOWS (a preregistered move)."""
     from lawvm.tools.us_anchor_manifest import attribute_window
 
     for key in (
         "title23:2020->2022",
-        "title28:2014->2016",
         "title40:2018->2020",
         "title50:2022->2023",
     ):
