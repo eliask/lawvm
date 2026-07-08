@@ -23,12 +23,12 @@ Incompleteness is explicit and blocks clean assertions.
 ```
 
 Normative keywords MUST/SHOULD/MAY follow RFC 2119. Companion specs:
-[CERTIFIED_TREE_TRANSITION_TRACE_V0.md](CERTIFIED_TREE_TRANSITION_TRACE_V0.md) (the
+CERTIFIED_TREE_TRANSITION_TRACE_V0.md (the
 replayable transition grammar, base-tree schema, content blobs, and
 state-root/checkpoint semantics the checker folds),
 [SEAM_SPEC_PROVISION_STATE.md](SEAM_SPEC_PROVISION_STATE.md) (the seam, now a
 certificate projection), [LAWVM_PROOF_SURFACES.md](LAWVM_PROOF_SURFACES.md),
-[COMPILER_OBSERVATION_STREAM.md](COMPILER_OBSERVATION_STREAM.md),
+COMPILER_OBSERVATION_STREAM.md,
 [REPLAY_INVARIANTS_AND_FAILURE_MODEL.md](REPLAY_INVARIANTS_AND_FAILURE_MODEL.md).
 
 ## 1. Claim model: the per-work temporal dossier
@@ -285,7 +285,7 @@ Rules:
 - **Two non-JSON hash recipes are frozen as-is** because the engine already
   emits them: the canonical structural subtree hash and the covering-state
   (checkpoint) hash. Both are byte-stream recipes defined exactly in the
-  companion spec ([CERTIFIED_TREE_TRANSITION_TRACE_V0.md](CERTIFIED_TREE_TRANSITION_TRACE_V0.md)
+  companion spec (CERTIFIED_TREE_TRANSITION_TRACE_V0.md
   §2.2, §8.1); the certificate consumes their outputs as leaf values.
 
 Per-artifact root rules:
@@ -1533,7 +1533,7 @@ contract freezes tight rather than loose.
   universes so partial emission cannot read as all-provision clean (§4,
   §5.5).
 - Transition semantics moved to the normative companion spec
-  ([CERTIFIED_TREE_TRANSITION_TRACE_V0.md](CERTIFIED_TREE_TRANSITION_TRACE_V0.md)):
+  (CERTIFIED_TREE_TRANSITION_TRACE_V0.md):
   base-tree representation, content blobs, transition grammar and action
   semantics, and materialization state-root/checkpoint semantics. The
   certificate spec consumes those roots; the companion defines them.

@@ -42,18 +42,18 @@ the architecture, keep it explanatory.
 - [LAWVM_CONSTITUTION.md](LAWVM_CONSTITUTION.md)
 - [LAWVM_PIPELINE_CONTRACT.md](LAWVM_PIPELINE_CONTRACT.md) — the checkable constitution of the pipeline: the central invariant + four sub-invariants (no silent drop/guess/authority-promotion/representation-regression), the 10 waists with canonical input/output/coverage/authority types, the six type-distinct planes, the no-reach-back rule + witness exception, closed conservation vocabularies, guard-liveness as a registry rule, the authority firewall in types, identity discipline, certificate as destination. Backlog measured against it: `ARCHITECTURE_LEAK_LEDGER.md`
 - [CANONICAL_OP_SEMANTICS.md](CANONICAL_OP_SEMANTICS.md)
-- [COMPILER_OBSERVATION_STREAM.md](COMPILER_OBSERVATION_STREAM.md)
+- COMPILER_OBSERVATION_STREAM.md
 - [LAWVM_PROOF_SURFACES.md](LAWVM_PROOF_SURFACES.md)
-- [FRONTEND_CAPABILITY_MATRIX.md](FRONTEND_CAPABILITY_MATRIX.md)
-- [MANUAL_COMPILATION_CLAIMS.md](MANUAL_COMPILATION_CLAIMS.md)
+- FRONTEND_CAPABILITY_MATRIX.md
+- MANUAL_COMPILATION_CLAIMS.md
 - [REPLAY_INVARIANTS_AND_FAILURE_MODEL.md](REPLAY_INVARIANTS_AND_FAILURE_MODEL.md)
 - [CONFORMANCE_CORPUS.md](CONFORMANCE_CORPUS.md)
 - [SOURCE_PATHOLOGY_AND_ADJUDICATION_SPEC.md](SOURCE_PATHOLOGY_AND_ADJUDICATION_SPEC.md)
 - [CROSS_JURISDICTION_ARCHITECTURE.md](CROSS_JURISDICTION_ARCHITECTURE.md)
-- [LEGAL_BRANCH_AND_AUTHORITY_AXIS.md](LEGAL_BRANCH_AND_AUTHORITY_AXIS.md)
+- LEGAL_BRANCH_AND_AUTHORITY_AXIS.md
 - [SEAM_SPEC_PROVISION_STATE.md](SEAM_SPEC_PROVISION_STATE.md)
 - [CERTIFICATE_SCHEMA_V0.md](CERTIFICATE_SCHEMA_V0.md) — temporal-dossier certificate, hash hierarchy, residue honesty, checker v0 contract
-- [CERTIFIED_TREE_TRANSITION_TRACE_V0.md](CERTIFIED_TREE_TRANSITION_TRACE_V0.md) — replayable transition grammar: base tree, content blobs, action semantics, state-root/checkpoint semantics
+- CERTIFIED_TREE_TRANSITION_TRACE_V0.md — replayable transition grammar: base tree, content blobs, action semantics, state-root/checkpoint semantics
 - [APPLY_RESOLUTION_AND_RECEIPT_CONTRACT.md](APPLY_RESOLUTION_AND_RECEIPT_CONTRACT.md) — the semantic apply waist: ScopedTargetResolver/ResolverBinding, fallback rungs, WriteReceipt, ObservedWriteAudit, occupancy contract, transition-leaf production
 - [DISCIPLINE_GATES.md](DISCIPLINE_GATES.md) — normative (cited by AGENTS.md §4)
 - [UNIFIED_BENCH_CONTRACT.md](UNIFIED_BENCH_CONTRACT.md) — normative (cited by AGENTS.md §4)
@@ -65,28 +65,28 @@ the architecture, keep it explanatory.
 - [FINLAND_CLAUSE_AST_SPEC.md](FINLAND_CLAUSE_AST_SPEC.md)
 - [FINLAND_PAYLOAD_IR_SPEC.md](FINLAND_PAYLOAD_IR_SPEC.md)
 - [FINLAND_XML_INGEST_ONLY_SOURCE_MODEL.md](FINLAND_XML_INGEST_ONLY_SOURCE_MODEL.md)
-- [FINLAND_ELABORATION_RULES.md](FINLAND_ELABORATION_RULES.md)
+- FINLAND_ELABORATION_RULES.md
 - [FINLAND_ELABORATED_GROUP_SPEC.md](FINLAND_ELABORATED_GROUP_SPEC.md)
 - [FINLAND_SPARSE_SUBSECTION_SLOT_SPEC.md](FINLAND_SPARSE_SUBSECTION_SLOT_SPEC.md)
 - [FI_AMENDMENT_DRAFTING_GRAMMAR.md](FI_AMENDMENT_DRAFTING_GRAMMAR.md) — best-practice johtolause drafting guide derived from the per-rule register tiers (32 canonical / 7 accepted / 22 discouraged / 5 archaic)
-- [FI_REFERENCE_CATALOGUE.md](FI_REFERENCE_CATALOGUE.md) — living catalogue of Finnish citation/reference families: resolution-status ladder + determinism tiers (T1/T2/T3), the typed-overlay IR model (references as H1 of the Legal Surface Algebra), per-family table + detail cards, recognizer inventory (wired vs standalone), typed-primitive/status map, registry/convention dependencies, verification matrix, coverage ledger
-- [FINLAND_PERIODIC_TABLE.md](FINLAND_PERIODIC_TABLE.md) — Finland abstraction axes (phase/structure/time/provenance/evidence/instrumentation); filled cells, open holes, proof-projector split map; machine catalog in `src/lawvm/finland/periodic_table.py`
-- [LEGAL_SURFACE_GRAPH.md](LEGAL_SURFACE_GRAPH.md) — canonical spec for the Legal Surface Graph: node/edge model + source-anchored identity, lens producers, the surface_only/replay_authorized authority firewall, typed residue + token-partition/coverage certificate, the SourceSyntaxGraph forest (totality certifier, not yet sole producer), bitemporal broken-ref detection, and the projection consumers. The spine the catalogue's H1 plugs into. Core algebra `src/lawvm/core/legal_surface_{graph,assembler,lens,lints,tokens}.py`; Finland lenses `src/lawvm/finland/legal_surface/`; E2E entry `lawvm surface-graph <id>` (full code map in the spec).
+- FI_REFERENCE_CATALOGUE.md — living catalogue of Finnish citation/reference families: resolution-status ladder + determinism tiers (T1/T2/T3), the typed-overlay IR model (references as H1 of the Legal Surface Algebra), per-family table + detail cards, recognizer inventory (wired vs standalone), typed-primitive/status map, registry/convention dependencies, verification matrix, coverage ledger
+- FINLAND_PERIODIC_TABLE.md — Finland abstraction axes (phase/structure/time/provenance/evidence/instrumentation); filled cells, open holes, proof-projector split map; machine catalog in `src/lawvm/finland/periodic_table.py`
+- LEGAL_SURFACE_GRAPH.md — canonical spec for the Legal Surface Graph: node/edge model + source-anchored identity, lens producers, the surface_only/replay_authorized authority firewall, typed residue + token-partition/coverage certificate, the SourceSyntaxGraph forest (totality certifier, not yet sole producer), bitemporal broken-ref detection, and the projection consumers. The spine the catalogue's H1 plugs into. Core algebra `src/lawvm/core/legal_surface_{graph,assembler,lens,lints,tokens}.py`; Finland lenses `src/lawvm/finland/legal_surface/`; E2E entry `lawvm surface-graph <id>` (full code map in the spec).
 
 ## Other Frontends
 
-- [ESTONIA_FRONTEND_LIVING_SPEC.md](ESTONIA_FRONTEND_LIVING_SPEC.md)
-- [ESTONIA_GUARD_LIVENESS_DISCIPLINE.md](ESTONIA_GUARD_LIVENESS_DISCIPLINE.md) — EE guard-liveness ratchet: every blocking CompileAdjudication rule_id is partitioned into fire-drills or a debt allowlist with a monotone-decreasing ceiling
+- ESTONIA_FRONTEND_LIVING_SPEC.md
+- ESTONIA_GUARD_LIVENESS_DISCIPLINE.md — EE guard-liveness ratchet: every blocking CompileAdjudication rule_id is partitioned into fire-drills or a debt allowlist with a monotone-decreasing ceiling
 - [UK_FRONTEND_ELABORATION_ARCHITECTURE.md](UK_FRONTEND_ELABORATION_ARCHITECTURE.md)
-- [UK_REPLAY_LIVING_SPEC.md](UK_REPLAY_LIVING_SPEC.md)
+- UK_REPLAY_LIVING_SPEC.md
 - [UK_REPLAY_REGIME_CONTRACT.md](UK_REPLAY_REGIME_CONTRACT.md)
-- [UK_OFFICIAL_DRAFTING_SOURCE_LEDGER.md](UK_OFFICIAL_DRAFTING_SOURCE_LEDGER.md) — per-statute UK official drafting-source rules
-- [US_LAWVM_STATUS.md](US_LAWVM_STATUS.md) — U.S. federal frontend status/limits/roadmap: witness-anchored dry-run over keyless govinfo PLAW USLM source + USC annual-edition htm oracle; coverage, lowering-gap residual classes, geo-block reality
-- [SWEDEN_LAWVM_STATUS.md](SWEDEN_LAWVM_STATUS.md) — Sweden frontend status/limits/roadmap: official SFS PDF → clause surface → payload surface → elaboration → effects plan → lowering → replay with typed recovery ladder; unified bench comparator; typed conservation receipt (§1.8 FilterResult); observed-write-audit (§2.3 receipt contract, first step); structured replay outcome; ~1% genuine mismatch on 500-act sample, 0% error rate
-- [NEW_ZEALAND_LAWVM_STATUS.md](NEW_ZEALAND_LAWVM_STATUS.md) — New Zealand frontend status/limits/roadmap
-- [NORWAY_LAWVM_STATUS.md](NORWAY_LAWVM_STATUS.md) — Norway frontend status/limits/roadmap
+- UK_OFFICIAL_DRAFTING_SOURCE_LEDGER.md — per-statute UK official drafting-source rules
+- US_LAWVM_STATUS.md — U.S. federal frontend status/limits/roadmap: witness-anchored dry-run over keyless govinfo PLAW USLM source + USC annual-edition htm oracle; coverage, lowering-gap residual classes, geo-block reality
+- SWEDEN_LAWVM_STATUS.md — Sweden frontend status/limits/roadmap: official SFS PDF → clause surface → payload surface → elaboration → effects plan → lowering → replay with typed recovery ladder; unified bench comparator; typed conservation receipt (§1.8 FilterResult); observed-write-audit (§2.3 receipt contract, first step); structured replay outcome; ~1% genuine mismatch on 500-act sample, 0% error rate
+- NEW_ZEALAND_LAWVM_STATUS.md — New Zealand frontend status/limits/roadmap
+- NORWAY_LAWVM_STATUS.md — Norway frontend status/limits/roadmap
 - [OPEN_LAW_FRONTEND_SPEC.md](OPEN_LAW_FRONTEND_SPEC.md)
-- [OPEN_LAW_REGIME.md](OPEN_LAW_REGIME.md)
+- OPEN_LAW_REGIME.md
 
 ## Evidence and Verification
 
@@ -102,16 +102,16 @@ the architecture, keep it explanatory.
 - [PROOF_ALGEBRA.md](PROOF_ALGEBRA.md)
 - [PROOF_CLAIMS_ALGEBRA.md](PROOF_CLAIMS_ALGEBRA.md)
 - [EVIDENCE_INFERENCE_MODEL.md](EVIDENCE_INFERENCE_MODEL.md)
-- [CONDITIONAL_ENACTMENT_AND_TEMPORAL_EFFECTS.md](CONDITIONAL_ENACTMENT_AND_TEMPORAL_EFFECTS.md)
+- CONDITIONAL_ENACTMENT_AND_TEMPORAL_EFFECTS.md
 
 ## Current Implementation Maps
 
 - [LAWVM_ARCHITECTURE_INDEX.md](LAWVM_ARCHITECTURE_INDEX.md)
 - [LAWVM_STACK_MAP.md](LAWVM_STACK_MAP.md)
 - [REGEX_TO_GRAMMAR_MIGRATION.md](REGEX_TO_GRAMMAR_MIGRATION.md) — when string matching stays regex (lint + prefilter) vs becomes a named recognizer/spec; applies AGENTS.md §1.11/§1.12 (regex/recognizer firewall) + §2.4
-- [IMPLEMENTATION_DIVERGENCE_LEDGER.md](IMPLEMENTATION_DIVERGENCE_LEDGER.md) — current target-vs-implementation gaps + active work queue
+- IMPLEMENTATION_DIVERGENCE_LEDGER.md — current target-vs-implementation gaps + active work queue
 - [ARCHITECTURE_LEAK_LEDGER.md](ARCHITECTURE_LEAK_LEDGER.md) — EV-ranked backlog of representation/typing/authority leaks vs `LAWVM_PIPELINE_CONTRACT.md` (audit-and-enforce, not rewrite); 27 ranked sites + 2 CI-gate specs + 2 seam candidates from the e2e architecture-coherence audit
-- [LAWVM_INVARIANT_GENERATOR_V0.md](LAWVM_INVARIANT_GENERATOR_V0.md) — the METHOD the registry is generated from (Pro-blessed 2026-06-23): "no public claim without a live accounting path"; the 12-field InvariantSpec, 6 axes (planes × waists × object-kinds × transform-verbs × failure-classes × public-claims), the 12-question generator, the 9-bucket stopping rule (forbidden = `implicit convention`), and 15 under-covered families to fold (INV-META/POL/SRC-LINEAGE/TIME-AXIS/SCOPE/SEL/WRITE/SCHED/PROJ/OVL/SIG/CORPUS/NEG/DET/REGEX)
-- [INVARIANT_DISCIPLINE_AND_PRECEDENT.md](INVARIANT_DISCIPLINE_AND_PRECEDENT.md) — standalone account of the total-invariant-mining discipline: precise statement, its lineage (Design-by-Contract, HAZOP/FMEA, DO-178C/ISO-26262 traceability, proof-carrying code & CompCert/seL4, assertion-based auditing, Jepsen/mutation-testing), what is genuinely novel (HAZOP-generator over a compiler's typed waists + proof-carrying certs + per-unit totality, transferred to law; guard-liveness as a non-optional completion field), how it manifests in LawVM artifacts, and honest limits (bounds the claim surface not the world; evidence- not proof-carrying; oracle-fallible floor)
-- [LAWVM_AUDIT_INVARIANT_REGISTRY.md](LAWVM_AUDIT_INVARIANT_REGISTRY.md) — complete a-priori audit/invariant coverage map: 78 distinct audits across 6 planes from 8 generative axes (planes/waists/§1.x/prime-directive-facts/temporal-determinism/certificate/meta-overlay/cross-jurisdiction); 31 implemented / 27 partial / 20 open, 44 new beyond the UK roadmap; ranked OPEN next-tier roadmap + adversarial completeness self-critique. Subsumes the UK-checkout `LAWVM_AUDIT_REGISTRY_ROADMAP.md`
-- [FINLAND_COVERAGE_GAP_REPORT.md](FINLAND_COVERAGE_GAP_REPORT.md) — Finland projection freshness / coverage snapshot
+- LAWVM_INVARIANT_GENERATOR_V0.md — the METHOD the registry is generated from (Pro-blessed 2026-06-23): "no public claim without a live accounting path"; the 12-field InvariantSpec, 6 axes (planes × waists × object-kinds × transform-verbs × failure-classes × public-claims), the 12-question generator, the 9-bucket stopping rule (forbidden = `implicit convention`), and 15 under-covered families to fold (INV-META/POL/SRC-LINEAGE/TIME-AXIS/SCOPE/SEL/WRITE/SCHED/PROJ/OVL/SIG/CORPUS/NEG/DET/REGEX)
+- INVARIANT_DISCIPLINE_AND_PRECEDENT.md — standalone account of the total-invariant-mining discipline: precise statement, its lineage (Design-by-Contract, HAZOP/FMEA, DO-178C/ISO-26262 traceability, proof-carrying code & CompCert/seL4, assertion-based auditing, Jepsen/mutation-testing), what is genuinely novel (HAZOP-generator over a compiler's typed waists + proof-carrying certs + per-unit totality, transferred to law; guard-liveness as a non-optional completion field), how it manifests in LawVM artifacts, and honest limits (bounds the claim surface not the world; evidence- not proof-carrying; oracle-fallible floor)
+- LAWVM_AUDIT_INVARIANT_REGISTRY.md — complete a-priori audit/invariant coverage map: 78 distinct audits across 6 planes from 8 generative axes (planes/waists/§1.x/prime-directive-facts/temporal-determinism/certificate/meta-overlay/cross-jurisdiction); 31 implemented / 27 partial / 20 open, 44 new beyond the UK roadmap; ranked OPEN next-tier roadmap + adversarial completeness self-critique. Subsumes the UK-checkout `LAWVM_AUDIT_REGISTRY_ROADMAP.md`
+- FINLAND_COVERAGE_GAP_REPORT.md — Finland projection freshness / coverage snapshot

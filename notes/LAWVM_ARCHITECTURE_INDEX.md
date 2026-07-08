@@ -56,7 +56,7 @@ The fine waists the full list adds beyond the replay-core lens — **source_iden
 Graph names are **not** interchangeable. **A graph's name must say which plane it belongs to and whether it is producer, proof, or projection.**
 
 - **SourceSyntaxGraph** (nickname: *forest*) — token/source-total construction graph over source text; owns syntactic/surface parse accounting; **producer**, does not authorize replay. Prefer `SourceSyntaxGraph` in normative prose, not "forest".
-- **LegalSurfaceGraph** — graph of explicit source-surface facts (references, definitions, terms, temporal expressions, actor/modal frames, conditions, exceptions, residuals); static-analysis, surface-only; **not** replay authority. See [LEGAL_SURFACE_GRAPH.md](LEGAL_SURFACE_GRAPH.md).
+- **LegalSurfaceGraph** — graph of explicit source-surface facts (references, definitions, terms, temporal expressions, actor/modal frames, conditions, exceptions, residuals); static-analysis, surface-only; **not** replay authority. See LEGAL_SURFACE_GRAPH.md.
 - **ProvenanceGraph** — graph of assertions, attestations, sources, reviews, retractions, dependencies (proof/accounting plane); does not self-authorize replay.
 - **TransitionGraph** — **projection** over temporal legal-state transitions; not the replay source of truth unless backed by a certificate/trace root.
 
@@ -187,7 +187,7 @@ explicit in release docs.
 5. [THEORY_OF_LAWVM.md](THEORY_OF_LAWVM.md)
 6. [CROSS_JURISDICTION_ARCHITECTURE.md](CROSS_JURISDICTION_ARCHITECTURE.md)
 7. [FINLAND_FRONTEND_ELABORATION_ARCHITECTURE.md](FINLAND_FRONTEND_ELABORATION_ARCHITECTURE.md)
-8. [LEGAL_SURFACE_GRAPH.md](LEGAL_SURFACE_GRAPH.md)
+8. LEGAL_SURFACE_GRAPH.md
 9. [ROADMAP_V1_0.md](../ROADMAP_V1_0.md)
 
 ## Historical Material
