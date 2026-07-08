@@ -25,7 +25,13 @@ from __future__ import annotations
 import typing
 from pathlib import Path
 
-from lawvm.core.ir import IRNode, IRStatute
+from lawvm.core.ir import (
+    IRNode,
+    IRStatute,
+    LegalAddress,
+    LegalOperation,
+    OperationSource,
+)
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.core import tree_ops
 from lawvm.eu.eu_consolidation_oracle import build_consolidation_oracle
@@ -45,6 +51,7 @@ _SUBP = typing.cast(IRNodeKind, "subparagraph")
 _ITEM = typing.cast(IRNodeKind, "item")
 _PARAG = typing.cast(IRNodeKind, "paragraph")
 _ANNEX = typing.cast(IRNodeKind, "annex")
+_P = typing.cast(IRNodeKind, "p")
 
 
 # --------------------------------------------------------------------------- #
@@ -233,6 +240,125 @@ def test_direct_article_point_list_parses_and_applies(tmp_path) -> None:
     assert "new psychoactive substance text" in replayed_text
     assert "old psychoactive substance text" not in replayed_text
 
+
+def test_alinea_point_list_followed_by_p_blocks_materializes_subparagraphs(
+    tmp_path,
+) -> None:
+    """Real 32010R1093/32013R1022 shape: one PARAG>ALINEA contains
+    P/LIST/P/P. The post-list P blocks are legal subparagraphs, so a target like
+    ``article:1/paragraph:5/subparagraph:2`` must resolve without flattening
+    away the existing paragraph-level point list."""
+    base_xml = tmp_path / "base_alinea_subparagraphs.fmx4.xml"
+    base_xml.write_bytes(
+        b"""<?xml version="1.0"?>
+<ACT><TITLE><TI>base</TI></TITLE><ENACTING.TERMS>
+  <ARTICLE><TI.ART>Article 1</TI.ART>
+    <PARAG IDENTIFIER="001.005"><NO.PARAG>5.</NO.PARAG>
+      <ALINEA>
+        <P>The Authority shall contribute to:</P>
+        <LIST TYPE="alpha">
+          <ITEM><NP><NO.P>(a)</NO.P><TXT>improving the internal market;</TXT></NP></ITEM>
+          <ITEM><NP><NO.P>(b)</NO.P><TXT>ensuring integrity;</TXT></NP></ITEM>
+        </LIST>
+        <P>For those purposes, the Authority shall contribute to convergence.</P>
+        <P>In the exercise of its tasks, the Authority shall pay attention.</P>
+        <P>When carrying out its tasks, the Authority shall act independently.</P>
+      </ALINEA>
+    </PARAG>
+  </ARTICLE>
+</ENACTING.TERMS></ACT>"""
+    )
+    base = parse_eu_regulation_ir(base_xml, celex="32010R1093")
+    paragraph = base.body.children[0].children[0]
+    assert [(child.kind, child.label) for child in paragraph.children] == [
+        (_SUBP, "1"),
+        (_SUBP, "2"),
+        (_SUBP, "3"),
+        (_SUBP, "4"),
+    ]
+    assert (
+        tree_ops.find(
+            base.body,
+            "item",
+            "a",
+            scope_kind="paragraph",
+            scope_label="5",
+        )
+        is not None
+    )
+
+    result = apply_eu_ops_conserved(
+        base,
+        [
+            LegalOperation(
+                op_id="32013R1022-1.2",
+                sequence=1,
+                action=StructuralAction.REPLACE,
+                target=LegalAddress(
+                    path=(
+                        ("article", "1"),
+                        ("paragraph", "5"),
+                        ("subparagraph", "2"),
+                    )
+                ),
+                payload=IRNode(
+                    kind=_SUBP,
+                    label="2",
+                    text=(
+                        "For those purposes, the Authority shall undertake "
+                        "economic analyses."
+                    ),
+                ),
+                source=OperationSource(statute_id="32013R1022"),
+                witness_rule_id="EU_FMX4.SUBART_SUBPARAGRAPH_REPLACE",
+            )
+        ],
+    )
+    assert result.skipped_items == ()
+    assert [op.op_id for op in result.applied_ops] == ["32013R1022-1.2"]
+    replaced = tree_ops.resolve(
+        result.statute.body,
+        (("section", "1"), ("paragraph", "5"), ("subparagraph", "2")),
+    )
+    assert replaced is not None
+    assert "undertake economic analyses" in replaced.text
+
+
+def test_alinea_lowercase_post_list_p_stays_same_subparagraph(tmp_path) -> None:
+    """Real 32022R2309 guard: lower-case post-list prose like ``provided that``
+    continues the list-bearing subparagraph. Splitting it as a new
+    subparagraph duplicates list text on the article compare surface."""
+    base_xml = tmp_path / "base_lowercase_continuation.fmx4.xml"
+    base_xml.write_bytes(
+        b"""<?xml version="1.0"?>
+<ACT><TITLE><TI>base</TI></TITLE><ENACTING.TERMS>
+  <ARTICLE><TI.ART>Article 6</TI.ART>
+    <PARAG IDENTIFIER="006.001"><NO.PARAG>1.</NO.PARAG>
+      <ALINEA>
+        <P>The funds concerned are:</P>
+        <LIST TYPE="alpha">
+          <ITEM><NP><NO.P>(a)</NO.P><TXT>necessary for basic needs;</TXT></NP></ITEM>
+          <ITEM><NP><NO.P>(b)</NO.P><TXT>intended for legal fees;</TXT></NP></ITEM>
+        </LIST>
+        <P>provided that the competent authority has notified the committee.</P>
+      </ALINEA>
+    </PARAG>
+  </ARTICLE>
+</ENACTING.TERMS></ACT>"""
+    )
+    base = parse_eu_regulation_ir(base_xml, celex="32022R2309")
+    paragraph = base.body.children[0].children[0]
+    assert [child.kind for child in paragraph.children] == [_P, _ITEM, _ITEM, _P]
+    article_text = " ".join(
+        part
+        for part in (
+            base.body.children[0].text,
+            *(child.text for child in paragraph.children),
+        )
+        if part
+    )
+    assert article_text.count("necessary for basic needs") == 1
+    assert "provided that the competent authority" in article_text
 
 # --------------------------------------------------------------------------- #
 # Goal 2 — separate-annex payload threading                                    #

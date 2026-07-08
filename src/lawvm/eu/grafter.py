@@ -164,6 +164,77 @@ def _block_units(el: ET.Element[str]) -> list[IRNode]:
     return units
 
 
+def _alinea_subparagraph_units(el: ET.Element[str]) -> list[IRNode]:
+    """Split an FMX4 ``ALINEA`` into legal subparagraph coordinate units.
+
+    Some EU base acts encode one numbered paragraph as a single ``ALINEA`` whose
+    direct children are ``P, LIST, P, P, ...``. Drafting then refers to "the
+    second subparagraph of paragraph N": the first subparagraph is the lead-in
+    ``P`` plus its point list, and each following direct ``P`` is the next
+    subparagraph. A flat paragraph body has no resolvable
+    ``paragraph:N/subparagraph:K`` coordinate, so materialize those direct
+    ALINEA blocks as subparagraph children while keeping point items nested in
+    source order.
+    """
+    if el.tag != "ALINEA":
+        return []
+    direct_blocks = [c for c in el if c.tag in ("P", "LIST")]
+    if len(direct_blocks) <= 1:
+        return []
+    if any(c.tag == "LIST" and not _point_items(c) for c in direct_blocks):
+        return []
+
+    groups: list[list[ET.Element[str]]] = []
+    current: list[ET.Element[str]] = []
+    current_has_list = False
+    for child in direct_blocks:
+        if child.tag == "P" and current:
+            text = _element_text(child)
+            first = next((ch for ch in text if ch.isalnum()), "")
+            if current_has_list and first and not (first.isupper() or first.isdigit()):
+                current.append(child)
+                continue
+            groups.append(current)
+            current = [child]
+            current_has_list = False
+            continue
+        if child.tag == "LIST":
+            current_has_list = True
+            current.append(child)
+            continue
+        current.append(child)
+    if current:
+        groups.append(current)
+    if len(groups) <= 1:
+        return []
+
+    out: list[IRNode] = []
+    for idx, group in enumerate(groups, start=1):
+        units: list[IRNode] = []
+        for block in group:
+            units.extend(_block_units(block))
+        if any(unit.kind == cast(IRNodeKind, "item") for unit in units):
+            out.append(
+                IRNode(
+                    kind=cast(IRNodeKind, "subparagraph"),
+                    label=str(idx),
+                    text="",
+                    children=tuple(units),
+                )
+            )
+            continue
+        text = _normalize_text(" ".join(unit.text for unit in units if unit.text))
+        if text:
+            out.append(
+                IRNode(
+                    kind=cast(IRNodeKind, "subparagraph"),
+                    label=str(idx),
+                    text=text,
+                )
+            )
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Core Parser
 # ---------------------------------------------------------------------------
@@ -415,6 +486,10 @@ class EUIRGrafter:
             if child.tag == "NO.PARAG":
                 continue
             if child.tag in ("ALINEA", "P"):
+                split_subparas = _alinea_subparagraph_units(child)
+                if split_subparas:
+                    children.extend(split_subparas)
+                    continue
                 if _point_items(child):
                     # Lead-in prose, then the points, then any wrap-up prose — all
                     # as children in document order.
