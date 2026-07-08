@@ -636,6 +636,28 @@ def test_numberless_article_insert_number_from_quoted_heading() -> None:
     assert op.payload is not None and op.payload.text == "Derogation body text."
 
 
+def test_numberless_article_insert_drops_quoted_article_subtitle() -> None:
+    """Real 32013R1022 Article 49a shape: STI.ART is article metadata, not body
+    text, so it must not leak into replay-materialized whole-article payloads."""
+    fmx = b"""<?xml version="1.0"?>
+<ACT><ENACTING.TERMS>
+  <ARTICLE><TI.ART>Article 1</TI.ART>
+    <ALINEA><P>The following article is inserted in Regulation (EU) No 1093/2010:</P>
+      <QUOT.S LEVEL="1"><ARTICLE IDENTIFIER="049A"><TI.ART><QUOT.START/>Article 49a</TI.ART>
+        <STI.ART>Expenses</STI.ART>
+        <ALINEA>The Chair shall make public meetings held and hospitality received.<QUOT.END/></ALINEA>
+      </ARTICLE></QUOT.S>
+    </ALINEA></ARTICLE>
+</ENACTING.TERMS></ACT>"""
+    r = lower_amending_act(fmx, "32013R1022", base_celex="32010R1093")
+
+    assert [str(op.target) for op in r.ops] == ["article:49a"]
+    op = r.ops[0]
+    assert op.action == StructuralAction.INSERT
+    assert op.payload is not None
+    assert op.payload.text == "The Chair shall make public meetings held and hospitality received."
+
+
 def test_marker_form_paragraph_insert_payload_recovered() -> None:
     """The real 32021R1096 shape: a numbered paragraph quoted in NP form whose
     QUOT.START opens INSIDE its own NO.P marker. The marker is the node label

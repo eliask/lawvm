@@ -897,12 +897,13 @@ _RE_ARTICLE_INSERT_NUMBERLESS = re.compile(
 )
 
 #: Payload marker tags excluded from GRAFTER-COMMENSURABLE structural payload
-#: text: in the IR coordinate system the article heading (TI.ART) and the
-#: paragraph number marker (NO.PARAG) are the node's LABEL, not text — the EU
-#: grafter renders neither into a consolidated article's text, so neither may a
-#: replay-materialized payload. Point markers (NO.P) STAY: the grafter renders
-#: them inline (ALINEA itertext), so the payload must too.
-_PAYLOAD_MARKER_TAGS = frozenset({"TI.ART", "NO.PARAG"})
+#: text: in the IR coordinate system the article heading/subtitle
+#: (TI.ART/STI.ART) and the paragraph number marker (NO.PARAG) are node metadata,
+#: not text — the EU grafter renders none of them into a consolidated article's
+#: text, so neither may a replay-materialized payload. Point markers (NO.P)
+#: STAY: the grafter renders them inline (ALINEA itertext), so the payload must
+#: too.
+_PAYLOAD_MARKER_TAGS = frozenset({"TI.ART", "STI.ART", "NO.PARAG"})
 
 
 def _top_level_nps(el: ET.Element) -> list[ET.Element]:
@@ -983,13 +984,14 @@ def _np_prose(el: ET.Element, *, keep_child_nps: bool) -> str:
 def _quoted_struct_payload_text(el: ET.Element, *, drop_own_no_p: bool = False) -> str:
     """GRAFTER-COMMENSURABLE text of a quoted structural payload element.
 
-    Mirrors how the EU grafter renders a consolidated unit: TI.ART headings and
-    NO.PARAG markers are labels (excluded); point markers and body text are
-    kept; collection STOPS at the first ``QUOT.END`` (its tail belongs to the
-    instruction, not the payload — the 32022R2309@20230216 boundary conviction).
-    ``drop_own_no_p`` additionally excludes the element's own DIRECT ``NO.P``
-    marker — the case of a numbered paragraph quoted in NP form, whose marker
-    is the node LABEL (nested point markers stay, as the grafter keeps them).
+    Mirrors how the EU grafter renders a consolidated unit: TI.ART/STI.ART
+    headings and NO.PARAG markers are labels/metadata (excluded); point markers
+    and body text are kept; collection STOPS at the first ``QUOT.END`` (its tail
+    belongs to the instruction, not the payload — the 32022R2309@20230216
+    boundary conviction). ``drop_own_no_p`` additionally excludes the element's
+    own DIRECT ``NO.P`` marker — the case of a numbered paragraph quoted in NP
+    form, whose marker is the node LABEL (nested point markers stay, as the
+    grafter keeps them).
     """
     parts: list[str] = []
     stopped = False
