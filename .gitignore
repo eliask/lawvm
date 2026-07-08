@@ -31,6 +31,7 @@ data/**
 !data/finland/corrigendum_unresolvable_fi.yaml
 !data/finland/oracle_overrides_fi.yaml
 !data/finland/source_defect_fixes_fi.yaml
+!data/finland/reference_successor_promotion_claims_fi.jsonl
 !data/finland/bench_corpus.csv
 !data/finland/bench_corpus_curated217.csv
 !data/finland/bench_corpus_notes.md
