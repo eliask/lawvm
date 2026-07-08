@@ -328,6 +328,9 @@ US_DRY_RUN_DEFERRED_OP_INFLATED_AS_MISSING_SOURCE_RULE_ID = (
 US_DRY_RUN_RECOVERED_BARE_LEAF_TARGET_VIA_UNIQUE_SUFFIX_RULE_ID = (
     "us_dry_run_recovered_bare_leaf_target_via_unique_suffix_match"
 )
+US_DRY_RUN_RECOVERED_TEXT_ANCHOR_ARTICLE_VARIANT_RULE_ID = (
+    "us_dry_run_recovered_text_anchor_article_variant"
+)
 
 
 def _norm(text: str) -> str:
@@ -1030,6 +1033,29 @@ class USDryRunTargetRecovery:
 
 
 @dataclass(frozen=True)
+class USDryRunTextAnchorRecovery:
+    """One text-anchor recovery observation (AGENTS.md §0 typed emission)."""
+
+    op_id: str
+    target_address: str
+    original_match_text: str
+    recovered_match_text: str
+    reason_code: str
+    family: str = "text_anchor_recovery"
+
+    def to_jsonable(self) -> dict[str, Any]:
+        return {
+            "op_id": self.op_id,
+            "rule_id": US_DRY_RUN_RECOVERED_TEXT_ANCHOR_ARTICLE_VARIANT_RULE_ID,
+            "target_address": self.target_address,
+            "original_match_text": self.original_match_text,
+            "recovered_match_text": self.recovered_match_text,
+            "reason_code": self.reason_code,
+            "family": self.family,
+        }
+
+
+@dataclass(frozen=True)
 class USDryRunReport:
     """Section-level dry-run report for one (before-edition, PL window) pair.
 
@@ -1059,6 +1085,11 @@ class USDryRunReport:
     # segments). Non-blocking and non-authoritative (the dry-run surface stays
     # ``replay_authorized=False``); surfaced for audit only.
     target_recoveries: tuple[USDryRunTargetRecovery, ...] = ()
+    # Owned text-anchor recoveries (AGENTS.md §0 typed emission): one row per op
+    # whose quoted anchor was absent exactly but had a unique, witnessed
+    # source-text variant in the located target node. Non-authoritative; surfaced
+    # for audit only.
+    text_anchor_recoveries: tuple[USDryRunTextAnchorRecovery, ...] = ()
     # task #105: same-moment cross-act conflict findings from the unified ordering
     # kernel. A blocking ``CompileAdjudication`` (kind
     # ``us_same_moment_cross_act_incompatible_payload_ambiguous``) is emitted
@@ -1400,6 +1431,7 @@ class USDryRunReport:
             "sunset_finding_count": len(self.sunset_findings),
             "same_moment_finding_count": len(self.same_moment_findings),
             "target_recovery_count": len(self.target_recoveries),
+            "text_anchor_recovery_count": len(self.text_anchor_recoveries),
             "lowering_sentence_strike_sections": list(
                 self.lowering_sentence_strike_sections
             ),
@@ -1431,6 +1463,9 @@ class USDryRunReport:
         payload["sunset_reversions"] = [c.to_jsonable() for c in self.sunset_reversions]
         payload["sunset_findings"] = [f.to_jsonable() for f in self.sunset_findings]
         payload["target_recoveries"] = [r.to_jsonable() for r in self.target_recoveries]
+        payload["text_anchor_recoveries"] = [
+            r.to_jsonable() for r in self.text_anchor_recoveries
+        ]
         payload["same_moment_findings"] = [
             {
                 "kind": f.kind,
@@ -2075,6 +2110,25 @@ def _token_count_in_text(text: str, match_text: str) -> int:
     return text.count(match_text)
 
 
+def _article_variant_match_anchor(
+    *, node_text: str, match_text: str, replacement: str
+) -> str | None:
+    """Return a unique ``a State``/``the State`` anchor variant, if witnessed."""
+    variants: list[str] = []
+    if " a State " in match_text and " a State " in replacement:
+        variants.append(match_text.replace(" a State ", " the State "))
+    if " the State " in match_text and " the State " in replacement:
+        variants.append(match_text.replace(" the State ", " a State "))
+    for candidate in variants:
+        if candidate == match_text:
+            continue
+        if _token_in_text(node_text, candidate) and _token_count_in_text(
+            node_text, candidate
+        ) == 1:
+            return candidate
+    return None
+
+
 def _replace_token_in_text(
     text: str,
     match_text: str,
@@ -2671,6 +2725,7 @@ def _materialize_one(
     before_section: UscSection | None = None,
     node_overrides: NodeOverrides | None = None,
     recoveries: list[USDryRunTargetRecovery] | None = None,
+    text_anchor_recoveries: list[USDryRunTextAnchorRecovery] | None = None,
 ) -> tuple[str, str, str] | USDryRunRefusal:
     """Apply one op to a section's before-text -> (materialized, rule_id, disposition).
 
@@ -2755,36 +2810,55 @@ def _materialize_one(
                 recoveries=recoveries,
             )
             if node_text is not None:
+                effective_match_text = match_text
                 if not _token_in_text(node_text, match_text):
-                    # The immediate container may not contain the anchor while deeper
-                    # descendants do (e.g. "in paragraph (4)" but ``120`` only appears
-                    # in subparagraph (A)/(B) clauses).  Apply the patch inside the
-                    # target subtree without widening beyond it.
-                    if node_overrides is not None:
-                        subtree_materialized = _apply_text_patch_to_target_subtree(
-                            before_text,
-                            target_segments=_subsection_segments(operation.target),
-                            match_text=match_text,
-                            replacement=replacement or "",
-                            count=count,
-                            last_occurrence=last_occurrence,
-                            node_overrides=node_overrides,
-                        )
-                        if subtree_materialized is not None:
-                            return (subtree_materialized, "", "")
-                    # The anchor is not in the running node or its descendants. Either a
-                    # prior IDENTICAL patch on this node already consumed the only/last
-                    # occurrence (the dual-identical-patch tail), or a sibling op
-                    # rewrote the node away from this anchor. Striking an anchor the
-                    # running node no longer carries is a NO-OP against the live text, not
-                    # a wrong materialization: REFUSE it (mirroring the absent-anchor
-                    # refusal) so the section's already-applied sibling patches keep
-                    # their correct composition instead of being tanked into a section-
-                    # wide residual. Refusing (not collapsing onto the prior edit) is
-                    # what keeps two identical patches from colliding on one occurrence.
-                    return _refuse_absent_text_target(
-                        operation, absent_kind="match anchor", absent_text=match_text
+                    recovered_match_text = _article_variant_match_anchor(
+                        node_text=node_text,
+                        match_text=match_text,
+                        replacement=replacement or "",
                     )
+                    if recovered_match_text is not None:
+                        effective_match_text = recovered_match_text
+                        if text_anchor_recoveries is not None:
+                            text_anchor_recoveries.append(
+                                USDryRunTextAnchorRecovery(
+                                    op_id=op_id,
+                                    target_address=str(operation.target),
+                                    original_match_text=match_text,
+                                    recovered_match_text=recovered_match_text,
+                                    reason_code="article_variant_a_the_unique",
+                                )
+                            )
+                    else:
+                        # The immediate container may not contain the anchor while deeper
+                        # descendants do (e.g. "in paragraph (4)" but ``120`` only appears
+                        # in subparagraph (A)/(B) clauses).  Apply the patch inside the
+                        # target subtree without widening beyond it.
+                        if node_overrides is not None:
+                            subtree_materialized = _apply_text_patch_to_target_subtree(
+                                before_text,
+                                target_segments=_subsection_segments(operation.target),
+                                match_text=match_text,
+                                replacement=replacement or "",
+                                count=count,
+                                last_occurrence=last_occurrence,
+                                node_overrides=node_overrides,
+                            )
+                            if subtree_materialized is not None:
+                                return (subtree_materialized, "", "")
+                        # The anchor is not in the running node or its descendants. Either a
+                        # prior IDENTICAL patch on this node already consumed the only/last
+                        # occurrence (the dual-identical-patch tail), or a sibling op
+                        # rewrote the node away from this anchor. Striking an anchor the
+                        # running node no longer carries is a NO-OP against the live text, not
+                        # a wrong materialization: REFUSE it (mirroring the absent-anchor
+                        # refusal) so the section's already-applied sibling patches keep
+                        # their correct composition instead of being tanked into a section-
+                        # wide residual. Refusing (not collapsing onto the prior edit) is
+                        # what keeps two identical patches from colliding on one occurrence.
+                        return _refuse_absent_text_target(
+                            operation, absent_kind="match anchor", absent_text=match_text
+                        )
                 # First-occurrence (count==1) or each-place (count==-1) replace inside
                 # the RUNNING node text. First-occurrence always takes the LEFTMOST
                 # remaining match: for two SAME-anchor patches on one node, patch 0
@@ -2797,7 +2871,7 @@ def _materialize_one(
                 ):
                     new_node_text = _replace_nth_token_in_text(
                         node_text,
-                        match_text=match_text,
+                        match_text=effective_match_text,
                         replacement=replacement or "",
                         occurrence=patch.selector.occurrence,
                     )
@@ -2811,7 +2885,7 @@ def _materialize_one(
                     new_node_text = _apply_text_patch_with_tail_dispatch(
                         operation,
                         node_text,
-                        match_text=match_text,
+                        match_text=effective_match_text,
                         replacement=replacement or "",
                         count=count,
                     )
@@ -3526,6 +3600,7 @@ def build_us_dry_run(
     rows: list[USDryRunSectionRow] = []
     refusals: list[USDryRunRefusal] = []
     target_recoveries: list[USDryRunTargetRecovery] = []
+    text_anchor_recoveries: list[USDryRunTextAnchorRecovery] = []
     claimed_sections: set[str] = set()
 
     # Phase 1: lower each Public Law, then route every op to its section's
@@ -3893,6 +3968,7 @@ def build_us_dry_run(
                 before_section=before_section,
                 node_overrides=node_overrides,
                 recoveries=target_recoveries,
+                text_anchor_recoveries=text_anchor_recoveries,
             )
             if isinstance(outcome, USDryRunRefusal):
                 refusals.append(outcome)
@@ -4255,6 +4331,7 @@ def build_us_dry_run(
         sunset_reversions=sunset_reversions,
         sunset_findings=sunset_findings,
         target_recoveries=tuple(target_recoveries),
+        text_anchor_recoveries=tuple(text_anchor_recoveries),
         same_moment_findings=same_moment_findings,
         lowering_deferred_sections=tuple(
             sorted(f"{title}:{s}" for s in lowering_deferred_sections)

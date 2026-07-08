@@ -526,6 +526,13 @@ _US_RULE_SPECS: Dict[str, str] = {
         "resolved. When multiple nodes match the suffix, the existing §1.1 refusal "
         "fires (no silent target hijacking)."
     ),
+    "us_dry_run_recovered_text_anchor_article_variant": (
+        "A text op whose exact quoted match_text is absent from the located target node "
+        "may recover only the witnessed 'a State'/'the State' article variant when the "
+        "replacement text proves the source article form and the before-section node "
+        "contains exactly one candidate variant. Ambiguous or absent variants keep the "
+        "existing match-text residual/refusal rather than fuzzy-matching."
+    ),
     "us_dry_run_residual_target_level_absent_in_source_tree": (
         "Contradiction: the USC annual-edition source tree for the section does not "
         "expose the structural level the amendment names (e.g. only subparagraph markers "
@@ -960,6 +967,7 @@ _US_RULE_CONFIDENCE: Dict[str, str] = {
     "us_dry_run_residual_olrc_grammar_cleanup": US_CONFIDENCE_HEURISTIC,
     "us_dry_run_residual_oracle_retained_title_scope_strike": US_CONFIDENCE_HEURISTIC,
     "us_dry_run_recovered_bare_leaf_target_via_unique_suffix_match": US_CONFIDENCE_HEURISTIC,
+    "us_dry_run_recovered_text_anchor_article_variant": US_CONFIDENCE_HEURISTIC,
     "us_amendatory_deferred_amend_to_read": US_CONFIDENCE_HEURISTIC,
     "us_amendatory_unrecognized_redesignate_shape": US_CONFIDENCE_HEURISTIC,
     "us_amendatory_unrecognized_form": US_CONFIDENCE_HEURISTIC,

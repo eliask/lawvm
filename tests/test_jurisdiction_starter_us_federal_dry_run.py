@@ -63,10 +63,12 @@ from lawvm.us_federal.dry_run import (
     US_DRY_RUN_RESIDUAL_TEXT_MISMATCH_RULE_ID,
     US_DRY_RUN_SECTION_AGREES_RULE_ID,
     US_DRY_RUN_RECOVERED_BARE_LEAF_TARGET_VIA_UNIQUE_SUFFIX_RULE_ID,
+    US_DRY_RUN_RECOVERED_TEXT_ANCHOR_ARTICLE_VARIANT_RULE_ID,
     USDryRunConservedAccount,
     USDryRunRefusal,
     USDryRunReport,
     USDryRunTargetRecovery,
+    USDryRunTextAnchorRecovery,
     USDryRunWindowError,
     _has_source_truncated_clause_payload,
     _index_node_text,
@@ -1109,6 +1111,9 @@ def test_build_us_dry_run_default_report_has_no_target_recoveries() -> None:
     assert report.target_recoveries == ()
     assert report.to_jsonable()["summary"]["target_recovery_count"] == 0
     assert report.to_jsonable()["target_recoveries"] == []
+    assert report.text_anchor_recoveries == ()
+    assert report.to_jsonable()["summary"]["text_anchor_recovery_count"] == 0
+    assert report.to_jsonable()["text_anchor_recoveries"] == []
 
 
 def test_build_us_dry_run_carries_same_moment_findings_through_the_report(
@@ -1438,6 +1443,40 @@ def test_real_title23_section109_heading_body_duplicate_anchor_is_oracle_suspect
     assert row.disposition == DISPOSITION_ORACLE_SUSPECT
     assert "Non-NHS Projects.—(A) In general.—Projects" in row.materialized_text
     assert "Non-NHS (A) In general.—Projects.—Projects" not in row.materialized_text
+    assert _norm_editorial(row.materialized_text) == _norm_editorial(row.oracle_text)
+
+
+def test_real_title23_section126_article_variant_anchor_is_oracle_suspect_when_archive_present() -> None:
+    report = _build_real_title23_2020_2022_report_or_skip()
+
+    recoveries = [
+        r
+        for r in report.text_anchor_recoveries
+        if r.op_id == "/us/pl/117/58/dA/tI/stA/s11109/b/2/B"
+    ]
+    assert len(recoveries) == 1
+    recovery = recoveries[0]
+    assert recovery.to_jsonable()["rule_id"] == (
+        US_DRY_RUN_RECOVERED_TEXT_ANCHOR_ARTICLE_VARIANT_RULE_ID
+    )
+    assert recovery.original_match_text == (
+        "reserved for a State under section 133(h) for a fiscal year may"
+    )
+    assert recovery.recovered_match_text == (
+        "reserved for the State under section 133(h) for a fiscal year may"
+    )
+
+    row = {r.section_key: r for r in report.rows}["23:126"]
+    assert row.rule_id == US_DRY_RUN_RESIDUAL_TEXT_MISMATCH_RULE_ID
+    assert row.disposition == DISPOSITION_ORACLE_SUSPECT
+    assert (
+        "funding set aside for a State under section 133(h) for a fiscal year"
+        in row.materialized_text
+    )
+    assert (
+        "funding reserved for the State under section 133(h) for a fiscal year"
+        not in row.materialized_text
+    )
     assert _norm_editorial(row.materialized_text) == _norm_editorial(row.oracle_text)
 
 
@@ -2641,6 +2680,124 @@ def test_heading_body_duplicate_anchor_patch_edits_body_occurrence_only() -> Non
     assert signal_rule_id == ""
     assert "Non-NHS Projects.—(A) In general.—Projects shall be designed" in materialized
     assert "Non-NHS (A) In general" not in materialized
+
+
+def test_article_variant_text_anchor_recovery_edits_unique_located_node_anchor() -> None:
+    before = (
+        '<!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml"><head>'
+        "<title>T23</title><!-- AUTHORITIES-USC-TITLE-ENUM:23 --></head><body><div>"
+        "<!-- expcite:TITLE 23!@!CHAPTER 1!@!Sec. 126 -->"
+        '<!-- field-start:head --><h3 class="section-head">&sect;126. Transferability</h3>'
+        "<!-- field-end:head --><!-- field-start:statute -->"
+        '<p class="statutory-body">(b) Application to Certain Set-asides.—</p>'
+        '<p class="statutory-body-1em">(2) Funds transferred by States.—Funds '
+        "transferred by a State under this section of the funding reserved for "
+        "the State under section 133(h) for a fiscal year may only come from "
+        "eligible funds.</p>"
+        "<!-- field-end:statute --></div></body></html>"
+    ).encode("utf-8")
+    doc = parse_usc_title_document(before, title=23, year="2020")
+    section = doc.section_by_number("126")
+    assert section is not None
+    op = LegalOperation(
+        op_id="article-variant-anchor",
+        sequence=1,
+        action=StructuralAction.TEXT_PATCH,
+        target=LegalAddress(
+            path=(
+                ("title", "23"),
+                ("section", "126"),
+                ("subsection", "b"),
+                ("paragraph", "2"),
+            )
+        ),
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(
+                match_text="reserved for a State under section 133(h) for a fiscal year may"
+            ),
+            replacement="set aside for a State under section 133(h) for a fiscal year—(A) may",
+        ),
+    )
+    recoveries: list[USDryRunTextAnchorRecovery] = []
+
+    outcome = _materialize_one(
+        op,
+        section.statutory_text,
+        before_section=section,
+        text_anchor_recoveries=recoveries,
+    )
+
+    assert not isinstance(outcome, USDryRunRefusal)
+    materialized, signal_rule_id, _disp = outcome
+    assert signal_rule_id == ""
+    assert (
+        "funding set aside for a State under section 133(h) for a fiscal year—(A) may"
+        in materialized
+    )
+    assert "reserved for the State" not in materialized
+    assert len(recoveries) == 1
+    recovery = recoveries[0]
+    assert recovery.op_id == "article-variant-anchor"
+    assert recovery.original_match_text == (
+        "reserved for a State under section 133(h) for a fiscal year may"
+    )
+    assert recovery.recovered_match_text == (
+        "reserved for the State under section 133(h) for a fiscal year may"
+    )
+    assert recovery.to_jsonable()["rule_id"] == (
+        US_DRY_RUN_RECOVERED_TEXT_ANCHOR_ARTICLE_VARIANT_RULE_ID
+    )
+
+
+def test_article_variant_text_anchor_recovery_refuses_ambiguous_variant() -> None:
+    before = (
+        '<!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml"><head>'
+        "<title>T23</title><!-- AUTHORITIES-USC-TITLE-ENUM:23 --></head><body><div>"
+        "<!-- expcite:TITLE 23!@!CHAPTER 1!@!Sec. 126 -->"
+        '<!-- field-start:head --><h3 class="section-head">&sect;126. Transferability</h3>'
+        "<!-- field-end:head --><!-- field-start:statute -->"
+        '<p class="statutory-body">(b) Application.—</p>'
+        '<p class="statutory-body-1em">(2) first reserved for the State under '
+        "section 133(h) for a fiscal year may apply; second reserved for the "
+        "State under section 133(h) for a fiscal year may apply.</p>"
+        "<!-- field-end:statute --></div></body></html>"
+    ).encode("utf-8")
+    doc = parse_usc_title_document(before, title=23, year="2020")
+    section = doc.section_by_number("126")
+    assert section is not None
+    op = LegalOperation(
+        op_id="article-variant-ambiguous",
+        sequence=1,
+        action=StructuralAction.TEXT_PATCH,
+        target=LegalAddress(
+            path=(
+                ("title", "23"),
+                ("section", "126"),
+                ("subsection", "b"),
+                ("paragraph", "2"),
+            )
+        ),
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(
+                match_text="reserved for a State under section 133(h) for a fiscal year may"
+            ),
+            replacement="set aside for a State under section 133(h) for a fiscal year—(A) may",
+        ),
+    )
+    recoveries: list[USDryRunTextAnchorRecovery] = []
+
+    outcome = _materialize_one(
+        op,
+        section.statutory_text,
+        before_section=section,
+        text_anchor_recoveries=recoveries,
+    )
+
+    assert isinstance(outcome, USDryRunRefusal)
+    assert outcome.rule_id == US_DRY_RUN_REFUSED_TEXT_TARGET_NODE_ABSENT_RULE_ID
+    assert recoveries == []
 
 
 def test_node_scoped_each_place_patch_with_repeated_anchor_replaces_every_node_occurrence() -> None:
