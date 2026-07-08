@@ -792,6 +792,7 @@ def test_test_shard_maps_repo_hygiene_and_ratchet_baselines_narrowly() -> None:
     assert module.affected_shards([".gitignore"]) == ["tools_audit_release"]
     assert module.affected_shards([
         "tests/data/classifier_wrap_ratchet_baseline.json",
+        "tests/data/module_roles_baseline.json",
         "tests/data/regex_ratchet_baseline.json",
     ]) == ["core_ir_contracts"]
     assert _without_path_expanded_shards(module.affected_plan([

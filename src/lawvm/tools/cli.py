@@ -12958,6 +12958,15 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
     us_spec_ledger_p.add_argument(
         "--json-out", default="", metavar="PATH", help="also write the ledger JSON here"
     )
+    us_spec_ledger_p.add_argument(
+        "--out-dir",
+        default="",
+        metavar="DIR",
+        help=(
+            "also persist the shared diffable spec-ledger report under DIR "
+            "(spec_ledger.json + spec_ledger.md)"
+        ),
+    )
 
     spec_ledger_p = sub.add_parser(
         "spec-ledger",
@@ -15116,6 +15125,7 @@ def _main_impl() -> None:
             ledger_to_dict,
             render_text,
         )
+        from lawvm.tools.spec_ledger_report import persist_ledger
 
         _corpus = (
             _Path(args.corpus) if getattr(args, "corpus", None) else DEFAULT_CORPUS_PATH
@@ -15133,6 +15143,10 @@ def _main_impl() -> None:
             print(json.dumps(ledger_to_dict(_ledger), ensure_ascii=False, indent=2))
         else:
             print(render_text(_ledger))
+        _out_dir = getattr(args, "out_dir", "")
+        if _out_dir:
+            _json_path = persist_ledger(_ledger, _Path(_out_dir))
+            print(f"wrote {_json_path}", file=sys.stderr)
         _json_out = getattr(args, "json_out", "")
         if _json_out:
             with open(_json_out, "w", encoding="utf-8") as _fh:

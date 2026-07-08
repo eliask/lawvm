@@ -2821,6 +2821,7 @@ _CHAPTER_ANALYSIS_INSERT_RE = compile_classifier_regex(
 # deterministically locate a sentence boundary from prose alone. The instruction
 # is a typed finding, not a phrase swap. Recognizer is a hot-path classifier on
 # every insert_after instruction.
+# lawvm-regex: prefilter typed sentence-anchor holdout recognizer; never authorizes replay
 _SENTENCE_ANCHOR_INSERT_RE = re.compile(
     r"\binserting\s+"
     r"(?:"
@@ -5125,6 +5126,7 @@ def _lower_instruction(
                     "insert-after without both inserted text and anchor text",
                 )
     elif family == "add_at_end":
+        # lawvm-regex: prefilter typed sentence-anchor holdout recognizer; never authorizes replay
         if _SENTENCE_ANCHOR_INSERT_RE.search(raw_text) is not None:
             finding = _finding(
                 SENTENCE_ANCHOR_INSERT_FINDING_RULE_ID,

@@ -440,7 +440,7 @@ def _norm_editorial(text: str) -> str:
     return _norm(respaced)
 
 
-def _norm_certificate_grammar_cleanup(text: str) -> str:
+def _norm_olrc_grammar_cleanup(text: str) -> str:
     respaced = re.sub(r"\s+([,;:.])", r"\1", text)
     respaced = respaced.replace(
         "issued a certificate correcting such error",
@@ -449,7 +449,7 @@ def _norm_certificate_grammar_cleanup(text: str) -> str:
     return _norm_editorial(respaced)
 
 
-def _has_olrc_certificate_grammar_cleanup(
+def _has_olrc_grammar_cleanup(
     materialized: str,
     oracle_text: str,
     before_text: str,
@@ -466,7 +466,7 @@ def _has_olrc_certificate_grammar_cleanup(
         return False
     if _norm(materialized) == _norm(oracle_text):
         return False
-    return _norm_certificate_grammar_cleanup(materialized) == _norm_certificate_grammar_cleanup(
+    return _norm_olrc_grammar_cleanup(materialized) == _norm_olrc_grammar_cleanup(
         oracle_text
     )
 
@@ -3726,7 +3726,7 @@ def build_us_dry_run(
                     oracle_changed=oracle_changed_here,
                 )
             )
-        elif _has_olrc_certificate_grammar_cleanup(
+        elif _has_olrc_grammar_cleanup(
             materialized,
             oracle_text,
             before_text,
