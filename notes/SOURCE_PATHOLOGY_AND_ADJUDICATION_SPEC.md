@@ -481,7 +481,7 @@ Required response:
 - do not fail; the two-pass fix picks the next free ordinal (e.g. `'2a'`)
 
 Classification: `RISK_SIGNAL`, `SECTION_STATE`.
-Implementation: T2 commit a9034ce8 averted the collision; observation emission
+Implementation: T2 averted the collision; observation emission
 deferred.
 
 ### 8.5 Editorial oracle artifacts
@@ -534,7 +534,7 @@ Required response:
 
 Classification: **editorial lane** (new first-class lane distinct from source
 pathology and replay demotion). Scope: `STATUTE_SCOPE`.
-Implementation: T6 commit a9034ce8 strips stubs at projection; T4/Gap 4
+Implementation: T6 strips stubs at projection; T4/Gap 4
 implements the cross-check in `src/lawvm/finland/editorial_adjudication.py`.
 
 #### 8.5.3 Editorial witness confirmed
@@ -626,7 +626,7 @@ Required response:
 - continue to accept the artifact; use the computed effective PIT instead
 
 Classification: `RISK_SIGNAL`, `STATUTE_SCOPE`.
-Implementation: T5 commit dd3d631c (Option Z): switch to computing oracle PIT
+Implementation: T5 (Option Z): switch to computing oracle PIT
 from embedded version + amendment effective dates; observation emission
 deferred.
 

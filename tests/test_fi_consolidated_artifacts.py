@@ -584,8 +584,8 @@ def test_select_cached_consolidated_artifact_bench_comparable_prefers_self_comme
     Finlex drafting lead-time window and is treated as a real metadata
     inconsistency rather than a collapsed-dates pathology.
 
-    Provenance: T5 (commit dd3d631c) introduced Option Z. T5-fix
-    (commit a3870eea) restored the 180-day tolerance matching the
+    Provenance: T5 introduced Option Z. T5-fix
+    restored the 180-day tolerance matching the
     long-standing ``corpus.py:404`` convention.
     """
     class DummyArchive:

@@ -6,7 +6,7 @@ ClaimStore-direct acceptance criteria still validated here:
       observes retraction — retracted claims leave NULL slots as NULL)
 
 Criteria 11/12/13/15 exercised the v2.2 ClaimStore-backed `lawvm claim
-retract` / `taint-report` CLI. Commit 7d0eb1df migrated those CLI commands
+retract` / `taint-report` CLI. An earlier change migrated those CLI commands
 to the v3 GraphStore / ProvenanceAssertion substrate (they no longer read
 ClaimStore), so those four tests — which seeded a ClaimStore and then drove
 the migrated CLI — became incoherent and are now covered against the current

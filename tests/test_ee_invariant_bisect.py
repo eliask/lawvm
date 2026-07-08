@@ -27,7 +27,7 @@ def curriculum_bisect_bundle() -> dict:
     """Build the EE invariant bisect bundle over the curriculum statute.
 
     Module-scoped: the curriculum pair is known clean at zero open divergences
-    (per commit d22c44d0), so the bisect bundle is expected to report zero
+   (this bundle is a fixpoint), so the bisect bundle is expected to report zero
     violations. Multiple tests reuse the same bundle.
     """
     return build_ee_invariant_bisect_bundle(

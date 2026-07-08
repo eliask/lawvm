@@ -748,7 +748,7 @@ def _is_terminal_child_target(payload_ir: IRNode, target: LegalAddress | None) -
 
     In that scope an OMISSION boundary separates this target's own payload from
     later carried/rejected siblings owned by other targets, so chunk collection
-    must stop at the first OMISSION (commit 4fd20d98). For coarser scopes
+    must stop at the first OMISSION. For coarser scopes
     (section/subsection sparse-omission restatements) post-omission siblings are
     legitimately owned source payload and must be collected.
     """
@@ -776,7 +776,7 @@ def _collect_chunks(node: IRNode, chunks: list[str], *, truncate_at_omission: bo
         if truncate_at_omission and child.kind is IRNodeKind.OMISSION:
             # Item/subitem scope: an OMISSION boundary marks the end of this
             # target's own payload; later siblings are carried/rejected content
-            # belonging to other targets (commit 4fd20d98).
+            # belonging to other targets.
             break
         _collect_chunks(child, chunks, truncate_at_omission=truncate_at_omission)
 

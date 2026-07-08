@@ -25,7 +25,7 @@ and it is only meaningful relative to a specific parser commit.  Regenerate it
 on demand at the start of rewrite work; do not commit the 7 MB output.  The only
 durable fact is the reference baseline below.
 
-Reference baseline (FI johtolause parser @ commit ce813278..c3eb79bf,
+Reference baseline (FI johtolause parser.
 2026-06-15): 32233 amendment johtolauses, 32046 clean / 187 known-drop.
 
 Two subcommands:

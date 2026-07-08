@@ -123,7 +123,7 @@ def test_inserted_body_chapter_scopes_following_child_section_insert() -> None:
         ("subsection", "2"),
     )
     # The group carries a descendant-scoped REPLACE (the §25 heading replace), so
-    # the descendant-scope phase (added by sibling a3aafa26 "Guard FI sparse slot
+    # the descendant-scope phase (added by a sibling change "Guard FI sparse slot
     # ownership") is the precise owner of the body-chapter rebind and emits
     # BODY_CHAPTER_DESCENDANT_SCOPE_CORRECTION. The insert-scope phase abstains for
     # descendant-replace-bearing groups; the scope correction itself (6 -> 6a, with

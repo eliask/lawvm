@@ -615,7 +615,7 @@ b. The original "21 pins" count and live change-detector claim. The current
    in-repo contract suite is `tests/test_fi_provision_state_consumer_contract.py`;
    the initial fixture provenance was MeVM's fact-pack pins.
 
-c. The enacted-date semantics-change precedent (commit b09e0003 populating
+c. The enacted-date semantics-change precedent (a change populating
    enacted for base versions, causing cross-build hash divergence for pins
    minted earlier). Copied from LAWVM_MEVM_CONTRACT_REPLY lines 51-64; presented
    here only as a precedent illustrating the cross-engine NON-guarantee, not as

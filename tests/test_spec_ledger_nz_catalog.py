@@ -284,7 +284,7 @@ def test_runtime_emitted_rule_ids_match_their_fstring_prefix() -> None:
     thing that appears as a literal Constant in src) AND the full runtime-emitted
     id, leading to a duplicate-emission mask where the prefix is cataloged as
     the rule_id and the full id (an emission that fires only at runtime) is
-    silently uncatalogued. Pinned by commit 0a18108a (AGENTS §2.9 guard-liveness:
+    silently uncatalogued. Pinned by a guard (AGENTS §2.9 guard-liveness:
     the runtime f-string result lane was the gap the src-only scan missed).
 
     Each pair: the rule_id MUST start with the prefix (stripped of trailing

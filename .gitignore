@@ -3,7 +3,7 @@ __pycache__/
 *.pyc
 .tmp
 .codex
-/notes_internal/
+/notes_internal
 /docs/archive/
 *.farchive
 *.sqlite

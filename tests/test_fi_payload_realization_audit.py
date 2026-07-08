@@ -951,7 +951,7 @@ def test_payload_realization_audit_reports_unrealized_post_omission_sparse_momen
 
 def test_collect_chunks_suppresses_post_omission_carried_tail_in_item_scope() -> None:
     # NEGATIVE BITE: at terminal item/subitem scope the post-omission sibling is
-    # carried/rejected content owned by another target (commit 4fd20d98) and must
+    # carried/rejected content owned by another target and must
     # stay out of the chunk set so it is not charged as a false non-realization.
     item_payload = IRNode(
         kind=IRNodeKind.PARAGRAPH,

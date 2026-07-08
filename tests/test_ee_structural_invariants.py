@@ -23,7 +23,7 @@ edge) into a CI failure rather than a silent observation.
 
 Pinned corpus: 130042020016 → 120092023003 (Sekretäri- ja kontoritöö
 erialade riiklikppekava) at 2023-09-23. Verified zero open divergences
-against the RT consolidated oracle (commit d22c44d0).
+against the RT consolidated oracle.
 """
 from __future__ import annotations
 
@@ -77,7 +77,7 @@ def test_ee_curriculum_replay_is_clean_against_neutral_structural_detectors() ->
 
     Pinned corpus: 130042020016 → 120092023003 at 2023-09-23
     (Sekretäri- ja kontoritöö erialade riiklikppekava, post ``bürooassistent``
-    rename convergence from commit d22c44d0). Any future regression in EE
+    rename convergence). Any future regression in EE
     tree construction that introduces a duplicate-label collision, a
     flattened sublist family, an out-of-order sibling, a duplicated text
     block, a mixed hierarchy, or an illegal parentchild edge is caught

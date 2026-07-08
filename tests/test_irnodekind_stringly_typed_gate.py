@@ -66,7 +66,7 @@ _BANNED_IRNODE_ONLY_LITERAL_SNIPPETS = frozenset(
 _ALLOWLIST: frozenset[str] = frozenset(
     {
         # oracle_check.py annex hcontainer counting: an IRNode comparison whose
-        # enum fix lands via the oracle-check work-stream (commit d1ef1495 on
+        # enum fix lands via the oracle-check work-stream (on
         # that branch converts these to IRNodeKind members).  Listed here so the
         # gate stays green in this worktree without editing the owned file.
         "src/lawvm/tools/oracle_check.py:315",
