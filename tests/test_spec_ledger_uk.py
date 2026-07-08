@@ -14,6 +14,7 @@ green without the archive. The existing FI ledger tests are unaffected.
 """
 from __future__ import annotations
 
+import dataclasses
 import os
 from pathlib import Path
 
@@ -23,8 +24,12 @@ from lawvm.tools.spec_ledger import (
     DivergenceRow,
     StatuteLedgerInput,
     build_ledger,
+    get_ledger_adapter,
+    main as spec_ledger_main,
+    register_ledger_adapter,
     run_ledger,
 )
+from lawvm.tools.spec_authority import load_uk_authority_grounding
 from lawvm.uk_legislation.spec_ledger_adapter import (
     _UK_DIAGNOSIS_DISPOSITION,
     uk_ledger_inputs,
@@ -174,10 +179,6 @@ def test_uk_ledger_inputs_skips_errored_statute(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_run_ledger_dispatches_uk():
-    import dataclasses
-
-    from lawvm.tools.spec_ledger import get_ledger_adapter, register_ledger_adapter
-
     synthetic = [
         StatuteLedgerInput(
             "ukpga/2000/1",
@@ -209,6 +210,41 @@ def test_run_ledger_dispatches_uk():
     assert led.statute_errors == 0
     assert led.rules["uk_effect_alpha"].firings == 2
     assert led.rules["uk_effect_alpha"].contradicted == 1
+
+
+def test_generic_spec_ledger_cli_persists_uk_report_with_grounding(tmp_path, capsys):
+    grounding = load_uk_authority_grounding()
+    known_rule_id = next(iter(grounding))
+    ungrounded_rule_id = "uk.synthetic.ungrounded_rule"
+
+    def fake_inputs(sids, mode):
+        assert sids == ["ukpga/2000/1"]
+        assert mode == "official_consolidation"
+        return [
+            StatuteLedgerInput(
+                "ukpga/2000/1",
+                {known_rule_id: 2, ungrounded_rule_id: 1},
+                [],
+            )
+        ]
+
+    original = get_ledger_adapter("uk")
+    register_ledger_adapter(dataclasses.replace(original, ledger_inputs=fake_inputs))
+    try:
+        rc = spec_ledger_main(
+            ["-j", "uk", "--out-dir", str(tmp_path), "ukpga/2000/1"]
+        )
+    finally:
+        register_ledger_adapter(original)
+
+    assert rc == 0
+    assert (tmp_path / "spec_ledger.json").exists()
+    md = (tmp_path / "spec_ledger.md").read_text(encoding="utf-8")
+    assert "| rule_id | cat | grounding |" in md
+    assert grounding[known_rule_id].authority_status in md
+    assert f"| {ungrounded_rule_id} |" in md
+    assert "—/GAP" in md
+    assert f"wrote {tmp_path / 'spec_ledger.json'}" in capsys.readouterr().err
 
 
 def test_run_ledger_unknown_jurisdiction_raises():

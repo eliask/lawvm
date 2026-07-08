@@ -218,6 +218,37 @@ def test_grounding_renders_from_stream_c_authority_grounding_rows():
     assert "AuthorityGrounding(" not in md
 
 
+def test_persisted_uk_report_loads_real_grounding_and_gap_fallback(tmp_path):
+    from lawvm.tools.spec_authority import load_uk_authority_grounding
+
+    grounding = load_uk_authority_grounding()
+    known_rule_id, known = next(iter(grounding.items()))
+    ungrounded_rule_id = "uk.synthetic.ungrounded_rule"
+    ledger = build_ledger(
+        [
+            StatuteLedgerInput(
+                "ukpga/2000/1",
+                {known_rule_id: 1, ungrounded_rule_id: 1},
+                [],
+            )
+        ],
+        jurisdiction="uk",
+        mode="official_consolidation",
+        catalog={
+            known_rule_id: "grounded spec",
+            ungrounded_rule_id: "ungrounded spec",
+        },
+    )
+
+    persist_ledger(ledger, tmp_path)
+
+    md = (tmp_path / "spec_ledger.md").read_text(encoding="utf-8")
+    header = next(line for line in md.splitlines() if line.startswith("| rule_id"))
+    assert "grounding" in header
+    assert f"{known.authority_tier}/{known.authority_status}" in md
+    assert f"| {ungrounded_rule_id} | Y | —/GAP |" in md
+
+
 # ---------------------------------------------------------------------------
 # Catalog-coverage regression guard
 # ---------------------------------------------------------------------------

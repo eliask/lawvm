@@ -13049,6 +13049,12 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
     spec_ledger_p.add_argument(
         "--json", default="", metavar="PATH", help="write full ledger JSON to this path"
     )
+    spec_ledger_p.add_argument(
+        "--out-dir",
+        default="",
+        metavar="DIR",
+        help="write deterministic spec_ledger.json + spec_ledger.md report artifacts to this directory",
+    )
 
     us_evidence_pack_p = sub.add_parser(
         "us-evidence-pack",
@@ -15163,6 +15169,8 @@ def _main_impl() -> None:
         _argv += ["--mode", args.mode]
         if getattr(args, "json", ""):
             _argv += ["--json", args.json]
+        if getattr(args, "out_dir", ""):
+            _argv += ["--out-dir", args.out_dir]
         _argv += list(getattr(args, "sids", []) or [])
         sys.exit(spec_ledger_main(_argv))
 

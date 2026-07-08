@@ -44,6 +44,7 @@ import math
 import sys
 from collections import defaultdict
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Literal, Mapping, Optional, Set, Tuple
 
 # ---------------------------------------------------------------------------
@@ -641,6 +642,14 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--mode", default="official_consolidation",
                     choices=["official_consolidation", "legal_pit"])
     ap.add_argument("--json", default="", help="write full ledger JSON to this path")
+    ap.add_argument(
+        "--out-dir",
+        default="",
+        help=(
+            "write deterministic spec_ledger.json + spec_ledger.md report artifacts "
+            "to this directory"
+        ),
+    )
     args = ap.parse_args(argv)
 
     sids = list(args.sids)
@@ -665,6 +674,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         ap.error("provide statute ids or --corpus-bench")
 
     ledger = run_ledger(args.jurisdiction, sids, args.mode)  # type: ignore[arg-type]
+    if args.out_dir:
+        from lawvm.tools.spec_ledger_report import persist_ledger
+
+        json_path = persist_ledger(ledger, Path(args.out_dir))
+        print(f"wrote {json_path}", file=sys.stderr)
     if args.json:
         with open(args.json, "w", encoding="utf-8") as fh:
             json.dump(ledger.to_dict(), fh, ensure_ascii=False, indent=2)
