@@ -569,12 +569,32 @@ def _wrapper_text_until_quot_end(wrapper: ET.Element) -> str:
     """
     parts: list[str] = []
     stopped = False
+    outer_start_id: str | None = None
+    outer_end_id: str | None = None
+    for node in wrapper.iter():
+        if _local(node.tag).upper() == "QUOT.START":
+            outer_start_id = node.attrib.get("ID") or None
+            outer_end_id = node.attrib.get("REF.END") or None
+            break
+
+    def _is_outer_end(node: ET.Element) -> bool:
+        if _local(node.tag).upper() not in ("QUOT.END", "QUOT.E"):
+            return False
+        if outer_end_id is None and outer_start_id is None:
+            return True
+        return (
+            (outer_end_id is not None and node.attrib.get("ID") == outer_end_id)
+            or (
+                outer_start_id is not None
+                and node.attrib.get("REF.START") == outer_start_id
+            )
+        )
 
     def _walk(node: ET.Element) -> None:
         nonlocal stopped
         if stopped:
             return
-        if _local(node.tag).upper() in ("QUOT.END", "QUOT.E"):
+        if _is_outer_end(node):
             stopped = True
             return
         if node.text and node.text.strip():

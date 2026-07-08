@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.eu.fmx4_amendment_grammar import lower_amending_act
 
@@ -457,12 +458,20 @@ def test_bare_point_label_not_swallowed_as_whole_article_replace() -> None:
 <ACT><ENACTING.TERMS>
   <ARTICLE><TI.ART>Article 9</TI.ART>
     <ALINEA><P>In Article 2 of Commission Implementing Regulation (EU) No 923/2012, point 104 is replaced by the following:</P>
-      <QUOT.S LEVEL="1"><NP><NO.P><QUOT.START/>104.</NO.P><TXT>psychoactive substance means alcohol and opioids;<QUOT.END/></TXT></NP></QUOT.S>
+      <QUOT.S LEVEL="1"><NP><NO.P><QUOT.START ID="QS1" REF.END="QE1"/>104.</NO.P><TXT><QUOT.START ID="QS2" REF.END="QE2"/>psychoactive substance<QUOT.END ID="QE2" REF.START="QS2"/> means alcohol and opioids;<QUOT.END ID="QE1" REF.START="QS1"/></TXT></NP></QUOT.S>
     </ALINEA></ARTICLE>
 </ENACTING.TERMS></ACT>"""
     r = lower_amending_act(fmx, "32015R0340", base_celex="32012R0923")
-    assert [str(op.target) for op in r.ops] == ["article:2/point:104"]
-    assert r.ops[0].witness_rule_id == "EU_FMX4.SUBART_POINT_REPLACE"
+    assert len(r.ops) == 1
+    op = r.ops[0]
+    assert str(op.target) == "article:2/point:104"
+    assert op.witness_rule_id == "EU_FMX4.SUBART_POINT_REPLACE"
+    assert op.payload is not None
+    assert op.payload.kind == IRNodeKind.ITEM
+    assert op.payload.label == "104"
+    assert irnode_to_text(op.payload) == (
+        "104. psychoactive substance means alcohol and opioids;"
+    )
 
 
 def test_non_amending_provision_typed_not_gap() -> None:

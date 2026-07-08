@@ -1614,6 +1614,7 @@ TOOLING_BLOCKED_PREFIXES = (
 )
 SOURCE_SHARD_PATHS: dict[str, tuple[str, ...]] = {
     "tests/data/classifier_wrap_ratchet_baseline.json": ("core_ir_contracts",),
+    "tests/data/ctsf_gate_eu_residual_baseline.json": ("core_ir_contracts",),
     "tests/data/module_roles_baseline.json": ("core_ir_contracts",),
     "tests/data/regex_ratchet_baseline.json": ("core_ir_contracts",),
     # XP-06 parity is read-mostly audit/report code. It is not on the replay
