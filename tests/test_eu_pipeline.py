@@ -1281,11 +1281,12 @@ def test_grafter_lifts_annex_coordinate_onto_label() -> None:
 def test_end_to_end_indirect_annex_amendment_resolves_and_applies() -> None:
     """Full path: real indirect-annex amender bytes → ``lower_amending_act`` →
     ``apply_eu_ops_conserved`` against an inline-annex base. The named-annex ops
-    (``annex:II``/``annex:III``) RESOLVE and APPLY against supplements; only the
-    sole-annex ``annex:`` (empty label) is the preserved typed skip.
+    (``annex:II``/``annex:III``) RESOLVE and APPLY against supplements; the
+    sole-annex form is now owned in grammar as a typed annex-lane target gap, so
+    it never reaches replay as an executable ``annex:`` op.
 
-    Before this fix all three annex ops resolved as
-    ``eu_replay_target_not_found`` (0/3 applied); after, 2/3 apply — the delta
+    Before the annex-root fix all named annex ops resolved as
+    ``eu_replay_target_not_found`` (0/2 applied); after, 2/2 apply — the delta
     the assessment's blocker #2 targeted."""
     from pathlib import Path
 
@@ -1312,8 +1313,11 @@ def test_end_to_end_indirect_annex_amendment_resolves_and_applies() -> None:
     assert {str(op.target) for op in ops} == {
         "@supplements annex:II",
         "@supplements annex:III",
-        "@supplements annex:",
     }
+    assert any(
+        d.rule_id == "eu_fmx4_grammar_annex_as_set_out_target_unresolved"
+        for d in r.diagnostics
+    )
 
     result = apply_eu_ops_conserved(base, ops)
 
@@ -1321,10 +1325,8 @@ def test_end_to_end_indirect_annex_amendment_resolves_and_applies() -> None:
     rejected = {
         str(i.item.target): i.reason_code for i in result.filter_result.rejected_items
     }
-    # The two named-annex ops applied; the sole-annex empty-label op is the
-    # preserved typed skip (resolving it to the base's single annex is deferred).
     assert applied_targets == {"@supplements annex:II", "@supplements annex:III"}
-    assert rejected == {"@supplements annex:": "eu_replay_target_not_found"}
+    assert rejected == {}
     # Both named annexes now carry the replacement body in supplements.
     supp = {s.label: (s.text or "") for s in result.statute.supplements}
     assert "List replacing" in supp["II"]

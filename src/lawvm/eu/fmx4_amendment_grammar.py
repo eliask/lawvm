@@ -2579,9 +2579,27 @@ def _lower_one_instruction(
     # recoverable; only the materialised replacement text is the recorded gap.
     m = _RE_ANNEX_AS_SET_OUT.search(instr)
     if m:
-        # Numbered ("Annex III …") or sole-annex ("The Annex … is replaced"). The
-        # sole form targets the base's single annex with an empty number label.
+        # Numbered ("Annex III …") has an executable base-annex coordinate. The
+        # sole form ("The Annex …") does not: resolving a bare annex to "the
+        # base's single annex" would be target invention at lowering time, so it
+        # remains an annex-lane extraction frontier instead of minting
+        # ``@supplements annex:``.
         annex_num = (m.group("num") or "").upper()
+        if not annex_num:
+            diagnostics.append(
+                AmendmentGrammarDiagnostic(
+                    rule_id="eu_fmx4_grammar_annex_as_set_out_target_unresolved",
+                    reason=(
+                        "indirect annex amendment uses the sole-annex form "
+                        "('the Annex ... as set out in the Annex to this "
+                        "Regulation') without a numbered base-annex coordinate; "
+                        "not lowered to a bare annex target"
+                    ),
+                    source_excerpt=raw,
+                    family="annex_extraction_gap",
+                )
+            )
+            return None
         annex_payload = (
             " ".join(_all_text(a) for a in own_annexes) if own_annexes else ""
         )

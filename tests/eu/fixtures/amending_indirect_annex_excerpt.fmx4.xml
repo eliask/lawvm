@@ -10,7 +10,8 @@
       (plural — the FIRST named annex is the structural target)
     * "Annex II ... is replaced by the list set out in the Annex to this Regulation"
     * "The Annex to Regulation X is replaced by the list set out in the Annex ..."
-      (sole-annex form — no number)
+      (sole-annex form — no number; typed as an annex-lane target gap, not an
+      executable bare annex target)
     * the entry-into-force boilerplate (out-of-scope typed residual)
 
   Every instruction cites the BASE act (Regulation (EU) 2016/44): since the

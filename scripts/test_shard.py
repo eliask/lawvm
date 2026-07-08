@@ -1206,6 +1206,7 @@ SOURCE_SHARD_PREFIXES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("src/lawvm/xml_ingest.py", ("core", "finland", "tools_cli_debug")),
     ("src/lawvm/estonia/", ("estonia",)),
     ("src/lawvm/eu/", ("eu",)),
+    ("tests/eu/fixtures/", ("eu",)),
     ("src/lawvm/finland/", ("finland",)),
     ("src/lawvm/new_zealand/", ("new_zealand",)),
     ("src/lawvm/norway/", ("norway",)),

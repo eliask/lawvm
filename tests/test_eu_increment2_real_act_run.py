@@ -23,9 +23,10 @@ Increment-0/1 grammar did not handle and Increment 2 closes:
      zero.
 
 MEASURED CORPUS RESULT (the 4 real ACT-root amenders, offline on pinned excerpts
-+ networked smoke on the live bytes): of 39 ENACTING.TERMS instructions, 35 lower
-to typed ops; the only 4 residuals are entry-into-force boilerplate (NOT amendment
-instructions). Amendment-instruction coverage = 35/35 = 100%.
++ networked smoke on the live bytes): of 39 ENACTING.TERMS instructions, the
+named-coordinate amendment instructions lower to typed ops; entry-into-force
+boilerplate and the later-promoted sole-annex target frontier are typed
+diagnostics, not silent loss.
 """
 
 from __future__ import annotations
@@ -103,7 +104,8 @@ def _indirect_annex() -> bytes:
 def test_indirect_annex_amendment_lowers_structural_target() -> None:
     """The dominant real shape lowers to a REPLACE on the named base annex; the
     plural form ('Annexes II and VI') takes the FIRST named annex as target; the
-    sole-annex form ('The Annex ...') targets the base's single annex."""
+    sole-annex form ('The Annex ...') is a typed annex-lane target gap, not a
+    bare ``annex:`` op."""
     r = lower_amending_act(
         _indirect_annex(), "32017R0489", base_celex=BASE_CELEX, effective="2017-03-21"
     )
@@ -113,7 +115,6 @@ def test_indirect_annex_amendment_lowers_structural_target() -> None:
     assert set(targets) == {
         "@supplements annex:II",
         "@supplements annex:III",
-        "@supplements annex:",
     }
     for op in r.ops:
         assert op.action == StructuralAction.REPLACE
@@ -122,9 +123,18 @@ def test_indirect_annex_amendment_lowers_structural_target() -> None:
     annex_ii_payload = targets["@supplements annex:II"].payload
     assert annex_ii_payload is not None
     assert "List replacing" in annex_ii_payload.text
-    # 4 instructions: 3 indirect-annex ops + the entry-into-force residual.
+    sole_annex = [
+        d
+        for d in r.diagnostics
+        if d.rule_id == "eu_fmx4_grammar_annex_as_set_out_target_unresolved"
+    ]
+    assert len(sole_annex) == 1
+    assert sole_annex[0].family == "annex_extraction_gap"
+    assert "The Annex to Council Regulation" in sole_annex[0].source_excerpt
+    # 4 instructions: 2 indirect-annex ops + the sole-annex target residual +
+    # the entry-into-force residual.
     assert r.instruction_count == 4
-    assert r.covered_count == 3
+    assert r.covered_count == 2
 
 
 def test_indirect_annex_payload_gap_is_typed_when_no_own_annex() -> None:
@@ -166,7 +176,7 @@ def test_corpus_coverage_denominator_over_real_act_root_shapes() -> None:
         ("32017R0488", "amending_act_root_real_excerpt.fmx4.xml"),
         ("32017R0489", "amending_indirect_annex_excerpt.fmx4.xml"),
     ]
-    total_instr = total_ops = total_eif = 0
+    total_instr = total_ops = total_eif = total_sole_annex_target_gap = 0
     for celex, fixture in corpus:
         r = lower_amending_act(
             (FIXTURES / fixture).read_bytes(), celex, base_celex=BASE_CELEX
@@ -183,17 +193,27 @@ def test_corpus_coverage_denominator_over_real_act_root_shapes() -> None:
             )
             and "enter into force" in d.source_excerpt.lower()
         )
-    # 2 + 4 = 6 instructions; 1 + 3 = 4 lowered; 2 entry-into-force residuals.
+        total_sole_annex_target_gap += sum(
+            1
+            for d in r.diagnostics
+            if d.rule_id == "eu_fmx4_grammar_annex_as_set_out_target_unresolved"
+        )
+    # 2 + 4 = 6 instructions; 1 + 2 = 3 lowered; 2 entry-into-force residuals;
+    # 1 sole-annex target frontier.
     assert total_instr == 6
-    assert total_ops == 4
+    assert total_ops == 3
     assert total_eif == 2
+    assert total_sole_annex_target_gap == 1
+    assert total_ops + total_eif + total_sole_annex_target_gap == total_instr
     # Raw coverage over ALL ENACTING.TERMS instructions.
-    assert abs(total_ops / total_instr - 4 / 6) < 1e-9
-    # Amendment-instruction coverage (excluding the non-amendment boilerplate) is
-    # 100% on these real shapes — the measured Increment-2 result.
-    amendment_instr = total_instr - total_eif
-    assert total_ops == amendment_instr
-    assert total_ops / amendment_instr == 1.0
+    assert abs(total_ops / total_instr - 3 / 6) < 1e-9
+    # Executable amendment-instruction coverage excludes non-amendment boilerplate
+    # and the typed non-executable sole-annex target frontier.
+    executable_amendment_instr = (
+        total_instr - total_eif - total_sole_annex_target_gap
+    )
+    assert total_ops == executable_amendment_instr
+    assert total_ops / executable_amendment_instr == 1.0
 
 
 # --------------------------------------------------------------------------- #

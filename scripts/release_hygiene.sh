@@ -28,8 +28,10 @@ uv run python -m pytest tests/test_release_docs.py -q --override-ini="addopts="
 
 echo ""
 echo "=== [2/6] package build metadata ==="
-build_log="$(mktemp .tmp/release-build-log.XXXXXX)"
-tmp_build_dir="$(mktemp -d .tmp/release-build.XXXXXX)"
+release_tmp_root="${LAWVM_RELEASE_TMPDIR:-.tmp}"
+mkdir -p "$release_tmp_root"
+build_log="$(mktemp "$release_tmp_root/release-build-log.XXXXXX")"
+tmp_build_dir="$(mktemp -d "$release_tmp_root/release-build.XXXXXX")"
 trap 'rm -rf "$tmp_build_dir" "$build_log"' EXIT
 UV_CACHE_DIR="${UV_CACHE_DIR:-.tmp/uv-cache}" uv build --out-dir "$tmp_build_dir" >"$build_log" 2>&1 || {
     cat "$build_log"

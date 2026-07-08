@@ -577,6 +577,24 @@ def test_annex_amended_in_accordance_typed_annex_lane() -> None:
     assert r.diagnostics[0].family == "annex_extraction_gap"
 
 
+def test_sole_annex_as_set_out_has_no_empty_executable_target() -> None:
+    """'The Annex ... is replaced as set out ...' names no base-annex coordinate.
+    It must remain a typed annex-lane residual, not a REPLACE on ``annex:``."""
+    fmx = b"""<?xml version="1.0"?>
+<ACT><ENACTING.TERMS>
+  <ARTICLE><TI.ART>Article 1</TI.ART>
+    <ALINEA>The Annex to Council Regulation (EU) 2016/44 is replaced by the list set out in the Annex to this Regulation.</ALINEA></ARTICLE>
+</ENACTING.TERMS>
+<ANNEX><TITLE><TI><P>ANNEX</P></TI></TITLE><CONTENTS><P>Replacement list.</P></CONTENTS></ANNEX>
+</ACT>"""
+    r = lower_amending_act(fmx, "32017R0489", base_celex="32016R0044")
+    assert r.ops == []
+    assert [d.rule_id for d in r.diagnostics] == [
+        "eu_fmx4_grammar_annex_as_set_out_target_unresolved"
+    ]
+    assert r.diagnostics[0].family == "annex_extraction_gap"
+
+
 def test_numberless_article_insert_number_from_quoted_heading() -> None:
     """'The following article is inserted in Regulation X:' -- the number lives
     on the quoted body's own heading (the real 32019R1778 shape)."""
