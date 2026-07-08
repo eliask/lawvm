@@ -36,6 +36,12 @@ from lawvm.open_law.audit import (
     failed_codification_findings,
     replay_open_law_ops,
 )
+from lawvm.open_law.belief_revision import (
+    CrossBranchBeliefReport,
+    CrossBranchDocumentFinding,
+    CrossBranchPairReport,
+    audit_maryland_belief_revisions,
+)
 from lawvm.open_law.codify import parse_open_law_codify_ops
 from lawvm.open_law.models import (
     OpenLawAction,
@@ -47,6 +53,9 @@ from lawvm.open_law.models import (
 from lawvm.open_law.xml import parse_open_law_xml
 
 __all__ = [
+    "CrossBranchBeliefReport",
+    "CrossBranchDocumentFinding",
+    "CrossBranchPairReport",
     "OpenLawAction",
     "OpenLawAnnotationLane",
     "OpenLawFinding",
@@ -54,6 +63,7 @@ __all__ = [
     "OpenLawOperation",
     "OpenLawReplayResult",
     "OpenLawSnapshotAuditResult",
+    "audit_maryland_belief_revisions",
     "audit_open_law_snapshot",
     "execute_open_law_expiry",
     "failed_codification_findings",

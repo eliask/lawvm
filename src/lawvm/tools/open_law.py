@@ -11,6 +11,11 @@ from typing import Any, Mapping, cast
 from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.open_law.audit import audit_open_law_snapshot, replay_open_law_ops
+from lawvm.open_law.belief_revision import (
+    audit_maryland_belief_revisions,
+    belief_report_to_jsonable,
+    write_belief_revision_report,
+)
 from lawvm.open_law.corpus_audit import audit_maryland_corpus, audit_maryland_transition, write_corpus_report, write_inventory
 from lawvm.open_law.evidence_pack import write_maryland_evidence_pack
 from lawvm.open_law.codify import parse_open_law_codify_ops
@@ -58,8 +63,12 @@ def main(args: Namespace) -> None:
     if command == "explain":
         _print_explain(args)
         return
+    if command == "belief-revision":
+        _print_belief_revision(args)
+        return
     raise SystemExit(
-        "open-law requires a subcommand: ops, replay, audit, inventory, corpus-audit, evidence-pack, verify-pack, or explain"
+        "open-law requires a subcommand: ops, replay, audit, inventory, corpus-audit, evidence-pack, "
+        "verify-pack, explain, or belief-revision"
     )
 
 
@@ -285,6 +294,42 @@ def _print_explain(args: Namespace) -> None:
             )
         for finding in row["findings"]:
             print(f"  finding {finding['kind']}: {finding['message']}")
+
+
+def _print_belief_revision(args: Namespace) -> None:
+    repos = _maryland_repos(args)
+    report = audit_maryland_belief_revisions(repos=repos, limit=args.limit, strict=args.strict)
+    if args.out:
+        write_belief_revision_report(report, Path(args.out))
+    if args.json:
+        print(json.dumps(belief_report_to_jsonable(report), indent=2, ensure_ascii=False))
+        return
+    summary = report.summary
+    print(
+        " ".join(
+            (
+                f"pairs_audited={summary['pairs_audited']}",
+                f"pairs_same_source_commit={summary['pairs_same_source_commit']}",
+                f"documents_compared={summary['documents_compared']}",
+                f"documents_diverged={summary['documents_diverged']}",
+                f"silent_revisions={summary['silent_revisions']}",
+                f"explained_revisions={summary['explained_revisions']}",
+            )
+        )
+    )
+    for pair in report.pair_reports:
+        for finding in pair.findings:
+            print(f"  {finding.kind}: {finding.xml_path}")
+            print(f"    slice={finding.publication_slice} {finding.earlier_branch} -> {finding.later_branch}")
+            print(
+                "    "
+                f"source {finding.earlier_source_commit[:10] or '-'}..{finding.later_source_commit[:10] or '-'} "
+                f"belief {finding.earlier_belief_sha256[:12]} -> {finding.later_belief_sha256[:12]}"
+            )
+            for cause in finding.declared_causes:
+                print(f"    explained-by {cause.action} {'|'.join(cause.codify_path)} ({cause.source_id})")
+    if args.out:
+        print(f"wrote {Path(args.out)}")
 
 
 def _op_json(op: OpenLawOperation) -> dict[str, Any]:

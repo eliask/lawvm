@@ -10479,6 +10479,20 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
     open_law_explain_p.add_argument("--status", default="", metavar="STATUS", help="filter rows by status")
     open_law_explain_p.add_argument("--limit", type=int, default=5, metavar="N", help="maximum rows to print")
     open_law_explain_p.add_argument("--json", action="store_true", help="emit matching rows as JSON")
+    open_law_belief_p = open_law_sub.add_parser(
+        "belief-revision",
+        help="audit cross-branch belief revisions for the same legal slice (independent of self-attestation)",
+    )
+    open_law_belief_p.add_argument("--source-repo", required=True, metavar="PATH", help="local maryland-dsd/law-xml clone")
+    open_law_belief_p.add_argument("--codified-repo", required=True, metavar="PATH", help="local law-xml-codified clone")
+    open_law_belief_p.add_argument("--out", default="", metavar="DIR", help="optional output directory for JSON/JSONL artifacts")
+    open_law_belief_p.add_argument("--limit", type=int, metavar="N", help="stop after N diverged documents")
+    open_law_belief_p.add_argument(
+        "--strict",
+        action="store_true",
+        help="mark cross-branch silent-revision findings as blocking",
+    )
+    open_law_belief_p.add_argument("--json", action="store_true", help="emit full report JSON")
 
     # --- sql ---
     sql_p = sub.add_parser(

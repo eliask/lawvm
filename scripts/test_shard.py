@@ -223,6 +223,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # the ``p5`` runtime-scaffold family to avoid double-ownership.
         "test_jurisdiction_starter_p5_*.py",
         "test_open_law_frontend.py",
+        "test_open_law_belief_revision.py",
         "test_scaffold_tool.py",
     ),
     "us_federal": (
