@@ -343,6 +343,12 @@ _EDITORIAL_QUOTE_CHARS = "“”‘’„‚«»\"'"
 # stripped, the published Code inserts a courtesy space after the introductory
 # dash/colon (``if— (1) ...``). Collapse that boundary space for classification.
 _EDITORIAL_DASH_PAREN_SPACE_RE = re.compile(r"([—–:])\s+\(")
+# OLRC quotedContent block-boundary spacing (AIA chapter 32 witness): USLM wraps
+# inserted subsection/list markers in quotes, so after quote stripping the faithful
+# materialization has ``review.(b)`` or ``321;(2)`` while the Code surface uses
+# ``review. (b)`` / ``321; (2)``. Collapse only punctuation-to-parenthetical-marker
+# space; other parenthetical spacing remains visible.
+_EDITORIAL_PUNCT_PAREN_MARKER_SPACE_RE = re.compile(r"([.;])\s+(\([A-Za-z0-9]+[)\.])")
 # OLRC insert-after courtesy space (F1, §507(d) and the comma-anchor generalization):
 # the enacted instruction inserts matter directly after an anchor that ends in a
 # closing ``)`` (``inserting "excluding …" after "(a)(8)"`` -> faithful
@@ -357,6 +363,13 @@ _EDITORIAL_DASH_PAREN_SPACE_RE = re.compile(r"([—–:])\s+\(")
 # erases the difference when that anchor-adjacent space is the SOLE divergence — it
 # never invents agreement between texts that differ in any other character.
 _EDITORIAL_INSERT_AFTER_ANCHOR_SPACE_RE = re.compile(r"([),])\s+(?=[\w“”‘’\"'])")
+# Same insert-after courtesy family for semicolon anchors, witnessed by AIA §25:
+# ``inserting "and" after the semicolon`` faithfully yields ``;and`` while OLRC
+# prints ``; and``. Keep this narrow to the conjunction token.
+_EDITORIAL_SEMICOLON_AND_SPACE_RE = re.compile(r";\s+(?=and\b)")
+_EDITORIAL_CONJ_PAREN_MARKER_SPACE_RE = re.compile(
+    r"(;\s*(?:and|or))\s+(\([A-Za-z0-9]+[)\.])"
+)
 # OLRC hyphenated-compound line-wrap space (F1, ``non- Federal`` -> ``non-Federal``):
 # the enacted USLM ``quotedText`` payload preserves a line-wrap space after an
 # intra-word hyphen (``the non- Federal cost share`` — the PL text broke
@@ -435,7 +448,10 @@ def _norm_editorial(text: str) -> str:
     """
     stripped = text.translate({ord(ch): None for ch in _EDITORIAL_QUOTE_CHARS})
     respaced = _EDITORIAL_DASH_PAREN_SPACE_RE.sub(r"\1(", stripped)
+    respaced = _EDITORIAL_PUNCT_PAREN_MARKER_SPACE_RE.sub(r"\1\2", respaced)
     respaced = _EDITORIAL_INSERT_AFTER_ANCHOR_SPACE_RE.sub(r"\1", respaced)
+    respaced = _EDITORIAL_SEMICOLON_AND_SPACE_RE.sub(";", respaced)
+    respaced = _EDITORIAL_CONJ_PAREN_MARKER_SPACE_RE.sub(r"\1\2", respaced)
     respaced = _EDITORIAL_HYPHEN_WRAP_SPACE_RE.sub("", respaced)
     return _norm(respaced)
 

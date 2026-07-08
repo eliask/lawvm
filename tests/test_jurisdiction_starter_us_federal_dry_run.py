@@ -2682,6 +2682,54 @@ def test_norm_editorial_undoes_olrc_quote_and_dash_paren_spacing() -> None:
     assert _norm_editorial(enacted) == _norm_editorial(published)
 
 
+def test_norm_editorial_undoes_quoted_block_marker_spacing() -> None:
+    # AIA chapter 32: USLM quotedContent wraps inserted subsection/list markers.
+    # After quote stripping, faithful materialization has punctuation immediately
+    # followed by the marker; OLRC inserts courtesy spaces on the Code surface.
+    from lawvm.core.comparison_normalization import normalize_inline_comparison_text
+
+    enacted = "review.“(b) Scope.—Fees;“(2) parties in interest."
+    published = "review. (b) Scope.—Fees; (2) parties in interest."
+    assert normalize_inline_comparison_text(enacted) != normalize_inline_comparison_text(
+        published
+    )
+    assert _norm_editorial(enacted) == _norm_editorial(published)
+    # The projection only erases punctuation-to-marker spacing, not content.
+    other = "review. (c) Scope.—Fees; (2) parties in interest."
+    assert _norm_editorial(enacted) != _norm_editorial(other)
+
+
+def test_norm_editorial_undoes_semicolon_and_courtesy_space() -> None:
+    # AIA §25: inserting quotedText "and" after a semicolon faithfully produces
+    # ``;and``; OLRC prints the conjunction with courtesy spacing.
+    from lawvm.core.comparison_normalization import normalize_inline_comparison_text
+
+    enacted = "consistent with impartiality;and (G) may prioritize applications"
+    published = "consistent with impartiality; and (G) may prioritize applications"
+    assert normalize_inline_comparison_text(enacted) != normalize_inline_comparison_text(
+        published
+    )
+    assert _norm_editorial(enacted) == _norm_editorial(published)
+    # It is not a blanket semicolon-space eraser.
+    other = "consistent with impartiality; or (G) may prioritize applications"
+    assert _norm_editorial(enacted) != _norm_editorial(other)
+
+
+def test_norm_editorial_undoes_conjunction_marker_courtesy_space() -> None:
+    # AIA chapter 32 also carries quoted list continuations where OLRC spaces the
+    # marker after the conjunction: ``;and(B)`` vs ``; and (B)``.
+    from lawvm.core.comparison_normalization import normalize_inline_comparison_text
+
+    enacted = "the petition;and“(B) affidavits; or“(2) no response is filed"
+    published = "the petition; and (B) affidavits; or (2) no response is filed"
+    assert normalize_inline_comparison_text(enacted) != normalize_inline_comparison_text(
+        published
+    )
+    assert _norm_editorial(enacted) == _norm_editorial(published)
+    other = "the petition; and (C) affidavits; or (2) no response is filed"
+    assert _norm_editorial(enacted) != _norm_editorial(other)
+
+
 def test_norm_editorial_undoes_insert_after_anchor_courtesy_space() -> None:
     # F1 case ii: the enacted insert-after places matter directly after a
     # parenthesized anchor (no space); the published Code adds a courtesy space.

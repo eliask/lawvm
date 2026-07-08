@@ -6110,11 +6110,14 @@ def _iter_instruction_units(
                     )
                 ancestor = parent_of.get(ancestor)
             if inherited is None:
-                # Fall back to the section's own content ref ("Section X ... — (1)...").
-                section_content = section.find("u:content", _NS)
-                if section_content is not None:
-                    sp, sh = _first_usc_ref(section_content)
-                    inherited, _ = _resolve_target(sp, sh)
+                # Fall back to the section's own chapeau/content ref. Direct
+                # child amendatory units are excluded so a descendant leaf cannot
+                # hijack the section-level target.
+                sp, sh = _first_usc_ref(
+                    section,
+                    exclude=_amendatory_unit_children(section),
+                )
+                inherited, _ = _resolve_target(sp, sh)
             if inherited is None:
                 # Last resort: a parent "in section X(...)—" or "Section X(...) is
                 # amended" head with no "of title" whose section the OLRC classifies
@@ -6675,10 +6678,10 @@ def _lower_plaw_amendatory_body(
     for section in main.iter():
         if _localname(section.tag) != "section":
             continue
-        section_content = section.find("u:content", _NS)
-        sec_phrase, sec_href = ("", "")
-        if section_content is not None:
-            sec_phrase, sec_href = _first_usc_ref(section_content)
+        sec_phrase, sec_href = _first_usc_ref(
+            section,
+            exclude=_amendatory_unit_children(section),
+        )
         # Skip pure short-title / non-amendatory sections.
         if not any(_localname(a.tag) == "amendingAction" for a in section.iter()):
             continue
@@ -6698,8 +6701,10 @@ def _lower_plaw_amendatory_body(
             # The leaf's OWN ref/prose is canonical; the section-level ref is only a
             # last resort (it would mis-target a leaf that amends a sibling section).
             # The inherited ancestor address threads the title for relative prose.
-            target_phrase = unit_phrase or sec_phrase
-            target_href = unit_href or sec_href
+            fallback_sec_phrase = "" if inherited_address is not None else sec_phrase
+            fallback_sec_href = "" if inherited_address is not None else sec_href
+            target_phrase = unit_phrase or fallback_sec_phrase
+            target_href = unit_href or fallback_sec_href
             explicit_title = _direct_target_title(target_phrase, target_href) or _address_title(
                 inherited_address
             )
@@ -6781,8 +6786,10 @@ def _lower_plaw_amendatory_body(
         # The leaf's OWN ref/prose is canonical; the section-level ref is only a
         # last resort (it would mis-target a leaf that amends a sibling section).
         # The inherited ancestor address threads the title for relative prose.
-        target_phrase = unit_phrase or sec_phrase
-        target_href = unit_href or sec_href
+        fallback_sec_phrase = "" if inherited_address is not None else sec_phrase
+        fallback_sec_href = "" if inherited_address is not None else sec_href
+        target_phrase = unit_phrase or fallback_sec_phrase
+        target_href = unit_href or fallback_sec_href
         raw_text = _text_of(unit)
         quoted = _quoted_texts(unit)
         payload_node = _quoted_content_node(unit)

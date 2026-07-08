@@ -189,10 +189,15 @@ def test_real_fixture_projects_signals_without_reading_any_usc_edition() -> None
         assert r["statute_id"] == loc
 
     # The lowering stage genuinely surfaces target-absent classes on this real law.
-    assert any(r["signal_type"] == "target_absent" for r in rows), rows
+    # Do not pin a stale exact rule id here: target resolution can legitimately
+    # promote a generic unresolved target into a more specific non-positive holdout
+    # while preserving the durable self-consistency signal.
+    target_absent_categories = {
+        r["category"] for r in rows if r["signal_type"] == "target_absent"
+    }
+    assert len(target_absent_categories) >= 2
     categories = {r["category"] for r in rows}
     assert NON_TITLE_TARGET_RULE_ID in categories
-    assert TARGET_UNRESOLVED_FINDING_RULE_ID in categories
 
 
 def test_absent_plaw_source_is_a_typed_error_row_not_a_crash() -> None:

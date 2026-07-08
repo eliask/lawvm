@@ -2406,6 +2406,97 @@ def test_compound_redesignate_and_inserting_lowers_redesignate_prefix_only():
     assert instr.finding.rule_id == RULE_REDESIGNATE_COMPOUND_HELD_OUT
 
 
+def test_nested_subunit_children_inherit_parent_target_for_add_at_end():
+    # AIA §25 / 35 U.S.C. §2(b)(2): the parent chapeau names
+    # Section 2(b)(2), then child paragraphs edit subparagraphs (E)/(F) and add
+    # new subparagraph (G). The leaf "by adding at the end" has no own ref, so it
+    # must inherit the parent target instead of becoming target_unresolved.
+    body = (
+        '<section identifier="/us/pl/112/29/s25"><num value="25">SEC. 25. </num>'
+        "<chapeau>"
+        '<ref href="/us/usc/t35/s2/b/2">Section 2(b)(2) of title 35, '
+        'United States Code</ref>, <amendingAction type="amend">is amended</amendingAction> '
+        "as follows:</chapeau>"
+        '<paragraph identifier="/us/pl/112/29/s25/1" role="instruction">'
+        '<num value="1">(1) </num><content>in subparagraph (E), by '
+        '<amendingAction type="delete">striking</amendingAction> '
+        "“<quotedText>and</quotedText>” after the semicolon;</content></paragraph>"
+        '<paragraph identifier="/us/pl/112/29/s25/2" role="instruction">'
+        '<num value="2">(2) </num><content>in subparagraph (F), by '
+        '<amendingAction type="insert">inserting</amendingAction> '
+        "“<quotedText>and</quotedText>” after the semicolon; and</content></paragraph>"
+        '<paragraph identifier="/us/pl/112/29/s25/3" role="instruction">'
+        '<num value="3">(3) </num><content>by '
+        '<amendingAction type="insert">adding</amendingAction> at the end the following:'
+        '<quotedContent><subparagraph><num value="G">“(G) </num>'
+        '<content>may prioritize important applications notwithstanding section 41;”'
+        "</content></subparagraph></quotedContent>.</content></paragraph>"
+        "</section>"
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body), proof_title="35")
+    by_id = {instr.instruction_id: instr for instr in report.instructions}
+
+    strike_e = by_id["/us/pl/112/29/s25/1"]
+    assert strike_e.instruction_status == "accepted"
+    assert str(strike_e.target_address) == "title:35/section:2/subsection:b/paragraph:2/subparagraph:E"
+
+    insert_f = by_id["/us/pl/112/29/s25/2"]
+    assert insert_f.instruction_status == "accepted"
+    assert str(insert_f.target_address) == "title:35/section:2/subsection:b/paragraph:2/subparagraph:F"
+    assert _patch(insert_f).replacement == ";and"
+
+    add_g = by_id["/us/pl/112/29/s25/3"]
+    assert add_g.instruction_status == "accepted"
+    assert add_g.finding is None
+    assert add_g.witness_rule_id == RULE_ADD_AT_END
+    assert str(add_g.target_address) == "title:35/section:2/subsection:b/paragraph:2"
+    assert add_g.operation is not None
+    assert str(add_g.operation.target) == "title:35/section:2/subsection:b/paragraph:2"
+    assert add_g.operation.payload is not None
+    assert add_g.operation.payload.text.startswith("(G) may prioritize")
+
+
+def test_inherited_parent_target_beats_outer_section_fallback_ref():
+    # AIA §3(g)(7): SEC. 3 contains an earlier title 15 definition reference, then
+    # a later nested "Section 202(c) of title 35 ... is amended" instruction. Leaf
+    # clauses with no own ref must inherit the nearest title 35 parent, not the
+    # outer section's first USC reference.
+    body = (
+        '<section identifier="/us/pl/112/29/s3"><num value="3">SEC. 3. </num>'
+        "<heading>First Inventor To File.</heading>"
+        "<subsection><num value=\"l\">(l) </num><content>"
+        "the term has the meaning given under "
+        '<ref href="/us/usc/t15/s632">section 3 of the Small Business Act '
+        "(15 U.S.C. 632)</ref>.</content></subsection>"
+        "<subsection><num value=\"g\">(g) </num><heading>Conforming Amendments.</heading>"
+        '<paragraph identifier="/us/pl/112/29/s3/g/7" role="instruction">'
+        '<num value="7">(7) </num><chapeau>'
+        '<ref href="/us/usc/t35/s202/c">Section 202(c) of title 35, United States Code</ref>, '
+        '<amendingAction type="amend">is amended</amendingAction>—</chapeau>'
+        "<subparagraph><num value=\"A\">(A) </num><chapeau>in paragraph (2)—</chapeau>"
+        '<clause identifier="/us/pl/112/29/s3/g/7/A/i" role="instruction">'
+        '<num value="i">(i) </num><content>by '
+        '<amendingAction type="replace">striking</amendingAction> '
+        "“<quotedText>publication, on sale, or public use,</quotedText>” and all "
+        "that follows through “<quotedText>obtained in the United States</quotedText>” "
+        'and inserting “<quotedText>the 1-year period referred to in section 102(b) '
+        "would end before the end of that 2-year period</quotedText>”;</content>"
+        "</clause></subparagraph></paragraph></subsection></section>"
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body), proof_title="35")
+    instr = next(
+        instr
+        for instr in report.instructions
+        if instr.instruction_id == "/us/pl/112/29/s3/g/7/A/i"
+    )
+
+    assert instr.instruction_status == "accepted"
+    assert instr.finding is None
+    assert str(instr.target_address) == "title:35/section:202/subsection:c/paragraph:2"
+    assert instr.operation is not None
+    assert str(instr.operation.target) == "title:35/section:202/subsection:c/paragraph:2"
+
+
 def test_compound_redesignate_and_transferring_lowers_redesignate_prefix_only():
     # 'redesignating subsections (c), (e), and (g) as subsections (e), (g), and (c),
     # respectively, and by transferring subsection (e) so as to appear after
