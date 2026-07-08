@@ -455,6 +455,13 @@ def main(args: Any) -> None:
         max_works=getattr(args, "max_works", None),
     )
 
+    out_dir = getattr(args, "out_dir", "")
+    if out_dir:
+        from lawvm.tools.spec_ledger_report import persist_ledger
+
+        json_path = persist_ledger(ledger, Path(out_dir))
+        print(f"wrote {json_path}", file=sys.stderr)
+
     if getattr(args, "json", False):
         print(json.dumps(ledger_to_dict(ledger), ensure_ascii=False, indent=2))
         return

@@ -8937,6 +8937,15 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
     nz_spec_ledger_p.add_argument(
         "--json-out", default="", metavar="PATH", help="also write the ledger JSON to PATH"
     )
+    nz_spec_ledger_p.add_argument(
+        "--out-dir",
+        default="",
+        metavar="DIR",
+        help=(
+            "also persist the shared diffable spec-ledger report under DIR "
+            "(spec_ledger.json + spec_ledger.md)"
+        ),
+    )
     nz_dry_run_north_star_p = nz_corpus_sub.add_parser(
         "dry-run-north-star",
         help="report the stable combined replay-coverage north-star over all supported dry-run families",

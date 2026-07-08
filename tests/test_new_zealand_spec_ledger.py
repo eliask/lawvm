@@ -14,6 +14,7 @@ spec-ledger core read-only. These tests pin:
 """
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import List
 
 import pytest
@@ -301,6 +302,52 @@ def test_render_text_marks_uncataloged_rule() -> None:
     text = render_text(ledger)
     assert "[UNCATALOGED!]" in text
     assert "LEGACY_UNKNOWN" in text
+
+
+def test_nz_spec_ledger_main_persists_shared_diffable_report(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    import lawvm.new_zealand.spec_ledger_adapter as adapter
+
+    ledger = build_ledger(
+        nz_ledger_inputs_from_reports(
+            [
+                _report(
+                    "act_public_2001_1",
+                    [
+                        _proof(
+                            op_id="op1",
+                            oracle_match="agrees",
+                            oracle_rule_id=NZ_DRY_RUN_REPEAL_TOMBSTONE_AGREES_RULE_ID,
+                        )
+                    ],
+                )
+            ]
+        ),
+        jurisdiction="nz",
+        mode="dry_run_after_tree_vs_archived_on_or_after_xml",
+        catalog=NZ_RULE_SPECS,
+    )
+    out_dir = tmp_path / "ledger-out"
+    monkeypatch.setattr(adapter, "build_nz_spec_ledger", lambda *args, **kwargs: ledger)
+
+    adapter.main(
+        SimpleNamespace(
+            db="missing-but-monkeypatched.farchive",
+            work_id=(),
+            corpus=None,
+            max_works=None,
+            json=False,
+            json_out="",
+            out_dir=str(out_dir),
+        )
+    )
+
+    assert (out_dir / "spec_ledger.json").exists()
+    assert (out_dir / "spec_ledger.md").exists()
+    assert "wrote" in capsys.readouterr().err
 
 
 def test_empty_reports_yield_no_inputs() -> None:
