@@ -34,10 +34,12 @@ STATIC_CHECK_PATHS=(
 )
 
 AFFECTED_PATHS=()
+AFFECTED_REQUESTED=0
 REQUESTED_SHARDS=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --affected)
+            AFFECTED_REQUESTED=1
             shift
             while [[ $# -gt 0 && "$1" != --* ]]; do
                 AFFECTED_PATHS+=("$1")
@@ -85,6 +87,12 @@ fi
 if [[ ${#AFFECTED_PATHS[@]} -eq 0 && -n "${LAWVM_CI_AFFECTED_PATHS:-}" ]]; then
     # shellcheck disable=SC2206
     AFFECTED_PATHS=(${LAWVM_CI_AFFECTED_PATHS})
+fi
+
+if [[ "$AFFECTED_REQUESTED" -eq 1 && ${#AFFECTED_PATHS[@]} -eq 0 ]]; then
+    echo "--affected requires at least one path or LAWVM_CI_AFFECTED_PATHS." >&2
+    echo "Add an affected-shard mapping if the path is unmapped, or run ./scripts/ci.sh / ./scripts/ci.sh --shards \"frontends modules\" explicitly." >&2
+    exit 2
 fi
 
 ALL_BOUNDED_SHARDS="$(./scripts/test_shard.sh expand $DEFAULT_SHARD_GROUPS | tr '\n' ' ')"

@@ -227,6 +227,7 @@ def test_test_shard_named_groups_expand_to_stable_shards() -> None:
         "properties",
         "properties_timeline",
         "substrate",
+        "tools_ctsf_gate",
         "tools_cli_debug_hotspot",
         "tools_cli_oracle",
         "tools_cli_debug",
@@ -322,6 +323,7 @@ def test_test_shard_group_plan_is_jsonable() -> None:
         "properties",
         "properties_timeline",
         "substrate",
+        "tools_ctsf_gate",
         "tools_cli_debug_hotspot",
         "tools_cli_oracle",
         "tools_cli_debug",
@@ -685,24 +687,21 @@ def test_test_shard_maps_source_modules_to_frontend_shards() -> None:
     ]
 
 
-def test_test_shard_maps_uk_living_notes_to_uk_shard() -> None:
+def test_test_shard_maps_uk_living_notes_to_documentation_noop() -> None:
     module = _load_test_shard_module()
 
-    assert module.affected_shards(["notes/UK_REPLAY_LIVING_SPEC.md"]) == [
-        "tools_cli_debug",
-        "uk",
-    ]
+    assert module.affected_shards(["notes/UK_REPLAY_LIVING_SPEC.md"]) == []
     assert _without_path_expanded_shards(
         module.affected_plan(["notes/UK_REPLAY_LIVING_SPEC.md"])
     ) == {
         "kind": "lawvm_pytest_affected_shards",
         "input_paths": ["notes/UK_REPLAY_LIVING_SPEC.md"],
-        "shards": ["tools_cli_debug", "uk"],
+        "shards": [],
         "paths": [
             {
                 "path": "notes/UK_REPLAY_LIVING_SPEC.md",
-                "shards": ["uk", "tools_cli_debug"],
-                "reason": "known frontend prefix notes/UK_ maps to uk, tools_cli_debug",
+                "shards": [],
+                "reason": "documentation path has no bounded pytest shard impact",
             }
         ],
     }
@@ -795,6 +794,17 @@ def test_test_shard_maps_repo_hygiene_and_ratchet_baselines_narrowly() -> None:
         "tests/data/module_roles_baseline.json",
         "tests/data/regex_ratchet_baseline.json",
     ]) == ["core_ir_contracts"]
+    assert module.affected_shards([
+        "src/lawvm/core/ctsf_gate.py",
+        "tests/data/ctsf_gate_residual_baseline.json",
+        "tests/data/ctsf_gate_ee_residual_baseline.json",
+        "tests/data/ctsf_gate_eu_residual_baseline.json",
+        "tests/data/ctsf_gate_no_residual_baseline.json",
+        "tests/data/ctsf_gate_nz_residual_baseline.json",
+        "tests/data/ctsf_gate_se_residual_baseline.json",
+        "tests/data/ctsf_gate_uk_residual_baseline.json",
+        "tests/data/ctsf_gate_us_residual_baseline.json",
+    ]) == ["tools_ctsf_gate"]
     assert _without_path_expanded_shards(module.affected_plan([
         ".gitignore",
         "tests/data/classifier_wrap_ratchet_baseline.json",
@@ -921,10 +931,24 @@ def test_test_shard_affected_plan_ignores_generic_notes_paths() -> None:
             }
         ],
     }
+    assert module.affected_shards(["docs/getting-started.md"]) == []
+    assert module.affected_shards(["notes/EU_STRUCTURAL_INGESTION_ROADMAP.md"]) == []
     assert module.affected_shards(
         [
             "src/lawvm/us_federal/dry_run.py",
             "notes/DEFERRED_ROADMAP.md",
+        ]
+    ) == ["us_federal"]
+    assert module.affected_shards(
+        [
+            "src/lawvm/eu/pipeline.py",
+            "notes/EU_STRUCTURAL_INGESTION_ROADMAP.md",
+        ]
+    ) == ["eu"]
+    assert module.affected_shards(
+        [
+            "src/lawvm/us_federal/dry_run.py",
+            "docs/getting-started.md",
         ]
     ) == ["us_federal"]
 
@@ -1176,15 +1200,15 @@ def test_test_shard_affected_plan_explains_excluded_all_and_unknown_blocking() -
         ],
     }
     unknown_plan = _without_path_expanded_shards(
-        module.affected_plan(["docs/unmapped.md"])
+        module.affected_plan(["assets/new_fixture.bin"])
     )
     assert unknown_plan == {
         "kind": "lawvm_pytest_affected_shards",
-        "input_paths": ["docs/unmapped.md"],
+        "input_paths": ["assets/new_fixture.bin"],
         "shards": [],
         "blocking_paths": [
             {
-                "path": "docs/unmapped.md",
+                "path": "assets/new_fixture.bin",
                 "shards": [],
                 "reason": "unknown path is not mapped to a bounded shard",
                 "blocking": True,
@@ -1196,7 +1220,7 @@ def test_test_shard_affected_plan_explains_excluded_all_and_unknown_blocking() -
         ],
         "paths": [
             {
-                "path": "docs/unmapped.md",
+                "path": "assets/new_fixture.bin",
                 "shards": [],
                 "reason": "unknown path is not mapped to a bounded shard",
                 "blocking": True,
@@ -1207,15 +1231,15 @@ def test_test_shard_affected_plan_explains_excluded_all_and_unknown_blocking() -
             }
         ],
     }
-    with pytest.raises(ValueError, match="docs/unmapped.md"):
-        module.affected_shards(["docs/unmapped.md"])
+    with pytest.raises(ValueError, match="assets/new_fixture.bin"):
+        module.affected_shards(["assets/new_fixture.bin"])
 
 
 def test_test_shard_affected_cli_rejects_unknown_paths() -> None:
     root = Path(__file__).resolve().parents[1]
 
     result = subprocess.run(
-        ["./scripts/test_shard.sh", "affected", "docs/unmapped.md"],
+        ["./scripts/test_shard.sh", "affected", "assets/new_fixture.bin"],
         cwd=root,
         text=True,
         capture_output=True,
@@ -1224,7 +1248,7 @@ def test_test_shard_affected_cli_rejects_unknown_paths() -> None:
 
     assert result.returncode == 2
     assert "Cannot compute --affected shard set for unknown path" in result.stderr
-    assert "docs/unmapped.md" in result.stderr
+    assert "assets/new_fixture.bin" in result.stderr
     assert "add an affected-shard mapping" in result.stderr
 
 
@@ -1303,3 +1327,14 @@ def test_ci_sharded_accepts_explicit_shard_flags_and_rejects_affected_mix() -> N
     )
     assert conflict_result.returncode == 2
     assert "--affected cannot be combined with --shard/--shards" in conflict_result.stderr
+
+    bare_affected_result = subprocess.run(
+        [str(script), "--affected"],
+        check=False,
+        cwd=root,
+        text=True,
+        capture_output=True,
+    )
+    assert bare_affected_result.returncode == 2
+    assert "--affected requires at least one path" in bare_affected_result.stderr
+    assert "run ./scripts/ci.sh" in bare_affected_result.stderr

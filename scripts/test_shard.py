@@ -1016,68 +1016,6 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # newly-migrated label-redundancy rules (+ negative gate test), the
         # parallel residual-set report, and the bench byte-identity guard.
         "test_ctsf_phase2.py",
-        # #186/#198 CTSF Phase 3: the residual-set-diff GATE — now PRIMARY /
-        # load-bearing. FAIL (exit nonzero) on a new replay_bug/unknown residual,
-        # WARN on a typed oracle/editorial/state-index/temporal move, PASS on an
-        # unchanged set; frozen-baseline round-trip + committed-artifact freshness;
-        # data-aware — the callable/CLI gate fails red where the corpus is present
-        # and skips clean where absent (data-less CI never failed). The
-        # @requires_corpus tests are the authoritative data-present fail-red surface;
-        # the unit surface (baseline diff + synthetic injection) always runs here.
-        "test_ctsf_gate.py",
-        # EE (#205) CTSF gate corpus — the second-jurisdiction analogue: frozen
-        # 0-billable EE baseline, FAIL/WARN/PASS diff logic, round-trip, and
-        # @requires_ee_corpus data-present fail-red over the Riigi Teataja archive.
-        "test_ctsf_gate_ee.py",
-        # UK (#205) CTSF gate corpus — the third-jurisdiction analogue: frozen
-        # 0-billable UK baseline over the enacted→current replay window, FAIL/WARN/PASS
-        # diff logic, round-trip, and @requires_uk_corpus data-present fail-red over
-        # the legislation.gov.uk archive.
-        "test_ctsf_gate_uk.py",
-        # EU (#204) CTSF gate corpus — the fourth-jurisdiction analogue, the last
-        # un-gated jurisdiction: frozen 0-billable EU baseline over the offline
-        # replay-conservation window (EU stores no consolidation oracle / dated DAG),
-        # FAIL/WARN/PASS diff logic, round-trip, and @requires_eu_corpus data-present
-        # fail-red over the EU Cellar archive.
-        "test_ctsf_gate_eu.py",
-        # NZ (#205) CTSF gate corpus — the fifth-jurisdiction analogue over the
-        # RICHEST anchor surface (the dense dated PIT archived-version chain): frozen
-        # 0-billable NZ baseline (partial-coverage lag → temporal_mismatch;
-        # op-local-convicted wrong-ops → replay_bug), FAIL/WARN/PASS diff logic,
-        # round-trip, an engine-level synthetic-injection fail-red, and
-        # @requires_nz_corpus data-present fail-red over the NZ legislation Farchive.
-        "test_ctsf_gate_nz.py",
-        # SE (#183/#205) CTSF gate corpus — the Sweden analogue: frozen 0-billable SE
-        # baseline over the per-amending-act pre→post replay window (SE has no dated
-        # consolidation chain; the amending act is the legal-time step, and the penalized
-        # surface is the SE three-bucket genuine_mismatch set se-bench scores),
-        # FAIL/WARN/PASS diff logic, round-trip, and @requires_se_corpus data-present
-        # fail-red over the sweden.farchive.
-        "test_ctsf_gate_se.py",
-        # NO (#205) CTSF gate corpus — the Norway analogue: frozen
-        # 0-billable NO baseline over the base→current replay window (Norway replays
-        # the lovtidend base forward to as_of, scores against the single live Lovdata
-        # consolidated oracle), FAIL/WARN/PASS diff logic, round-trip, and
-        # @requires_no_corpus data-present fail-red over the Norway Farchive. The
-        # engine lives in lawvm.tools.no_anchor_manifest (exposes score_no_real_corpus
-        # + the frozen baseline for the parent to integrate into core.ctsf_gate).
-        "test_ctsf_gate_no.py",
-        # US (#205) CTSF gate corpus — the EIGHTH-jurisdiction analogue over an
-        # architecturally different frontend: US is a TEXT/SPAN materializer
-        # (us_federal.dry_run does string surgery on located char spans), not a
-        # label-ordered tree grafter. Its anchor is one adjacent USC annual-edition
-        # window (title, before_year, after_year); the dry-run kernel replays the
-        # window's Public Laws onto the before edition and scores the materialized
-        # per-section text against the OLRC after-edition oracle, over the
-        # changed-section touch surface. The per-window disposition partition projects
-        # to CTSF families (lawvm_wrong -> replay_bug, unclassified non-agreement ->
-        # unknown; oracle_suspect/sunset/deferred/missing_source to the WARN-lane
-        # families). Frozen 0-billable US baseline, FAIL/WARN/PASS diff logic,
-        # round-trip, an excluded-billable-windows convict test, and @requires_us_corpus
-        # data-present fail-red over the us_federal.farchive. The engine lives in
-        # lawvm.tools.us_anchor_manifest (exposes score_us_real_corpus + the frozen
-        # baseline for the parent to integrate into core.ctsf_gate).
-        "test_ctsf_gate_us.py",
         "test_diagnose_phase.py",
         "test_diff.py",
         "test_dump.py",
@@ -1105,6 +1043,18 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_replay_all_cli.py",
         "test_verify_facade_execution.py",
         "test_verify_observations.py",
+    ),
+    "tools_ctsf_gate": (
+        # CTSF residual-set-diff gate surface. Split out of tools_cli_debug so
+        # baseline and gate-module edits do not pull unrelated CLI/debug tests.
+        "test_ctsf_gate.py",
+        "test_ctsf_gate_ee.py",
+        "test_ctsf_gate_uk.py",
+        "test_ctsf_gate_eu.py",
+        "test_ctsf_gate_nz.py",
+        "test_ctsf_gate_se.py",
+        "test_ctsf_gate_no.py",
+        "test_ctsf_gate_us.py",
     ),
     "tools_runtime_io": (
         "test_corpus_store_path_validation.py",
@@ -1213,6 +1163,7 @@ SHARD_GROUPS: dict[str, tuple[str, ...]] = {
         "core_surface_semantic",
     ),
     "tools": (
+        "tools_ctsf_gate",
         "tools_cli_debug_hotspot",
         "tools_cli_oracle",
         "tools_cli_debug",
@@ -1262,7 +1213,6 @@ SOURCE_SHARD_PREFIXES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("src/lawvm/sweden/", ("sweden",)),
     ("src/lawvm/uk_legislation/", ("uk",)),
     ("src/lawvm/us_federal/", ("us_federal",)),
-    ("notes/UK_", ("uk", "tools_cli_debug")),
     ("src/lawvm/core/", ("all",)),
     ("src/lawvm/jurisdiction_starter/", ("starter",)),
     ("src/lawvm/substrate/", ("substrate",)),
@@ -1614,9 +1564,17 @@ TOOLING_BLOCKED_PREFIXES = (
 )
 SOURCE_SHARD_PATHS: dict[str, tuple[str, ...]] = {
     "tests/data/classifier_wrap_ratchet_baseline.json": ("core_ir_contracts",),
-    "tests/data/ctsf_gate_eu_residual_baseline.json": ("core_ir_contracts",),
+    "tests/data/ctsf_gate_residual_baseline.json": ("tools_ctsf_gate",),
+    "tests/data/ctsf_gate_ee_residual_baseline.json": ("tools_ctsf_gate",),
+    "tests/data/ctsf_gate_eu_residual_baseline.json": ("tools_ctsf_gate",),
+    "tests/data/ctsf_gate_no_residual_baseline.json": ("tools_ctsf_gate",),
+    "tests/data/ctsf_gate_nz_residual_baseline.json": ("tools_ctsf_gate",),
+    "tests/data/ctsf_gate_se_residual_baseline.json": ("tools_ctsf_gate",),
+    "tests/data/ctsf_gate_uk_residual_baseline.json": ("tools_ctsf_gate",),
+    "tests/data/ctsf_gate_us_residual_baseline.json": ("tools_ctsf_gate",),
     "tests/data/module_roles_baseline.json": ("core_ir_contracts",),
     "tests/data/regex_ratchet_baseline.json": ("core_ir_contracts",),
+    "src/lawvm/core/ctsf_gate.py": ("tools_ctsf_gate",),
     # XP-06 parity is read-mostly audit/report code. It is not on the replay
     # execution path, so edits need the parity shard, not every frontend shard.
     "src/lawvm/core/cross_jurisdiction_parity.py": ("core_tree_apply",),
@@ -2218,7 +2176,7 @@ def affected_path_plan(raw_path: str) -> dict[str, Any]:
                     f"core/dependency prefix {prefix} forces all affected shards",
                 )
             return plan(list(shards), f"known frontend prefix {prefix} maps to {', '.join(shards)}")
-    if normalized.startswith("notes/"):
+    if normalized.startswith(("docs/", "notes/")):
         return plan([], "documentation path has no bounded pytest shard impact")
     if normalized.startswith(TOOLING_BLOCKED_PREFIXES):
         prefixes = ", ".join(TOOLING_BLOCKED_PREFIXES)
