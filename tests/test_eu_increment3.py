@@ -25,6 +25,8 @@ from __future__ import annotations
 import typing
 from pathlib import Path
 
+import pytest
+
 from lawvm.core.ir import (
     IRNode,
     IRStatute,
@@ -297,6 +299,69 @@ def test_nested_alpha_points_under_numeric_point_parse_and_apply(tmp_path) -> No
     )
     assert replaced is not None
     assert "new NPA text" in replaced.text
+
+
+@pytest.mark.xfail(
+    reason=(
+        "Known 32013R1022/32010R1093 frontier: the narrow inline-roman grafter "
+        "repair exposes same-day billable unknowns unless paired with broader "
+        "payload/adjudication work."
+    ),
+    strict=True,
+)
+def test_inline_roman_points_under_numeric_point_parse_and_apply(tmp_path) -> None:
+    """Real 32010R1093/32013R1022 shape: Article 4 point (2) encodes child
+    roman points inline as ``(i) ...; (ii) ...; and (iii) ...``. The amender
+    targets ``point (i) of point (2) of Article 4``; replay needs a real
+    ``article:4/point:2/point:i`` coordinate, not one flat point-2 blob."""
+    base_xml = tmp_path / "base_inline_roman_points.fmx4.xml"
+    base_xml.write_bytes(
+        b"""<?xml version="1.0"?>
+<ACT><TITLE><TI>base</TI></TITLE><ENACTING.TERMS>
+  <ARTICLE><TI.ART>Article 4</TI.ART>
+    <ALINEA><LIST TYPE="ARAB">
+      <ITEM><NP><NO.P>(2)</NO.P><TXT>competent authorities means:</TXT>
+        <TXT>(i)old banking authorities;</TXT>
+        <TXT>(ii)old financial intelligence authorities; and</TXT>
+        <TXT>(iii)old deposit guarantee authorities.</TXT>
+      </NP></ITEM>
+    </LIST></ALINEA>
+  </ARTICLE>
+</ENACTING.TERMS></ACT>"""
+    )
+    base = parse_eu_regulation_ir(base_xml, celex="32010R1093")
+    point_2 = tree_ops.resolve(
+        base.body,
+        (("section", "4"), ("item", "2")),
+    )
+    assert point_2 is not None
+    assert [(child.kind, child.label) for child in point_2.children] == [
+        (_ITEM, "i"),
+        (_ITEM, "ii"),
+        (_ITEM, "iii"),
+    ]
+
+    amender = b"""<?xml version="1.0"?>
+<ACT><ENACTING.TERMS>
+  <ARTICLE><TI.ART>Article 1</TI.ART>
+    <ALINEA><P>Regulation (EU) No 1093/2010 is amended as follows:</P>
+      <LIST><ITEM><NP><NO.P>(4)</NO.P><TXT>in point (2) of Article 4, point (i) is replaced by the following:</TXT>
+        <P><QUOT.S><NP><NO.P><QUOT.START/>(i)</NO.P><TXT>new competent-authority text;<QUOT.END/></TXT></NP></QUOT.S></P>
+      </NP></ITEM></LIST>
+    </ALINEA></ARTICLE>
+</ENACTING.TERMS></ACT>"""
+    lowered = lower_amending_act(amender, "32013R1022", base_celex="32010R1093")
+    assert [str(op.target) for op in lowered.ops] == ["article:4/point:2/point:i"]
+
+    result = apply_eu_ops_conserved(base, list(order_eu_ops(lowered.ops).ops))
+    assert result.skipped_items == ()
+    replaced = tree_ops.resolve(
+        result.statute.body,
+        (("section", "4"), ("item", "2"), ("item", "i")),
+    )
+    assert replaced is not None
+    assert "new competent-authority text" in replaced.text
+    assert "old banking authorities" not in replaced.text
 
 
 def test_point_of_article_repeal_preserves_host_for_later_insert(tmp_path) -> None:
