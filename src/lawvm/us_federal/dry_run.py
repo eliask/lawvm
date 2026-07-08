@@ -3388,6 +3388,7 @@ def build_us_dry_run(
     ordered_result = order_us_ops(flat_ops)
     same_moment_findings = tuple(ordered_result.findings)
 
+    container_fanout_ops: list[LegalOperation] = []
     for operation in ordered_result.ops:
         # Temporal guard: skip instructions that are not yet in force, or that
         # have already expired, relative to the after-edition snapshot. Both
@@ -3448,6 +3449,7 @@ def build_us_dry_run(
                         )
                     )
                     continue
+                container_fanout_ops.append(operation)
                 for fan_section in fanout.sections:
                     fanned = _dc_replace(
                         operation,
@@ -3481,6 +3483,7 @@ def build_us_dry_run(
     # sub-section ops (e.g. amend-to-read of paragraph (1)) cannot locate nodes.
     # We parse the initial INSERT payload into a best-effort UscSection so
     # subsequent ops can compose sub-section edits on the newly created section.
+    created_section_sequence: dict[str, int] = {}
     for operations in section_ops.values():
         for op in operations:
             if op.action is not StructuralAction.INSERT:
@@ -3517,6 +3520,52 @@ def build_us_dry_run(
             # will fill it from the insert).
             if section_number not in before_text_by_section:
                 before_text_by_section[section_number] = ""
+            prior = created_section_sequence.get(section_number)
+            if prior is None or op.sequence < prior:
+                created_section_sequence[section_number] = op.sequence
+
+    # Phase 1a.1: A container-scope each-place patch that appears AFTER a same-window
+    # section INSERT also reaches the newly created section. The before-edition
+    # fan-out above cannot see those sections by construction; this second pass is
+    # sequence-gated and anchor-gated so it cannot widen an earlier title-scope op or
+    # a section whose inserted text does not carry the enacted match.
+    for operation in container_fanout_ops:
+        path = operation.target.path
+        if len(path) != 1:
+            # Synthetic inserted sections do not carry chapter metadata, so only
+            # bare-title each-place ops can be soundly extended in this pass.
+            continue
+        entries = _each_place_exception_entries(operation) or frozenset()
+        whole_section_exempt = {
+            parts[1]
+            for entry in entries
+            if (parts := entry.split(":")) and len(parts) == 2 and parts[0] == "s"
+        }
+        patch = operation.text_patch
+        if patch is None:
+            continue
+        match_text = patch.selector.match_text
+        for section, insert_sequence in created_section_sequence.items():
+            if operation.sequence <= insert_sequence:
+                continue
+            if section in whole_section_exempt:
+                continue
+            source_section = before_section_by_number.get(section)
+            if source_section is None:
+                continue
+            if not _token_in_text(source_section.statutory_text, match_text):
+                continue
+            fanned = _dc_replace(
+                operation,
+                op_id=f"{operation.op_id}@s{section}",
+                target=LegalAddress(
+                    path=(
+                        ("title", str(title)),
+                        ("section", section),
+                    )
+                ),
+            )
+            section_ops.setdefault(section, []).append(fanned)
 
     # Phase 1b: Refuse ops on sections still absent from the before edition and not
     # created by a window-level INSERT.
