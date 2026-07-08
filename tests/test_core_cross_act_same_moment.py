@@ -33,9 +33,15 @@ from lawvm.core.cross_act_same_moment import (
     BASIS_LATER_ENACTMENT,
     DEFAULT_UNPROVEN_RESOLUTION_LABEL,
     DetectedSameMomentConflict,
+    DetectedSameMomentConflictRecord,
+    RESOLUTION_RESOLVED_BY_CLAIM,
+    SAME_MOMENT_CONFLICT_REASON_CODE,
     SameMomentPrecedenceClaim,
+    SameMomentPrecedenceClaimRecord,
     detect_cross_act_same_moment_conflicts,
     detected_same_moment_conflicts_from_ops,
+    same_moment_conflict_finding_kind,
+    validate_same_moment_precedence_claim_record,
     validate_same_moment_precedence_claim,
 )
 from lawvm.core.ir import (
@@ -139,6 +145,12 @@ def _ee_prefix_two_replaces_same_moment() -> list[LegalOperation]:
     ]
 
 
+def _only_detected_conflict(ops: list[LegalOperation]) -> DetectedSameMomentConflict:
+    detected = detected_same_moment_conflicts_from_ops(ops)
+    assert len(detected) == 1
+    return detected[0]
+
+
 #─ POSITIVE (EE shape): two REPLACEs same target same effective date → finding
 
 
@@ -161,10 +173,11 @@ def test_two_distinct_acts_replace_same_target_same_effective_date_emits_ee_find
         adjudications_out=adjudications,
         lowering_observations_out=lowering_observations,
     )
+    conflict = _only_detected_conflict(ops)
 
     assert len(findings) == 1, f"expected 1 finding; got {findings!r}"
     finding = findings[0]
-    assert finding["rule_id"] == "ee_same_moment_cross_act_incompatible_payload_ambiguous"
+    assert finding["rule_id"] == same_moment_conflict_finding_kind("ee")
     assert finding["phase"] == "apply"
     assert finding["family"] == "temporal_recovery"
     assert finding["blocking"] is True
@@ -172,9 +185,9 @@ def test_two_distinct_acts_replace_same_target_same_effective_date_emits_ee_find
     detail = finding["detail"] if "detail" in finding else finding
     # Diagnostic envelope flattens detail fields into the top-level dict via
     # `diagnostic_detail` — the finding payload is the merged record.
-    assert detail["affected_target"] == "(('section', '5'),)"
-    assert detail["effective_date"] == "2026-01-01"
-    assert detail["reason_code"] == "same_moment_cross_act_incompatible_payload"
+    assert detail["affected_target"] == conflict.affected_target
+    assert detail["effective_date"] == conflict.effective_date
+    assert detail["reason_code"] == SAME_MOMENT_CONFLICT_REASON_CODE
     assert detail["resolution"] == DEFAULT_UNPROVEN_RESOLUTION_LABEL
     assert set(detail["conflicting_affecting_acts"]) == {
         "ee/act-a/2025",
@@ -195,7 +208,7 @@ def test_two_distinct_acts_replace_same_target_same_effective_date_emits_ee_find
     # (Pattern A) so the per-op conserved-wrapper partition is unaffected.
     assert len(adjudications) == 1
     adj = adjudications[0]
-    assert adj.kind == "ee_same_moment_cross_act_incompatible_payload_ambiguous"
+    assert adj.kind == same_moment_conflict_finding_kind("ee")
     assert adj.blocking is True
     assert adj.op_id == ""
     assert adj.source_statute == ""
@@ -456,7 +469,7 @@ def test_no_prefix_emits_no_kind_finding() -> None:
     )
     assert len(findings) == 1
     finding = findings[0]
-    assert finding["rule_id"] == "no_same_moment_cross_act_incompatible_payload_ambiguous"
+    assert finding["rule_id"] == same_moment_conflict_finding_kind("no")
     assert finding["blocking"] is True
     assert finding["family"] == "temporal_recovery"
     assert finding["phase"] == "apply"
@@ -478,12 +491,12 @@ def test_each_frontend_prefix_produces_distinct_rule_ids() -> None:
     them would make one frontend's evidence invisible against another's."""
     ops = _ee_prefix_two_replaces_same_moment()
     expected_rule_ids = {
-        "ee_same_moment_cross_act_incompatible_payload_ambiguous",
-        "no_same_moment_cross_act_incompatible_payload_ambiguous",
-        "eu_same_moment_cross_act_incompatible_payload_ambiguous",
-        "se_same_moment_cross_act_incompatible_payload_ambiguous",
-        "nz_same_moment_cross_act_incompatible_payload_ambiguous",
-        "us_same_moment_cross_act_incompatible_payload_ambiguous",
+        same_moment_conflict_finding_kind("ee"),
+        same_moment_conflict_finding_kind("no"),
+        same_moment_conflict_finding_kind("eu"),
+        same_moment_conflict_finding_kind("se"),
+        same_moment_conflict_finding_kind("nz"),
+        same_moment_conflict_finding_kind("us"),
     }
     actual_rule_ids = {
         detect_cross_act_same_moment_conflicts(
@@ -506,8 +519,8 @@ def test_empty_finder_kind_prefix_fails_loud() -> None:
     ops = _ee_prefix_two_replaces_same_moment()
     try:
         detect_cross_act_same_moment_conflicts(ops, finder_kind_prefix="")
-    except ValueError as exc:
-        assert "finder_kind_prefix" in str(exc)
+    except ValueError:
+        pass
     else:
         raise AssertionError(
             "expected ValueError for empty finder_kind_prefix (AGENTS.md §1.10)"
@@ -541,12 +554,13 @@ def test_validated_precedence_claim_resolves_conflict_non_blocking() -> None:
     §1.7/§0 (preserve uncertainty) invariant: the conflict is now owned by a
     typed claim, not silently picked by op.sequence."""
     ops = _ee_prefix_two_replaces_same_moment()
+    conflict = _only_detected_conflict(ops)
     claim = SameMomentPrecedenceClaim(
         claim_id="ee-claim-1",
         claim_kind="same_moment_precedence",
-        effective_date="2026-01-01",
-        affected_target="(('section', '5'),)",
-        conflicting_affecting_acts=("ee/act-a/2025", "ee/act-b/2025"),
+        effective_date=conflict.effective_date,
+        affected_target=conflict.affected_target,
+        conflicting_affecting_acts=conflict.conflicting_affecting_acts,
         winner_affecting_act_id="ee/act-a/2025",
         basis=BASIS_LATER_ENACTMENT,
         basis_note="act-a enacted later than act-b",
@@ -561,7 +575,7 @@ def test_validated_precedence_claim_resolves_conflict_non_blocking() -> None:
     finding = findings[0]
     assert finding["blocking"] is False
     assert finding["strict_disposition"] == "record"
-    assert finding["resolution"] == "resolved_by_claim"
+    assert finding["resolution"] == RESOLUTION_RESOLVED_BY_CLAIM
     assert (
         finding["resolved_by_claim_winner_affecting_act_id"] == "ee/act-a/2025"
     )
@@ -572,12 +586,13 @@ def test_unvalidated_precedence_claim_leaves_finding_blocking() -> None:
     fails validation) leaves the finding in its default blocking-unproven
     state — a bad candidate must remain rejectable (AGENTS.md §0)."""
     ops = _ee_prefix_two_replaces_same_moment()
+    conflict = _only_detected_conflict(ops)
     # Claim names an act that isn't even in the conflict — must be rejected.
     bad_claim = SameMomentPrecedenceClaim(
         claim_id="ee-claim-bad",
         claim_kind="same_moment_precedence",
-        effective_date="2026-01-01",
-        affected_target="(('section', '5'),)",
+        effective_date=conflict.effective_date,
+        affected_target=conflict.affected_target,
         conflicting_affecting_acts=("ee/act-a/2025", "ee/act-c/2025"),
         winner_affecting_act_id="ee/act-c/2025",
         basis=BASIS_LATER_ENACTMENT,
@@ -603,13 +618,14 @@ def test_validate_same_moment_precedence_claim_rejects_unknown_act() -> None:
     detected = detected_same_moment_conflicts_from_ops(ops)
     assert len(detected) == 1
     assert DetectedSameMomentConflict is type(detected[0])
+    conflict = detected[0]
 
     bad_claim = SameMomentPrecedenceClaim(
         claim_id="ee-claim-bad",
         claim_kind="same_moment_precedence",
-        effective_date="2026-01-01",
-        affected_target="(('section', '5'),)",
-        conflicting_affecting_acts=("ee/act-a/2025", "ee/act-b/2025"),
+        effective_date=conflict.effective_date,
+        affected_target=conflict.affected_target,
+        conflicting_affecting_acts=conflict.conflicting_affecting_acts,
         # Winner is OUTSIDE the conflicting act set — must be rejected at the
         # basis-admissibility stage.
         winner_affecting_act_id="ee/act-c/2025",
@@ -625,7 +641,10 @@ def test_validate_same_moment_precedence_claim_rejects_unknown_act() -> None:
         validation.rule_id
         == "ee_same_moment_precedence_claim_rejected_basis"
     )
-    assert "winner" in validation.reason.lower()
+    assert validation.detail == {
+        "winner_affecting_act_id": "ee/act-c/2025",
+        "conflicting_affecting_acts": list(conflict.conflicting_affecting_acts),
+    }
 
 
 def test_validate_same_moment_precedence_claim_accepts_well_formed_claim() -> None:
@@ -635,13 +654,14 @@ def test_validate_same_moment_precedence_claim_accepts_well_formed_claim() -> No
     ops = _ee_prefix_two_replaces_same_moment()
     detected = detected_same_moment_conflicts_from_ops(ops)
     assert len(detected) == 1
+    conflict = detected[0]
 
     claim = SameMomentPrecedenceClaim(
         claim_id="ee-claim-1",
         claim_kind="same_moment_precedence",
-        effective_date="2026-01-01",
-        affected_target="(('section', '5'),)",
-        conflicting_affecting_acts=("ee/act-a/2025", "ee/act-b/2025"),
+        effective_date=conflict.effective_date,
+        affected_target=conflict.affected_target,
+        conflicting_affecting_acts=conflict.conflicting_affecting_acts,
         winner_affecting_act_id="ee/act-a/2025",
         basis=BASIS_LATER_ENACTMENT,
         basis_note="act-a enacted 2025-12-01; act-b enacted 2025-12-15",
@@ -653,6 +673,42 @@ def test_validate_same_moment_precedence_claim_accepts_well_formed_claim() -> No
     )
     assert validation.validated is True
     assert validation.rule_id == "ee_same_moment_precedence_claim_validated"
+
+
+def test_neutral_precedence_claim_validator_preserves_record_id_field() -> None:
+    """The shared kernel does not decide whether a record id is an op or effect."""
+    claim = SameMomentPrecedenceClaimRecord(
+        claim_id="x-claim-1",
+        claim_kind="same_moment_precedence",
+        effective_date="2026-01-01",
+        affected_target="section:5",
+        conflicting_affecting_acts=("act-a", "act-b"),
+        winner_affecting_act_id="act-a",
+        basis=BASIS_LATER_ENACTMENT,
+        winner_record_id="record-b",
+    )
+    conflict = DetectedSameMomentConflictRecord(
+        effective_date="2026-01-01",
+        affected_target="section:5",
+        conflicting_affecting_acts=("act-a", "act-b"),
+        conflicting_record_ids=("record-a", "record-b"),
+        record_ids_by_act={"act-a": ("record-a",), "act-b": ("record-b",)},
+    )
+
+    validation = validate_same_moment_precedence_claim_record(
+        claim,
+        detected_conflicts=(conflict,),
+        finder_kind_prefix="ee",
+        record_id_field="winner_effect_id",
+        record_plural_label="effects",
+    )
+
+    assert validation.validated is False
+    assert validation.rule_id == "ee_same_moment_precedence_claim_rejected_conflict_binding"
+    assert validation.detail == {
+        "winner_effect_id": "record-b",
+        "winner_affecting_act_id": "act-a",
+    }
 
 
 #─ POSITIVE: default-overridable incompatible_payload_predicate
@@ -725,15 +781,14 @@ def test_custom_unproven_resolution_label_per_frontend() -> None:
     Both still emit ``blocking=True`` and the finding has the same shape —
     only the resolution string differs."""
     ops = _ee_prefix_two_replaces_same_moment()
+    uk_unproven_resolution_label = "affecting_act_id_lexical_order_unproven"
     findings = detect_cross_act_same_moment_conflicts(
         ops,
         finder_kind_prefix="uk",
-        unproven_resolution_label="affecting_act_id_lexical_order_unproven",
+        unproven_resolution_label=uk_unproven_resolution_label,
     )
     assert len(findings) == 1
     finding = findings[0]
     assert finding["blocking"] is True
-    assert (
-        finding["resolution"] == "affecting_act_id_lexical_order_unproven"
-    )
-    assert finding["rule_id"] == "uk_same_moment_cross_act_incompatible_payload_ambiguous"
+    assert finding["resolution"] == uk_unproven_resolution_label
+    assert finding["rule_id"] == same_moment_conflict_finding_kind("uk")

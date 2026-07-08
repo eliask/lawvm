@@ -20,6 +20,8 @@ production output. It builds a VIEW (the matrix) and a typed finding population
   be imported as module constants without running the whole grafter; the AST
   scan reads the real keyword literals without executing any frontend code,
   mirroring how ``tests/test_ee_guard_liveness.py`` scans for emit sites).
+  NZ has no ``ApplyProfile`` seam today, so its per-unit modes are recorded as
+  ``absent`` instead of being collapsed into a sibling ``off``.
 * FI is the reference UPPER BOUND: its per-op apply-authority battery
   (``finland/apply_resolved_op._enforce_per_op_apply_authority``) blocks on all
   four gates under strict mode. FI is never edited; it is read-only here as the
@@ -56,11 +58,12 @@ from typing import Dict, Literal, Mapping, Optional, Tuple, cast
 # ── Vocabulary ────────────────────────────────────────────────────────────────
 
 #: The known frontends, in the registry's canonical order. FI is the reference
-#: upper bound (its own per-op battery, NOT an ``ApplyProfile``); the other six
-#: each construct an ``ApplyProfile`` fed to ``core/apply_seam.apply_op``.
-FrontendId = Literal["fi", "no", "se", "ee", "eu", "uk", "us"]
+#: upper bound (its own per-op battery, NOT an ``ApplyProfile``); NO/SE/EE/EU/UK/US
+#: each construct an ``ApplyProfile`` fed to ``core/apply_seam.apply_op``. NZ is
+#: a first-class frontend row but has no apply-seam profile today.
+FrontendId = Literal["fi", "no", "se", "ee", "eu", "nz", "uk", "us"]
 
-KNOWN_FRONTENDS: Tuple[FrontendId, ...] = ("fi", "no", "se", "ee", "eu", "uk", "us")
+KNOWN_FRONTENDS: Tuple[FrontendId, ...] = ("fi", "no", "se", "ee", "eu", "nz", "uk", "us")
 
 #: A gate's per-frontend enforcement mode.
 #:
@@ -69,6 +72,16 @@ KNOWN_FRONTENDS: Tuple[FrontendId, ...] = ("fi", "no", "se", "ee", "eu", "uk", "
 #: * ``off`` — the gate mechanism is wired but the disposition disables it.
 #: * ``absent`` — no producer is wired for this gate in this frontend.
 GateMode = Literal["block", "observe", "off", "absent"]
+
+#: Same-moment ordering/detection path kind. This is intentionally more precise
+#: than the legacy boolean carrier: UK uses the shared generic algorithm at the
+#: effect plane, while NO/SE/EE/EU/NZ/US route lowered ops through ``order_ops``.
+SameMomentPathKind = Literal[
+    "op_ordering",
+    "shared_generic_effect_adapter",
+    "timeline_plane",
+    "absent",
+]
 
 #: The four per-unit apply-seam invariants whose disposition is read from each
 #: ``ApplyProfile`` (registry rows in parentheses).
@@ -106,8 +119,10 @@ INVARIANT_LABEL: Dict[str, str] = {
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _SRC_ROOT = _REPO_ROOT / "src" / "lawvm"
 
-#: For the five non-FI/non-US tree frontends + US + UK: the module file whose
-#: ``ApplyProfile(...)`` construction site carries the real gate dispositions.
+#: For the ApplyProfile frontends: the module file whose ``ApplyProfile(...)``
+#: construction site carries the real gate dispositions. NZ is omitted because
+#: its chain replay does not yet use the apply seam; the row is populated
+#: separately with ``absent`` modes.
 _PROFILE_SOURCE: Dict[str, Path] = {
     "no": _SRC_ROOT / "norway" / "grafter.py",
     "se": _SRC_ROOT / "sweden" / "grafter.py",
@@ -116,6 +131,8 @@ _PROFILE_SOURCE: Dict[str, Path] = {
     "uk": _SRC_ROOT / "uk_legislation" / "replay_executor.py",
     "us": _SRC_ROOT / "us_federal" / "apply_profile.py",
 }
+
+_APPLY_PROFILE_FRONTENDS: Tuple[FrontendId, ...] = ("no", "se", "ee", "eu", "uk", "us")
 
 
 # ── The matrix model (frozen typed) ───────────────────────────────────────────
@@ -134,6 +151,7 @@ class FrontendGates:
     frontend: FrontendId
     modes: Dict[str, GateMode]
     carriers: Dict[str, bool]
+    same_moment_path: SameMomentPathKind
     source: str
 
     def mode(self, invariant: str) -> GateMode:
@@ -161,6 +179,13 @@ class ParityMatrix:
                 return False
             if set(gates.carriers) != set(CARRIER_PRESENCES):
                 return False
+            if gates.same_moment_path not in (
+                "op_ordering",
+                "shared_generic_effect_adapter",
+                "timeline_plane",
+                "absent",
+            ):
+                return False
         return True
 
     def modes_for(self, invariant: str) -> Dict[FrontendId, GateMode]:
@@ -170,6 +195,10 @@ class ParityMatrix:
     def carriers_for(self, carrier: str) -> Dict[FrontendId, bool]:
         """The per-frontend present/absent map for one carrier."""
         return {fe: self.rows[fe].carriers[carrier] for fe in KNOWN_FRONTENDS}
+
+    def same_moment_paths(self) -> Dict[FrontendId, SameMomentPathKind]:
+        """The precise same-moment routing path per frontend."""
+        return {fe: self.rows[fe].same_moment_path for fe in KNOWN_FRONTENDS}
 
 
 # ── Divergence finding (the typed first-class object) ─────────────────────────
@@ -337,17 +366,20 @@ def _gates_from_literals(frontend: FrontendId, lits: _ProfileLiterals) -> Dict[s
 
 # ── Carrier presence (real code surface) ──────────────────────────────────────
 
-#: ``apply_<j>_ops_conserved`` / ``replay_<j>_ops_conserved`` def per frontend.
-#: US has no IR conserved wrapper — its conservation is the dry-run AGREE/RESIDUAL
-#: lane, a different metric instantiation (recorded absent for the IR-wrapper
-#: carrier, which is the honest reading).
+#: ``apply_<j>_ops_conserved`` / ``replay_<j>_ops_conserved`` def per frontend,
+#: or an equivalent typed accounting carrier for a frontend whose materialization
+#: unit is not the shared IR op fold. NZ's chain replay exposes an accepted/skipped
+#: transition wrapper over its own chain-op vocabulary; US exposes a dry-run
+#: section-surface account over rows/refusals/agreement residuals. These are
+#: conservation carriers, not replay-authorization claims.
 _CONSERVED_WRAPPER_DEF: Dict[FrontendId, Optional[Tuple[Path, Optional[str]]]] = {
     "no": (_SRC_ROOT / "norway" / "grafter.py", "apply_no_ops_conserved"),
     "se": (_SRC_ROOT / "sweden" / "grafter.py", "apply_se_ops_conserved"),
     "ee": (_SRC_ROOT / "estonia" / "grafter.py", "apply_ee_ops_conserved"),
     "eu": (_SRC_ROOT / "eu" / "pipeline.py", "apply_eu_ops_conserved"),
+    "nz": (_SRC_ROOT / "new_zealand" / "chain_replay.py", "apply_nz_transition_conserved"),
     "uk": (_SRC_ROOT / "uk_legislation" / "replay_conserved.py", "replay_uk_ops_conserved"),
-    "us": None,
+    "us": (_SRC_ROOT / "us_federal" / "dry_run.py", "build_us_dry_run_conserved_account"),
     "fi": (_SRC_ROOT / "finland" / "oracle_comparison.py", None),  # FI conserves via its own fold
 }
 
@@ -371,6 +403,7 @@ _FRONTEND_PACKAGE: Dict[FrontendId, Path] = {
     "se": _SRC_ROOT / "sweden",
     "ee": _SRC_ROOT / "estonia",
     "eu": _SRC_ROOT / "eu",
+    "nz": _SRC_ROOT / "new_zealand",
     "uk": _SRC_ROOT / "uk_legislation",
     "us": _SRC_ROOT / "us_federal",
 }
@@ -379,6 +412,13 @@ _FRONTEND_PACKAGE: Dict[FrontendId, Path] = {
 #: the detector itself, and the unified ordering kernel that wraps it. A frontend
 #: importing EITHER routes its ops through same-moment detection.
 _SHARED_SAME_MOMENT_MODULES: Tuple[str, ...] = ("cross_act_same_moment", "op_ordering")
+
+_SAME_MOMENT_PATH_DISPLAY: Dict[SameMomentPathKind, str] = {
+    "op_ordering": "op-order",
+    "shared_generic_effect_adapter": "effect-adapter",
+    "timeline_plane": "timeline",
+    "absent": "absent",
+}
 
 
 def _has_def(source_path: Path, def_name: Optional[str]) -> bool:
@@ -436,6 +476,28 @@ def _package_imports_any_module(package_dir: Path, module_names: Tuple[str, ...]
     return False
 
 
+def _same_moment_path_for_frontend(frontend: FrontendId) -> SameMomentPathKind:
+    """Return the precise shared same-moment path kind for one frontend.
+
+    The boolean carrier answers "does this frontend participate in the shared
+    cross-act same-moment family?". This typed path keeps the phase boundary
+    visible: UK delegates the shared generic algorithm over ``UKEffectRecord``s,
+    before op lowering, while the op frontends use ``op_ordering.order_ops``.
+    FI's same-moment behavior is timeline-plane and intentionally outside this
+    carrier.
+    """
+    if frontend == "fi":
+        return "timeline_plane"
+    package_dir = _FRONTEND_PACKAGE[frontend]
+    if _package_imports_any_module(package_dir, ("op_ordering",)):
+        return "op_ordering"
+    if _package_calls_name(package_dir, "detect_same_moment_conflict_groups_generic"):
+        return "shared_generic_effect_adapter"
+    if _package_imports_any_module(package_dir, ("cross_act_same_moment",)):
+        return "shared_generic_effect_adapter"
+    return "absent"
+
+
 def _package_calls_name(package_dir: Path, call_name: str) -> bool:
     """True iff any module in ``package_dir`` calls ``call_name(...)`` (by name).
 
@@ -472,8 +534,10 @@ def _carriers_for_frontend(frontend: FrontendId) -> Dict[str, bool]:
 
     has_receipt = _package_calls_name(_FRONTEND_PACKAGE[frontend], _WRITE_RECEIPT_CTOR)
 
-    has_same_moment = _package_imports_any_module(
-        _FRONTEND_PACKAGE[frontend], _SHARED_SAME_MOMENT_MODULES
+    same_moment_path = _same_moment_path_for_frontend(frontend)
+    has_same_moment = same_moment_path in (
+        "op_ordering",
+        "shared_generic_effect_adapter",
     )
 
     return {
@@ -513,16 +577,23 @@ def _fi_reference_gates() -> Dict[str, GateMode]:
     return {inv: "block" for inv in PER_UNIT_INVARIANTS}
 
 
+def _absent_apply_seam_gates() -> Dict[str, GateMode]:
+    """Per-unit apply-seam modes for a frontend with no ApplyProfile seam."""
+    return {inv: "absent" for inv in PER_UNIT_INVARIANTS}
+
+
 # ── Public builders ────────────────────────────────────────────────────────────
 
 
 def build_parity_matrix() -> ParityMatrix:
     """Build the invariant × frontend parity matrix from REAL registrations.
 
-    FI is read as the reference upper bound (its per-op battery); the six
-    non-FI frontends are read by AST-scanning their ``ApplyProfile(...)``
-    construction sites + the real carrier code surface. The returned matrix is
-    total over :data:`KNOWN_FRONTENDS`.
+    FI is read as the reference upper bound (its per-op battery); the
+    ApplyProfile frontends are read by AST-scanning their construction sites +
+    the real carrier code surface. NZ has no ApplyProfile seam today, so it is
+    represented explicitly as apply-seam ``absent`` while its carriers are still
+    read from the real code surface. The returned matrix is total over
+    :data:`KNOWN_FRONTENDS`.
     """
     rows: Dict[FrontendId, FrontendGates] = {}
 
@@ -531,19 +602,30 @@ def build_parity_matrix() -> ParityMatrix:
         frontend="fi",
         modes=_fi_reference_gates(),
         carriers=_carriers_for_frontend("fi"),
+        same_moment_path=_same_moment_path_for_frontend("fi"),
         source="finland/apply_resolved_op.py::_enforce_per_op_apply_authority (reference)",
     )
 
-    # The six ApplyProfile frontends.
-    for fe in ("no", "se", "ee", "eu", "uk", "us"):
+    # The ApplyProfile frontends.
+    for fe in _APPLY_PROFILE_FRONTENDS:
         source_path = _PROFILE_SOURCE[fe]
         lits = _scan_apply_profile_call(source_path)
-        rows[fe] = FrontendGates(  # type: ignore[index]
-            frontend=fe,  # type: ignore[arg-type]
-            modes=_gates_from_literals(fe, lits),  # type: ignore[arg-type]
-            carriers=_carriers_for_frontend(fe),  # type: ignore[arg-type]
+        rows[fe] = FrontendGates(
+            frontend=fe,
+            modes=_gates_from_literals(fe, lits),
+            carriers=_carriers_for_frontend(fe),
+            same_moment_path=_same_moment_path_for_frontend(fe),
             source=str(source_path.relative_to(_REPO_ROOT)),
         )
+
+    # NZ — first-class frontend, but no ApplyProfile apply seam.
+    rows["nz"] = FrontendGates(
+        frontend="nz",
+        modes=_absent_apply_seam_gates(),
+        carriers=_carriers_for_frontend("nz"),
+        same_moment_path=_same_moment_path_for_frontend("nz"),
+        source="new_zealand/chain_replay.py (no ApplyProfile seam)",
+    )
 
     return ParityMatrix(rows=rows)
 
@@ -627,17 +709,22 @@ def classify_divergences(matrix: ParityMatrix) -> Tuple[InvariantCoverageDiverge
     """Emit one :class:`InvariantCoverageDivergence` per real cross-frontend gap.
 
     A divergence is surfaced when, for a per-unit invariant, NOT every frontend
-    shares the same mode. The kind is decided by where the outlier sits relative
-    to the majority baseline among the six ``ApplyProfile`` frontends (FI, the
-    reference upper bound, is reported in the mode map but does not by itself
-    constitute a divergence — it is the ceiling everything is measured against).
-    Carrier absences (a sibling missing a carrier its peers have) are surfaced
-    as ``absent-here`` rows.
+    shares the same mode. Outliers are classified relative to the majority
+    baseline among all non-FI siblings, and stronger/weaker outliers become
+    separate typed rows. That keeps NZ's no-ApplyProfile ``absent`` seam visible
+    instead of merging it into EE's stronger ``block`` outlier. FI, the reference
+    upper bound, is reported in the mode map but does not by itself constitute a
+    divergence — it is the ceiling everything is measured against. Carrier
+    absences (a sibling missing a carrier its peers have) are surfaced as
+    ``absent-here`` rows.
     """
     out: list[InvariantCoverageDivergence] = []
-    siblings: Tuple[FrontendId, ...] = ("no", "se", "ee", "eu", "uk", "us")
+    siblings: Tuple[FrontendId, ...] = tuple(
+        fe for fe in KNOWN_FRONTENDS if fe != "fi"
+    )
 
-    # Per-unit gate divergences (among the six ApplyProfile siblings).
+    # Per-unit gate divergences (among all non-FI siblings, including NZ's
+    # explicit no-ApplyProfile row).
     for inv in PER_UNIT_INVARIANTS:
         modes = matrix.modes_for(inv)
         sibling_modes: Dict[str, GateMode] = {fe: modes[fe] for fe in siblings}
@@ -661,27 +748,36 @@ def classify_divergences(matrix: ParityMatrix) -> Tuple[InvariantCoverageDiverge
                 )
             continue
 
-        # Siblings disagree: find the baseline (the strict majority mode) and the
-        # outliers. The outlier is the frontend whose strength differs from the mode.
+        # Siblings disagree: find the baseline (the strict majority mode) and
+        # surface stronger/weaker outliers as separate rows.
         baseline = _majority_mode(sibling_modes)
-        outliers = tuple(fe for fe in siblings if sibling_modes[fe] != baseline)
-        # Decide the kind by the strongest outlier relative to baseline.
-        strongest = max(outliers, key=lambda fe: _MODE_STRENGTH[sibling_modes[fe]])
-        if _MODE_STRENGTH[sibling_modes[strongest]] > _MODE_STRENGTH[baseline]:
-            kind = "enforced-here"
-        else:
-            kind = "absent-here" if sibling_modes[strongest] == "absent" else "observe-here"
-        out.append(
-            InvariantCoverageDivergence(
-                invariant=inv,
-                invariant_label=INVARIANT_LABEL[inv],
-                mode_map={fe: modes[fe] for fe in KNOWN_FRONTENDS},
-                kind=kind,
-                divergent_frontends=outliers,
-                baseline_mode=baseline,
-                rationale=_rationale(inv, kind),
-            )
+        stronger = tuple(
+            fe
+            for fe in siblings
+            if _MODE_STRENGTH[sibling_modes[fe]] > _MODE_STRENGTH[baseline]
         )
+        weaker = tuple(
+            fe
+            for fe in siblings
+            if _MODE_STRENGTH[sibling_modes[fe]] < _MODE_STRENGTH[baseline]
+        )
+        for kind, outliers in (
+            (cast(DivergenceKind, "enforced-here"), stronger),
+            (cast(DivergenceKind, "absent-here"), weaker),
+        ):
+            if not outliers:
+                continue
+            out.append(
+                InvariantCoverageDivergence(
+                    invariant=inv,
+                    invariant_label=INVARIANT_LABEL[inv],
+                    mode_map={fe: modes[fe] for fe in KNOWN_FRONTENDS},
+                    kind=kind,
+                    divergent_frontends=outliers,
+                    baseline_mode=baseline,
+                    rationale=_rationale(inv, kind),
+                )
+            )
 
     # Carrier absences: a sibling missing a carrier the majority of its peers have.
     for carrier in CARRIER_PRESENCES:
@@ -755,9 +851,16 @@ def render_matrix(matrix: ParityMatrix) -> str:
     lines.append("-" * len(header))
     for carrier in CARRIER_PRESENCES:
         label = INVARIANT_LABEL[carrier]
-        row = label.ljust(34) + "".join(
-            ("present" if matrix.rows[c].carriers[carrier] else "absent").rjust(9) for c in cols
-        )
+        if carrier == "same_moment_detector":
+            row = label.ljust(34) + "".join(
+                _SAME_MOMENT_PATH_DISPLAY[
+                    matrix.rows[c].same_moment_path
+                ].rjust(15) for c in cols
+            )
+        else:
+            row = label.ljust(34) + "".join(
+                ("present" if matrix.rows[c].carriers[carrier] else "absent").rjust(9) for c in cols
+            )
         lines.append(row)
     return "\n".join(lines)
 

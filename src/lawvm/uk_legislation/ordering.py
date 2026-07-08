@@ -6,14 +6,21 @@ from collections.abc import Mapping
 from typing import Any, NamedTuple, Optional, Sequence
 
 from lawvm.core.cross_act_same_moment import (
+    RESOLUTION_RESOLVED_BY_CLAIM,
+    SAME_MOMENT_CONFLICT_REASON_CODE,
     _SameMomentTargetKey as _CoreSameMomentTargetKey,
     detect_same_moment_conflict_groups_generic,
+    same_moment_conflict_finding_kind,
 )
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.ir import LegalOperation
 from lawvm.core.semantic_types import TextPatchKindEnum, legacy_text_action_value
 from lawvm.roman import roman_to_arabic as _shared_roman_to_arabic
 from lawvm.uk_legislation.effects import STRUCTURAL_EFFECT_TYPES, UKEffectRecord
+from lawvm.uk_legislation.same_moment_precedence_claim import (
+    RESOLUTION_LEXICAL_ORDER_UNPROVEN,
+    SameMomentPrecedenceClaim,
+)
 from lawvm.uk_legislation.uk_grafter import _clean_num
 
 # §1.7 same-moment cross-act conflict classification.
@@ -194,7 +201,7 @@ def _order_uk_effects_for_replay(
     effective_date_overrides: Optional[Mapping[str, str]] = None,
     diagnostics_out: Optional[list[dict[str, Any]]] = None,
     lowering_observations_out: Optional[list[dict[str, Any]]] = None,
-    same_moment_precedence_claims: Optional[Sequence[Any]] = None,
+    same_moment_precedence_claims: Optional[Sequence[SameMomentPrecedenceClaim]] = None,
 ) -> list[UKEffectRecord]:
     """Order UK effects by legal time and affecting-source citation order.
 
@@ -411,7 +418,7 @@ def _validated_same_moment_precedence_winners(
     original: Sequence[UKEffectRecord],
     *,
     effective_date_of: Any,
-    precedence_claims: Optional[Sequence[Any]],
+    precedence_claims: Optional[Sequence[SameMomentPrecedenceClaim]],
 ) -> dict[_SameMomentTargetKey, str]:
     """Index validated precedence claims by conflict key → winning affecting act.
 
@@ -497,11 +504,11 @@ def _emit_uk_same_moment_cross_act_conflict_findings(
         order_based_winner = ordered_conflicting[0] if ordered_conflicting else None
         claimed_winner_act = winner_by_conflict.get(key)
         if claimed_winner_act is not None:
-            resolution = "resolved_by_claim"
+            resolution = RESOLUTION_RESOLVED_BY_CLAIM
         else:
-            resolution = "affecting_act_id_lexical_order_unproven"
+            resolution = RESOLUTION_LEXICAL_ORDER_UNPROVEN
         record = _uk_ordering_diagnostic(
-            rule_id="uk_same_moment_cross_act_incompatible_payload_ambiguous",
+            rule_id=same_moment_conflict_finding_kind("uk"),
             reason=(
                 "Two or more affecting acts change the same target at the same "
                 "effective date with incompatible whole-target payloads. "
@@ -520,7 +527,7 @@ def _emit_uk_same_moment_cross_act_conflict_findings(
             blocking=claimed_winner_act is None,
             effective_date=key.effective_date,
             affected_target=key.affected_target,
-            reason_code="same_moment_cross_act_incompatible_payload",
+            reason_code=SAME_MOMENT_CONFLICT_REASON_CODE,
             conflicting_affecting_acts=tuple(conflicting_acts),
             conflicting_effects=tuple(
                 {

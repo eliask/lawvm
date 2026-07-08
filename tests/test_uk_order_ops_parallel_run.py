@@ -387,4 +387,11 @@ def test_real_corpus_witness_winner_is_uk_si() -> None:
     assert record["affected_target"] == "reg. 11(3)"
     assert record["resolution"] == "affecting_act_id_lexical_order_unproven"
     assert record["order_based_winner_affecting_act_id"] == "uksi/2005/894"
+    assert record["order_based_winner_effect_id"] == "real-uksi"
+    assert {effect["effect_id"] for effect in record["conflicting_effects"]} == {
+        "real-uksi",
+        "real-wsi",
+    }
+    assert "winner_op_id" not in record
+    assert "conflicting_op_ids" not in record
     assert ordered[0].effect_id == "real-uksi"

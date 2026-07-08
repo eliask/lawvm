@@ -16,6 +16,10 @@ from __future__ import annotations
 
 import pytest
 
+from lawvm.core.cross_act_same_moment import (
+    RESOLUTION_RESOLVED_BY_CLAIM,
+    same_moment_conflict_finding_kind,
+)
 from lawvm.uk_legislation.effects import UKEffectRecord
 from lawvm.uk_legislation.manual_claim_templates import (
     UK_MANUAL_CLAIM_TEMPLATE_RULE_IDS,
@@ -31,6 +35,7 @@ from lawvm.uk_legislation.same_moment_precedence_claim import (
     CLAIM_REJECTED_CONFLICT_BINDING_RULE_ID,
     CLAIM_REJECTED_SCHEMA_RULE_ID,
     CLAIM_VALIDATED_RULE_ID,
+    RESOLUTION_LEXICAL_ORDER_UNPROVEN,
     SAME_MOMENT_PRECEDENCE_CLAIM_KIND,
     SAME_MOMENT_PRECEDENCE_CLAIM_TEMPLATE_RULE_ID,
     SAME_MOMENT_PRECEDENCE_RESOLUTION_PROOF_SEMANTIC,
@@ -40,7 +45,7 @@ from lawvm.uk_legislation.same_moment_precedence_claim import (
 )
 from lawvm.tools.uk_semantic_claims import UK_OPERATION_FAMILY_PROOF_SEMANTICS
 
-_CONFLICT_RULE_ID = "uk_same_moment_cross_act_incompatible_payload_ambiguous"
+_CONFLICT_RULE_ID = same_moment_conflict_finding_kind("uk")
 _TARGET = "reg. 11(3)"
 _DATE = "2005-07-16"
 
@@ -120,6 +125,14 @@ def test_claim_round_trips_through_dict() -> None:
     claim = _valid_claim(_welsh_si().affecting_act_id)
     rebuilt = claim_from_dict(claim.to_dict())
     assert rebuilt == claim
+
+
+def test_claim_dict_stays_effect_level_not_op_level() -> None:
+    claim = _valid_claim(_welsh_si().affecting_act_id)
+    row = claim.to_dict()
+
+    assert "winner_effect_id" in row
+    assert "winner_op_id" not in row
 
 
 def test_claim_from_dict_accepts_single_act_string() -> None:
@@ -325,7 +338,7 @@ def test_absent_claim_leaves_default_lexical_order_and_unproven_finding() -> Non
     # Lexical default: uksi/2005/894 < wsi/2005/1806.
     assert [e.effect_id for e in ordered] == ["eUK", "eWSI"]
     finding = _conflict_findings(diagnostics)[0]
-    assert finding["resolution"] == "affecting_act_id_lexical_order_unproven"
+    assert finding["resolution"] == RESOLUTION_LEXICAL_ORDER_UNPROVEN
     assert finding["order_based_winner_affecting_act_id"] == "uksi/2005/894"
     assert finding["blocking"] is True
     assert finding["strict_disposition"] == "block"
@@ -363,7 +376,7 @@ def test_validated_claim_reorders_to_winner_and_flips_finding() -> None:
     # The claimed winner's effect is ordered first, overriding lexical order.
     assert [e.effect_id for e in ordered] == ["eWSI", "eUK"]
     finding = _conflict_findings(diagnostics)[0]
-    assert finding["resolution"] == "resolved_by_claim"
+    assert finding["resolution"] == RESOLUTION_RESOLVED_BY_CLAIM
     assert finding["resolved_by_claim_winner_affecting_act_id"] == "wsi/2005/1806"
     assert finding["order_based_winner_affecting_act_id"] == "wsi/2005/1806"
     # Resolved conflict is no longer a blocking ambiguity.
@@ -383,7 +396,7 @@ def test_validated_claim_for_lexical_winner_keeps_order_but_flips_finding() -> N
     )
     assert [e.effect_id for e in ordered] == ["eUK", "eWSI"]
     finding = _conflict_findings(diagnostics)[0]
-    assert finding["resolution"] == "resolved_by_claim"
+    assert finding["resolution"] == RESOLUTION_RESOLVED_BY_CLAIM
     assert finding["resolved_by_claim_winner_affecting_act_id"] == "uksi/2005/894"
 
 
@@ -406,7 +419,7 @@ def test_invalid_claim_does_not_reorder_and_keeps_unproven_finding() -> None:
     )
     assert [e.effect_id for e in ordered] == ["eUK", "eWSI"]
     finding = _conflict_findings(diagnostics)[0]
-    assert finding["resolution"] == "affecting_act_id_lexical_order_unproven"
+    assert finding["resolution"] == RESOLUTION_LEXICAL_ORDER_UNPROVEN
 
 
 def test_claim_for_other_target_does_not_reorder_this_conflict() -> None:
@@ -425,7 +438,7 @@ def test_claim_for_other_target_does_not_reorder_this_conflict() -> None:
     )
     assert [e.effect_id for e in ordered] == ["eUK", "eWSI"]
     finding = _conflict_findings(diagnostics)[0]
-    assert finding["resolution"] == "affecting_act_id_lexical_order_unproven"
+    assert finding["resolution"] == RESOLUTION_LEXICAL_ORDER_UNPROVEN
 
 
 # ── Registry registration ────────────────────────────────────────────────────

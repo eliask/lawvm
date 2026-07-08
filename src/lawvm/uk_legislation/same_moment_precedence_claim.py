@@ -41,15 +41,41 @@ basis an owned claim records to resolve which instrument prevails.
 
 from __future__ import annotations
 
-import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Sequence
 
+from lawvm.core.cross_act_same_moment import (
+    BASIS_DEVOLUTION_TERRITORIAL_EXTENT_SPLIT,
+    BASIS_EXPRESS_SAVING,
+    BASIS_EXPLICIT_PRECEDENCE_PROVISION,
+    BASIS_LATER_ENACTMENT,
+    DetectedSameMomentConflictRecord,
+    SAME_MOMENT_PRECEDENCE_CLAIM_KIND,
+    SameMomentPrecedenceClaimRecord,
+    validate_same_moment_precedence_claim_record,
+)
 from lawvm.uk_legislation.phase_discipline import UK_PHASE_EFFECT_METADATA_FRONTEND
 
-# ── Claim kind + rule ids ────────────────────────────────────────────────────
-SAME_MOMENT_PRECEDENCE_CLAIM_KIND = "same_moment_precedence"
-_CLAIM_KINDS = frozenset({SAME_MOMENT_PRECEDENCE_CLAIM_KIND})
+__all__ = [
+    "BASIS_DEVOLUTION_TERRITORIAL_EXTENT_SPLIT",
+    "BASIS_EXPRESS_SAVING",
+    "BASIS_EXPLICIT_PRECEDENCE_PROVISION",
+    "BASIS_LATER_ENACTMENT",
+    "CLAIM_REJECTED_BASIS_RULE_ID",
+    "CLAIM_REJECTED_CONFLICT_BINDING_RULE_ID",
+    "CLAIM_REJECTED_SCHEMA_RULE_ID",
+    "CLAIM_VALIDATED_RULE_ID",
+    "DetectedSameMomentConflict",
+    "RESOLUTION_LEXICAL_ORDER_UNPROVEN",
+    "SAME_MOMENT_PRECEDENCE_CLAIM_KIND",
+    "SAME_MOMENT_PRECEDENCE_CLAIM_TEMPLATE_RULE_ID",
+    "SAME_MOMENT_PRECEDENCE_RESOLUTION_PROOF_SEMANTIC",
+    "SameMomentPrecedenceClaim",
+    "SameMomentPrecedenceClaimValidation",
+    "claim_from_dict",
+    "validate_same_moment_precedence_claim",
+]
 
 # Manual-frontier rule id this claim family advertises. Registered in
 # ``UK_MANUAL_CLAIM_TEMPLATE_RULE_IDS`` so the conflict shape advertises an owned
@@ -72,26 +98,8 @@ CLAIM_REJECTED_CONFLICT_BINDING_RULE_ID = (
 CLAIM_REJECTED_BASIS_RULE_ID = "uk_same_moment_precedence_claim_rejected_basis"
 
 # The ordering finding's resolution value when a validated claim resolves it.
-RESOLUTION_RESOLVED_BY_CLAIM = "resolved_by_claim"
 # The default (no-claim) value emitted by the ordering finding.
 RESOLUTION_LEXICAL_ORDER_UNPROVEN = "affecting_act_id_lexical_order_unproven"
-
-# Recognized precedence bases. The validator only accepts these named kinds; it
-# never infers the basis from the conflict shape.
-BASIS_LATER_ENACTMENT = "later_enactment"
-BASIS_DEVOLUTION_TERRITORIAL_EXTENT_SPLIT = "devolution_territorial_extent_split"
-BASIS_EXPRESS_SAVING = "express_saving"
-BASIS_EXPLICIT_PRECEDENCE_PROVISION = "explicit_precedence_provision"
-_RECOGNIZED_BASES = frozenset(
-    {
-        BASIS_LATER_ENACTMENT,
-        BASIS_DEVOLUTION_TERRITORIAL_EXTENT_SPLIT,
-        BASIS_EXPRESS_SAVING,
-        BASIS_EXPLICIT_PRECEDENCE_PROVISION,
-    }
-)
-
-_ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -197,27 +205,27 @@ class DetectedSameMomentConflict:
     effect_ids_by_act: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
 
-def _is_iso_date(value: str) -> bool:
-    return bool(_ISO_DATE_RE.match(str(value or "")))
-
-
-def claim_from_dict(row: Any) -> SameMomentPrecedenceClaim:
+def claim_from_dict(row: Mapping[str, object]) -> SameMomentPrecedenceClaim:
     """Build a claim carrier from a mapping row.
 
     This is a plain deserializer; it does not validate — call
     ``validate_same_moment_precedence_claim``.
     """
     get = row.get
-    acts = get("conflicting_affecting_acts") or ()
-    if isinstance(acts, str):
-        acts = (acts,)
+    acts_raw = get("conflicting_affecting_acts")
+    if isinstance(acts_raw, str):
+        acts = (acts_raw,)
+    elif isinstance(acts_raw, (list, tuple)):
+        acts = tuple(str(act) for act in acts_raw)
+    else:
+        acts = ()
     return SameMomentPrecedenceClaim(
         claim_id=str(get("claim_id") or ""),
         claim_kind=str(get("claim_kind") or ""),
         statute_id=str(get("statute_id") or ""),
         effective_date=str(get("effective_date") or ""),
         affected_target=str(get("affected_target") or ""),
-        conflicting_affecting_acts=tuple(str(act) for act in acts),
+        conflicting_affecting_acts=acts,
         winner_affecting_act_id=str(get("winner_affecting_act_id") or ""),
         winner_effect_id=str(get("winner_effect_id") or ""),
         basis=str(get("basis") or ""),
@@ -227,23 +235,30 @@ def claim_from_dict(row: Any) -> SameMomentPrecedenceClaim:
     )
 
 
-def _conflict_matches_claim(
+def _same_moment_precedence_claim_record_from_claim(
     claim: SameMomentPrecedenceClaim,
-    conflict: DetectedSameMomentConflict,
-) -> bool:
-    """Return True when a detected conflict is the one the claim binds to.
+) -> SameMomentPrecedenceClaimRecord:
+    return SameMomentPrecedenceClaimRecord(
+        claim_id=claim.claim_id,
+        claim_kind=claim.claim_kind,
+        effective_date=claim.effective_date,
+        affected_target=claim.affected_target,
+        conflicting_affecting_acts=claim.conflicting_affecting_acts,
+        winner_affecting_act_id=claim.winner_affecting_act_id,
+        basis=claim.basis,
+        winner_record_id=claim.winner_effect_id,
+    )
 
-    The match is exact on ``(effective_date, affected_target)`` and on the SET of
-    conflicting affecting acts. This rejects a claim that names a different
-    ``(date, target)`` or a different (sub/super)set of acts than a real
-    conflict.
-    """
-    if claim.effective_date != conflict.effective_date:
-        return False
-    if claim.affected_target.strip() != conflict.affected_target.strip():
-        return False
-    return set(claim.conflicting_affecting_acts) == set(
-        conflict.conflicting_affecting_acts
+
+def _detected_same_moment_conflict_record_from_conflict(
+    conflict: DetectedSameMomentConflict,
+) -> DetectedSameMomentConflictRecord:
+    return DetectedSameMomentConflictRecord(
+        effective_date=conflict.effective_date,
+        affected_target=conflict.affected_target,
+        conflicting_affecting_acts=conflict.conflicting_affecting_acts,
+        conflicting_record_ids=conflict.conflicting_effect_ids,
+        record_ids_by_act=conflict.effect_ids_by_act,
     )
 
 
@@ -270,135 +285,23 @@ def validate_same_moment_precedence_claim(
 
     The validator NEVER invents a winner; it only accepts an owned one.
     """
-    base = {
-        "claim_id": claim.claim_id,
-        "effective_date": claim.effective_date,
-        "affected_target": claim.affected_target,
-        "proof_semantic": SAME_MOMENT_PRECEDENCE_RESOLUTION_PROOF_SEMANTIC,
-    }
-
-    # 1. Schema.
-    schema_error = _schema_error(claim)
-    if schema_error:
-        return SameMomentPrecedenceClaimValidation(
-            validated=False,
-            rule_id=CLAIM_REJECTED_SCHEMA_RULE_ID,
-            reason=schema_error,
-            detail={
-                "claim_kind": claim.claim_kind,
-                "conflicting_affecting_acts": list(claim.conflicting_affecting_acts),
-            },
-            **base,
-        )
-
-    # 2. Conflict binding.
-    matched = next(
-        (c for c in detected_conflicts if _conflict_matches_claim(claim, c)),
-        None,
-    )
-    if matched is None:
-        return SameMomentPrecedenceClaimValidation(
-            validated=False,
-            rule_id=CLAIM_REJECTED_CONFLICT_BINDING_RULE_ID,
-            reason=(
-                "claim does not match any detected same-moment cross-act "
-                "incompatible-payload conflict at this (effective_date, target) "
-                "with exactly these acts; the claim may not invent a conflict"
-            ),
-            detail={
-                "claimed_acts": list(claim.conflicting_affecting_acts),
-                "detected_conflict_count": len(detected_conflicts),
-            },
-            **base,
-        )
-    if claim.winner_effect_id:
-        if claim.winner_effect_id not in matched.conflicting_effect_ids:
-            return SameMomentPrecedenceClaimValidation(
-                validated=False,
-                rule_id=CLAIM_REJECTED_CONFLICT_BINDING_RULE_ID,
-                reason=(
-                    "claim winner_effect_id is not one of the detected "
-                    "conflict's conflicting effects"
-                ),
-                detail={"winner_effect_id": claim.winner_effect_id},
-                **base,
-            )
-        winner_act_effects = matched.effect_ids_by_act.get(
-            claim.winner_affecting_act_id, ()
-        )
-        if winner_act_effects and claim.winner_effect_id not in winner_act_effects:
-            return SameMomentPrecedenceClaimValidation(
-                validated=False,
-                rule_id=CLAIM_REJECTED_CONFLICT_BINDING_RULE_ID,
-                reason=(
-                    "claim winner_effect_id does not belong to the claimed "
-                    "winning affecting act"
-                ),
-                detail={
-                    "winner_effect_id": claim.winner_effect_id,
-                    "winner_affecting_act_id": claim.winner_affecting_act_id,
-                },
-                **base,
-            )
-
-    # 3. Basis admissibility.
-    if claim.winner_affecting_act_id not in matched.conflicting_affecting_acts:
-        return SameMomentPrecedenceClaimValidation(
-            validated=False,
-            rule_id=CLAIM_REJECTED_BASIS_RULE_ID,
-            reason=(
-                "claimed winner is not one of the conflicting affecting acts; "
-                "the claim may not name an act outside the conflict"
-            ),
-            detail={
-                "winner_affecting_act_id": claim.winner_affecting_act_id,
-                "conflicting_affecting_acts": list(
-                    matched.conflicting_affecting_acts
-                ),
-            },
-            **base,
-        )
-    if claim.basis not in _RECOGNIZED_BASES:
-        return SameMomentPrecedenceClaimValidation(
-            validated=False,
-            rule_id=CLAIM_REJECTED_BASIS_RULE_ID,
-            reason=f"unrecognized precedence basis {claim.basis!r}",
-            detail={"basis": claim.basis},
-            **base,
-        )
-
-    return SameMomentPrecedenceClaimValidation(
-        validated=True,
-        rule_id=CLAIM_VALIDATED_RULE_ID,
-        reason=(
-            "owned same-moment precedence resolution is well-formed, bound to a "
-            "real detected cross-act conflict, and names a conflicting act on a "
-            "recognized basis"
+    validation = validate_same_moment_precedence_claim_record(
+        _same_moment_precedence_claim_record_from_claim(claim),
+        detected_conflicts=tuple(
+            _detected_same_moment_conflict_record_from_conflict(c)
+            for c in detected_conflicts
         ),
-        detail={
-            "winner_affecting_act_id": claim.winner_affecting_act_id,
-            "winner_effect_id": claim.winner_effect_id,
-            "basis": claim.basis,
-            "conflicting_affecting_acts": list(matched.conflicting_affecting_acts),
-        },
-        **base,
+        finder_kind_prefix="uk",
+        record_id_field="winner_effect_id",
+        record_plural_label="effects",
     )
-
-
-def _schema_error(claim: SameMomentPrecedenceClaim) -> str:
-    if claim.claim_kind not in _CLAIM_KINDS:
-        return f"unsupported claim_kind {claim.claim_kind!r}"
-    if not claim.claim_id:
-        return "missing claim_id"
-    if not _is_iso_date(claim.effective_date):
-        return f"effective_date {claim.effective_date!r} is not an ISO date"
-    if not claim.affected_target.strip():
-        return "missing affected_target"
-    distinct_acts = {a for a in claim.conflicting_affecting_acts if a}
-    if len(distinct_acts) < 2:
-        return "conflicting_affecting_acts must name at least two distinct acts"
-    if not claim.winner_affecting_act_id:
-        return "missing winner_affecting_act_id"
-    if not claim.basis:
-        return "missing basis"
-    return ""
+    return SameMomentPrecedenceClaimValidation(
+        claim_id=validation.claim_id,
+        effective_date=validation.effective_date,
+        affected_target=validation.affected_target,
+        proof_semantic=SAME_MOMENT_PRECEDENCE_RESOLUTION_PROOF_SEMANTIC,
+        validated=validation.validated,
+        rule_id=validation.rule_id,
+        reason=validation.reason,
+        detail=validation.detail,
+    )

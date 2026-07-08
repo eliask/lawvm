@@ -46,6 +46,12 @@ def test_matrix_is_total_over_known_frontends() -> None:
         assert set(gates.carriers) == set(CARRIER_PRESENCES)
         for mode in gates.modes.values():
             assert mode in ("block", "observe", "off", "absent")
+        assert gates.same_moment_path in (
+            "op_ordering",
+            "shared_generic_effect_adapter",
+            "timeline_plane",
+            "absent",
+        )
 
 
 def test_matrix_reference_is_fi_upper_bound() -> None:
@@ -110,6 +116,28 @@ def test_matrix_reflects_real_no_profile_source() -> None:
     assert matrix.rows["ee"].modes["LS-03"] == "block"
 
 
+def test_matrix_models_nz_as_frontend_without_apply_seam() -> None:
+    matrix = build_parity_matrix()
+    nz = matrix.rows["nz"]
+
+    assert set(nz.modes.values()) == {"absent"}
+    assert nz.same_moment_path == "op_ordering"
+    assert nz.carriers["same_moment_detector"] is True
+    assert nz.carriers["write_receipt"] is True
+
+
+def test_matrix_models_us_dry_run_conserved_account_carrier() -> None:
+    matrix = build_parity_matrix()
+    us = matrix.rows["us"]
+
+    assert us.carriers["conserved_wrapper"] is True
+    assert not [
+        d
+        for d in classify_divergences(matrix)
+        if d.invariant == "conserved_wrapper"
+    ]
+
+
 # ── The EE-occupancy divergence is surfaced ───────────────────────────────────
 
 
@@ -118,8 +146,11 @@ def test_ee_occupancy_block_vs_others_divergence_surfaced() -> None:
     divergences = classify_divergences(matrix)
 
     ls03 = [d for d in divergences if d.invariant == "LS-03"]
-    assert len(ls03) == 1, "exactly one LS-03 occupancy divergence expected"
-    d = ls03[0]
+    d = next(
+        d
+        for d in ls03
+        if d.kind == "enforced-here" and d.divergent_frontends == ("ee",)
+    )
     assert isinstance(d, InvariantCoverageDivergence)
     # EE is the enforcing outlier.
     assert d.kind == "enforced-here"
@@ -129,9 +160,18 @@ def test_ee_occupancy_block_vs_others_divergence_surfaced() -> None:
     assert d.mode_map["no"] == "off"
     assert d.mode_map["se"] == "off"
     assert d.mode_map["eu"] == "off"
+    assert d.mode_map["nz"] == "absent"
     # The rationale classifies this as a justified jurisdiction difference.
     assert "JUSTIFIED" in d.rationale
     assert d.finding_code == INVARIANT_COVERAGE_DIVERGENCE_CODE
+
+    nz_absent = next(
+        d
+        for d in ls03
+        if d.kind == "absent-here" and d.divergent_frontends == ("nz",)
+    )
+    assert nz_absent.baseline_mode == "off"
+    assert nz_absent.mode_map["nz"] == "absent"
 
 
 def test_ee_boundary_block_vs_others_divergence_surfaced() -> None:
@@ -140,8 +180,11 @@ def test_ee_boundary_block_vs_others_divergence_surfaced() -> None:
     divergences = classify_divergences(matrix)
 
     ls01 = [d for d in divergences if d.invariant == "LS-01"]
-    assert len(ls01) == 1, "exactly one LS-01 boundary divergence expected"
-    d = ls01[0]
+    d = next(
+        d
+        for d in ls01
+        if d.kind == "enforced-here" and d.divergent_frontends == ("ee",)
+    )
     assert isinstance(d, InvariantCoverageDivergence)
     # EE is the enforcing outlier; the siblings stay off (seam observes).
     assert d.kind == "enforced-here"
@@ -149,9 +192,18 @@ def test_ee_boundary_block_vs_others_divergence_surfaced() -> None:
     assert d.mode_map["ee"] == "block"
     assert d.mode_map["no"] == "off"
     assert d.mode_map["uk"] == "off"
+    assert d.mode_map["nz"] == "absent"
     # Justified, measured flip — not a uniform-flip mandate.
     assert "JUSTIFIED" in d.rationale
     assert d.finding_code == INVARIANT_COVERAGE_DIVERGENCE_CODE
+
+    nz_absent = next(
+        d
+        for d in ls01
+        if d.kind == "absent-here" and d.divergent_frontends == ("nz",)
+    )
+    assert nz_absent.baseline_mode == "off"
+    assert nz_absent.mode_map["nz"] == "absent"
 
 
 def test_divergences_cover_all_per_unit_invariants_and_carrier_gaps() -> None:
@@ -164,14 +216,31 @@ def test_divergences_cover_all_per_unit_invariants_and_carrier_gaps() -> None:
     for inv in PER_UNIT_INVARIANTS:
         assert inv in invariants_seen, f"{inv} divergence missing"
 
-    # EE closed its WriteReceipt gap (it now emits a per-op receipt via its own
-    # emitter), so EVERY frontend emits one and there is NO write_receipt
-    # divergence. US still has no IR conserved wrapper (it conserves via a
-    # different metric — the dry-run AGREE/RESIDUAL lane).
+    # EE and NZ both now emit per-op receipts, so there is no write_receipt
+    # carrier divergence.
     write_receipt = [d for d in divergences if d.invariant == "write_receipt"]
-    assert not write_receipt, "EE now emits per-op WriteReceipts; the gap is closed"
+    assert not write_receipt
+    # US now exposes a dry-run section-surface conserved account, so the
+    # conserved carrier is present across all sibling frontends.
     conserved = [d for d in divergences if d.invariant == "conserved_wrapper"]
-    assert conserved and conserved[0].divergent_frontends == ("us",)
+    assert not conserved
+
+
+def test_same_moment_path_kinds_preserve_phase_boundary() -> None:
+    """UK shares the algorithm at effect-plane, not by inventing op ids."""
+    matrix = build_parity_matrix()
+    paths = matrix.same_moment_paths()
+
+    assert paths["fi"] == "timeline_plane"
+    assert paths["uk"] == "shared_generic_effect_adapter"
+    for frontend in ("no", "se", "ee", "eu", "nz", "us"):
+        assert paths[frontend] == "op_ordering"
+
+    carrier = matrix.carriers_for("same_moment_detector")
+    assert carrier["fi"] is False
+    assert carrier["uk"] is True
+    for frontend in ("no", "se", "ee", "eu", "nz", "us"):
+        assert carrier[frontend] is True
 
 
 def test_every_divergence_uses_the_registered_finding_code() -> None:
@@ -203,6 +272,9 @@ def test_render_matrix_includes_every_frontend_and_invariant() -> None:
         assert fe.upper() in rendered
     for inv in PER_UNIT_INVARIANTS:
         assert inv in rendered
+    assert "effect-adapter" in rendered
+    assert "op-order" in rendered
+    assert "timeline" in rendered
 
 
 def test_build_report_runs_and_mentions_divergences() -> None:

@@ -6,6 +6,7 @@ from typing import cast
 
 import pytest
 
+from lawvm.core.write_receipt import WriteReceipt
 from lawvm.new_zealand.effect_candidates import NZEffectCandidatePreflightReport
 from lawvm.new_zealand import chain_replay as chain_replay_module
 
@@ -23,10 +24,12 @@ from lawvm.new_zealand.chain_replay import (
     NZChainOp,
     NZChainRepealOp,
     NZChainTransition,
+    NZApplyTransitionConservedResult,
     _apply_transition,
     _EvolvingTree,
     _similarity_point,
     _stable_path,
+    apply_nz_transition_conserved,
     build_archived_work_chain_replay,
     build_chain_replay,
     build_nz_chain,
@@ -35,6 +38,7 @@ from lawvm.new_zealand.chain_replay import (
 )
 from lawvm.new_zealand.source_tree import NZSourceDocument, NZSourceNode
 from lawvm.new_zealand.version_diff import NZArchivedVersion
+from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.tools.cli import _build_parser
 
 
@@ -169,6 +173,64 @@ def test_apply_transition_tombstones_exact_target_on_evolving_tree() -> None:
     index = {n.path: n for n in tree.document.nodes}
     assert index[("prov:2",)].deletion_status  # tombstoned
     assert not index[("prov:1",)].deletion_status  # untouched neighbour
+
+
+def test_apply_transition_emits_write_receipt_for_landed_repeal() -> None:
+    tree = _EvolvingTree(
+        _doc((_node(("prov:1",), text="alpha"), _node(("prov:2",), text="beta")))
+    )
+    transition = NZChainTransition(
+        amendment_date_iso="2010-01-01", ops=(_op("r1", "2010-01-01", ("prov:2",)),)
+    )
+
+    applied, skips, applied_ops = _apply_transition(
+        tree, transition, latest_version_date="2024-01-01"
+    )
+
+    assert applied == 1
+    assert skips == []
+    assert len(applied_ops) == 1
+    receipt = applied_ops[0].write_receipt
+    assert isinstance(receipt, WriteReceipt)
+    assert receipt.op_id == "r1"
+    assert receipt.helper == "nz_chain_replay::repeal"
+    assert receipt.action == "repeal"
+    assert receipt.bound_target_path == (("prov", "2"),)
+    assert receipt.landed_primary_path == (("prov", "2"),)
+    assert receipt.removed_paths == ((("prov", "2"),),)
+    assert receipt.pre_hashes
+    assert receipt.post_hashes
+    assert receipt.pre_hashes != receipt.post_hashes
+    assert receipt.divergence_explained
+
+
+def test_apply_nz_transition_conserved_accounts_for_every_op() -> None:
+    tree = _EvolvingTree(
+        _doc((_node(("prov:1",), text="alpha"), _node(("prov:dead",), text="beta", deletion="repealed")))
+    )
+    transition = NZChainTransition(
+        amendment_date_iso="2010-01-01",
+        ops=(
+            _op("r1", "2010-01-01", ("prov:1",)),
+            _op("dead", "2010-01-01", ("prov:dead",)),
+            _op("missing", "2010-01-01", ("prov:missing",)),
+        ),
+    )
+
+    result = apply_nz_transition_conserved(
+        tree, transition, latest_version_date="2024-01-01"
+    )
+
+    assert isinstance(result, NZApplyTransitionConservedResult)
+    assert result.input_count == 3
+    assert result.applied_count == 1
+    assert result.skipped_count == 2
+    assert result.is_conserved
+    assert [op.row_id for op in result.applied_ops] == ["r1"]
+    assert {skip.row_id: skip.bucket for skip in result.skipped_items} == {
+        "dead": SKIP_ALREADY_TOMBSTONED,
+        "missing": SKIP_TARGET_ABSENT,
+    }
 
 
 def test_apply_transition_carries_tree_forward_across_transitions() -> None:
@@ -455,7 +517,62 @@ def test_build_chain_replay_over_fixture_chain(monkeypatch: pytest.MonkeyPatch) 
     assert 0.0 < report.similarity_curve[-1].combined_similarity < 1.0
     # Honesty flags hold.
     assert report.replay_claims is False
-    assert report.to_jsonable()["report_kind"] == "experimental_dry_run_chain_replay"
+    assert len(report.write_receipts) == 1
+    receipt = report.write_receipts[0]
+    assert receipt.op_id == "r1"
+    assert receipt.action == "repeal"
+    payload = report.to_jsonable()
+    assert payload["report_kind"] == "experimental_dry_run_chain_replay"
+    assert payload["summary"]["n_write_receipts"] == 1
+    assert payload["write_receipts"][0]["op_id"] == "r1"
+
+
+def test_build_chain_replay_carries_same_moment_findings_to_report_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Production report boundary preserves shared same-moment diagnostics.
+
+    ``build_chain_replay`` is the public report lane. The same-moment detector
+    runs earlier in ``build_nz_chain``; this pins that its typed adjudication is
+    not dropped when no archived versions are present.
+    """
+    import lawvm.new_zealand.chain_replay as mod
+
+    finding = CompileAdjudication(
+        kind="nz_same_moment_cross_act_incompatible_payload_ambiguous",
+        message="same-moment conflict",
+        source_statute="act_no_versions",
+        phase="apply",
+        blocking=True,
+        detail={
+            "rule_id": "nz_same_moment_cross_act_incompatible_payload_ambiguous",
+            "phase": "apply",
+            "family": "temporal_recovery",
+            "reason_code": "same_moment_cross_act_incompatible_payload",
+            "effective_date": "2026-01-01",
+            "resolution": "sequence_order_unproven",
+            "conflicting_affecting_acts": ["nz/act-a/2025", "nz/act-b/2025"],
+        },
+    )
+    transition = NZChainTransition(
+        "2026-01-01",
+        (_op("r1", "2026-01-01", ("prov:2",)),),
+    )
+    monkeypatch.setattr(
+        mod, "build_nz_chain", lambda _pf, _surface, families=None: ((transition,), (finding,))
+    )
+
+    report = build_chain_replay(
+        _FakeArchive("act_no_versions", []),
+        work_id="act_no_versions",
+        preflight=cast(NZEffectCandidatePreflightReport, object()),
+        families="repeal",
+    )
+
+    assert report.same_moment_findings == (finding,)
+    payload = report.to_jsonable(summary_only=True)
+    assert payload["summary"]["n_same_moment_findings"] == 1
+    assert payload["same_moment_findings"] == [finding.detail]
 
 
 # --- CLI wiring ---

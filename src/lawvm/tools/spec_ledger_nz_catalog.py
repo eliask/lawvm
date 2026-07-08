@@ -1017,6 +1017,10 @@ _EXTRA_NZ_RULE_SPECS: Dict[str, str] = {
         "the payload cannot be extracted; surfaced as a refusal."
     ),
     # --- Amendment-chain replay refusals (chain_replay.py — experimental all-families lane) ---
+    "nz_same_moment_cross_act_incompatible_payload_ambiguous": (
+        "Chain-replay ordering finding: two distinct amending acts at the same effective moment target the "
+        "same provision with incompatible payloads; order remains unproven and strict mode may reject it."
+    ),
     "nz_chain_replay_op_target_resolution_not_exact": (
         "Chain-replay refusal: the op's target did not resolve to an exact (candidate) source path — "
         "chain replay refuses inferred scope rather than widening the resolved path (§1.1)."

@@ -57,6 +57,7 @@ from lawvm.core.evidence_support import (
     section_similarity_cleaned,
 )
 from lawvm.core.op_ordering import OrderingProfile, order_ops
+from lawvm.core.write_receipt import WriteReceipt, receipt_address_string
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.new_zealand.acquisition import open_farchive
 from lawvm.new_zealand.dry_run import (
@@ -408,6 +409,7 @@ class NZChainReplayReport:
     skips: tuple[NZChainSkip, ...]
     per_family_stats: tuple[NZChainPerFamilyStat, ...] = ()
     divergences: tuple[NZChainDivergence, ...] = ()
+    write_receipts: tuple[WriteReceipt, ...] = ()
     families_requested: tuple[str, ...] = CHAIN_FAMILY_ORDER
     truth_claim: str = NZ_CHAIN_REPLAY_TRUTH_CLAIM
     replay_claims: bool = NZ_CHAIN_REPLAY_REPLAY_CLAIMS
@@ -463,6 +465,7 @@ class NZChainReplayReport:
             "per_family_stats": [stat.to_jsonable() for stat in self.per_family_stats],
             "n_divergences": len(self.divergences),
             "n_same_moment_findings": len(self.same_moment_findings),
+            "n_write_receipts": len(self.write_receipts),
         }
 
     def to_jsonable(self, *, summary_only: bool = False) -> dict[str, Any]:
@@ -474,6 +477,9 @@ class NZChainReplayReport:
             "summary": self.summary(),
             "similarity_curve": [point.to_jsonable() for point in self.similarity_curve],
             "divergences": [div.to_jsonable() for div in self.divergences],
+            "write_receipts": [
+                _write_receipt_to_jsonable(receipt) for receipt in self.write_receipts
+            ],
             "same_moment_findings": [
                 dict(finding.detail) if finding.detail else {"kind": finding.kind}
                 for finding in self.same_moment_findings
@@ -949,6 +955,95 @@ class _AppliedOp:
     row_id: str
     target_path: tuple[str, ...]
     amendment_date_iso: str = ""
+    write_receipt: WriteReceipt | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class NZApplyTransitionConservedResult:
+    """Accepted/rejected partition for one NZ chain-replay transition.
+
+    ``applied_ops`` are the accepted, landed writes. ``skipped_items`` are typed
+    skip residuals. Together they account for every input op in the transition;
+    the wrapper is evidence-only and does not authorize canonical replay.
+    """
+
+    input_count: int
+    applied_ops: tuple[_AppliedOp, ...]
+    skipped_items: tuple[NZChainSkip, ...]
+
+    @property
+    def applied_count(self) -> int:
+        return len(self.applied_ops)
+
+    @property
+    def skipped_count(self) -> int:
+        return len(self.skipped_items)
+
+    @property
+    def is_conserved(self) -> bool:
+        return self.applied_count + self.skipped_count == self.input_count
+
+
+def _source_path_to_receipt_path(path: tuple[str, ...]) -> tuple[tuple[str, str], ...]:
+    """Project an NZ source path into the core ``WriteReceipt`` tree-path shape."""
+    out: list[tuple[str, str]] = []
+    for segment in path:
+        kind, sep, label = segment.partition(":")
+        out.append((kind, label if sep else ""))
+    return tuple(out)
+
+
+def _receipt_hashes_for_node(path: tuple[str, ...], node: NZSourceNode | None) -> dict[str, str]:
+    receipt_path = _source_path_to_receipt_path(path)
+    return {
+        receipt_address_string(receipt_path): _node_digest(node) if node is not None else ""
+    }
+
+
+def _write_receipt_to_jsonable(receipt: WriteReceipt) -> dict[str, Any]:
+    return {
+        "op_id": receipt.op_id,
+        "helper": receipt.helper,
+        "action": receipt.action,
+        "bound_target_path": list(receipt.bound_target_path or ()),
+        "landed_primary_path": list(receipt.landed_primary_path or ()),
+        "created_paths": [list(path) for path in receipt.created_paths],
+        "replaced_paths": [list(path) for path in receipt.replaced_paths],
+        "removed_paths": [list(path) for path in receipt.removed_paths],
+        "pre_hashes": dict(receipt.pre_hashes),
+        "post_hashes": dict(receipt.post_hashes),
+    }
+
+
+def _nz_write_receipt(
+    *,
+    op: NZChainOp,
+    action: str,
+    before_node: NZSourceNode | None,
+    after_node: NZSourceNode | None,
+    bound_path: tuple[str, ...],
+    landed_path: tuple[str, ...],
+    created: bool = False,
+    replaced: bool = False,
+    removed: bool = False,
+) -> WriteReceipt:
+    receipt_path = _source_path_to_receipt_path(bound_path)
+    landed_receipt_path = _source_path_to_receipt_path(landed_path)
+    created_paths = (landed_receipt_path,) if created else ()
+    replaced_paths = (landed_receipt_path,) if replaced else ()
+    removed_paths = (landed_receipt_path,) if removed else ()
+    return WriteReceipt(
+        op_id=op.row_id,
+        helper=f"nz_chain_replay::{action}",
+        action=action,
+        bound_target_path=receipt_path,
+        landed_primary_path=landed_receipt_path,
+        created_paths=created_paths,
+        replaced_paths=replaced_paths,
+        removed_paths=removed_paths,
+        pre_hashes=_receipt_hashes_for_node(landed_path, before_node),
+        post_hashes=_receipt_hashes_for_node(landed_path, after_node),
+    )
 
 
 _BASE_WORK_ID_RE = re.compile(r"^act_public_(?P<year>\d{4})_(?P<number>[0-9A-Za-z]+)$")
@@ -969,7 +1064,7 @@ def _base_work_year_number(work_id: str) -> tuple[str, str]:
     return (match.group("year"), number.lstrip("0") or "0")
 
 
-def _apply_transition(
+def apply_nz_transition_conserved(
     tree: _EvolvingTree,
     transition: NZChainTransition,
     *,
@@ -978,13 +1073,13 @@ def _apply_transition(
     amending_root_cache: dict[str, Any] | None = None,
     base_work_year: str = "",
     base_work_number: str = "",
-) -> tuple[int, list[NZChainSkip], list[_AppliedOp]]:
-    """Apply one transition's authorized ops (all families) to the evolving tree.
+) -> NZApplyTransitionConservedResult:
+    """Apply one transition and return its accepted/rejected op partition.
 
     Ops are applied in the order they appear in ``transition.ops``, which the
-    enumerator emits in :data:`CHAIN_FAMILY_ORDER`. Returns ``(applied_count,
-    skips, applied_ops)``. Every op that cannot be applied is a typed skip, never
-    a silent drop. ``archive`` + ``amending_root_cache`` are required only for the
+    enumerator emits in :data:`CHAIN_FAMILY_ORDER`. Every op that cannot be
+    applied is a typed skip, never a silent drop. ``archive`` +
+    ``amending_root_cache`` are required only for the
     structural families (replace/insert) that re-extract the amending-act payload;
     a repeal/text_replace-only transition tolerates ``archive=None``.
     ``base_work_year``/``base_work_number`` identify the act being replayed so a
@@ -1030,7 +1125,35 @@ def _apply_transition(
         applied += 1
         applied_ops.append(result)
 
-    return applied, skips, applied_ops
+    return NZApplyTransitionConservedResult(
+        input_count=len(transition.ops),
+        applied_ops=tuple(applied_ops),
+        skipped_items=tuple(skips),
+    )
+
+
+def _apply_transition(
+    tree: _EvolvingTree,
+    transition: NZChainTransition,
+    *,
+    latest_version_date: str,
+    archive: Any = None,
+    amending_root_cache: dict[str, Any] | None = None,
+    base_work_year: str = "",
+    base_work_number: str = "",
+) -> tuple[int, list[NZChainSkip], list[_AppliedOp]]:
+    """Compatibility tuple wrapper around the named conserved transition result."""
+    result = apply_nz_transition_conserved(
+        tree,
+        transition,
+        latest_version_date=latest_version_date,
+        archive=archive,
+        amending_root_cache=amending_root_cache,
+        base_work_year=base_work_year,
+        base_work_number=base_work_number,
+    )
+    assert result.is_conserved
+    return result.applied_count, list(result.skipped_items), list(result.applied_ops)
 
 
 def _apply_repeal_op(tree: _EvolvingTree, op: NZChainOp) -> _AppliedOp | NZChainSkip:
@@ -1048,7 +1171,23 @@ def _apply_repeal_op(tree: _EvolvingTree, op: NZChainOp) -> _AppliedOp | NZChain
     if _occupancy(target) != "substantive":
         return _skip(SKIP_ALREADY_TOMBSTONED, op)
     tree.tombstone(target.path)
-    return _AppliedOp(family="repeal", row_id=op.row_id, target_path=target.path, amendment_date_iso=op.amendment_date_iso)
+    after_target = tree.node_index().get(target.path)
+    receipt = _nz_write_receipt(
+        op=op,
+        action="repeal",
+        before_node=target,
+        after_node=after_target,
+        bound_path=target.path,
+        landed_path=target.path,
+        removed=True,
+    )
+    return _AppliedOp(
+        family="repeal",
+        row_id=op.row_id,
+        target_path=target.path,
+        amendment_date_iso=op.amendment_date_iso,
+        write_receipt=receipt,
+    )
 
 
 def _apply_text_replace_op(tree: _EvolvingTree, op: NZChainOp) -> _AppliedOp | NZChainSkip:
@@ -1081,7 +1220,23 @@ def _apply_text_replace_op(tree: _EvolvingTree, op: NZChainOp) -> _AppliedOp | N
         # change the node — surface loudly rather than emit a vacuous mutation.
         return _skip(SKIP_TEXT_APPLY_NO_OP, op)
     tree.substitute_text(target.path, old_text, new_text)
-    return _AppliedOp(family="text_replace", row_id=op.row_id, target_path=target.path, amendment_date_iso=op.amendment_date_iso)
+    after_target = tree.node_index().get(target.path)
+    receipt = _nz_write_receipt(
+        op=op,
+        action="text_replace",
+        before_node=target,
+        after_node=after_target,
+        bound_path=target.path,
+        landed_path=target.path,
+        replaced=True,
+    )
+    return _AppliedOp(
+        family="text_replace",
+        row_id=op.row_id,
+        target_path=target.path,
+        amendment_date_iso=op.amendment_date_iso,
+        write_receipt=receipt,
+    )
 
 
 def _apply_replace_op(
@@ -1114,7 +1269,23 @@ def _apply_replace_op(
     if _node_digest(rebased) == _node_digest(target) and rebased.text == target.text:
         return _skip(SKIP_REPLACE_APPLY_NO_OP, op)
     tree.swap_subtree(target.path, replacement.root, replacement.descendants)
-    return _AppliedOp(family="replace", row_id=op.row_id, target_path=target.path, amendment_date_iso=op.amendment_date_iso)
+    after_target = tree.node_index().get(target.path)
+    receipt = _nz_write_receipt(
+        op=op,
+        action="replace",
+        before_node=target,
+        after_node=after_target,
+        bound_path=target.path,
+        landed_path=target.path,
+        replaced=True,
+    )
+    return _AppliedOp(
+        family="replace",
+        row_id=op.row_id,
+        target_path=target.path,
+        amendment_date_iso=op.amendment_date_iso,
+        write_receipt=receipt,
+    )
 
 
 def _def_term_case_fold_collision_exists(
@@ -1374,7 +1545,23 @@ def _apply_insert_op(
         payload.root,
         payload.descendants,
     )
-    return _AppliedOp(family="insert", row_id=op.row_id, target_path=new_node_resolved_path, amendment_date_iso=op.amendment_date_iso)
+    after_target = tree.node_index().get(new_node_resolved_path)
+    receipt = _nz_write_receipt(
+        op=op,
+        action="insert",
+        before_node=None,
+        after_node=after_target,
+        bound_path=new_node_source_path,
+        landed_path=new_node_resolved_path,
+        created=True,
+    )
+    return _AppliedOp(
+        family="insert",
+        row_id=op.row_id,
+        target_path=new_node_resolved_path,
+        amendment_date_iso=op.amendment_date_iso,
+        write_receipt=receipt,
+    )
 
 
 def _extract_replacement_payload(
@@ -2043,6 +2230,7 @@ def build_chain_replay(
     curve: list[NZChainSimilarityPoint] = []
     all_skips: list[NZChainSkip] = []
     divergences: list[NZChainDivergence] = []
+    write_receipts: list[WriteReceipt] = []
     cleaned_similarity_text_cache: dict[_CleanedNodeSimilarityKey, str] = {}
     # Run-scoped memo of Levenshtein ratios over cleaned-text pairs. The
     # similarity curve re-scores the same (replayed_text, oracle_text) pairs at
@@ -2060,7 +2248,7 @@ def build_chain_replay(
 
     def _run_transition(transition: NZChainTransition) -> list[_AppliedOp]:
         nonlocal ops_applied, transitions_applied
-        applied, skips, applied_ops = _apply_transition(
+        conserved = apply_nz_transition_conserved(
             tree,
             transition,
             latest_version_date=latest_version_date,
@@ -2069,9 +2257,13 @@ def build_chain_replay(
             base_work_year=base_work_year,
             base_work_number=base_work_number,
         )
-        ops_applied += applied
-        all_skips.extend(skips)
+        assert conserved.is_conserved
+        applied_ops = list(conserved.applied_ops)
+        ops_applied += conserved.applied_count
+        all_skips.extend(conserved.skipped_items)
         for applied_op in applied_ops:
+            if applied_op.write_receipt is not None:
+                write_receipts.append(applied_op.write_receipt)
             applied_paths_by_family[applied_op.family].add(applied_op.target_path)
             applied_count_by_family[applied_op.family] += 1
             # Op-local honesty guard for content-producing families: the node the
@@ -2164,6 +2356,7 @@ def build_chain_replay(
         skips=tuple(all_skips),
         per_family_stats=per_family_stats,
         divergences=tuple(divergences),
+        write_receipts=tuple(write_receipts),
         families_requested=tuple(f for f in CHAIN_FAMILY_ORDER if f in resolved),
         same_moment_findings=same_moment_findings,
     )

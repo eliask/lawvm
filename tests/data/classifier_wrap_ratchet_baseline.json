@@ -158,7 +158,6 @@
     "src/lawvm/uk_legislation/replay_table_apply.py": 4,
     "src/lawvm/uk_legislation/replay_text_action_apply.py": 1,
     "src/lawvm/uk_legislation/replay_text_apply.py": 14,
-    "src/lawvm/uk_legislation/same_moment_precedence_claim.py": 1,
     "src/lawvm/uk_legislation/schedule_list_selectors.py": 7,
     "src/lawvm/uk_legislation/si_source_semantics.py": 9,
     "src/lawvm/uk_legislation/source_adjudication.py": 25,
@@ -198,5 +197,5 @@
     "src/lawvm/us_federal/table3.py": 4,
     "src/lawvm/us_federal/usc_witness.py": 4
   },
-  "total_raw_re_compile": 1265
+  "total_raw_re_compile": 1264
 }
