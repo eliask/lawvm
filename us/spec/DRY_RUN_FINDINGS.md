@@ -419,5 +419,10 @@ remaining) — its strike anchor is descriptive prose, not a quotedText.
    (see the "Sunset/temporal (F2 resolution)" section). The remaining lever is
    full temporal-replay materialization — produce the reverted text from a
    temporary-overlay expiry rather than recognize it against the prior edition.
+2a. F3 deferred-op accounting — DONE at the aggregate/reporting layer: `deferred_op`
+   is an OLRC pre-incorporation/editorial-timing bucket, so
+   `coverage_source_present` excludes it with F1 `oracle_suspect` and F2
+   `sunset_reversion`. `missing_source` and `lawvm_wrong` stay in the denominator
+   because those are still billable lowering/replay gaps.
 3. Insert-after editorial spacing (F1) — decide whether to declare a named OLRC
    normalization or keep as `oracle_suspect`.

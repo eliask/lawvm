@@ -1581,6 +1581,7 @@ SOURCE_SHARD_PATHS: dict[str, tuple[str, ...]] = {
     "src/lawvm/core/cross_jurisdiction_parity.py": ("core_tree_apply",),
 }
 GLOBAL_CHANGE_PATHS = frozenset({"pyproject.toml", "uv.lock"})
+DOCUMENTATION_PREFIXES = ("docs/", "notes/", "us/spec/")
 TOP_LEVEL_DOCUMENTATION_PATHS = frozenset({
     "AGENTS.md",
     "CHANGELOG.md",
@@ -2187,7 +2188,7 @@ def affected_path_plan(raw_path: str) -> dict[str, Any]:
                     f"core/dependency prefix {prefix} forces all affected shards",
                 )
             return plan(list(shards), f"known frontend prefix {prefix} maps to {', '.join(shards)}")
-    if normalized.startswith(("docs/", "notes/")) or normalized in TOP_LEVEL_DOCUMENTATION_PATHS:
+    if normalized.startswith(DOCUMENTATION_PREFIXES) or normalized in TOP_LEVEL_DOCUMENTATION_PATHS:
         return plan([], "documentation path has no bounded pytest shard impact")
     if normalized.startswith(TOOLING_BLOCKED_PREFIXES):
         prefixes = ", ".join(TOOLING_BLOCKED_PREFIXES)

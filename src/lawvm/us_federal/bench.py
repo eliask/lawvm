@@ -845,7 +845,7 @@ def main(argv: list[str] | None = None) -> int:
         f"{ca['numerator']}/{ca['denominator']} = {ca_str}"
     )
     # coverage_source_present: same numerator, denominator minus structurally-
-    # unwitnessable buckets (oracle_suspect F1 + sunset_reversion F2).
+    # unwitnessable buckets (oracle_suspect F1 + sunset_reversion F2 + deferred_op F3).
     sp = agg["coverage_source_present"]
     sp_str = "-" if sp["fraction"] is None else f"{sp['fraction']:.4f}"
     excluded = sp["excluded_total"]
@@ -855,7 +855,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     print(
         f"    excluded: oracle_suspect(F1)={sp['excluded_oracle_suspect']}  "
-        f"sunset_reversion(F2)={sp['excluded_sunset_reversion']}"
+        f"sunset_reversion(F2)={sp['excluded_sunset_reversion']}  "
+        f"deferred_op(F3)={sp['excluded_deferred_op']}"
     )
     # coverage_by_title_class: positive-law (clean amendment->USC structure) vs
     # non-positive (editorial-reclassification tail), each within its own population.

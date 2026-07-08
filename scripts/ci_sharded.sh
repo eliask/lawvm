@@ -130,7 +130,7 @@ if [[ ${#AFFECTED_PATHS[@]} -gt 0 && -z "$SHARDS" ]]; then
     DOCS_ONLY_AFFECTED=1
     for path in "${AFFECTED_PATHS[@]}"; do
         normalized="${path//\\//}"
-        if [[ ! "$normalized" =~ ^(docs|notes)/ && ! "$normalized" =~ ^[^/]+\.md$ && "$normalized" != "LICENSE" ]]; then
+        if [[ ! "$normalized" =~ ^(docs|notes|us/spec)/ && ! "$normalized" =~ ^[^/]+\.md$ && "$normalized" != "LICENSE" ]]; then
             DOCS_ONLY_AFFECTED=0
             break
         fi

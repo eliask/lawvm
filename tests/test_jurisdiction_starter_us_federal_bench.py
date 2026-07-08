@@ -255,6 +255,7 @@ def test_source_present_aggregate_present_and_correctly_labelled() -> None:
     assert {
         "numerator", "denominator", "fraction",
         "excluded_oracle_suspect", "excluded_sunset_reversion",
+        "excluded_deferred_op",
         "excluded_total", "denominator_note",
     } <= set(sp)
     # The same numerator (agreements) must appear in both aggregates.
@@ -263,8 +264,12 @@ def test_source_present_aggregate_present_and_correctly_labelled() -> None:
     # coverage_source_present denominator <= coverage_all denominator (we exclude,
     # never add sections).
     assert sp["denominator"] <= ca["denominator"]
-    # excluded_total = oracle_suspect + sunset_reversion.
-    assert sp["excluded_total"] == sp["excluded_oracle_suspect"] + sp["excluded_sunset_reversion"]
+    # excluded_total = oracle_suspect + sunset_reversion + deferred_op.
+    assert sp["excluded_total"] == (
+        sp["excluded_oracle_suspect"]
+        + sp["excluded_sunset_reversion"]
+        + sp["excluded_deferred_op"]
+    )
     # coverage_source_present >= coverage_all: subtracting a non-negative count of
     # structurally-unwitnessable deltas from the denominator cannot increase the denominator,
     # so the fraction can only stay the same or increase.
@@ -276,7 +281,7 @@ def test_source_present_aggregate_present_and_correctly_labelled() -> None:
 
 
 def test_source_present_aggregate_no_structural_exclusion_when_no_pathology() -> None:
-    """When no oracle_suspect/sunset_reversion sections exist both fractions coincide.
+    """When no structurally-unwitnessable sections exist both fractions coincide.
 
     The synthetic fixture has 2 oracle-changed sections: section 10 (agrees) and
     section 30 (missing_source gap, no oracle pathology, no sunset).  The excluded
@@ -286,13 +291,47 @@ def test_source_present_aggregate_no_structural_exclusion_when_no_pathology() ->
     agg = report.aggregate()
     sp = agg["coverage_source_present"]
     ca = agg["coverage_all"]
-    # The synthetic fixture has no oracle_suspect or sunset_reversion sections.
+    # The synthetic fixture has no oracle_suspect, sunset_reversion, or deferred_op sections.
     assert sp["excluded_oracle_suspect"] == 0
     assert sp["excluded_sunset_reversion"] == 0
+    assert sp["excluded_deferred_op"] == 0
     assert sp["excluded_total"] == 0
     # When nothing is excluded both denominators (and fractions) must be equal.
     assert sp["denominator"] == ca["denominator"]
     assert sp["fraction"] == pytest.approx(ca["fraction"])
+
+
+def test_source_present_aggregate_excludes_deferred_op_but_not_billable_gaps() -> None:
+    """F3 ``deferred_op`` is structurally unwitnessable; real gaps stay scored."""
+    window = _synthetic_window()
+    report = BenchReport(corpus_path="synthetic-deferred")
+    report.results.append(
+        WindowResult(
+            window=window,
+            window_status=WindowStatus.EVALUATED,
+            oracle_changed=5,
+            agreements=1,
+            lawvm_wrong=1,
+            oracle_suspect=1,
+            missing_source=1,
+            sunset_reversion=0,
+            deferred_op=1,
+            coverage_fraction=0.2,
+        )
+    )
+
+    agg = report.aggregate()
+    sp = agg["coverage_source_present"]
+
+    assert agg["coverage_all"]["denominator"] == 5
+    assert sp["excluded_oracle_suspect"] == 1
+    assert sp["excluded_sunset_reversion"] == 0
+    assert sp["excluded_deferred_op"] == 1
+    assert sp["excluded_total"] == 2
+    assert sp["denominator"] == 3
+    assert sp["fraction"] == pytest.approx(1 / 3)
+    assert agg["disposition_breakdown"]["lawvm_wrong"] == 1
+    assert agg["disposition_breakdown"]["missing_source"] == 1
 
 
 def test_aggregate_shape_includes_coverage_source_present_in_json() -> None:
@@ -467,9 +506,13 @@ def test_real_corpus_runs_and_produces_a_witness_anchored_aggregate() -> None:
     # are reported separately and never folded into coverage.
     breakdown = agg["disposition_breakdown"]
     assert breakdown["agreement"] == agg["agreements_total"]
-    assert {"lawvm_wrong", "oracle_suspect", "missing_source", "sunset_reversion"} <= set(
-        breakdown
-    )
+    assert {
+        "lawvm_wrong",
+        "oracle_suspect",
+        "missing_source",
+        "sunset_reversion",
+        "deferred_op",
+    } <= set(breakdown)
     # The gate stays shut: the report kind never authorizes replay.
     assert report.to_jsonable()["replay_authorized"] is False
     # The parallel runner strips the heavy per-window report at the process

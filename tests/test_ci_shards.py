@@ -938,6 +938,7 @@ def test_test_shard_affected_plan_ignores_documentation_paths() -> None:
     }
     assert module.affected_shards(["docs/getting-started.md"]) == []
     assert module.affected_shards(["notes/EU_STRUCTURAL_INGESTION_ROADMAP.md"]) == []
+    assert module.affected_shards(["us/spec/DRY_RUN_FINDINGS.md"]) == []
     assert module.affected_shards(["README.md"]) == []
     assert module.affected_shards(["AGENTS.md"]) == []
     assert module.affected_shards(["CHANGELOG.md"]) == []
@@ -1354,7 +1355,14 @@ def test_ci_sharded_docs_only_affected_is_noop_green() -> None:
     script = root / "scripts" / "ci_sharded.sh"
 
     result = subprocess.run(
-        [str(script), "--affected", "notes/DEFERRED_ROADMAP.md", "README.md", "AGENTS.md"],
+        [
+            str(script),
+            "--affected",
+            "notes/DEFERRED_ROADMAP.md",
+            "us/spec/DRY_RUN_FINDINGS.md",
+            "README.md",
+            "AGENTS.md",
+        ],
         check=False,
         cwd=root,
         text=True,
