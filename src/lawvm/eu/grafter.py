@@ -133,6 +133,37 @@ def _trailing_text(el: ET.Element[str]) -> str:
     return _normalize_text(" ".join(p for p in parts if p))
 
 
+def _block_units(el: ET.Element[str]) -> list[IRNode]:
+    """Render a mixed prose/list block into document-order IR child units.
+
+    Direct article bodies can carry point lists without an enclosing ``PARAG``,
+    e.g. ``ARTICLE > ALINEA > LIST > ITEM > NP > NO.P``. Lowered amendment ops
+    target those as ``article:N/point:X``; a flat article ``text`` string has no
+    coordinate for replay to resolve. This helper mirrors paragraph-body
+    lowering: intro/wrap-up prose becomes plain ``p`` children and each point
+    marker becomes an ``item`` child, keeping depth-first text flattening in
+    source order.
+    """
+    units: list[IRNode] = []
+    point_items = _point_items(el)
+    if point_items:
+        intro = _intro_text(el)
+        if intro:
+            units.append(IRNode(kind=cast(IRNodeKind, "p"), text=intro))
+        for pt_label, pt_text in point_items:
+            units.append(
+                IRNode(kind=cast(IRNodeKind, "item"), label=pt_label, text=pt_text)
+            )
+        trailing = _trailing_text(el)
+        if trailing:
+            units.append(IRNode(kind=cast(IRNodeKind, "p"), text=trailing))
+        return units
+    text = _element_text(el)
+    if text:
+        units.append(IRNode(kind=cast(IRNodeKind, "p"), text=text))
+    return units
+
+
 # ---------------------------------------------------------------------------
 # Core Parser
 # ---------------------------------------------------------------------------
@@ -465,6 +496,7 @@ class EUIRGrafter:
         # Children
         children = []
         text_parts = []
+        direct_block_units: list[IRNode] = []
 
         # Generic child walk
         for child in el:
@@ -482,7 +514,25 @@ class EUIRGrafter:
                 # text — the Increment-1 "text preserved on the nested child"
                 # residual held only for the PARAG>P fixture shape, NOT real bytes.
                 # _element_text recurses itertext, so both ALINEA shapes are covered.
-                text_parts.append(_element_text(child))
+                if kind == "section" and _point_items(child):
+                    direct_block_units.extend(_block_units(child))
+                elif direct_block_units:
+                    direct_block_units.extend(_block_units(child))
+                else:
+                    text_parts.append(_element_text(child))
+
+        if direct_block_units and text_parts:
+            direct_block_units = [
+                *(
+                    IRNode(kind=cast(IRNodeKind, "p"), text=text)
+                    for text in text_parts
+                    if text
+                ),
+                *direct_block_units,
+            ]
+            text_parts = []
+        if direct_block_units:
+            children.extend(direct_block_units)
 
         text = " ".join(text_parts).strip()
 

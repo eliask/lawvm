@@ -27,6 +27,7 @@ from pathlib import Path
 
 from lawvm.core.ir import IRNode, IRStatute
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
+from lawvm.core import tree_ops
 from lawvm.eu.eu_consolidation_oracle import build_consolidation_oracle
 from lawvm.eu.eu_oracle_divergence import (
     CORPUS_DIVERGENCE_CLASSES,
@@ -168,6 +169,69 @@ def test_subart_shapes_apply_resolvable_targets_and_own_renumber() -> None:
     skipped = res.skipped_items[0]
     assert skipped.item.witness_rule_id == "EU_FMX4.ARTICLE_RENUMBER"
     assert skipped.reason_code == "eu_replay_unsupported_action"
+
+
+def test_direct_article_point_list_parses_and_applies(tmp_path) -> None:
+    """Real #221 shape: article-level point lists must be coordinates.
+
+    ``point 104`` amendments lower as ``article:2/point:104``. If the base
+    grafter flattens ``ARTICLE > ALINEA > LIST`` into article text only, replay
+    cannot resolve the point and conserves it as ``eu_replay_target_not_found``.
+    The grafter must instead materialize the direct point as an ``item`` child
+    while preserving article text through descendant flattening.
+    """
+    base_xml = tmp_path / "base_point_list.fmx4.xml"
+    base_xml.write_bytes(
+        b"""<?xml version="1.0"?>
+<ACT><TITLE><TI>base</TI></TITLE><ENACTING.TERMS>
+  <ARTICLE><TI.ART>Article 2</TI.ART>
+    <ALINEA><P>For this Regulation:</P>
+      <LIST><ITEM><NP><NO.P>104.</NO.P><TXT>old psychoactive substance text;</TXT></NP></ITEM></LIST>
+      <P>Final sentence.</P>
+    </ALINEA>
+  </ARTICLE>
+</ENACTING.TERMS></ACT>"""
+    )
+    base = parse_eu_regulation_ir(base_xml, celex="32012R0923")
+    article = base.body.children[0]
+    assert article.label == "2"
+    assert [(child.kind, child.label) for child in article.children] == [
+        (typing.cast(IRNodeKind, "p"), None),
+        (_ITEM, "104"),
+        (typing.cast(IRNodeKind, "p"), None),
+    ]
+    assert (
+        tree_ops.find(base.body, "item", "104", scope_kind="section", scope_label="2")
+        is not None
+    )
+
+    amender = b"""<?xml version="1.0"?>
+<ACT><ENACTING.TERMS>
+  <ARTICLE><TI.ART>Article 9</TI.ART>
+    <ALINEA><P>In Article 2 of Commission Implementing Regulation (EU) No 923/2012, point 104 is replaced by the following:</P>
+      <QUOT.S LEVEL="1"><NP><NO.P><QUOT.START/>104.</NO.P><TXT>new psychoactive substance text;<QUOT.END/></TXT></NP></QUOT.S>
+    </ALINEA>
+  </ARTICLE>
+</ENACTING.TERMS></ACT>"""
+    lowered = lower_amending_act(amender, "32015R0340", base_celex="32012R0923")
+    ordered = order_eu_ops(list(lowered.ops))
+    result = apply_eu_ops_conserved(base, list(ordered.ops))
+
+    assert len(result.skipped_items) == 0
+    assert [op.witness_rule_id for op in result.applied_ops] == [
+        "EU_FMX4.SUBART_POINT_REPLACE"
+    ]
+    replayed_article = result.statute.body.children[0]
+    replayed_text = " ".join(
+        part
+        for part in (
+            replayed_article.text,
+            *(child.text for child in replayed_article.children),
+        )
+        if part
+    )
+    assert "new psychoactive substance text" in replayed_text
+    assert "old psychoactive substance text" not in replayed_text
 
 
 # --------------------------------------------------------------------------- #

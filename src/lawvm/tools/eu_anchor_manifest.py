@@ -99,13 +99,16 @@ from __future__ import annotations
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional, cast
+from typing import Any, Iterable, Optional, cast
 
 from lawvm.core.agreement_residual import (
     AgreementResidual,
     AgreementResidualFamily,
     AgreementResidualStatus,
 )
+from lawvm.core.filter_result import RejectedItem
+from lawvm.core.ir import LegalOperation
+from lawvm.replay_adjudication import CompileAdjudication
 
 MANIFEST_SCHEMA = "lawvm.eu_anchor_manifest.v1"
 
@@ -127,6 +130,17 @@ VERDICT_APPLY_RAISE = "eu_replay_apply_raise"
 VERDICT_CONSERVATION_VIOLATION = "eu_replay_conservation_violation"
 #: A typed, non-blocking op skip — a standing replay capability gap (non-billable).
 VERDICT_TYPED_OP_SKIP = "eu_replay_typed_op_skip"
+
+EU_TYPED_SKIP_BUCKET_EMPTY_TARGET_LABEL = "empty_target_label"
+EU_TYPED_SKIP_BUCKET_UNSUPPORTED_ACTION = "unsupported_action"
+EU_TYPED_SKIP_BUCKET_UNKNOWN_ACTION = "unknown_action"
+EU_TYPED_SKIP_BUCKET_PAYLOAD_MISSING = "payload_missing"
+EU_TYPED_SKIP_BUCKET_PARENT_UNRESOLVED = "parent_unresolved"
+EU_TYPED_SKIP_BUCKET_PARENT_SCOPE_UNRESOLVED = "parent_scope_unresolved"
+EU_TYPED_SKIP_BUCKET_ANNEX_LANE_TARGET_ABSENT = "annex_lane_target_absent"
+EU_TYPED_SKIP_BUCKET_TARGET_KIND_LABEL_ABSENT = "target_kind_label_absent"
+EU_TYPED_SKIP_BUCKET_GENERIC_OP_SKIP = "eu_replay_op_skip"
+EU_TYPED_SKIP_BUCKET_UNBUCKETED = "unbucketed_typed_skip_evidence"
 
 #: EU verdict → CTSF residual family (``lawvm.core.ctsf_residual_report``'s
 #: ``RESIDUAL_VERDICT_FAMILIES`` — the family set the gate diffs). The two BILLABLE
@@ -175,9 +189,10 @@ class EUReplayObservation:
     window: str
     touching_amendments: tuple[str, ...]
     evidence: str
+    typed_skip_evidence: EUTypedOpSkipEvidence | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        payload: dict[str, Any] = {
             "sid": self.sid,
             "section_key": self.section_key,
             "verdict": self.verdict,
@@ -185,6 +200,143 @@ class EUReplayObservation:
             "touching_amendments": list(self.touching_amendments),
             "evidence": self.evidence,
         }
+        if self.typed_skip_evidence is not None:
+            payload["typed_skip_evidence"] = self.typed_skip_evidence.to_dict()
+        return payload
+
+
+@dataclass(frozen=True)
+class EUTypedOpSkipEvidence:
+    """Structured diagnostics for one conserved EU typed-op skip.
+
+    This is a projection input, not replay authority. ``EUReplayObservation``
+    keeps its historical ``evidence: str`` field, so the structured carrier is
+    rendered only at that boundary.
+    """
+
+    skip_bucket: str
+    reason_code: str
+    target: str = ""
+    detail_reason_code: str = ""
+    reason: str = ""
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "skip_bucket": self.skip_bucket,
+            "reason_code": self.reason_code,
+            "target": self.target,
+            "detail_reason_code": self.detail_reason_code,
+            "reason": self.reason,
+        }
+
+    def render(self) -> str:
+        parts = [
+            f"skip_bucket={self.skip_bucket}",
+            f"reason_code={self.reason_code}",
+        ]
+        if self.target:
+            parts.append(f"target={self.target}")
+        if self.detail_reason_code:
+            parts.append(f"detail_reason_code={self.detail_reason_code}")
+        if self.reason:
+            parts.append(f"reason={self.reason[:200]}")
+        return "; ".join(parts)[:400]
+
+
+def _eu_typed_op_skip_bucket(
+    rejected: RejectedItem[LegalOperation],
+    adjudication: CompileAdjudication | None = None,
+) -> str:
+    """Classify an already-rejected EU op for diagnostics-only skip census.
+
+    This helper never decides whether an op applies. It only refines the evidence
+    string for a :class:`EUReplayObservation` after ``apply_eu_ops_conserved`` has
+    already partitioned the op into ``skipped_items`` (§1.8). The buckets are a
+    triage surface for the EU structural-ingestion roadmap I1 census, not replay
+    authority.
+    """
+    reason_code = str(rejected.reason_code or "")
+    detail = adjudication.detail if adjudication is not None else {}
+    op = rejected.item
+    target = op.target
+    if detail.get("reason_code") == "empty_target_label":
+        return EU_TYPED_SKIP_BUCKET_EMPTY_TARGET_LABEL
+    if reason_code == "eu_replay_unsupported_action":
+        return EU_TYPED_SKIP_BUCKET_UNSUPPORTED_ACTION
+    if reason_code == "eu_replay_unknown_action":
+        return EU_TYPED_SKIP_BUCKET_UNKNOWN_ACTION
+    if reason_code == "eu_replay_text_payload_missing":
+        return EU_TYPED_SKIP_BUCKET_PAYLOAD_MISSING
+    if reason_code == "eu_replay_parent_not_found":
+        return EU_TYPED_SKIP_BUCKET_PARENT_UNRESOLVED
+    if reason_code == "eu_replay_insert_parent_scope_unresolved":
+        return EU_TYPED_SKIP_BUCKET_PARENT_SCOPE_UNRESOLVED
+    if reason_code == "eu_replay_target_not_found":
+        if target is not None and target.root_kind() == "supplements":
+            return EU_TYPED_SKIP_BUCKET_ANNEX_LANE_TARGET_ABSENT
+        return EU_TYPED_SKIP_BUCKET_TARGET_KIND_LABEL_ABSENT
+    return reason_code or EU_TYPED_SKIP_BUCKET_GENERIC_OP_SKIP
+
+
+def _eu_typed_op_skip_evidence_record(
+    rejected: RejectedItem[LegalOperation],
+    adjudication: CompileAdjudication | None = None,
+) -> EUTypedOpSkipEvidence:
+    """Return structured diagnostics for one conserved EU typed-op skip."""
+    op = rejected.item
+    target = op.target
+    reason_code = str(rejected.reason_code or "eu_replay_op_skip")
+    bucket = _eu_typed_op_skip_bucket(rejected, adjudication)
+    target_text = str(target) if target is not None else ""
+    detail_reason_code = ""
+    if adjudication is not None:
+        detail_reason = adjudication.detail.get("reason_code")
+        if detail_reason:
+            detail_reason_code = str(detail_reason)
+    reason = str(rejected.reason or "")[:200]
+    return EUTypedOpSkipEvidence(
+        skip_bucket=bucket,
+        reason_code=reason_code,
+        target=target_text,
+        detail_reason_code=detail_reason_code,
+        reason=reason,
+    )
+
+
+def _eu_typed_op_skip_evidence(
+    rejected: RejectedItem[LegalOperation],
+    adjudication: CompileAdjudication | None = None,
+) -> str:
+    """Return a bounded projection string for one conserved EU typed-op skip."""
+    return _eu_typed_op_skip_evidence_record(rejected, adjudication).render()
+
+
+@dataclass(frozen=True)
+class EUTypedOpSkipBucketSummary:
+    """One diagnostics-only I1 bucket count over typed EU op skips."""
+
+    skip_bucket: str
+    count: int
+
+
+def summarize_eu_typed_op_skip_buckets(
+    observations: Iterable[EUReplayObservation],
+) -> tuple[EUTypedOpSkipBucketSummary, ...]:
+    """Count typed-op skip buckets from typed evidence, never rendered strings."""
+    counts: dict[str, int] = {}
+    for obs in observations:
+        if obs.verdict != VERDICT_TYPED_OP_SKIP:
+            continue
+        bucket = (
+            obs.typed_skip_evidence.skip_bucket
+            if obs.typed_skip_evidence is not None
+            else EU_TYPED_SKIP_BUCKET_UNBUCKETED
+        )
+        counts[bucket] = counts.get(bucket, 0) + 1
+    return tuple(
+        EUTypedOpSkipBucketSummary(skip_bucket=bucket, count=count)
+        for bucket, count in sorted(counts.items())
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -324,8 +476,11 @@ def attribute_chain(chain: EUChainRef, *, archive: Any) -> EUAttribution:
 
     ordered = order_eu_ops(ops)
     window = "enacted..amended"
+    adjudications: list[CompileAdjudication] = []
     try:
-        result = apply_eu_ops_conserved(base, list(ordered.ops))
+        result = apply_eu_ops_conserved(
+            base, list(ordered.ops), adjudications_out=adjudications
+        )
     # An apply RAISE is a genuine replay crash — the headline BILLABLE residual the
     # metric exists to catch. Type it, do NOT let it propagate (it is the finding).
     # lawvm-failloud: the raise IS the typed observation, not a swallowed error.
@@ -365,7 +520,13 @@ def attribute_chain(chain: EUChainRef, *, archive: Any) -> EUAttribution:
         # curated to fully-applied windows, so blocking skips are absent at freeze;
         # a new one surfaces as a cnf_unsupported move the gate WARNs on.
         for rejected in result.skipped_items:
-            reason_code = getattr(rejected, "reason_code", "") or "eu_replay_op_skip"
+            reason_code = rejected.reason_code or "eu_replay_op_skip"
+            op_id = rejected.item.op_id
+            adjudication = next(
+                (a for a in adjudications if a.op_id == op_id),
+                None,
+            )
+            skip_evidence = _eu_typed_op_skip_evidence_record(rejected, adjudication)
             observations.append(
                 EUReplayObservation(
                     sid=sid,
@@ -373,7 +534,8 @@ def attribute_chain(chain: EUChainRef, *, archive: Any) -> EUAttribution:
                     verdict=VERDICT_TYPED_OP_SKIP,
                     window=window,
                     touching_amendments=(chain.amender,),
-                    evidence=str(getattr(rejected, "reason", ""))[:200],
+                    evidence=skip_evidence.render(),
+                    typed_skip_evidence=skip_evidence,
                 )
             )
 
@@ -494,13 +656,12 @@ def observation_to_residual(obs: EUReplayObservation) -> AgreementResidual:
 #      gap swallowed "In Article 2 of Regulation 923/2012, point 104 is
 #      replaced …" and nuked 32012R0923 Article 2 to the point payload
 #      (billed at 32012R0923@20150630 the moment the anchor first scored).
-#   1b. SUB-ARTICLE APPLY RESOLUTION (the NEW dominant suspicion cause, the
-#      ``eu_replay_typed_op_skip`` rows): the EU grafter lifts NO label onto
-#      paragraph/item nodes (``NO.PARAG`` is not parsed; points are flattened
-#      into ALINEA text), so every lowered sub-article REPLACE/REPEAL targets
-#      an unresolvable coordinate and typed-skips (507 skips → 32010R1093
-#      alone). Fixing this lives in ``eu/grafter.py`` + the apply seam — a
-#      separate lane from this manifest.
+#   1b. SUB-ARTICLE APPLY RESOLUTION (typed skip suspicion cause): the EU
+#      grafter must materialize the coordinates lowered by
+#      ``fmx4_amendment_grammar``. ``NO.PARAG`` paragraph labels and direct
+#      article-level point lists now become addressable IR children; remaining
+#      I1 work is to census the typed skip buckets and find the next missing
+#      base-coordinate family, not to patch apply by broadening target lookup.
 #   2. AMENDERS UNACQUIRABLE AS FMX4 — ACQUISITION-RESOLVED (#9): the 3
 #      truly-missing amenders (32016R0646 / 32017R1221 → 32008R0692, 32016R1185
 #      → 32012R0923) and the 34 wrong-manifestation-item stores (a ~2KB DOC
@@ -910,6 +1071,10 @@ class EUOracleAttribution:
             families[fam] = families.get(fam, 0) + 1
         return {fam: n for fam, n in sorted(families.items()) if n}
 
+    def typed_skip_bucket_counts(self) -> tuple[EUTypedOpSkipBucketSummary, ...]:
+        """Diagnostics-only I1 census over emitted EU typed-op skips."""
+        return summarize_eu_typed_op_skip_buckets(self.eu_observations)
+
 
 def attribute_base_consolidations(base_celex: str, *, archive: Any) -> EUOracleAttribution:
     """Score one base's stored consolidation chain via multi-amender PIT closure.
@@ -981,7 +1146,14 @@ def attribute_base_consolidations(base_celex: str, *, archive: Any) -> EUOracleA
     eu_observations: list[EUReplayObservation] = []
     seen_gap_keys: set[tuple[str, str]] = set()
 
-    def _emit_once(verdict: str, key: str, window: str, amenders: tuple[str, ...], evidence: str) -> None:
+    def _emit_once(
+        verdict: str,
+        key: str,
+        window: str,
+        amenders: tuple[str, ...],
+        evidence: str,
+        typed_skip_evidence: EUTypedOpSkipEvidence | None = None,
+    ) -> None:
         dedup = (verdict, key)
         if dedup in seen_gap_keys:
             return
@@ -994,6 +1166,7 @@ def attribute_base_consolidations(base_celex: str, *, archive: Any) -> EUOracleA
                 window=window,
                 touching_amendments=amenders,
                 evidence=evidence[:300],
+                typed_skip_evidence=typed_skip_evidence,
             )
         )
 
@@ -1005,7 +1178,7 @@ def attribute_base_consolidations(base_celex: str, *, archive: Any) -> EUOracleA
             e.celex for e in closure if not prev_iso or not e.effective_by(prev_iso)
         )
         witnesses: list[str] = []
-        ops: list[Any] = []
+        ops: list[LegalOperation] = []
         for edge in closure:
             low = _lowered(edge)
             if low is None:
@@ -1059,8 +1232,11 @@ def attribute_base_consolidations(base_celex: str, *, archive: Any) -> EUOracleA
 
         version_tag = f"0{base_celex[1:]}-{date8}"
         ordered = order_eu_ops(list(ops))
+        adjudications: list[CompileAdjudication] = []
         try:
-            result = apply_eu_ops_conserved(base_ir, list(ordered.ops))
+            result = apply_eu_ops_conserved(
+                base_ir, list(ordered.ops), adjudications_out=adjudications
+            )
         # An apply RAISE is the headline BILLABLE replay crash — the raise IS
         # the typed observation, and the anchor is unscored (excluded from the
         # touch chain), never a swallowed error.
@@ -1109,15 +1285,19 @@ def attribute_base_consolidations(base_celex: str, *, archive: Any) -> EUOracleA
                 )
             )
         for rejected in result.skipped_items:
-            reason_code = getattr(rejected, "reason_code", "") or "eu_replay_op_skip"
-            op = getattr(rejected, "item", None)
-            op_id = getattr(op, "op_id", "") or str(reason_code)
+            reason_code = rejected.reason_code or "eu_replay_op_skip"
+            op = rejected.item
+            op_id = op.op_id or str(reason_code)
+            adjudication = next(
+                (a for a in adjudications if a.op_id == op_id),
+                None,
+            )
+            skip_evidence = _eu_typed_op_skip_evidence_record(rejected, adjudication)
             # An ANNEX-rooted op skip cannot poison the ARTICLE-only compare
             # surface (the same lane argument as VERDICT_CLOSURE_OFF_SURFACE_GAP):
             # typed + visible, but not an anchor-suspicion witness.
             annex_lane = (
-                op is not None
-                and getattr(op, "target", None) is not None
+                op.target is not None
                 and op.target.root_kind() == "supplements"
             )
             if not annex_lane:
@@ -1127,7 +1307,8 @@ def attribute_base_consolidations(base_celex: str, *, archive: Any) -> EUOracleA
                 str(op_id),
                 f"..{iso}",
                 window_amenders,
-                str(getattr(rejected, "reason", ""))[:200],
+                skip_evidence.render(),
+                skip_evidence,
             )
 
         cons_ir = _graft_dated(archive, base_celex, date8)

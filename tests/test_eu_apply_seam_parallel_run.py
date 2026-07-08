@@ -6,12 +6,14 @@ routes its per-op REPLACE/REPEAL/INSERT tree dispatch through the unified
 text_replace/text_repeal/renumber/unknown SKIP lanes verbatim. This gate proves
 the migrated path is byte-identical to the pre-existing EU apply behaviour.
 
-EU'S NATURE (why this wave is mostly ADDITION). EU applies a SINGLE amending
-act's ops at a time: there is NO ordering pass and NO same-moment cross-act
-detection. Ops apply in input (Cellar-discovery) order. So the migration adds no
-new behaviour to the bare fold — the equality gate on the materialized statute +
-adjudications is the whole proof, and the receipt lane is the only net-new
-output (validated against the CORE write-receipt invariants, not an old
+EU'S APPLY-SEAM NATURE (why this wave is mostly ADDITION). The bare
+``apply_eu_ops`` fold is intentionally order-preserving: it applies the op list
+it is handed and does not run a same-moment detector itself. Production
+``EUReplayPipeline.replay_statute`` and the oracle/bench lanes now run
+``order_eu_ops`` before conserved apply, so ordering/same-moment liveness is
+pinned elsewhere. This seam test proves the migrated bare fold remains
+byte-identical for a supplied op order, and the receipt lane is the only net-new
+output here (validated against the CORE write-receipt invariants, not an old
 artifact).
 
 THE GATES.

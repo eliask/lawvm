@@ -50,6 +50,7 @@ from lawvm.core.ctsf_gate import (
     REAL_ANCHOR_EU_CORPUS_CHAINS,
     REAL_ANCHOR_EU_JURISDICTION,
     GateResult,
+    _eu_baseline_payload,
     _repo_root,
     eu_anchor_corpus_available,
     load_eu_baseline,
@@ -238,6 +239,30 @@ def test_eu_baseline_round_trips(tmp_path):
     }
     path = tmp_path / "eu_baseline.json"
     write_eu_baseline(residuals=residuals, path=path)
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["typed_skip_bucket_counts"] == {}
+    assert load_eu_baseline(path) == residuals
+
+
+def test_eu_baseline_payload_carries_non_gating_typed_skip_buckets(tmp_path):
+    """I1 diagnostics persist typed skip buckets without changing gate residuals."""
+    residuals = {"32000R0000": {"cnf_unsupported": 2}}
+    typed_skip_bucket_counts = {
+        "32000R0000": {
+            "target_kind_label_absent": 1,
+            "empty_target_label": 1,
+        }
+    }
+
+    payload = _eu_baseline_payload(
+        residuals,
+        typed_skip_bucket_counts=typed_skip_bucket_counts,
+    )
+
+    assert payload["residuals"] == residuals
+    assert payload["typed_skip_bucket_counts"] == typed_skip_bucket_counts
+    path = tmp_path / "eu_baseline_with_diagnostics.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
     assert load_eu_baseline(path) == residuals
 
 

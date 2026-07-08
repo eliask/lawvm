@@ -498,6 +498,19 @@ REAL_ANCHOR_EU_CORPUS_CHAINS: tuple[tuple[str, str], ...] = (
 GATE_EU_BASELINE_PATH = Path("tests/data/ctsf_gate_eu_residual_baseline.json")
 
 
+@dataclass(frozen=True, slots=True)
+class EUCorpusScore:
+    """Diagnostics-preserving EU CTSF score.
+
+    ``residuals`` is the historical gate input. ``typed_skip_bucket_counts`` is
+    a diagnostics-only I1 account over EU typed-op skips; it never changes the
+    residual-set diff gate semantics.
+    """
+
+    residuals: dict[str, dict[str, int]]
+    typed_skip_bucket_counts: dict[str, dict[str, int]]
+
+
 def eu_anchor_corpus_available() -> bool:
     """True iff the EU Cellar Farchive backing the EU real corpus is present.
 
@@ -517,11 +530,20 @@ def eu_anchor_corpus_available() -> bool:
         return False
 
 
+def _eu_bucket_summary_dict(summaries: Iterable[Any]) -> dict[str, int]:
+    """Project typed skip bucket summaries into a stable JSON/count shape."""
+    return {
+        str(summary.skip_bucket): int(summary.count)
+        for summary in summaries
+        if int(summary.count)
+    }
+
+
 @memoize_default_corpus
-def score_eu_real_corpus(
+def score_eu_real_corpus_account(
     chains: Iterable[tuple[str, str]] | None = None,
-) -> dict[str, dict[str, int]]:
-    """Score the EU corpus (#221 oracle-touch + #204 fallback) into its residual set.
+) -> EUCorpusScore:
+    """Score the EU corpus into residuals plus diagnostics-only skip buckets.
 
     TWO lanes, one diffable set:
 
@@ -537,11 +559,12 @@ def score_eu_real_corpus(
       consolidations), score the apply-fold conservation invariant as before.
       The sid stays ``amender->base``.
 
-    Returns the same diffable ``{sid: {family: count}}`` shape as
-    :func:`score_real_corpus`, only non-zero families retained, a clean-but-scored
-    unit present with an empty family map. Deterministic in sid order. Reads the
-    EU Cellar Farchive (offline replay); deterministic given the frozen corpus
-    bytes + the frozen closure table.
+    ``residuals`` preserves the same diffable ``{sid: {family: count}}`` shape
+    as :func:`score_eu_real_corpus`. ``typed_skip_bucket_counts`` is a sibling
+    diagnostics-only account over EU typed-op skips, keyed by the same sid and
+    projected from typed evidence carriers rather than rendered strings.
+    Deterministic in sid order. Reads the EU Cellar Farchive (offline replay);
+    deterministic given the frozen corpus bytes + the frozen closure table.
 
     ``chains`` overrides the FALLBACK lane only (kept for the synthetic-set
     callers/tests); the oracle-touch bases are always scored.
@@ -555,6 +578,7 @@ def score_eu_real_corpus(
         REAL_ANCHOR_EU_ORACLE_BASES,
         attribute_base_consolidations,
         attribute_chain,
+        summarize_eu_typed_op_skip_buckets,
     )
 
     corpus = tuple(chains) if chains is not None else REAL_ANCHOR_EU_CORPUS_CHAINS
@@ -562,9 +586,13 @@ def score_eu_real_corpus(
     archive = Farchive(str(_eu_default_db()), readonly=True)
     try:
         out: dict[str, dict[str, int]] = {}
+        skip_buckets: dict[str, dict[str, int]] = {}
         for oracle_base in REAL_ANCHOR_EU_ORACLE_BASES:
             oracle_attr = attribute_base_consolidations(oracle_base, archive=archive)
             out[oracle_attr.sid] = oracle_attr.family_counts()
+            buckets = _eu_bucket_summary_dict(oracle_attr.typed_skip_bucket_counts())
+            if buckets:
+                skip_buckets[oracle_attr.sid] = buckets
         for amender, base in corpus:
             attr = attribute_chain(EUChainRef(amender=amender, base=base), archive=archive)
             families: dict[str, int] = {}
@@ -578,12 +606,31 @@ def score_eu_real_corpus(
                 # capability/curation gap (non-billable), not an agreement.
                 families["cnf_unsupported"] = families.get("cnf_unsupported", 0) + 1
             out[attr.sid] = {fam: n for fam, n in sorted(families.items()) if n}
-        return dict(sorted(out.items()))
+            buckets = _eu_bucket_summary_dict(
+                summarize_eu_typed_op_skip_buckets(attr.observations)
+            )
+            if buckets:
+                skip_buckets[attr.sid] = buckets
+        return EUCorpusScore(
+            residuals=dict(sorted(out.items())),
+            typed_skip_bucket_counts=dict(sorted(skip_buckets.items())),
+        )
     finally:
         archive.close()
 
 
-def _eu_baseline_payload(residuals: dict[str, dict[str, int]]) -> dict[str, Any]:
+def score_eu_real_corpus(
+    chains: Iterable[tuple[str, str]] | None = None,
+) -> dict[str, dict[str, int]]:
+    """Score the EU corpus into the historical residual-set gate shape."""
+    return score_eu_real_corpus_account(chains).residuals
+
+
+def _eu_baseline_payload(
+    residuals: dict[str, dict[str, int]],
+    *,
+    typed_skip_bucket_counts: dict[str, dict[str, int]] | None = None,
+) -> dict[str, Any]:
     total = sum(
         count for families in residuals.values() for count in families.values()
     )
@@ -630,6 +677,7 @@ def _eu_baseline_payload(residuals: dict[str, dict[str, int]]) -> dict[str, Any]
         "families": list(RESIDUAL_VERDICT_FAMILIES),
         "fail_families": list(FAIL_FAMILIES),
         "total_residuals": total,
+        "typed_skip_bucket_counts": typed_skip_bucket_counts or {},
         "residuals": residuals,
     }
 
@@ -654,9 +702,14 @@ def write_eu_baseline(
     the EU Cellar Farchive; pass ``residuals`` to write a precomputed set (corpus-free).
     """
     p = path if path is not None else _repo_root() / GATE_EU_BASELINE_PATH
-    payload = _eu_baseline_payload(
-        residuals if residuals is not None else score_eu_real_corpus()
-    )
+    if residuals is None:
+        score = score_eu_real_corpus_account()
+        payload = _eu_baseline_payload(
+            score.residuals,
+            typed_skip_bucket_counts=score.typed_skip_bucket_counts,
+        )
+    else:
+        payload = _eu_baseline_payload(residuals)
     p.write_text(
         json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
     )

@@ -31,6 +31,7 @@ from lawvm.eu.totalization_table import EU_TOTALIZATION_TABLE
 from lawvm.core.phase_result import Finding
 from lawvm.core.replay_lints import build_text_duplication_findings
 from lawvm.core.write_receipt import WriteReceipt, receipt_address_string
+from lawvm.eu.eu_ordering import order_eu_ops
 from lawvm.eu.grafter import parse_eu_regulation_ir
 from lawvm.eu.ops_parser import EUOpsParser, EUOpsParserDiagnostic
 from lawvm.eu.cellar import NoticeRequest, _request_notice
@@ -97,6 +98,14 @@ def _map_address(addr: LegalAddress) -> LegalAddress:
     return LegalAddress(path=mapped, special=addr.special, root=addr.root)
 
 
+EU_REPLAY_UNSUPPORTED_ACTION = "eu_replay_unsupported_action"
+EU_REPLAY_UNKNOWN_ACTION = "eu_replay_unknown_action"
+EU_REPLAY_TEXT_PAYLOAD_MISSING = "eu_replay_text_payload_missing"
+EU_REPLAY_TARGET_NOT_FOUND = "eu_replay_target_not_found"
+EU_REPLAY_PARENT_NOT_FOUND = "eu_replay_parent_not_found"
+EU_REPLAY_INSERT_PARENT_SCOPE_UNRESOLVED = "eu_replay_insert_parent_scope_unresolved"
+
+
 def _append_eu_replay_adjudication(
     adjudications_out: Optional[List[CompileAdjudication]],
     *,
@@ -111,12 +120,12 @@ def _append_eu_replay_adjudication(
     detail_payload: dict[str, Any] = dict(detail or {})
     family = ""
     if kind in {
-        "eu_replay_unsupported_action",
-        "eu_replay_unknown_action",
-        "eu_replay_text_payload_missing",
-        "eu_replay_target_not_found",
-        "eu_replay_parent_not_found",
-        "eu_replay_insert_parent_scope_unresolved",
+        EU_REPLAY_UNSUPPORTED_ACTION,
+        EU_REPLAY_UNKNOWN_ACTION,
+        EU_REPLAY_TEXT_PAYLOAD_MISSING,
+        EU_REPLAY_TARGET_NOT_FOUND,
+        EU_REPLAY_PARENT_NOT_FOUND,
+        EU_REPLAY_INSERT_PARENT_SCOPE_UNRESOLVED,
     }:
         family = "unsupported_or_unresolved_action"
     elif kind == "eu_replay_tree_invariant_violation":
@@ -944,12 +953,12 @@ class EUApplyResult:
 # body, not skips — and are intentionally excluded from this set.
 _EU_SKIP_ADJUDICATION_KINDS = frozenset(
     {
-        "eu_replay_text_payload_missing",
-        "eu_replay_target_not_found",
-        "eu_replay_parent_not_found",
-        "eu_replay_insert_parent_scope_unresolved",
-        "eu_replay_unsupported_action",
-        "eu_replay_unknown_action",
+        EU_REPLAY_TEXT_PAYLOAD_MISSING,
+        EU_REPLAY_TARGET_NOT_FOUND,
+        EU_REPLAY_PARENT_NOT_FOUND,
+        EU_REPLAY_INSERT_PARENT_SCOPE_UNRESOLVED,
+        EU_REPLAY_UNSUPPORTED_ACTION,
+        EU_REPLAY_UNKNOWN_ACTION,
     }
 )
 
@@ -1625,7 +1634,7 @@ class EUReplayPipeline:
 
         Returns an EUReplayResult with:
           - baseline: the parsed base statute (unamended)
-          - ops: the compiled LegalOperations from affecting acts
+          - ops: the ordered LegalOperations from affecting acts
           - replayed: the statute after applying ops via tree_ops
           - timelines: compiled ProvisionTimelines for PIT queries
         """
@@ -1638,7 +1647,9 @@ class EUReplayPipeline:
 
         baseline = parse_eu_regulation_ir(baseline_path, celex=celex)
 
-        ops = self.compile_ops_for_statute(celex)
+        compiled_ops = self.compile_ops_for_statute(celex)
+        ordered = order_eu_ops(compiled_ops)
+        ops = list(ordered.ops)
         adjudications: List[CompileAdjudication] = []
         adjudications.extend(
             _eu_adjudication_from_pipeline_diagnostic(diagnostic)
@@ -1648,6 +1659,7 @@ class EUReplayPipeline:
             _eu_adjudication_from_parser_diagnostic(act_celex, diagnostic)
             for act_celex, diagnostic in self.parser_diagnostics
         )
+        adjudications.extend(ordered.findings)
 
         # Apply ops to produce replayed statute.
         # Route production through the conserved wrapper (AGENTS.md §1.8 +

@@ -8,6 +8,7 @@ receipt; it does not change replay semantics).
 """
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import cast
 
 import pytest
@@ -22,7 +23,13 @@ from lawvm.core.semantic_types import IRNodeKind
 # fixtures match real annex-node typing rather than tripping ty.
 _ANNEX_KIND = cast(IRNodeKind, "annex")
 from lawvm.core.write_receipt import WriteReceipt
-from lawvm.eu.pipeline import apply_eu_ops, apply_eu_ops_conserved, EUApplyResult
+from lawvm.eu.pipeline import (
+    EU_REPLAY_TARGET_NOT_FOUND,
+    EU_REPLAY_TEXT_PAYLOAD_MISSING,
+    EUApplyResult,
+    apply_eu_ops,
+    apply_eu_ops_conserved,
+)
 from lawvm.replay_adjudication import CompileAdjudication
 
 
@@ -87,7 +94,7 @@ def test_apply_eu_ops_conserved_partitions_accepted_and_skipped() -> None:
     skipped = rejected_by_id["eu-replace-no-payload"]
     assert isinstance(skipped, RejectedItem)
     assert skipped.reason  # message forwarded from the bare variant's adjudication
-    assert skipped.reason_code == "eu_replay_text_payload_missing"
+    assert skipped.reason_code == EU_REPLAY_TEXT_PAYLOAD_MISSING
     assert skipped.blocking is False  # EU conserved skips are recorded, not blocking
 
     # Partition is total (no silent drops, no phantoms). Accepted + rejected = input.
@@ -124,7 +131,7 @@ def test_apply_eu_ops_conserved_statute_identical_to_bare_variant() -> None:
     assert bare_statute.body is not baseline.body  # both produced a new body
     # The conserved wrapper preserves the bare variant's adjudication ledger too.
     bare_kinds = {a.kind for a in bare_adjudications}
-    assert "eu_replay_target_not_found" in bare_kinds  # one skip was emitted
+    assert EU_REPLAY_TARGET_NOT_FOUND in bare_kinds  # one skip was emitted
 
 
 def test_apply_eu_ops_conserved_forwards_adjudications_out_when_passed() -> None:
@@ -146,7 +153,7 @@ def test_apply_eu_ops_conserved_forwards_adjudications_out_when_passed() -> None
     result = apply_eu_ops_conserved(baseline, ops, adjudications_out=adjudications)
 
     assert len(adjudications) == 1
-    assert adjudications[0].kind == "eu_replay_target_not_found"
+    assert adjudications[0].kind == EU_REPLAY_TARGET_NOT_FOUND
     assert adjudications[0].op_id == "eu-replace-not-found"
     assert len(result.applied_ops) == 1
     assert len(result.skipped_items) == 1
@@ -235,7 +242,7 @@ def test_apply_eu_ops_conserved_empty_target_label_skips_not_raises() -> None:
     rejected = {item.item.op_id: item for item in result.filter_result.rejected_items}[
         "eu-annex-empty-label"
     ]
-    assert rejected.reason_code == "eu_replay_target_not_found"
+    assert rejected.reason_code == EU_REPLAY_TARGET_NOT_FOUND
     assert rejected.blocking is False
     # The good op still landed a materialized state (the whole set is NOT lost
     # to the one empty-label op — the pre-fix crash signature).
@@ -261,7 +268,7 @@ def test_apply_eu_ops_conserved_empty_label_repeal_skips_not_raises() -> None:
 
     rejected = {item.item.op_id: item for item in result.filter_result.rejected_items}
     assert "eu-annex-empty-repeal" in rejected
-    assert rejected["eu-annex-empty-repeal"].reason_code == "eu_replay_target_not_found"
+    assert rejected["eu-annex-empty-repeal"].reason_code == EU_REPLAY_TARGET_NOT_FOUND
     assert {op.op_id for op in result.filter_result.accepted_items} == {"eu-replace-ok"}
 
 
@@ -362,7 +369,7 @@ def test_annex_op_not_found_still_rejects_when_annex_absent() -> None:
 
     assert list(result.filter_result.accepted_items) == []
     rejected = {i.item.op_id: i for i in result.filter_result.rejected_items}
-    assert rejected["eu-annex-ZZ"].reason_code == "eu_replay_target_not_found"
+    assert rejected["eu-annex-ZZ"].reason_code == EU_REPLAY_TARGET_NOT_FOUND
 
 
 def test_mixed_annex_and_body_ops_partition_correctly() -> None:
@@ -496,7 +503,7 @@ def test_replay_statute_routes_apply_through_conserved_wrapper(monkeypatch, tmp_
     rejected = rejected_items[0]
     assert isinstance(rejected, RejectedItem)
     assert rejected.item.op_id == "eu-replace-not-found"
-    assert rejected.reason_code == "eu_replay_target_not_found"
+    assert rejected.reason_code == EU_REPLAY_TARGET_NOT_FOUND
     assert rejected.reason  # message forwarded from the bare variant's adjudication
     assert rejected.blocking is False  # EU conserved skips are recorded, not blocking
 
@@ -506,6 +513,96 @@ def test_replay_statute_routes_apply_through_conserved_wrapper(monkeypatch, tmp_
     input_ids = {op.op_id for op in synthesized_ops}
     assert accepted_ids | rejected_ids == input_ids
     assert accepted_ids & rejected_ids == set()  # disjoint
+
+
+def test_replay_statute_orders_ops_and_surfaces_same_moment_findings(
+    monkeypatch, tmp_path
+) -> None:
+    """§1.7/§2.9: production replay reaches EU ordering, not just apply.
+
+    The bench/oracle lanes already route through ``order_eu_ops``. This drives
+    the public ``EUReplayPipeline.replay_statute`` lane with two same-date,
+    cross-act replacements for one target, supplied in reverse CELEX order. The
+    production lane must:
+
+    * pass ordered ops to ``apply_eu_ops_conserved``;
+    * expose the ordered ops on ``EUReplayResult.ops``;
+    * preserve the additive same-moment ambiguity finding on adjudications.
+    """
+    from lawvm.eu.pipeline import EUReplayPipeline, EUReplayResult, apply_eu_ops_conserved
+
+    baseline = _baseline_statute()
+    baseline_path = tmp_path / "32000R0000_baseline.xhtml"
+    baseline_path.write_text("<dummy/>")
+    later_celex_op = _replace_op(
+        op_id="act-489-replace-1",
+        sequence=1,
+        section_label="1",
+        text="Text B from act 489.",
+        source_id="32017R0489",
+    )
+    earlier_celex_op = _replace_op(
+        op_id="act-488-replace-1",
+        sequence=1,
+        section_label="1",
+        text="Text A from act 488.",
+        source_id="32017R0488",
+    )
+    synthesized_ops = [
+        replace(later_celex_op, source=OperationSource(statute_id="32017R0489", effective="2017-03-23")),
+        replace(earlier_celex_op, source=OperationSource(statute_id="32017R0488", effective="2017-03-23")),
+    ]
+
+    def fake_compile_ops_for_statute(_self, celex: str):
+        assert celex == "32000R0000"
+        return synthesized_ops
+
+    def fake_parse_eu_regulation_ir(_path: object, celex: str) -> IRStatute:
+        assert celex == "32000R0000"
+        return baseline
+
+    timeline_inputs: list[list[str]] = []
+
+    def fake_compile_timelines(_base: IRStatute, ops, temporal_events=()):
+        timeline_inputs.append([op.op_id for op in ops])
+        return "timelines"
+
+    def fake_materialize_pit(_timelines, as_of: str, base: IRStatute):
+        return base
+
+    monkeypatch.setattr(EUReplayPipeline, "compile_ops_for_statute", fake_compile_ops_for_statute)
+    monkeypatch.setattr("lawvm.eu.pipeline.parse_eu_regulation_ir", fake_parse_eu_regulation_ir)
+    monkeypatch.setattr("lawvm.eu.pipeline.compile_timelines", fake_compile_timelines)
+    monkeypatch.setattr("lawvm.eu.pipeline.materialize_pit", fake_materialize_pit)
+
+    apply_inputs: list[list[str]] = []
+
+    def spy_apply_eu_ops_conserved(base_arg, ops, **kwargs):
+        apply_inputs.append([op.op_id for op in ops])
+        return apply_eu_ops_conserved(base_arg, ops, **kwargs)
+
+    monkeypatch.setattr(
+        "lawvm.eu.pipeline.apply_eu_ops_conserved",
+        spy_apply_eu_ops_conserved,
+    )
+
+    result: EUReplayResult = EUReplayPipeline(cache_dir=tmp_path).replay_statute("32000R0000")
+
+    expected_order = ["act-488-replace-1", "act-489-replace-1"]
+    assert [op.op_id for op in result.ops] == expected_order
+    assert apply_inputs == [expected_order]
+    assert timeline_inputs == [expected_order]
+    same_moment = [
+        adjudication
+        for adjudication in result.adjudications
+        if adjudication.kind == "eu_same_moment_cross_act_incompatible_payload_ambiguous"
+    ]
+    assert len(same_moment) == 1
+    assert same_moment[0].blocking is True
+    assert (
+        same_moment[0].detail["reason_code"]
+        == "same_moment_cross_act_incompatible_payload"
+    )
 
 
 def test_replay_statute_propagates_partial_adjudications_on_apply_raise(
@@ -581,7 +678,7 @@ def test_replay_statute_propagates_partial_adjudications_on_apply_raise(
         if adjudications_out is not None:
             adjudications_out.append(
                 CompileAdjudication(
-                    kind="eu_replay_target_not_found",
+                    kind=EU_REPLAY_TARGET_NOT_FOUND,
                     message=(
                         "Synthesized pre-raise skip adjudication — op target "
                         "not in the baseline body (mirrors bare-apply's per-op "
@@ -592,7 +689,7 @@ def test_replay_statute_propagates_partial_adjudications_on_apply_raise(
                     phase="replay",
                     op_id="eu-replace-then-raise",
                     detail={
-                        "rule_id": "eu_replay_target_not_found",
+                        "rule_id": EU_REPLAY_TARGET_NOT_FOUND,
                         "phase": "replay",
                         "blocking": False,
                     },
@@ -630,7 +727,7 @@ def test_replay_statute_propagates_partial_adjudications_on_apply_raise(
     # emitted by the spy IS on ``result.adjudications``. Pre-fix the local
     # list was discarded by the propagating exception.
     pre_raise = [
-        a for a in result.adjudications if a.kind == "eu_replay_target_not_found"
+        a for a in result.adjudications if a.kind == EU_REPLAY_TARGET_NOT_FOUND
     ]
     assert pre_raise, (
         "result.adjudications does not carry the pre-raise eu_replay_target_"
