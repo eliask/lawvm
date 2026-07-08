@@ -241,6 +241,64 @@ def test_direct_article_point_list_parses_and_applies(tmp_path) -> None:
     assert "old psychoactive substance text" not in replayed_text
 
 
+def test_nested_alpha_points_under_numeric_point_parse_and_apply(tmp_path) -> None:
+    """Real 32012R0923/32016R1185 shape: point 90 contains explicit alpha
+    subpoints, and the amender replaces "points (a), (b) and (c) of point 90"."""
+    base_xml = tmp_path / "base_nested_alpha_points.fmx4.xml"
+    base_xml.write_bytes(
+        b"""<?xml version="1.0"?>
+<ACT><TITLE><TI>base</TI></TITLE><ENACTING.TERMS>
+  <ARTICLE><TI.ART>Article 2</TI.ART>
+    <ALINEA><LIST TYPE="ARAB">
+      <ITEM><NP><NO.P>90.</NO.P><TXT>instrument approach procedures are classified as follows:</TXT><P>
+        <LIST TYPE="alpha">
+          <ITEM><NP><NO.P>(a)</NO.P><TXT>old NPA text;</TXT></NP></ITEM>
+          <ITEM><NP><NO.P>(b)</NO.P><TXT>old APV text;</TXT></NP></ITEM>
+          <ITEM><NP><NO.P>(c)</NO.P><TXT>old PA text;</TXT></NP></ITEM>
+        </LIST>
+      </P></NP></ITEM>
+    </LIST></ALINEA>
+  </ARTICLE>
+</ENACTING.TERMS></ACT>"""
+    )
+    base = parse_eu_regulation_ir(base_xml, celex="32012R0923")
+    point_90 = tree_ops.resolve(
+        base.body,
+        (("section", "2"), ("item", "90")),
+    )
+    assert point_90 is not None
+    assert [(child.kind, child.label) for child in point_90.children] == [
+        (_ITEM, "a"),
+        (_ITEM, "b"),
+        (_ITEM, "c"),
+    ]
+
+    amender = b"""<?xml version="1.0"?>
+<ACT><ENACTING.TERMS>
+  <ARTICLE><TI.ART>Article 1</TI.ART>
+    <ALINEA><P>Implementing Regulation (EU) No 923/2012 is amended as follows:</P>
+      <LIST TYPE="ARAB"><ITEM><NP><NO.P>(1)</NO.P><TXT>Article 2 is amended as follows:</TXT><P>
+        <LIST TYPE="alpha"><ITEM><NP><NO.P>(a)</NO.P><TXT>points (a), (b) and (c) of point 90 are replaced by the following:</TXT><P>
+          <QUOT.S LEVEL="1"><LIST TYPE="alpha">
+            <ITEM><NP><NO.P><QUOT.START/>(a)</NO.P><TXT>new NPA text;</TXT></NP></ITEM>
+            <ITEM><NP><NO.P>(b)</NO.P><TXT>new APV text;</TXT></NP></ITEM>
+            <ITEM><NP><NO.P>(c)</NO.P><TXT>new PA text;<QUOT.END/></TXT></NP></ITEM>
+          </LIST></QUOT.S>
+        </P></NP></ITEM></LIST>
+      </P></NP></ITEM></LIST>
+    </ALINEA></ARTICLE>
+</ENACTING.TERMS></ACT>"""
+    lowered = lower_amending_act(amender, "32016R1185", base_celex="32012R0923")
+    result = apply_eu_ops_conserved(base, list(order_eu_ops(lowered.ops).ops))
+    assert result.skipped_items == ()
+    replaced = tree_ops.resolve(
+        result.statute.body,
+        (("section", "2"), ("item", "90"), ("item", "a")),
+    )
+    assert replaced is not None
+    assert "new NPA text" in replaced.text
+
+
 def test_alinea_point_list_followed_by_p_blocks_materializes_subparagraphs(
     tmp_path,
 ) -> None:

@@ -692,6 +692,15 @@ def _eu_baseline_payload(
             "leaving unscoped lookalike hijacks rejected. This closes 62 more "
             "32010R1093 cnf_unsupported skips and moves 16 temporal mismatch "
             "rows toward the oracle (corpus residual total 987→905), billable "
+            "residuals still 0. 2026-07-08 EU nested alpha point repair: the "
+            "32016R1185 → 32012R0923 witness showed that 'points (a), (b) and "
+            "(c) of point 90' lowered as top-level Article 2 points a/b/c, while "
+            "the base FMX4 encoded those alpha children under numeric point 90. "
+            "The grafter now materializes explicitly encoded nested alpha LIST "
+            "children under their numeric point, and the NP grammar carries the "
+            "'of point 90' parent context into the lowered target. This closes "
+            "the remaining three 32012R0923 target_kind_label_absent skips "
+            "(cnf_unsupported 10→7; corpus residual total 905→902), billable "
             "residuals still 0. Regenerate "
             "with `uv run python "
             "-m lawvm.core.ctsf_gate --update-eu-baseline` (needs the EU Cellar "
@@ -1359,9 +1368,16 @@ def uk_anchor_corpus_available() -> bool:
     stays corpus-free and always runs.
     """
     try:
+        from farchive import Farchive
+
         from lawvm.tools.uk_anchor_manifest import _default_db
 
-        return _default_db().exists()
+        path = _default_db()
+        if not path.exists():
+            return False
+        archive = Farchive(str(path), readonly=True)
+        archive.close()
+        return True
     # An availability PROBE: any archive-open failure legitimately means "corpus
     # absent" (tests skip; the CLI reports the frozen baseline).
     # lawvm-failloud: corpus-availability probe; absence is the answer, not an error

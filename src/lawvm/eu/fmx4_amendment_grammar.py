@@ -1113,6 +1113,43 @@ def _parse_label_list(raw: str) -> Optional[list[str]]:
     return toks
 
 
+def _parse_points_of_point_replace(rem: str) -> Optional[tuple[list[str], str]]:
+    """Parse "points (a), (b) and (c) of point 90 are replaced ..."."""
+    text = rem.strip()
+    folded = text.casefold()
+    if folded.startswith("points "):
+        label_start = len("points ")
+    elif folded.startswith("point "):
+        label_start = len("point ")
+    else:
+        return None
+    marker = " of point "
+    marker_at = folded.find(marker, label_start)
+    if marker_at < 0:
+        return None
+    labels = _parse_label_list(text[label_start:marker_at])
+    if labels is None:
+        return None
+    after_marker = text[marker_at + len(marker) :].lstrip()
+    parent_chars: list[str] = []
+    for ch in after_marker:
+        if ch.isalnum():
+            parent_chars.append(ch)
+            continue
+        break
+    parent = "".join(parent_chars)
+    if not parent or len(parent) > 6:
+        return None
+    tail = after_marker[len(parent) :].lstrip().casefold()
+    if not (
+        tail.startswith("is replaced by the following")
+        or tail.startswith("are replaced by the following")
+        or tail.startswith("shall be replaced by the following")
+    ):
+        return None
+    return labels, parent
+
+
 def _extract_np_context(
     text: str, context: tuple[tuple[str, str], ...]
 ) -> tuple[tuple[tuple[str, str], ...], str]:
@@ -1425,6 +1462,25 @@ def _lower_np_leaf(
         ]
 
     # ---- REPLACE family -----------------------------------------------------
+    points_of_point = _parse_points_of_point_replace(rem)
+    if points_of_point is not None:
+        if not ctx:
+            return None
+        labels, parent = points_of_point
+        pairs = _np_payloads_for_labels(np, "point", labels)
+        if pairs is None:
+            return _missing_payload("point")
+        return [
+            _mk(
+                StructuralAction.REPLACE,
+                ctx + (("point", parent), ("point", label)),
+                _payload_node(IRNodeKind.ITEM, label, text),
+                "EU_FMX4.SUBART_POINT_REPLACE",
+                "point_replace",
+            )
+            for label, text in pairs
+        ]
+
     m = _RE_NPL_KIND_REPLACE.match(rem)
     if m:
         kind = m.group("kind").lower().rstrip("s")

@@ -474,6 +474,37 @@ def test_bare_point_label_not_swallowed_as_whole_article_replace() -> None:
     )
 
 
+def test_points_of_point_replace_carries_parent_point_context() -> None:
+    """Real 32016R1185 shape: "points (a), (b) and (c) of point 90" targets
+    child points under point 90, not Article 2 top-level points."""
+    fmx = b"""<?xml version="1.0"?>
+<ACT><ENACTING.TERMS>
+  <ARTICLE><TI.ART>Article 1</TI.ART>
+    <ALINEA><P>Implementing Regulation (EU) No 923/2012 is amended as follows:</P>
+      <LIST TYPE="ARAB"><ITEM><NP><NO.P>(1)</NO.P><TXT>Article 2 is amended as follows:</TXT><P>
+        <LIST TYPE="alpha"><ITEM><NP><NO.P>(a)</NO.P><TXT>points (a), (b) and (c) of point 90 are replaced by the following:</TXT><P>
+          <QUOT.S LEVEL="1"><LIST TYPE="alpha">
+            <ITEM><NP><NO.P><QUOT.START/>(a)</NO.P><TXT>new NPA text;</TXT></NP></ITEM>
+            <ITEM><NP><NO.P>(b)</NO.P><TXT>new APV text;</TXT></NP></ITEM>
+            <ITEM><NP><NO.P>(c)</NO.P><TXT>new PA text;<QUOT.END/></TXT></NP></ITEM>
+          </LIST></QUOT.S>
+        </P></NP></ITEM></LIST>
+      </P></NP></ITEM></LIST>
+    </ALINEA></ARTICLE>
+</ENACTING.TERMS></ACT>"""
+    r = lower_amending_act(fmx, "32016R1185", base_celex="32012R0923")
+    assert [str(op.target) for op in r.ops] == [
+        "article:2/point:90/point:a",
+        "article:2/point:90/point:b",
+        "article:2/point:90/point:c",
+    ]
+    assert [op.payload.label for op in r.ops if op.payload is not None] == [
+        "a",
+        "b",
+        "c",
+    ]
+
+
 def test_non_amending_provision_typed_not_gap() -> None:
     """An amender's OWN substantive article (definitions, duties) is typed
     non_amending_provision -- it cannot touch the base act."""

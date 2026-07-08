@@ -99,6 +99,70 @@ def _point_items(el: ET.Element[str]) -> list[tuple[str, str]]:
     return out
 
 
+def _point_item_nodes(el: ET.Element[str]) -> list[IRNode]:
+    """Materialize directly encoded point nodes under ``el``.
+
+    A numeric definition point can explicitly contain alpha subpoints
+    (``LIST TYPE="alpha"``) in its own ``NP``. Those subpoints are legal
+    coordinates for instructions such as "points (a), (b) and (c) of point 90".
+    Other nested list families stay in the parent text until promoted by their
+    own witness.
+    """
+    lists: list[ET.Element[str]]
+    if el.tag == "LIST":
+        lists = [el]
+    else:
+        lists = [c for c in el if c.tag == "LIST"]
+    out: list[IRNode] = []
+    for lst in lists:
+        for item in lst.findall("ITEM"):
+            np = item.find("NP")
+            if np is None:
+                continue
+            no = np.find("NO.P")
+            marker = _normalize_text("".join(no.itertext())) if no is not None else ""
+            m = re.match(r"^\(?([0-9]{1,3}[a-z]{0,2}|[a-z]{1,3}|[ivxlcdm]{1,6})\)?[).]?", marker, re.IGNORECASE)  # lawvm-regex: witness_only reads the list point's own NO.P marker for the point coordinate, not a semantic recognizer over statute text
+            label = m.group(1) if m else ""
+            if not label:
+                continue
+            nested_alpha_lists: list[ET.Element[str]] = []
+            for child in np:
+                nested_alpha_lists.extend(
+                    grand
+                    for grand in child
+                    if grand.tag == "LIST"
+                    and (grand.attrib.get("TYPE") or "").casefold() == "alpha"
+                )
+            if not nested_alpha_lists:
+                out.append(
+                    IRNode(
+                        kind=cast(IRNodeKind, "item"),
+                        label=label,
+                        text=_element_text(np),
+                    )
+                )
+                continue
+            text_parts: list[str] = []
+            for child in np:
+                if any(grand in nested_alpha_lists for grand in child):
+                    break
+                text_parts.append(_element_text(child))
+            children = tuple(
+                IRNode(kind=cast(IRNodeKind, "item"), label=pt_label, text=pt_text)
+                for nested in nested_alpha_lists
+                for pt_label, pt_text in _point_items(nested)
+            )
+            out.append(
+                IRNode(
+                    kind=cast(IRNodeKind, "item"),
+                    label=label,
+                    text=_normalize_text(" ".join(text_parts)),
+                    children=children,
+                )
+            )
+    return out
+
+
 def _intro_text(el: ET.Element[str]) -> str:
     """Text of ``el`` BEFORE its first ``<LIST>`` (a point-list's lead-in prose)."""
     parts: list[str] = []
@@ -150,10 +214,7 @@ def _block_units(el: ET.Element[str]) -> list[IRNode]:
         intro = _intro_text(el)
         if intro:
             units.append(IRNode(kind=cast(IRNodeKind, "p"), text=intro))
-        for pt_label, pt_text in point_items:
-            units.append(
-                IRNode(kind=cast(IRNodeKind, "item"), label=pt_label, text=pt_text)
-            )
+        units.extend(_point_item_nodes(el))
         trailing = _trailing_text(el)
         if trailing:
             units.append(IRNode(kind=cast(IRNodeKind, "p"), text=trailing))
@@ -477,10 +538,7 @@ class EUIRGrafter:
                 children.append(IRNode(kind=cast(IRNodeKind, "p"), text=text))
 
         def _emit_points(block: ET.Element[str]) -> None:
-            for pt_label, pt_text in _point_items(block):
-                children.append(
-                    IRNode(kind=cast(IRNodeKind, "item"), label=pt_label, text=pt_text)
-                )
+            children.extend(_point_item_nodes(block))
 
         for child in el:
             if child.tag == "NO.PARAG":

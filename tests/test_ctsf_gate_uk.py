@@ -25,6 +25,7 @@ import json
 
 import pytest
 
+import lawvm.tools.uk_anchor_manifest as uk_anchor_manifest
 from lawvm.core.ctsf_gate import (
     FAIL_FAMILIES,
     GATE_UK_BASELINE_PATH,
@@ -62,6 +63,14 @@ def test_uk_corpus_sids_are_frozen_and_sorted():
     assert REAL_ANCHOR_UK_CORPUS_SIDS
     assert list(REAL_ANCHOR_UK_CORPUS_SIDS) == sorted(REAL_ANCHOR_UK_CORPUS_SIDS)
     assert len(set(REAL_ANCHOR_UK_CORPUS_SIDS)) == len(REAL_ANCHOR_UK_CORPUS_SIDS)
+
+
+def test_uk_availability_requires_openable_archive(monkeypatch, tmp_path):
+    broken_archive = tmp_path / "uk_legislation.farchive"
+    broken_archive.write_text("not sqlite", encoding="utf-8")
+    monkeypatch.setattr(uk_anchor_manifest, "_default_db", lambda: broken_archive)
+
+    assert uk_anchor_corpus_available() is False
 
 
 def test_committed_uk_baseline_declares_corpus():

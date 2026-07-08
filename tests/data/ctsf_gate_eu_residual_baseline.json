@@ -30,7 +30,7 @@
     "replay_bug",
     "unknown"
   ],
-  "total_residuals": 905,
+  "total_residuals": 902,
   "typed_skip_bucket_counts": {
     "32008R0692": {
       "annex_lane_target_absent": 2,
@@ -49,9 +49,6 @@
     "32010R1093": {
       "parent_scope_unresolved": 3,
       "target_kind_label_absent": 11
-    },
-    "32012R0923": {
-      "target_kind_label_absent": 3
     },
     "32017R1576->32014R0540": {
       "annex_lane_target_absent": 1
@@ -87,7 +84,7 @@
       "temporal_mismatch": 546
     },
     "32012R0923": {
-      "cnf_unsupported": 10,
+      "cnf_unsupported": 7,
       "temporal_mismatch": 35
     },
     "32017R1576->32014R0540": {
