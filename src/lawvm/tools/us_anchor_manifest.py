@@ -410,6 +410,7 @@ REAL_ANCHOR_US_CORPUS_WINDOWS: tuple[str, ...] = (
     "title35:2010->2012",  # clean (agr=33) + oracle_editorial(16) + cnf_unsupported(17) + temporal(deferred=42) — patents/AIA
     "title35:2020->2022",  # clean (agr=3) + oracle_editorial_pathology(1) — patents
     "title39:2022->2023",  # pure clean (0 residual) — postal service
+    "title40:2018->2020",  # clean (agr=4) + oracle_editorial(1) + cnf_unsupported(4) — public buildings
     "title40:2022->2023",  # pure clean (agr=1, 0 residual) — public buildings
     "title47:2023->2024",  # pure clean (agr=1, 0 residual) — telecommunications (non-positive)
     "title48:2022->2023",  # clean (agr=1) + cnf_unsupported(1) — territories (non-positive)

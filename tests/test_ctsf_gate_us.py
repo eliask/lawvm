@@ -248,17 +248,14 @@ def test_us_excluded_billable_windows_convict():
     §133/§148/§515's compound-chain empty-materializations to source-truncated
     oracle_suspect / missing_source, then 7 after §151's quoted strike-at-end),
     title50:2022->2023 (8 after §3919's terminal-period-strike courtesy space was
-    materialized and later F3 cleanup),
-    and the currently-demoted zero-corpus anchor title40:2018->2020. The residual
-    counts are the DEFERRED_ROADMAP F2-F3 backlog plus demoted corpus-frontier
-    windows; they still convict (billable > 0), which is what this test pins. If
-    a window's replay was fully fixed (0 billable), promote it into
-    REAL_ANCHOR_US_CORPUS_WINDOWS (a preregistered move)."""
+    materialized and later F3 cleanup). The residual counts are the
+    DEFERRED_ROADMAP F2-F3 backlog; they still convict (billable > 0), which is
+    what this test pins. If a window's replay was fully fixed (0 billable),
+    promote it into REAL_ANCHOR_US_CORPUS_WINDOWS (a preregistered move)."""
     from lawvm.tools.us_anchor_manifest import attribute_window
 
     for key in (
         "title23:2020->2022",
-        "title40:2018->2020",
         "title50:2022->2023",
     ):
         attr = attribute_window(key)

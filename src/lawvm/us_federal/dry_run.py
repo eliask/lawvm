@@ -352,6 +352,11 @@ _EDITORIAL_QUOTE_CHARS = "“”‘’„‚«»\"'"
 # stripped, the published Code inserts a courtesy space after the introductory
 # dash/colon (``if— (1) ...``). Collapse that boundary space for classification.
 _EDITORIAL_DASH_PAREN_SPACE_RE = re.compile(r"([—–:])\s+\(")
+# OLRC dash-to-word courtesy space (40:6121 witness): enacted through-tail
+# replacement joins the heading continuation directly after an em dash
+# (``Firearms—Duties``); the Code renders a courtesy space
+# (``Firearms— Duties``). Projection-only; never mutates materialized text.
+_EDITORIAL_DASH_WORD_SPACE_RE = re.compile(r"([—–])\s+(?=[A-Z])")
 # OLRC quotedContent block-boundary spacing (AIA chapter 32 witness): USLM wraps
 # inserted subsection/list markers in quotes, so after quote stripping the faithful
 # materialization has ``review.(b)`` or ``321;(2)`` while the Code surface uses
@@ -457,6 +462,7 @@ def _norm_editorial(text: str) -> str:
     """
     stripped = text.translate({ord(ch): None for ch in _EDITORIAL_QUOTE_CHARS})
     respaced = _EDITORIAL_DASH_PAREN_SPACE_RE.sub(r"\1(", stripped)
+    respaced = _EDITORIAL_DASH_WORD_SPACE_RE.sub(r"\1", respaced)
     respaced = _EDITORIAL_PUNCT_PAREN_MARKER_SPACE_RE.sub(r"\1\2", respaced)
     respaced = _EDITORIAL_INSERT_AFTER_ANCHOR_SPACE_RE.sub(r"\1", respaced)
     respaced = _EDITORIAL_SEMICOLON_AND_SPACE_RE.sub(";", respaced)
@@ -2776,6 +2782,52 @@ def _materialize_one(
                         if operation.text_patch is not None
                         else None
                     ) or match_text
+                    if RULE_STRIKE_INSERT_THROUGH_TAIL in operation.provenance_tags:
+                        subtree_text = _running_subtree_text(
+                            before_section,
+                            operation.target,
+                            before_text,
+                            node_overrides,
+                            op_id=op_id,
+                            recoveries=recoveries,
+                        )
+                        if subtree_text is not None and _token_in_text(
+                            subtree_text, match_text
+                        ):
+                            new_subtree_text = _apply_text_patch_with_tail_dispatch(
+                                operation,
+                                subtree_text,
+                                match_text=match_text,
+                                replacement=replacement or "",
+                                count=count,
+                            )
+                            if new_subtree_text is not None:
+                                materialized = before_text.replace(
+                                    subtree_text, new_subtree_text, 1
+                                )
+                                if node_overrides is not None:
+                                    target_segments = _subsection_segments(
+                                        operation.target
+                                    )
+                                    for key in list(node_overrides):
+                                        if (
+                                            key == target_segments
+                                            or key[: len(target_segments)]
+                                            == target_segments
+                                        ):
+                                            del node_overrides[key]
+                                    _index_node_text(
+                                        new_subtree_text,
+                                        target_segments,
+                                        node_overrides,
+                                        as_root=True,
+                                    )
+                                    _refresh_sibling_overrides(
+                                        node_overrides,
+                                        target_segments,
+                                        running=materialized,
+                                    )
+                                return (materialized, "", "")
                     return _refuse_absent_text_target(
                         operation,
                         absent_kind="through end anchor",

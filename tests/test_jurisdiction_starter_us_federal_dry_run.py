@@ -32,6 +32,7 @@ from lawvm.core.ir import (
 )
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction, TextPatchKindEnum
 from lawvm.us_federal.amendatory import (
+    RULE_STRIKE_INSERT_THROUGH_TAIL,
     SENTENCE_ANCHOR_INSERT_FINDING_RULE_ID,
     SENTENCE_STRIKE_FINDING_RULE_ID,
     UNDESIGNATED_PARAGRAPH_OCCURRENCE_PROVENANCE,
@@ -2640,6 +2641,64 @@ def test_subtree_last_occurrence_patch_edits_rightmost_descendant_once() -> None
     assert "(2) The plan shall take effect." in materialized
 
 
+def test_through_tail_patch_can_span_target_heading_into_descendant() -> None:
+    # PL 116-75 §2(2)(B) / 40:6121 witness: the left anchor lives in subsection
+    # (b)'s heading, while the right anchor "Duties under" lives in paragraph
+    # (1). The bounded through-tail op is target-subtree scoped, not just the
+    # immediate node's own text and not the whole section.
+    section = synthetic_usc_section(
+        title=40,
+        section="6121",
+        text=(
+            "(a) Authority.—The Marshal may act. "
+            "(b) Additional Requirements.— "
+            "(1) Authorization to carry firearms.—Duties under subsection "
+            "shall be authorized in writing. "
+            "(2) Written notice shall be retained."
+        ),
+    )
+    nodes, _ = split_statutory_subsections(section)
+    node_overrides: dict[tuple[tuple[str, str], ...], str] = {
+        _subsection_segments(n.address): n.text for n in nodes
+    }
+    op = LegalOperation(
+        op_id="through-subtree",
+        sequence=1,
+        action=StructuralAction.TEXT_PATCH,
+        target=LegalAddress(
+            path=(("title", "40"), ("section", "6121"), ("subsection", "b"))
+        ),
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(
+                match_text="Additional Requirements",
+                end_match_text="Duties under",
+            ),
+            replacement="Authorization To Carry Firearms—Duties under",
+        ),
+        provenance_tags=("us_amendatory", RULE_STRIKE_INSERT_THROUGH_TAIL),
+    )
+
+    outcome = _materialize_one(
+        op,
+        section.statutory_text,
+        before_section=section,
+        node_overrides=node_overrides,
+    )
+
+    assert not isinstance(outcome, USDryRunRefusal)
+    materialized, signal_rule_id, disposition = outcome
+    assert signal_rule_id == ""
+    assert disposition == ""
+    assert "Additional Requirements Related to Subsection" not in materialized
+    assert "(1) Authorization to carry firearms.—" not in materialized
+    assert (
+        "(b) Authorization To Carry Firearms—Duties under subsection "
+        "shall be authorized in writing."
+    ) in materialized
+    assert "(2) Written notice shall be retained." in materialized
+
+
 def test_section_level_insert_with_plain_text_payload_still_materializes() -> None:
     # An INSERT whose target IS the section (add-at-end of the section body) remains
     # representable: the payload is appended. Only sub-section targets are refused.
@@ -3032,6 +3091,17 @@ def test_norm_editorial_undoes_olrc_quote_and_dash_paren_spacing() -> None:
         published
     )
     assert _norm_editorial(enacted) == _norm_editorial(published)
+
+
+def test_norm_editorial_undoes_olrc_dash_word_courtesy_space() -> None:
+    # 40:6121 witness: source-faithful through-tail materialization has
+    # ``Firearms—Duties``; OLRC inserts a courtesy space after the em dash.
+    faithful = "Authorization To Carry Firearms—Duties under subsection"
+    published = "Authorization To Carry Firearms— Duties under subsection"
+    other = "Authorization To Carry Firearms—Other duties under subsection"
+
+    assert _norm_editorial(faithful) == _norm_editorial(published)
+    assert _norm_editorial(faithful) != _norm_editorial(other)
 
 
 def test_norm_editorial_undoes_quoted_block_marker_spacing() -> None:
