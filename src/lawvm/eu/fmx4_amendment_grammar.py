@@ -1183,6 +1183,36 @@ def _parse_point_of_article_repeal(instr: str) -> Optional[tuple[str, str]]:
     return article, labels[0]
 
 
+def _parse_paragraph_of_article_replace(instr: str) -> Optional[tuple[str, str]]:
+    """Parse "Paragraph (1) of Article 4 ... is replaced" as paragraph replace."""
+    text = instr.strip()
+    folded = text.casefold()
+    if not folded.startswith("paragraph "):
+        return None
+    marker = " of article "
+    marker_at = folded.find(marker)
+    if marker_at < 0:
+        return None
+    paragraph_raw = text[len("paragraph ") : marker_at].strip()
+    labels = _parse_label_list(paragraph_raw)
+    if labels is None or len(labels) != 1:
+        return None
+    after_marker = text[marker_at + len(marker) :].lstrip()
+    article_chars: list[str] = []
+    for ch in after_marker:
+        if ch.isalnum():
+            article_chars.append(ch)
+            continue
+        break
+    article = "".join(article_chars)
+    if not article or len(article) > 6:
+        return None
+    tail = after_marker[len(article) :].casefold()
+    if " replaced by the following" not in tail and " replaced by:" not in tail:
+        return None
+    return article, labels[0]
+
+
 def _extract_np_context(
     text: str, context: tuple[tuple[str, str], ...]
 ) -> tuple[tuple[tuple[str, str], ...], str]:
@@ -2309,6 +2339,31 @@ def _lower_one_instruction(
     # Order matters (most specific first). Point-level edits are checked before
     # paragraph- and whole-article rules so "in Article N, point (b) ..." is not
     # captured by the broader patterns.
+    paragraph_of_article_replace = _parse_paragraph_of_article_replace(instr)
+    if paragraph_of_article_replace is not None:
+        art, paragraph = paragraph_of_article_replace
+        block = _quoted_block_text(article)
+        if block is None:
+            diagnostics.append(
+                AmendmentGrammarDiagnostic(
+                    rule_id="eu_fmx4_grammar_paragraph_of_article_replace_missing_payload",
+                    reason="paragraph-of-article replace had no QUOT block payload",
+                    source_excerpt=raw,
+                )
+            )
+            return None
+        path = (("article", art), ("paragraph", paragraph))
+        return LegalOperation(
+            op_id=f"{amending_celex}-{seq}",
+            sequence=seq,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=path),
+            payload=_payload_node(IRNodeKind.PARAGRAPH, paragraph, block),
+            source=src,
+            witness_rule_id="EU_FMX4.SUBART_PARAGRAPH_REPLACE",
+            provenance_tags=("ir_apply_class=subsection_replace",),
+        )
+
     point_of_article_repeal = _parse_point_of_article_repeal(instr)
     if point_of_article_repeal is not None:
         art, point = point_of_article_repeal

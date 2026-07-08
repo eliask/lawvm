@@ -358,6 +358,74 @@ def test_point_of_article_repeal_preserves_host_for_later_insert(tmp_path) -> No
     assert "point j" in inserted.text
 
 
+def test_paragraph_of_article_replace_preserves_article_for_later_point_insert(
+    tmp_path,
+) -> None:
+    """Real 32009R1284 closure shape: 32011R1295 replaces Article 4 paragraph 1,
+    then 32013R0049 inserts points g/h into that paragraph. The paragraph
+    replacement must not delete Article 4 or flatten away the paragraph parent."""
+    base_xml = tmp_path / "base_paragraph_replace_then_insert.fmx4.xml"
+    base_xml.write_bytes(
+        b"""<?xml version="1.0"?>
+<ACT><TITLE><TI>base</TI></TITLE><ENACTING.TERMS>
+  <ARTICLE><TI.ART>Article 4</TI.ART>
+    <PARAG><NO.PARAG>1.</NO.PARAG><ALINEA><P>May authorise:</P><LIST TYPE="alpha">
+      <ITEM><NP><NO.P>(a)</NO.P><TXT>point a;</TXT></NP></ITEM>
+      <ITEM><NP><NO.P>(f)</NO.P><TXT>point f.</TXT></NP></ITEM>
+    </LIST></ALINEA></PARAG>
+    <PARAG><NO.PARAG>2.</NO.PARAG><ALINEA>No retroactive authorisations.</ALINEA></PARAG>
+  </ARTICLE>
+</ENACTING.TERMS></ACT>"""
+    )
+    base = parse_eu_regulation_ir(base_xml, celex="32009R1284")
+    replace_paragraph = lower_amending_act(
+        b"""<?xml version="1.0"?>
+<ACT><ENACTING.TERMS>
+  <ARTICLE><TI.ART>Article 1</TI.ART>
+    <ALINEA>Paragraph (1) of Article 4 of Regulation (EU) No 1284/2009 is replaced by the following:</ALINEA>
+    <QUOT.S><P><QUOT.START/>1. Replacement paragraph text.<QUOT.END/></P></QUOT.S>
+  </ARTICLE>
+</ENACTING.TERMS></ACT>""",
+        "32011R1295",
+        base_celex="32009R1284",
+    )
+    insert_points = lower_amending_act(
+        b"""<?xml version="1.0"?>
+<ACT><ENACTING.TERMS>
+  <ARTICLE><TI.ART>Article 1</TI.ART>
+    <ALINEA><P>Article 4 is amended as follows:</P><LIST TYPE="alpha">
+      <ITEM><NP><NO.P>(a)</NO.P><TXT>in paragraph 1, the following points are added:</TXT>
+        <QUOT.S><LIST TYPE="alpha">
+          <ITEM><NP><NO.P><QUOT.START/>(g)</NO.P><TXT>point g;</TXT></NP></ITEM>
+          <ITEM><NP><NO.P>(h)</NO.P><TXT>point h.<QUOT.END/></TXT></NP></ITEM>
+        </LIST></QUOT.S>
+      </NP></ITEM>
+    </LIST></ALINEA>
+  </ARTICLE>
+</ENACTING.TERMS></ACT>""",
+        "32013R0049",
+        base_celex="32009R1284",
+    )
+    ops = [*replace_paragraph.ops, *insert_points.ops]
+    result = apply_eu_ops_conserved(base, list(order_eu_ops(ops).ops))
+
+    assert result.skipped_items == ()
+    article_4 = tree_ops.resolve(result.statute.body, (("section", "4"),))
+    assert article_4 is not None
+    paragraph_1 = tree_ops.resolve(
+        result.statute.body,
+        (("section", "4"), ("paragraph", "1")),
+    )
+    assert paragraph_1 is not None
+    assert "Replacement paragraph text" in paragraph_1.text
+    inserted = tree_ops.resolve(
+        result.statute.body,
+        (("section", "4"), ("paragraph", "1"), ("item", "g")),
+    )
+    assert inserted is not None
+    assert "point g" in inserted.text
+
+
 def test_alinea_point_list_followed_by_p_blocks_materializes_subparagraphs(
     tmp_path,
 ) -> None:
