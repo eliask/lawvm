@@ -90,7 +90,14 @@ fi
 ALL_BOUNDED_SHARDS="$(./scripts/test_shard.sh expand $DEFAULT_SHARD_GROUPS | tr '\n' ' ')"
 
 if [[ ${#AFFECTED_PATHS[@]} -gt 0 ]]; then
-    mapfile -t AFFECTED_SHARDS < <(./scripts/test_shard.sh affected "${AFFECTED_PATHS[@]}")
+    if ! AFFECTED_OUTPUT="$(./scripts/test_shard.sh affected "${AFFECTED_PATHS[@]}")"; then
+        echo "$AFFECTED_OUTPUT" >&2
+        exit 2
+    fi
+    mapfile -t AFFECTED_SHARDS <<< "$AFFECTED_OUTPUT"
+    if [[ ${#AFFECTED_SHARDS[@]} -eq 1 && -z "${AFFECTED_SHARDS[0]}" ]]; then
+        AFFECTED_SHARDS=()
+    fi
     if [[ "${AFFECTED_SHARDS[*]}" == "all" ]]; then
         SHARDS="$ALL_BOUNDED_SHARDS"
     else
@@ -104,8 +111,12 @@ else
     SHARDS="$ALL_BOUNDED_SHARDS"
 fi
 SHARDS="${SHARDS//,/ }"
-mapfile -t EXPANDED_SHARDS < <(./scripts/test_shard.sh expand $SHARDS)
-SHARDS="${EXPANDED_SHARDS[*]}"
+if [[ -n "$SHARDS" ]]; then
+    mapfile -t EXPANDED_SHARDS < <(./scripts/test_shard.sh expand $SHARDS)
+    SHARDS="${EXPANDED_SHARDS[*]}"
+else
+    SHARDS=""
+fi
 PYTEST_SELECTORS=()
 if [[ ${#AFFECTED_PATHS[@]} -gt 0 ]]; then
     only_test_paths=1
@@ -171,7 +182,11 @@ echo ""
 echo "=== [5/6] bounded pytest shards ==="
 if [[ ${#AFFECTED_PATHS[@]} -gt 0 ]]; then
     echo "Affected paths: ${AFFECTED_PATHS[*]}"
-    echo "Selected shards: $SHARDS"
+    if [[ -n "$SHARDS" ]]; then
+        echo "Selected shards: $SHARDS"
+    else
+        echo "Selected shards: (none)"
+    fi
 fi
 for shard in $SHARDS; do
     echo ""
