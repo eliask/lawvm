@@ -511,6 +511,45 @@ def apply_eu_ops(
             )
             return ("supplements", in_supp)
 
+        def _resolve_insert_parent_path(
+            parent_path: list[tuple[str, str]]
+        ) -> Optional[TreePath]:
+            """Resolve an INSERT parent, allowing anonymous wrapper prefixes.
+
+            EU FMX4 bodies can wrap articles in structural containers that the
+            source instruction does not name (for example ``DIVISION``). Exact
+            ``tree_ops.resolve(body, section:8)`` therefore misses a real
+            ``division:/section:8`` parent. Bind only when the requested parent
+            path is a unique suffix under its stated first scope, so unrelated
+            lookalike parents remain rejected by the existing scope diagnostics.
+            """
+            exact = tree_ops.resolve(body, parent_path)
+            if exact is not None:
+                return tuple(parent_path)
+            if not parent_path:
+                return ()
+            first_kind, first_label = parent_path[0]
+            last_kind, last_label = parent_path[-1]
+            if not last_label:
+                return None
+            if len(parent_path) == 1:
+                candidates = tree_ops.find_all(body, last_kind, last_label)
+            else:
+                candidates = tree_ops.find_all(
+                    body,
+                    last_kind,
+                    last_label,
+                    scope_kind=first_kind,
+                    scope_label=first_label,
+                )
+            suffix = tuple(parent_path)
+            matches = [
+                tuple(candidate)
+                for candidate in candidates
+                if len(candidate) >= len(suffix) and tuple(candidate[-len(suffix) :]) == suffix
+            ]
+            return matches[0] if len(matches) == 1 else None
+
         if action == StructuralAction.REPLACE.value:
             if op.payload is None:
                 # θ: (REPLACE, payload_missing) — table-sourced Reject (§2.3).
@@ -672,7 +711,8 @@ def apply_eu_ops(
                 parent_path = path_steps[:-1]
                 parent_kind = parent_path[-1][0]
                 parent_label = parent_path[-1][1]
-                if tree_ops.resolve(body, parent_path) is None:
+                resolved_parent_path = _resolve_insert_parent_path(parent_path)
+                if resolved_parent_path is None:
                     unscoped_parent_candidates = tree_ops.find_all(body, parent_kind, parent_label)
                     if unscoped_parent_candidates and len(parent_path) > 1:
                         # θ: (INSERT, parent_scope_unresolved) — table-sourced
@@ -725,8 +765,8 @@ def apply_eu_ops(
                     skipped += 1
                     return MaterializeResult(new_state=body, applied=False)
             else:
-                parent_path = []  # insert at body level
-            body = tree_ops.insert_sorted(body, parent_path, op.payload)
+                resolved_parent_path = ()  # insert at body level
+            body = tree_ops.insert_sorted(body, resolved_parent_path, op.payload)
             _mark_applied()
 
         elif action in ("text_replace", "text_repeal", "renumber"):

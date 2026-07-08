@@ -451,6 +451,90 @@ def test_apply_eu_ops_inserts_under_exact_scoped_parent() -> None:
     assert chapter_2_section.children == (IRNode(kind=IRNodeKind.ITEM, label="9", text="inserted"),)
 
 
+def test_apply_eu_ops_inserts_under_article_wrapped_by_division() -> None:
+    """Real 32010R1093/32013R1022 shape: Article 8 is wrapped in an unnamed
+    DIVISION that the amendment address does not name."""
+    baseline = IRStatute(
+        statute_id="32010R1093",
+        title="baseline",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.DIVISION,
+                    label="",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="8", text="article 8"),),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+    ops = [
+        LegalOperation(
+            op_id="32013R1022-1.11",
+            sequence=1,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("article", "8"), ("paragraph", ""))),
+            payload=IRNode(kind=IRNodeKind.PARAGRAPH, label="1a", text="inserted"),
+            source=OperationSource(statute_id="32013R1022"),
+        ),
+    ]
+
+    replayed = apply_eu_ops(baseline, ops, adjudications_out=adjudications)
+
+    assert adjudications == []
+    article_8 = replayed.body.children[0].children[0]
+    assert article_8.children == (
+        IRNode(kind=IRNodeKind.PARAGRAPH, label="1a", text="inserted"),
+    )
+
+
+def test_apply_eu_ops_inserts_under_nested_parent_wrapped_by_division() -> None:
+    """Real 32010R1093/32013R1022 shape: Article 29 paragraph 2 exists under
+    an unnamed DIVISION prefix, so exact body-root resolution is too strict."""
+    baseline = IRStatute(
+        statute_id="32010R1093",
+        title="baseline",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.DIVISION,
+                    label="",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SECTION,
+                            label="29",
+                            children=(IRNode(kind=IRNodeKind.PARAGRAPH, label="2"),),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+    ops = [
+        LegalOperation(
+            op_id="32013R1022-1.24",
+            sequence=1,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(
+                path=(("article", "29"), ("paragraph", "2"), ("subparagraph", ""))
+            ),
+            payload=IRNode(kind=IRNodeKind.SUBPARAGRAPH, label="2a", text="inserted"),
+            source=OperationSource(statute_id="32013R1022"),
+        ),
+    ]
+
+    replayed = apply_eu_ops(baseline, ops, adjudications_out=adjudications)
+
+    assert adjudications == []
+    paragraph_2 = replayed.body.children[0].children[0].children[0]
+    assert paragraph_2.children == (
+        IRNode(kind=IRNodeKind.SUBPARAGRAPH, label="2a", text="inserted"),
+    )
+
+
 def test_apply_eu_ops_blocks_unscoped_parent_hijack() -> None:
     baseline = IRStatute(
         statute_id="32000R0000",
