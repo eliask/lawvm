@@ -101,6 +101,23 @@ class StatuteNameEntry:
 
 
 @dataclass(frozen=True, slots=True)
+class FinlexRepealedByCandidate:
+    """Typed Finlex ``repealedBy`` metadata witness.
+
+    This is intentionally a candidate, not a successor edge. The metadata proves
+    that Finlex says this act was repealed by another act from a date; it does
+    not by itself prove that old citations now operate against the repealing
+    act. Promotion to ``StatuteSuccessorEdge`` remains a separate proof step.
+    """
+
+    repealing_work_id: str
+    effective_from: dt.date
+    witness_href: str | None
+    witness_text: str
+    rule_id: str = "fi.finlex.repealed_by_candidate"
+
+
+@dataclass(frozen=True, slots=True)
 class Candidate:
     """A single resolution candidate behind a looked-up surface."""
 
@@ -1127,6 +1144,62 @@ def _extract_title_and_date(xb: bytes) -> tuple[str, Optional[dt.date]] | None:
 _FINLEX_NS = "http://data.finlex.fi/schema/finlex"
 
 
+def _canonical_statute_id_from_finlex_text(text: str) -> str | None:
+    raw = text.strip()
+    if "/" not in raw:
+        return None
+    left, right = raw.split("/", 1)
+    if not left.isdigit() or not right.isdigit():
+        return None
+    return f"{right}/{left}"
+
+
+def _extract_repealed_by_candidate(
+    oracle_xb: bytes,
+) -> Optional[FinlexRepealedByCandidate]:
+    """Extract the Finlex ``repealedBy`` metadata as a non-authorizing candidate.
+
+    Returns a typed witness when the oracle exposes both a repealing act
+    reference and the date that act entered into force. This function does not
+    assert legal successor semantics; it only records the source metadata needed
+    for a later promotion/adjudication step.
+    """
+    from lxml import etree
+    from lawvm.core.xml_parse import parse_corpus_xml
+
+    try:
+        tree = parse_corpus_xml(oracle_xb)
+    except etree.XMLSyntaxError:
+        return None
+    repealed_by = tree.find(f".//{{{_FINLEX_NS}}}repealedBy")
+    if repealed_by is None:
+        return None
+    date_el = repealed_by.find(f".//{{{_FINLEX_NS}}}dateEntryIntoForce")
+    if date_el is None:
+        return None
+    raw_date = date_el.get("date")
+    if not raw_date:
+        return None
+    try:
+        effective_from = dt.date.fromisoformat(raw_date)
+    except ValueError:
+        return None
+    ref_el = repealed_by.find(f".//{{{_FINLEX_NS}}}ref")
+    if ref_el is None:
+        return None
+    witness_text = "".join(str(part) for part in ref_el.itertext()).strip()
+    repealing_work_id = _canonical_statute_id_from_finlex_text(witness_text)
+    if repealing_work_id is None:
+        return None
+    href = ref_el.get("href")
+    return FinlexRepealedByCandidate(
+        repealing_work_id=repealing_work_id,
+        effective_from=effective_from,
+        witness_href=href,
+        witness_text=witness_text,
+    )
+
+
 def _extract_repeal_date(oracle_xb: bytes) -> Optional[dt.date]:
     """Extract a statute's REPEAL date from its consolidated oracle XML.
 
@@ -1233,7 +1306,9 @@ def all_entries_from_farchive(
 __all__ = [
     "STATUTE_NAME_ALIASES",
     "Candidate",
+    "FinlexRepealedByCandidate",
     "_extract_repeal_date",
+    "_extract_repealed_by_candidate",
     "all_entries_from_farchive",
     "RegistryResult",
     "StatuteNameAlias",

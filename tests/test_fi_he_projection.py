@@ -508,6 +508,45 @@ class TestCLIWiring:
         args = parser.parse_args(["export-projections", "--include-he-corpus"])
         assert args.include_he_corpus is True
 
+    def test_export_projections_reference_successor_flags(self) -> None:
+        from lawvm.tools.cli import _build_parser
+        parser = _build_parser()
+        args = parser.parse_args([
+            "export-projections",
+            "--include-reference-successors",
+            "--reference-successor-edges",
+            "edges.jsonl",
+            "--reference-successor-as-of",
+            "2026-01-01",
+        ])
+        assert args.include_reference_successors is True
+        assert args.reference_successor_edges == "edges.jsonl"
+        assert args.reference_successor_as_of == "2026-01-01"
+
+    def test_export_projections_reference_successor_promotion_claims_flag(self) -> None:
+        from lawvm.tools.cli import _build_parser
+        parser = _build_parser()
+        args = parser.parse_args([
+            "export-projections",
+            "--include-reference-successors",
+            "--reference-successor-promotion-claims",
+            "promotion_claims.jsonl",
+            "--reference-successor-as-of",
+            "2026-01-01",
+        ])
+        assert args.include_reference_successors is True
+        assert args.reference_successor_promotion_claims == "promotion_claims.jsonl"
+        assert args.reference_successor_as_of == "2026-01-01"
+
+    def test_export_projections_repealed_by_candidate_flag(self) -> None:
+        from lawvm.tools.cli import _build_parser
+        parser = _build_parser()
+        args = parser.parse_args([
+            "export-projections",
+            "--include-repealed-by-candidates",
+        ])
+        assert args.include_repealed_by_candidates is True
+
     def test_fi_proposal_show_include_flags(self) -> None:
         from lawvm.tools.cli import _build_parser
         parser = _build_parser()

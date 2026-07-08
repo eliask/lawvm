@@ -46,9 +46,9 @@ import datetime as dt
 import re
 import warnings
 from dataclasses import dataclass
-from enum import Enum
+from enum import Enum, StrEnum
 from pathlib import Path
-from typing import Mapping, Optional
+from typing import Mapping, Optional, Sequence
 
 from lawvm.core.reference_mention import (
     AmbiguousReferenceFinding,
@@ -149,6 +149,247 @@ class ResolvedReference:
     candidates: tuple[str, ...]
     rejected_candidates: tuple[str, ...]
     finding: Optional[AmbiguousReferenceFinding]
+
+
+class SuccessorReferenceStatus(Enum):
+    """Outcome of dated successor resolution for an already-typed reference.
+
+    This is intentionally separate from :class:`ResolutionStatus`: ordinary
+    reference resolution owns the literal cited endpoint, while successor
+    resolution owns only a dated operative-endpoint claim. A citation to
+    ``592/1991`` therefore remains a citation to ``592/1991`` even when an
+    as-of-2026 successor projection can prove an operative endpoint.
+    """
+
+    RESOLVED = "resolved"
+    """Exactly one witnessed successor chain reaches one operative work id."""
+
+    NO_APPLICABLE_SUCCESSOR = "no_applicable_successor"
+    """No witnessed successor edge applies as of the requested date."""
+
+    MISSING_AS_OF = "missing_as_of"
+    """No dated query instant was supplied, so no successor can be selected."""
+
+    AMBIGUOUS = "ambiguous"
+    """More than one successor candidate applies; no operative id is asserted."""
+
+    UNRESOLVED_LITERAL = "unresolved_literal"
+    """The input reference has no literal work id to resolve from."""
+
+
+class SuccessorReferenceReasonCode(StrEnum):
+    """Closed reason-code set for successor-reference resolution.
+
+    ``StrEnum`` preserves the projection boundary's string values while keeping
+    the semantic waist closed and testable inside the resolver. Add a member
+    here before introducing a new successor-resolution reason.
+    """
+
+    LITERAL_WORK_ID_UNRESOLVED = "literal_work_id_unresolved"
+    AS_OF_REQUIRED = "as_of_required_for_successor_resolution"
+    MULTIPLE_APPLICABLE_SUCCESSORS = "multiple_applicable_successors"
+    UNIQUE_WITNESSED_SUCCESSOR_CHAIN = "unique_witnessed_successor_chain"
+    NO_SUCCESSOR_WITNESS_APPLICABLE_AS_OF = (
+        "no_successor_witness_applicable_as_of"
+    )
+    SUCCESSOR_CYCLE_DETECTED = "successor_cycle_detected"
+
+
+class SuccessorReferenceResolutionBasis(StrEnum):
+    """Closed basis set for successor-reference operative endpoint claims."""
+
+    SUCCESSOR_CHAIN = "successor_chain"
+
+
+@dataclass(frozen=True, slots=True)
+class StatuteSuccessorEdge:
+    """A witnessed act-level successor/substitution edge.
+
+    Attributes:
+        predecessor_work_id: Literal work id the source text may cite.
+        successor_work_id: Work id claimed as successor from ``effective_from``.
+        effective_from: First date on which the edge applies.
+        witness_id: Source witness identifier (Finlex lifecycle/substitution row,
+            manual claim id, or another evidence handle). Required: a lifecycle
+            gap alone is not a successor proof.
+        witness_text: Short source excerpt / statement carried for triage.
+        rule_id: Stable rule id authorising this edge family.
+    """
+
+    predecessor_work_id: str
+    successor_work_id: str
+    effective_from: dt.date
+    witness_id: str
+    witness_text: str
+    rule_id: str = "fi.reference_successor.witnessed_edge"
+
+
+@dataclass(frozen=True, slots=True)
+class SuccessorReferenceResolution:
+    """Dated operative-endpoint projection for a literal reference.
+
+    ``literal_work_id`` is never rewritten. ``operative_work_id`` is populated
+    only when the successor chain is uniquely witnessed as of ``as_of``. When the
+    witness is absent or ambiguous, candidates/rejections are carried but no
+    operative endpoint is asserted.
+    """
+
+    literal_work_id: Optional[str]
+    operative_work_id: Optional[str]
+    as_of: Optional[dt.date]
+    successor_status: SuccessorReferenceStatus
+    resolution_basis: SuccessorReferenceResolutionBasis
+    successor_chain: tuple[StatuteSuccessorEdge, ...]
+    candidates: tuple[str, ...]
+    rejected_candidates: tuple[str, ...]
+    reason_code: SuccessorReferenceReasonCode
+    rule_id: str = "fi.reference_successor.dated_resolution"
+
+
+def _literal_work_id(resolved: ResolvedReference) -> Optional[str]:
+    """Return the literal resolved work id, without successor rewriting."""
+    if resolved.work_id:
+        return resolved.work_id
+    target = resolved.mention.target_provision_ref
+    if target is None:
+        return None
+    statute_id = target.statute_id
+    if statute_id.startswith((_FI_NAME_PREFIX, _EU_NICKNAME_PREFIX)):
+        return None
+    return statute_id or None
+
+
+def _successor_edges_by_predecessor(
+    successor_edges: Sequence[StatuteSuccessorEdge],
+) -> dict[str, tuple[StatuteSuccessorEdge, ...]]:
+    by_pred: dict[str, list[StatuteSuccessorEdge]] = {}
+    for edge in successor_edges:
+        by_pred.setdefault(edge.predecessor_work_id, []).append(edge)
+    return {
+        pred: tuple(sorted(edges, key=lambda e: (e.effective_from, e.successor_work_id)))
+        for pred, edges in by_pred.items()
+    }
+
+
+def resolve_successor_reference(
+    resolved: ResolvedReference,
+    *,
+    as_of: Optional[dt.date],
+    successor_edges: Sequence[StatuteSuccessorEdge],
+) -> SuccessorReferenceResolution:
+    """Resolve a literal reference through witnessed successor edges, if any.
+
+    This is B5's first executable waist: the ordinary reference stays literal,
+    and this projection may additionally say "as of date D, a witnessed successor
+    chain makes work B the operative endpoint." It never infers a successor from
+    a broken/lifecycle gap alone, never picks among multiple candidates, and never
+    applies an edge whose effective date is after ``as_of``.
+    """
+    literal = _literal_work_id(resolved)
+    if literal is None:
+        return SuccessorReferenceResolution(
+            literal_work_id=None,
+            operative_work_id=None,
+            as_of=as_of,
+            successor_status=SuccessorReferenceStatus.UNRESOLVED_LITERAL,
+            resolution_basis=SuccessorReferenceResolutionBasis.SUCCESSOR_CHAIN,
+            successor_chain=(),
+            candidates=(),
+            rejected_candidates=(),
+            reason_code=SuccessorReferenceReasonCode.LITERAL_WORK_ID_UNRESOLVED,
+        )
+    if as_of is None:
+        return SuccessorReferenceResolution(
+            literal_work_id=literal,
+            operative_work_id=None,
+            as_of=None,
+            successor_status=SuccessorReferenceStatus.MISSING_AS_OF,
+            resolution_basis=SuccessorReferenceResolutionBasis.SUCCESSOR_CHAIN,
+            successor_chain=(),
+            candidates=(),
+            rejected_candidates=(),
+            reason_code=SuccessorReferenceReasonCode.AS_OF_REQUIRED,
+        )
+
+    by_pred = _successor_edges_by_predecessor(successor_edges)
+    current = literal
+    chain: list[StatuteSuccessorEdge] = []
+    rejected: list[str] = []
+    seen = {literal}
+
+    while True:
+        applicable = tuple(
+            edge
+            for edge in by_pred.get(current, ())
+            if edge.effective_from <= as_of
+        )
+        future = tuple(
+            edge
+            for edge in by_pred.get(current, ())
+            if edge.effective_from > as_of
+        )
+        rejected.extend(edge.successor_work_id for edge in future)
+
+        candidate_ids = tuple(dict.fromkeys(edge.successor_work_id for edge in applicable))
+        if len(candidate_ids) > 1:
+            return SuccessorReferenceResolution(
+                literal_work_id=literal,
+                operative_work_id=None,
+                as_of=as_of,
+                successor_status=SuccessorReferenceStatus.AMBIGUOUS,
+                resolution_basis=SuccessorReferenceResolutionBasis.SUCCESSOR_CHAIN,
+                successor_chain=tuple(chain),
+                candidates=candidate_ids,
+                rejected_candidates=tuple(dict.fromkeys(rejected)),
+                reason_code=(
+                    SuccessorReferenceReasonCode.MULTIPLE_APPLICABLE_SUCCESSORS
+                ),
+            )
+        if len(candidate_ids) == 0:
+            if chain:
+                return SuccessorReferenceResolution(
+                    literal_work_id=literal,
+                    operative_work_id=current,
+                    as_of=as_of,
+                    successor_status=SuccessorReferenceStatus.RESOLVED,
+                    resolution_basis=SuccessorReferenceResolutionBasis.SUCCESSOR_CHAIN,
+                    successor_chain=tuple(chain),
+                    candidates=(current,),
+                    rejected_candidates=tuple(dict.fromkeys(rejected)),
+                    reason_code=(
+                        SuccessorReferenceReasonCode.UNIQUE_WITNESSED_SUCCESSOR_CHAIN
+                    ),
+                )
+            return SuccessorReferenceResolution(
+                literal_work_id=literal,
+                operative_work_id=None,
+                as_of=as_of,
+                successor_status=SuccessorReferenceStatus.NO_APPLICABLE_SUCCESSOR,
+                resolution_basis=SuccessorReferenceResolutionBasis.SUCCESSOR_CHAIN,
+                successor_chain=(),
+                candidates=(),
+                rejected_candidates=tuple(dict.fromkeys(rejected)),
+                reason_code=(
+                    SuccessorReferenceReasonCode.NO_SUCCESSOR_WITNESS_APPLICABLE_AS_OF
+                ),
+            )
+
+        edge = next(edge for edge in applicable if edge.successor_work_id == candidate_ids[0])
+        if edge.successor_work_id in seen:
+            return SuccessorReferenceResolution(
+                literal_work_id=literal,
+                operative_work_id=None,
+                as_of=as_of,
+                successor_status=SuccessorReferenceStatus.AMBIGUOUS,
+                resolution_basis=SuccessorReferenceResolutionBasis.SUCCESSOR_CHAIN,
+                successor_chain=tuple(chain),
+                candidates=(edge.successor_work_id,),
+                rejected_candidates=tuple(dict.fromkeys(rejected)),
+                reason_code=SuccessorReferenceReasonCode.SUCCESSOR_CYCLE_DETECTED,
+            )
+        chain.append(edge)
+        current = edge.successor_work_id
+        seen.add(current)
 
 
 # ---------------------------------------------------------------------------
@@ -1321,9 +1562,13 @@ __all__ = [
     "NameIdAnaphoraTable",
     "ResolutionStatus",
     "ResolvedReference",
+    "StatuteSuccessorEdge",
+    "SuccessorReferenceResolution",
+    "SuccessorReferenceStatus",
     "build_default_registries",
     "build_defined_term_table",
     "build_name_id_anaphora_table",
     "resolve_mention",
     "resolve_mentions",
+    "resolve_successor_reference",
 ]

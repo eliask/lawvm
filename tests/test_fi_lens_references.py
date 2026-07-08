@@ -18,6 +18,10 @@ from lawvm.finland.legal_surface.lenses.references import (
     _CONFIDENCE_TO_STATUS,
 )
 from lawvm.core.reference_mention import CiteConfidence
+from lawvm.finland.references.resolve import (
+    StatuteSuccessorEdge,
+    SuccessorReferenceReasonCode,
+)
 
 _AKN = "http://docs.oasis-open.org/legaldocml/ns/akn/3.0"
 
@@ -35,6 +39,14 @@ _XML = (
 ).encode("utf-8")
 
 _STATUTE_ID = "2003/314"
+
+_RADIATION_XML = (
+    f'<akomaNtoso xmlns="{_AKN}"><act><body>'
+    "<section><num>3 §</num><paragraph><content><p>"
+    "Tätä lakia ei sovelleta säteilylaissa (592/1991) tarkoitettuun toimintaan."
+    "</p></content></paragraph></section>"
+    "</body></act></akomaNtoso>"
+).encode("utf-8")
 
 
 def _run_lens(*, options: dict[str, object] | None = None):
@@ -324,6 +336,98 @@ def test_build_surface_bundle_no_surface_time_stays_ambiguous() -> None:
     assert not any(
         e.payload.get("work_id") in {"1990/111", "2010/222"} for e in refers_to
     )
+
+
+def test_successor_resolution_payload_preserves_literal_target_and_operational_endpoint() -> None:
+    """The lens carries successor resolution without rewriting the literal citation."""
+    edge = StatuteSuccessorEdge(
+        predecessor_work_id="1991/592",
+        successor_work_id="859/2018",
+        effective_from=dt.date(2018, 12, 15),
+        witness_id="finlex:1991/592:repealed-by:859/2018",
+        witness_text="Tämä laki on kumottu lailla 859/2018.",
+    )
+    bundle = build_surface_bundle(
+        _RADIATION_XML, "527/2014", surface_time="2026-01-01"
+    )
+    result = ReferenceLens().analyze(
+        bundle,
+        context=SurfaceAnalysisContext(
+            surface_time="2026-01-01",
+            options={
+                "statute_registry": _StubStatuteRegistry({}),
+                "successor_edges": (edge,),
+                "successor_as_of": dt.date(2026, 1, 1),
+            },
+        ),
+    )
+
+    expr = next(s for s in result.node_seeds if s.node_kind == "reference_expr")
+    resolution = next(
+        s for s in result.node_seeds if s.node_kind == "reference_resolution"
+    )
+    assert expr.payload["surface_text"] == "säteilylaissa (592/1991)"
+    assert expr.payload["target_id"] == "1991/592"
+    assert resolution.payload["work_id"] == "1991/592"
+    assert resolution.payload["literal_work_id"] == "1991/592"
+    assert resolution.payload["operative_work_id"] == "859/2018"
+    assert resolution.payload["successor_resolution_status"] == "resolved"
+    assert resolution.payload["successor_as_of"] == "2026-01-01"
+    assert resolution.payload["successor_reason_code"] == (
+        SuccessorReferenceReasonCode.UNIQUE_WITNESSED_SUCCESSOR_CHAIN.value
+    )
+    assert resolution.payload["successor_chain"] == [
+        {
+            "predecessor_work_id": "1991/592",
+            "successor_work_id": "859/2018",
+            "effective_from": "2018-12-15",
+            "witness_id": "finlex:1991/592:repealed-by:859/2018",
+            "witness_text": "Tämä laki on kumottu lailla 859/2018.",
+            "rule_id": "fi.reference_successor.witnessed_edge",
+        }
+    ]
+
+    # Ordinary reference edges still point at the literal target only. The
+    # successor endpoint is payload evidence, not a new asserted refers_to edge.
+    refers_to_ids = {
+        e.payload.get("work_id") for e in result.edge_seeds if e.edge_kind == "refers_to"
+    }
+    assert refers_to_ids == {"1991/592"}
+
+
+def test_successor_resolution_payload_does_not_select_future_successor() -> None:
+    """A successor edge dated after successor_as_of is rejected, not selected."""
+    edge = StatuteSuccessorEdge(
+        predecessor_work_id="1991/592",
+        successor_work_id="859/2018",
+        effective_from=dt.date(2018, 12, 15),
+        witness_id="finlex:1991/592:repealed-by:859/2018",
+        witness_text="Tämä laki on kumottu lailla 859/2018.",
+    )
+    bundle = build_surface_bundle(
+        _RADIATION_XML, "527/2014", surface_time="2017-01-01"
+    )
+    result = ReferenceLens().analyze(
+        bundle,
+        context=SurfaceAnalysisContext(
+            surface_time="2017-01-01",
+            options={
+                "statute_registry": _StubStatuteRegistry({}),
+                "successor_edges": (edge,),
+                "successor_as_of": "2017-01-01",
+            },
+        ),
+    )
+
+    resolution = next(
+        s for s in result.node_seeds if s.node_kind == "reference_resolution"
+    )
+    assert resolution.payload["work_id"] == "1991/592"
+    assert resolution.payload["operative_work_id"] is None
+    assert resolution.payload["successor_resolution_status"] == (
+        "no_applicable_successor"
+    )
+    assert resolution.payload["successor_rejected_candidates"] == ["859/2018"]
 
 
 def test_unit_open_interval_keeps_multitemporal_ambiguous() -> None:

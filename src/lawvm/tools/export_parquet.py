@@ -504,6 +504,11 @@ def export_projections(
     include_inline_citations: bool = False,
     include_interlinks: bool = False,
     include_sections_text: bool = False,
+    include_repealed_by_candidates: bool = False,
+    include_reference_successors: bool = False,
+    reference_successor_edges_path: Optional[str] = None,
+    reference_successor_promotion_claims_path: Optional[str] = None,
+    reference_successor_as_of: Optional[str] = None,
     he_farchive: Optional[str] = None,
     he_data_dir: Optional[str] = None,
     compile_metadata: Optional[Any] = None,
@@ -649,6 +654,82 @@ def export_projections(
             compile_metadata=compile_metadata,
         )
         counts["fi_refs"] = refs_count
+
+    # --- fi_repealed_by_candidates.parquet: non-authorizing lifecycle witnesses ---
+    if include_repealed_by_candidates:
+        print("\nExporting fi_repealed_by_candidates projection...")
+        from lawvm.tools.export_fi_refs import export_fi_repealed_by_candidates
+
+        repealed_by_candidates_count = export_fi_repealed_by_candidates(
+            corpus,
+            data_dir=data_dir,
+            use_parquet=use_parquet,
+            limit=limit,
+            compile_metadata=compile_metadata,
+        )
+        counts["fi_repealed_by_candidates"] = repealed_by_candidates_count
+
+    # --- fi_reference_successors.parquet: dated successor-reference projection ---
+    if include_reference_successors:
+        has_edges = bool(reference_successor_edges_path)
+        has_promotion_claims = bool(reference_successor_promotion_claims_path)
+        if has_edges == has_promotion_claims:
+            raise ValueError(
+                "export-projections --include-reference-successors requires "
+                "exactly one of --reference-successor-edges PATH or "
+                "--reference-successor-promotion-claims PATH"
+            )
+        if not reference_successor_as_of:
+            raise ValueError(
+                "export-projections --include-reference-successors requires "
+                "--reference-successor-as-of YYYY-MM-DD"
+            )
+        print("\nExporting fi_reference_successors projection...")
+        if reference_successor_edges_path:
+            from lawvm.tools.export_fi_refs import (
+                export_fi_reference_successors,
+                load_reference_successor_edges,
+            )
+
+            successor_edges = load_reference_successor_edges(
+                reference_successor_edges_path
+            )
+            reference_successors_count = export_fi_reference_successors(
+                corpus,
+                successor_edges=successor_edges,
+                successor_as_of=reference_successor_as_of,
+                data_dir=data_dir,
+                use_parquet=use_parquet,
+                limit=limit,
+                compile_metadata=compile_metadata,
+            )
+        else:
+            promotion_claims_path = reference_successor_promotion_claims_path
+            if promotion_claims_path is None:
+                raise ValueError(
+                    "export-projections --include-reference-successors requires "
+                    "--reference-successor-promotion-claims PATH"
+                )
+            from lawvm.tools.export_fi_refs import (
+                export_fi_reference_successors_from_promoted_candidates,
+                load_reference_successor_promotion_claims,
+            )
+
+            promotion_claims = load_reference_successor_promotion_claims(
+                promotion_claims_path
+            )
+            reference_successors_count = (
+                export_fi_reference_successors_from_promoted_candidates(
+                    corpus,
+                    promotion_claims=promotion_claims,
+                    successor_as_of=reference_successor_as_of,
+                    data_dir=data_dir,
+                    use_parquet=use_parquet,
+                    limit=limit,
+                    compile_metadata=compile_metadata,
+                )
+            )
+        counts["fi_reference_successors"] = reference_successors_count
 
     # --- fi_actors.parquet: ActorMention projection ---
     if include_actors:
@@ -804,6 +885,19 @@ def main(args: Any) -> None:
         include_inline_citations=getattr(args, "include_inline_citations", False),
         include_interlinks=getattr(args, "include_interlinks", False),
         include_sections_text=getattr(args, "include_sections_text", False),
+        include_repealed_by_candidates=getattr(
+            args, "include_repealed_by_candidates", False
+        ),
+        include_reference_successors=getattr(
+            args, "include_reference_successors", False
+        ),
+        reference_successor_edges_path=getattr(
+            args, "reference_successor_edges", None
+        ),
+        reference_successor_promotion_claims_path=getattr(
+            args, "reference_successor_promotion_claims", None
+        ),
+        reference_successor_as_of=getattr(args, "reference_successor_as_of", None),
         he_farchive=getattr(args, "he_farchive", None),
         he_data_dir=getattr(args, "he_data_dir", None),
     )

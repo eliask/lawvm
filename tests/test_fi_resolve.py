@@ -28,7 +28,12 @@ from lawvm.finland.references.registries.statute_name import (
 from lawvm.finland.references.resolve import (
     ResolutionStatus,
     ResolvedReference,
+    StatuteSuccessorEdge,
+    SuccessorReferenceReasonCode,
+    SuccessorReferenceResolutionBasis,
+    SuccessorReferenceStatus,
     resolve_mentions,
+    resolve_successor_reference,
 )
 
 
@@ -1059,6 +1064,207 @@ def test_multi_version_no_unique_live_stays_ambiguous_even_with_flag() -> None:
     )
     assert rr.resolution_status is ResolutionStatus.AMBIGUOUS
     assert set(rr.candidates) == {"1988/517", "2001/1015"}
+
+
+# ---------------------------------------------------------------------------
+# successor-aware reference resolution
+# ---------------------------------------------------------------------------
+
+
+def _resolved_explicit(statute_id: str = "592/1991") -> ResolvedReference:
+    [rr] = resolve_mentions(
+        [
+            _mention(
+                statute_id,
+                cite_confidence=CiteConfidence.EXACT,
+                surface_text=f"säteilylaissa ({statute_id})",
+            )
+        ],
+        statute_registry=_statute_registry(),
+        eu_registry=eu_nickname,
+    )
+    assert rr.resolution_status is ResolutionStatus.UNCHANGED
+    return rr
+
+
+def test_successor_resolution_preserves_literal_old_id_and_asserts_dated_endpoint() -> None:
+    """A successor edge adds an operative endpoint; it does not rewrite the citation."""
+    rr = _resolved_explicit("592/1991")
+    edge = StatuteSuccessorEdge(
+        predecessor_work_id="592/1991",
+        successor_work_id="859/2018",
+        effective_from=dt.date(2018, 12, 15),
+        witness_id="finlex:592/1991:repealed-by:859/2018",
+        witness_text="Tämä laki on kumottu lailla 859/2018.",
+    )
+
+    resolved = resolve_successor_reference(
+        rr, as_of=dt.date(2026, 1, 1), successor_edges=(edge,)
+    )
+
+    assert resolved.successor_status is SuccessorReferenceStatus.RESOLVED
+    assert resolved.literal_work_id == "592/1991"
+    assert resolved.operative_work_id == "859/2018"
+    assert resolved.successor_chain == (edge,)
+    assert (
+        resolved.resolution_basis
+        is SuccessorReferenceResolutionBasis.SUCCESSOR_CHAIN
+    )
+    assert (
+        resolved.reason_code
+        is SuccessorReferenceReasonCode.UNIQUE_WITNESSED_SUCCESSOR_CHAIN
+    )
+    assert rr.mention.target_provision_ref is not None
+    assert rr.mention.target_provision_ref.statute_id == "592/1991"
+
+
+def test_successor_resolution_without_witness_does_not_guess_from_old_id() -> None:
+    """A repealed-looking literal id alone is not a successor proof."""
+    resolved = resolve_successor_reference(
+        _resolved_explicit("592/1991"),
+        as_of=dt.date(2026, 1, 1),
+        successor_edges=(),
+    )
+
+    assert resolved.successor_status is SuccessorReferenceStatus.NO_APPLICABLE_SUCCESSOR
+    assert resolved.literal_work_id == "592/1991"
+    assert resolved.operative_work_id is None
+    assert resolved.candidates == ()
+    assert (
+        resolved.resolution_basis
+        is SuccessorReferenceResolutionBasis.SUCCESSOR_CHAIN
+    )
+    assert (
+        resolved.reason_code
+        is SuccessorReferenceReasonCode.NO_SUCCESSOR_WITNESS_APPLICABLE_AS_OF
+    )
+
+
+def test_successor_resolution_is_dated_not_latest() -> None:
+    """A future successor edge is carried as rejected, not selected early."""
+    edge = StatuteSuccessorEdge(
+        predecessor_work_id="592/1991",
+        successor_work_id="859/2018",
+        effective_from=dt.date(2018, 12, 15),
+        witness_id="finlex:592/1991:repealed-by:859/2018",
+        witness_text="Tämä laki on kumottu lailla 859/2018.",
+    )
+
+    resolved = resolve_successor_reference(
+        _resolved_explicit("592/1991"),
+        as_of=dt.date(2017, 1, 1),
+        successor_edges=(edge,),
+    )
+
+    assert resolved.successor_status is SuccessorReferenceStatus.NO_APPLICABLE_SUCCESSOR
+    assert resolved.operative_work_id is None
+    assert resolved.rejected_candidates == ("859/2018",)
+
+
+def test_successor_resolution_never_picks_among_parallel_successors() -> None:
+    """Two applicable successor witnesses stay candidates only."""
+    resolved = resolve_successor_reference(
+        _resolved_explicit("592/1991"),
+        as_of=dt.date(2026, 1, 1),
+        successor_edges=(
+            StatuteSuccessorEdge(
+                predecessor_work_id="592/1991",
+                successor_work_id="859/2018",
+                effective_from=dt.date(2018, 12, 15),
+                witness_id="witness:one",
+                witness_text="edge one",
+            ),
+            StatuteSuccessorEdge(
+                predecessor_work_id="592/1991",
+                successor_work_id="999/2018",
+                effective_from=dt.date(2018, 12, 15),
+                witness_id="witness:two",
+                witness_text="edge two",
+            ),
+        ),
+    )
+
+    assert resolved.successor_status is SuccessorReferenceStatus.AMBIGUOUS
+    assert resolved.operative_work_id is None
+    assert resolved.candidates == ("859/2018", "999/2018")
+    assert (
+        resolved.resolution_basis
+        is SuccessorReferenceResolutionBasis.SUCCESSOR_CHAIN
+    )
+    assert (
+        resolved.reason_code
+        is SuccessorReferenceReasonCode.MULTIPLE_APPLICABLE_SUCCESSORS
+    )
+
+
+def test_successor_resolution_follows_unique_chain_only_as_of_date() -> None:
+    """The operative endpoint is the unique successor chain endpoint at as_of."""
+    first = StatuteSuccessorEdge(
+        predecessor_work_id="592/1991",
+        successor_work_id="859/2018",
+        effective_from=dt.date(2018, 12, 15),
+        witness_id="witness:first",
+        witness_text="592/1991 repealed by 859/2018",
+    )
+    second = StatuteSuccessorEdge(
+        predecessor_work_id="859/2018",
+        successor_work_id="123/2024",
+        effective_from=dt.date(2024, 1, 1),
+        witness_id="witness:second",
+        witness_text="859/2018 replaced by 123/2024",
+    )
+
+    old_as_of = resolve_successor_reference(
+        _resolved_explicit("592/1991"),
+        as_of=dt.date(2020, 1, 1),
+        successor_edges=(first, second),
+    )
+    current_as_of = resolve_successor_reference(
+        _resolved_explicit("592/1991"),
+        as_of=dt.date(2026, 1, 1),
+        successor_edges=(first, second),
+    )
+
+    assert old_as_of.successor_status is SuccessorReferenceStatus.RESOLVED
+    assert old_as_of.operative_work_id == "859/2018"
+    assert old_as_of.rejected_candidates == ("123/2024",)
+    assert current_as_of.successor_status is SuccessorReferenceStatus.RESOLVED
+    assert current_as_of.operative_work_id == "123/2024"
+    assert current_as_of.successor_chain == (first, second)
+
+
+def test_successor_resolution_cycle_is_ambiguous_not_latest_endpoint() -> None:
+    """A successor cycle is a typed residual, never a latest-successor guess."""
+    first = StatuteSuccessorEdge(
+        predecessor_work_id="592/1991",
+        successor_work_id="859/2018",
+        effective_from=dt.date(2018, 12, 15),
+        witness_id="witness:first",
+        witness_text="592/1991 repealed by 859/2018",
+    )
+    cycle = StatuteSuccessorEdge(
+        predecessor_work_id="859/2018",
+        successor_work_id="592/1991",
+        effective_from=dt.date(2024, 1, 1),
+        witness_id="witness:cycle",
+        witness_text="bad cycle fixture",
+    )
+
+    resolved = resolve_successor_reference(
+        _resolved_explicit("592/1991"),
+        as_of=dt.date(2026, 1, 1),
+        successor_edges=(first, cycle),
+    )
+
+    assert resolved.successor_status is SuccessorReferenceStatus.AMBIGUOUS
+    assert resolved.operative_work_id is None
+    assert resolved.successor_chain == (first,)
+    assert resolved.candidates == ("592/1991",)
+    assert (
+        resolved.resolution_basis
+        is SuccessorReferenceResolutionBasis.SUCCESSOR_CHAIN
+    )
+    assert resolved.reason_code is SuccessorReferenceReasonCode.SUCCESSOR_CYCLE_DETECTED
 
 
 def test_multi_version_law_vs_decree_head_filter() -> None:

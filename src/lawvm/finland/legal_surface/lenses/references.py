@@ -68,8 +68,11 @@ from lawvm.finland.references.resolve import (
     DefinedTermTable,
     ResolutionStatus,
     ResolvedReference,
+    StatuteSuccessorEdge,
+    SuccessorReferenceResolution,
     build_defined_term_table,
     resolve_mentions,
+    resolve_successor_reference,
 )
 
 LENS_ID = "fi.references.v0"
@@ -137,6 +140,45 @@ def _parse_iso_date(value: str | None) -> Optional[dt.date]:
         return dt.date.fromisoformat(value[:10])
     except ValueError:
         return None
+
+
+def _successor_edges_option(value: object) -> tuple[StatuteSuccessorEdge, ...]:
+    """Read typed successor edges from the lens context.
+
+    Context options are intentionally loose at the lens boundary, so this helper
+    validates the only shape B5 consumes. A malformed option fails loud instead
+    of being ignored as "no successors".
+    """
+    if value is None:
+        return ()
+    if not isinstance(value, (tuple, list)):
+        raise TypeError(
+            f"{LENS_ID}: successor_edges option must be a sequence of "
+            f"StatuteSuccessorEdge, got {type(value).__name__}"
+        )
+    edges: list[StatuteSuccessorEdge] = []
+    for edge in value:
+        if not isinstance(edge, StatuteSuccessorEdge):
+            raise TypeError(
+                f"{LENS_ID}: successor_edges option contains non-"
+                f"StatuteSuccessorEdge value {edge!r}"
+            )
+        edges.append(edge)
+    return tuple(edges)
+
+
+def _successor_as_of_option(value: object) -> Optional[dt.date]:
+    """Read the optional dated successor-resolution instant from context."""
+    if value is None:
+        return None
+    if isinstance(value, dt.date):
+        return value
+    if isinstance(value, str):
+        return dt.date.fromisoformat(value[:10])
+    raise TypeError(
+        f"{LENS_ID}: successor_as_of option must be a date or ISO date string, "
+        f"got {type(value).__name__}"
+    )
 
 
 def _unit_validity_interval(
@@ -217,6 +259,8 @@ class ReferenceLens:
         statute_registry = context.options.get("statute_registry")
         eu_registry = context.options.get("eu_registry")
         resolve_targets = statute_registry is not None
+        successor_edges = _successor_edges_option(context.options.get("successor_edges"))
+        successor_as_of = _successor_as_of_option(context.options.get("successor_as_of"))
 
         n_units = 0
         n_mentions = 0
@@ -333,6 +377,15 @@ class ReferenceLens:
                     self._reference_resolution_seed(
                         mention,
                         resolved=resolved,
+                        successor_resolution=(
+                            resolve_successor_reference(
+                                resolved,
+                                as_of=successor_as_of,
+                                successor_edges=successor_edges,
+                            )
+                            if resolved is not None and successor_edges
+                            else None
+                        ),
                         source_ref=source_ref,
                         resolution_status=node_status,
                         local=resolution_local,
@@ -508,6 +561,7 @@ class ReferenceLens:
         mention: ReferenceMention,
         *,
         resolved: ResolvedReference | None,
+        successor_resolution: SuccessorReferenceResolution | None,
         source_ref: SourceSpanRef,
         resolution_status: str,
         local: str,
@@ -520,6 +574,40 @@ class ReferenceLens:
             payload["resolution_status"] = resolved.resolution_status.value
             payload["work_id"] = resolved.work_id
             payload["candidates"] = list(resolved.candidates)
+        if successor_resolution is not None:
+            payload.update(
+                {
+                    "successor_resolution_status": (
+                        successor_resolution.successor_status.value
+                    ),
+                    "literal_work_id": successor_resolution.literal_work_id,
+                    "operative_work_id": successor_resolution.operative_work_id,
+                    "successor_as_of": (
+                        successor_resolution.as_of.isoformat()
+                        if successor_resolution.as_of is not None
+                        else None
+                    ),
+                    "successor_resolution_basis": (
+                        successor_resolution.resolution_basis.value
+                    ),
+                    "successor_candidates": list(successor_resolution.candidates),
+                    "successor_rejected_candidates": list(
+                        successor_resolution.rejected_candidates
+                    ),
+                    "successor_reason_code": successor_resolution.reason_code.value,
+                    "successor_chain": [
+                        {
+                            "predecessor_work_id": edge.predecessor_work_id,
+                            "successor_work_id": edge.successor_work_id,
+                            "effective_from": edge.effective_from.isoformat(),
+                            "witness_id": edge.witness_id,
+                            "witness_text": edge.witness_text,
+                            "rule_id": edge.rule_id,
+                        }
+                        for edge in successor_resolution.successor_chain
+                    ],
+                }
+            )
         return SurfaceNodeSeed(
             node_kind="reference_resolution",
             source_ref=source_ref,

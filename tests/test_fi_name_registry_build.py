@@ -11,8 +11,10 @@ from __future__ import annotations
 import datetime as dt
 
 from lawvm.finland.references.registries.statute_name import (
+    FinlexRepealedByCandidate,
     StatuteNameEntry,
     _extract_repeal_date,
+    _extract_repealed_by_candidate,
     _extract_title_and_date,
     load_statute_name_entries,
     load_statute_name_registry,
@@ -42,7 +44,12 @@ _FINLEX_NS = "http://data.finlex.fi/schema/finlex"
 # (mirrors the real corpus shape: repealedBy/statuteReference/inForce/
 # dateEntryIntoForce[@date]). ``repeal_date=None`` omits the block entirely
 # (a still-in-force act).
-def _oracle_xml(*, repeal_date: str | None, omit_date: bool = False) -> bytes:
+def _oracle_xml(
+    *,
+    repeal_date: str | None,
+    omit_date: bool = False,
+    repealing_text: str = "805/2011",
+) -> bytes:
     block = ""
     if repeal_date is not None or omit_date:
         date_el = (
@@ -53,7 +60,7 @@ def _oracle_xml(*, repeal_date: str | None, omit_date: bool = False) -> bytes:
         block = (
             "<finlex:repealedBy><finlex:statuteReference>"
             '<finlex:ref href="/akn/fi/act/statute-consolidated/2011/805">'
-            "805/2011</finlex:ref>"
+            f"{repealing_text}</finlex:ref>"
             f"<finlex:inForce>{date_el}</finlex:inForce>"
             "</finlex:statuteReference></finlex:repealedBy>"
         )
@@ -71,6 +78,18 @@ def test_extract_repeal_date_reads_finlex_repealed_by() -> None:
     )
 
 
+def test_extract_repealed_by_candidate_records_witness_without_successor_authority() -> None:
+    """Finlex repealedBy is a typed witness candidate, not an operative successor."""
+    assert _extract_repealed_by_candidate(
+        _oracle_xml(repeal_date="2014-01-01")
+    ) == FinlexRepealedByCandidate(
+        repealing_work_id="2011/805",
+        effective_from=dt.date(2014, 1, 1),
+        witness_href="/akn/fi/act/statute-consolidated/2011/805",
+        witness_text="805/2011",
+    )
+
+
 def test_extract_repeal_date_in_force_act_is_none() -> None:
     """A still-in-force act has no repealedBy block -> open window (never guessed)."""
     assert _extract_repeal_date(_oracle_xml(repeal_date=None)) is None
@@ -79,10 +98,20 @@ def test_extract_repeal_date_in_force_act_is_none() -> None:
 def test_extract_repeal_date_missing_date_is_none() -> None:
     """Fail-loud: a repealedBy block with no parseable date stays OPEN, not guessed."""
     assert _extract_repeal_date(_oracle_xml(repeal_date=None, omit_date=True)) is None
+    assert _extract_repealed_by_candidate(
+        _oracle_xml(repeal_date=None, omit_date=True)
+    ) is None
 
 
 def test_extract_repeal_date_unparseable_oracle_is_none() -> None:
     assert _extract_repeal_date(b"not xml at all") is None
+
+
+def test_extract_repealed_by_candidate_requires_parseable_repealing_id() -> None:
+    """A date without a typed repealing work id remains non-promotable metadata."""
+    assert _extract_repealed_by_candidate(
+        _oracle_xml(repeal_date="2014-01-01", repealing_text="laki 805")
+    ) is None
 
 
 def test_extract_title_and_date_reads_frbr_dateissued() -> None:

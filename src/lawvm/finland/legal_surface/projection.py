@@ -49,8 +49,10 @@ parity gate.
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import date
-from typing import Mapping, Optional
+from typing import Optional, cast
 
 from lawvm.core.legal_surface_graph import (
     LegalSurfaceGraph,
@@ -66,6 +68,11 @@ from lawvm.core.reference_mention import (
 )
 from lawvm.finland.legal_surface.lenses.references import (
     LENS_ID as _REFERENCES_LENS_ID,
+)
+from lawvm.finland.references.resolve import (
+    SuccessorReferenceReasonCode,
+    SuccessorReferenceResolutionBasis,
+    SuccessorReferenceStatus,
 )
 
 # ── Parity field sets (the contract the parity gate asserts against) ──────────
@@ -93,6 +100,44 @@ ROUND_TRIPPABLE_ROW_FIELDS: tuple[str, ...] = (
 #: (empty) so the disjoint/cover test still has a stable symbol to assert
 #: against (its presence pins that no field silently slips out of the schema).
 PAYLOAD_GAP_ROW_FIELDS: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class ReferenceSuccessorChainWitness:
+    """One witnessed edge in a projected successor chain."""
+
+    predecessor_work_id: str
+    successor_work_id: str
+    effective_from: date
+    witness_id: str
+    witness_text: str
+    rule_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class ReferenceSuccessorProjectionRow:
+    """Public projection row for B5 dated successor resolution.
+
+    This is intentionally separate from the legacy ``fi_refs`` row. ``fi_refs``
+    preserves the literal citation surface; successor resolution is a dated
+    operative-endpoint claim attached to the joined ``reference_resolution``.
+    """
+
+    source_work_id: str
+    source_provision_ref_str: str
+    source_span_file: str | None
+    source_span_byte_offset: int | None
+    source_span_len: int | None
+    surface_text: str
+    literal_work_id: str | None
+    operative_work_id: str | None
+    successor_as_of: str | None
+    successor_status: SuccessorReferenceStatus
+    successor_resolution_basis: SuccessorReferenceResolutionBasis
+    successor_candidates: tuple[str, ...]
+    successor_rejected_candidates: tuple[str, ...]
+    successor_reason_code: SuccessorReferenceReasonCode
+    successor_chain: tuple[ReferenceSuccessorChainWitness, ...]
 
 
 # ── Inverse enum maps (value string -> enum) ─────────────────────────────────
@@ -316,6 +361,95 @@ def _valid_interval_from_payload(
     return _parse(payload.get("valid_at_start")), _parse(payload.get("valid_at_end"))
 
 
+def _optional_str_payload(payload: Mapping[str, object], key: str) -> str | None:
+    value = payload.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError(
+            f"graph_to_reference_successor_rows: {key} must be a str or None, "
+            f"got {value!r}"
+        )
+    return value
+
+
+def _required_str_payload(payload: Mapping[str, object], key: str) -> str:
+    value = payload.get(key)
+    if not isinstance(value, str) or not value:
+        raise ValueError(
+            f"graph_to_reference_successor_rows: {key} must be a non-empty str, "
+            f"got {value!r}"
+        )
+    return value
+
+
+def _tuple_str_payload(payload: Mapping[str, object], key: str) -> tuple[str, ...]:
+    value = payload.get(key)
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise ValueError(
+            f"graph_to_reference_successor_rows: {key} must be a list[str], "
+            f"got {value!r}"
+        )
+    out: list[str] = []
+    for item in value:
+        if not isinstance(item, str):
+            raise ValueError(
+                f"graph_to_reference_successor_rows: {key} contains non-str "
+                f"value {item!r}"
+            )
+        out.append(item)
+    return tuple(out)
+
+
+def _required_date_payload(payload: Mapping[str, object], key: str) -> date:
+    raw = _required_str_payload(payload, key)
+    try:
+        return date.fromisoformat(raw)
+    except ValueError as exc:
+        raise ValueError(
+            f"graph_to_reference_successor_rows: {key} must be an ISO date, "
+            f"got {raw!r}"
+        ) from exc
+
+
+def _successor_chain_payload(
+    payload: Mapping[str, object],
+) -> tuple[ReferenceSuccessorChainWitness, ...]:
+    value = payload.get("successor_chain")
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise ValueError(
+            "graph_to_reference_successor_rows: successor_chain must be a "
+            f"list[dict], got {value!r}"
+        )
+    chain: list[ReferenceSuccessorChainWitness] = []
+    for item in value:
+        if not isinstance(item, Mapping):
+            raise ValueError(
+                "graph_to_reference_successor_rows: successor_chain contains "
+                f"non-mapping value {item!r}"
+            )
+        item_map = cast(Mapping[str, object], item)
+        chain.append(
+            ReferenceSuccessorChainWitness(
+                predecessor_work_id=_required_str_payload(
+                    item_map, "predecessor_work_id"
+                ),
+                successor_work_id=_required_str_payload(
+                    item_map, "successor_work_id"
+                ),
+                effective_from=_required_date_payload(item_map, "effective_from"),
+                witness_id=_required_str_payload(item_map, "witness_id"),
+                witness_text=_required_str_payload(item_map, "witness_text"),
+                rule_id=_required_str_payload(item_map, "rule_id"),
+            )
+        )
+    return tuple(chain)
+
+
 def graph_to_reference_mentions(
     graph: LegalSurfaceGraph,
 ) -> list[ReferenceMention]:
@@ -456,3 +590,78 @@ def graph_to_fi_refs_rows(graph: LegalSurfaceGraph) -> list[dict[str, object]]:
     :data:`ROUND_TRIPPABLE_ROW_FIELDS` (now the full 14-field schema).
     """
     return [reference_mention_to_row(m) for m in graph_to_reference_mentions(graph)]
+
+
+def graph_to_reference_successor_rows(
+    graph: LegalSurfaceGraph,
+) -> list[ReferenceSuccessorProjectionRow]:
+    """Project B5 successor-resolution payloads to public rows.
+
+    The ordinary ``fi_refs`` projection stays literal-citation-only. This
+    function exposes the separate dated successor layer carried by H1
+    ``reference_resolution`` payloads. It emits one row per H1 ``reference_expr``
+    whose joined resolution carries ``successor_resolution_status``; graphs built
+    without successor context return an empty list.
+    """
+    by_expr = _resolution_index(graph)
+    expr_nodes = [
+        node
+        for node in graph.nodes.values()
+        if node.node_kind == "reference_expr" and node.lens_id == _REFERENCES_LENS_ID
+    ]
+
+    rows: list[ReferenceSuccessorProjectionRow] = []
+    for expr in expr_nodes:
+        resolution = by_expr.get(expr.node_id)
+        if resolution is None:
+            raise ValueError(
+                "graph_to_reference_successor_rows: reference_expr node has no "
+                f"resolution_of -> reference_resolution edge (node_id={expr.node_id!r})"
+            )
+        payload = resolution.payload
+        if "successor_resolution_status" not in payload:
+            continue
+        source_ref = expr.source_ref
+        if source_ref is None or not source_ref.work_id:
+            raise ValueError(
+                "graph_to_reference_successor_rows: successor row needs a "
+                f"source_ref with work_id (node_id={expr.node_id!r})"
+            )
+        source_provision_ref = _source_ref_from_payload(
+            expr.payload.get("source_provision_ref")
+        )
+        source_span = _source_span_from_payload(expr.payload)
+        rows.append(
+            ReferenceSuccessorProjectionRow(
+                source_work_id=source_ref.work_id,
+                source_provision_ref_str=source_provision_ref.serialized(),
+                source_span_file=(
+                    source_span.source_file if source_span is not None else None
+                ),
+                source_span_byte_offset=(
+                    source_span.byte_offset if source_span is not None else None
+                ),
+                source_span_len=source_span.byte_len if source_span is not None else None,
+                surface_text=_optional_str_payload(expr.payload, "surface_text") or "",
+                literal_work_id=_optional_str_payload(payload, "literal_work_id"),
+                operative_work_id=_optional_str_payload(payload, "operative_work_id"),
+                successor_as_of=_optional_str_payload(payload, "successor_as_of"),
+                successor_status=SuccessorReferenceStatus(
+                    _required_str_payload(payload, "successor_resolution_status")
+                ),
+                successor_resolution_basis=SuccessorReferenceResolutionBasis(
+                    _required_str_payload(payload, "successor_resolution_basis")
+                ),
+                successor_candidates=_tuple_str_payload(
+                    payload, "successor_candidates"
+                ),
+                successor_rejected_candidates=_tuple_str_payload(
+                    payload, "successor_rejected_candidates"
+                ),
+                successor_reason_code=SuccessorReferenceReasonCode(
+                    _required_str_payload(payload, "successor_reason_code")
+                ),
+                successor_chain=_successor_chain_payload(payload),
+            )
+        )
+    return rows

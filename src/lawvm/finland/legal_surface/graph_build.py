@@ -14,6 +14,7 @@ context.
 from __future__ import annotations
 
 import os
+from collections.abc import Sequence
 
 from lawvm.core.legal_surface_assembler import (
     SurfaceEdgePass,
@@ -71,6 +72,7 @@ from lawvm.finland.legal_surface.lenses.procedure import ProcedureLens
 from lawvm.finland.legal_surface.lenses.references import ReferenceLens
 from lawvm.finland.legal_surface.lenses.sanction import SanctionLens
 from lawvm.finland.legal_surface.lenses.temporal import TemporalLens
+from lawvm.finland.references.resolve import StatuteSuccessorEdge
 from lawvm.finland.legal_surface.lints import (
     AmbiguousTermUseLintPass,
     DeadDefinitionLintPass,
@@ -332,6 +334,8 @@ def build_legal_surface_graph_staged(
     *,
     statute_registry: object | None = None,
     eu_registry: object | None = None,
+    successor_edges: Sequence[StatuteSuccessorEdge] | None = None,
+    successor_as_of: object | None = None,
     surface_time: str | None = None,
     lenses: tuple[SurfaceLens, ...] = DEFAULT_LENSES,
     edge_passes: tuple[SurfaceEdgePass, ...] = DEFAULT_EDGE_PASSES,
@@ -362,6 +366,8 @@ def build_legal_surface_graph_staged(
         statute_id,
         statute_registry=statute_registry,
         eu_registry=eu_registry,
+        successor_edges=successor_edges,
+        successor_as_of=successor_as_of,
         surface_time=surface_time,
         lenses=lenses,
         edge_passes=edge_passes,
@@ -383,6 +389,8 @@ def build_legal_surface_graph(
     *,
     statute_registry: object | None = None,
     eu_registry: object | None = None,
+    successor_edges: Sequence[StatuteSuccessorEdge] | None = None,
+    successor_as_of: object | None = None,
     surface_time: str | None = None,
     lenses: tuple[SurfaceLens, ...] = DEFAULT_LENSES,
     edge_passes: tuple[SurfaceEdgePass, ...] = DEFAULT_EDGE_PASSES,
@@ -393,6 +401,9 @@ def build_legal_surface_graph(
     assembles the graph (minting + firewall + ordered edge passes). Pass
     ``statute_registry`` / ``eu_registry`` to enable reference resolution
     (by-name / EU-nickname placeholders → resolved/ambiguous/statute_only).
+    Pass typed ``successor_edges`` plus ``successor_as_of`` to attach dated
+    successor projection payloads to H1 ``reference_resolution`` nodes. This does
+    not rewrite literal targets or assert operative ``refers_to`` edges.
 
     Value-only wrapper over :func:`build_legal_surface_graph_staged` (0-delta:
     existing consumers that want just the graph are untouched).
@@ -402,6 +413,8 @@ def build_legal_surface_graph(
         statute_id,
         statute_registry=statute_registry,
         eu_registry=eu_registry,
+        successor_edges=successor_edges,
+        successor_as_of=successor_as_of,
         surface_time=surface_time,
         lenses=lenses,
         edge_passes=edge_passes,
@@ -473,6 +486,8 @@ def _assemble_surface_graph_value(
     *,
     statute_registry: object | None = None,
     eu_registry: object | None = None,
+    successor_edges: Sequence[StatuteSuccessorEdge] | None = None,
+    successor_as_of: object | None = None,
     surface_time: str | None = None,
     lenses: tuple[SurfaceLens, ...] = DEFAULT_LENSES,
     edge_passes: tuple[SurfaceEdgePass, ...] = DEFAULT_EDGE_PASSES,
@@ -527,6 +542,8 @@ def _assemble_surface_graph_value(
         options={
             "statute_registry": statute_registry,
             "eu_registry": eu_registry,
+            "successor_edges": tuple(successor_edges or ()),
+            "successor_as_of": successor_as_of,
         },
     )
 

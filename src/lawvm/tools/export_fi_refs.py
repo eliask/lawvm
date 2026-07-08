@@ -41,8 +41,11 @@ import importlib
 import json
 import sys
 import time
+from dataclasses import dataclass
+from datetime import date
+from enum import StrEnum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from lawvm.core.reference_mention import reference_mention_to_row
 from lawvm.core.manual_claims.primitive import (
@@ -52,6 +55,158 @@ from lawvm.core.manual_claims.primitive import (
     ValidatorStatus,
     ReviewStatus,
 )
+
+if TYPE_CHECKING:
+    from lawvm.finland.legal_surface.projection import ReferenceSuccessorProjectionRow
+    from lawvm.finland.references.registries.statute_name import StatuteNameRegistry
+    from lawvm.finland.references.resolve import StatuteSuccessorEdge
+
+
+class FinlexRepealedByCandidateStatus(StrEnum):
+    """Closed status set for Finlex repealedBy candidate evidence rows."""
+
+    CANDIDATE = "candidate"
+
+
+class FinlexRepealedByPromotionStatus(StrEnum):
+    """Closed promotion status set for Finlex repealedBy candidate rows."""
+
+    NOT_PROMOTED = "not_promoted"
+
+
+@dataclass(frozen=True, slots=True)
+class FinlexRepealedByCandidateProjectionRow:
+    """Evidence-plane row for Finlex ``repealedBy`` successor candidates.
+
+    These rows record metadata witnesses only. They are intentionally separate
+    from :class:`StatuteSuccessorEdge` and never carry replay authority.
+    """
+
+    predecessor_work_id: str
+    repealing_work_id: str
+    effective_from: str
+    witness_href: str | None
+    witness_text: str
+    rule_id: str
+    candidate_status: FinlexRepealedByCandidateStatus = (
+        FinlexRepealedByCandidateStatus.CANDIDATE
+    )
+    promotion_status: FinlexRepealedByPromotionStatus = (
+        FinlexRepealedByPromotionStatus.NOT_PROMOTED
+    )
+    replay_authorized: bool = False
+
+    def __post_init__(self) -> None:
+        """Keep the candidate-ledger waist typed; JSON lowering is explicit."""
+        if not isinstance(self.candidate_status, FinlexRepealedByCandidateStatus):
+            raise TypeError(
+                "FinlexRepealedByCandidateProjectionRow.candidate_status must be "
+                "FinlexRepealedByCandidateStatus"
+            )
+        if not isinstance(self.promotion_status, FinlexRepealedByPromotionStatus):
+            raise TypeError(
+                "FinlexRepealedByCandidateProjectionRow.promotion_status must be "
+                "FinlexRepealedByPromotionStatus"
+            )
+
+
+class ReferenceSuccessorPromotionRejectionCode(StrEnum):
+    """Closed reason-code set for successor-candidate promotion receipts."""
+
+    CANDIDATE_ALREADY_CLAIMS_REPLAY_AUTHORITY = (
+        "candidate_already_claims_replay_authority"
+    )
+    MISSING_PROMOTION_CLAIM = "missing_promotion_claim"
+    AMBIGUOUS_PROMOTION_CLAIM = "ambiguous_promotion_claim"
+    PROMOTION_CLAIM_NOT_ACCEPTED = "promotion_claim_not_accepted"
+    PROMOTION_CLAIM_NOT_VERIFIED_MANUAL = "promotion_claim_not_verified_manual"
+    PROMOTION_CLAIM_NOT_MIGRATION_REVALIDATED = (
+        "promotion_claim_not_migration_revalidated"
+    )
+    CANDIDATE_RULE_MISMATCH = "candidate_rule_mismatch"
+    INVALID_CANDIDATE_EFFECTIVE_FROM = "invalid_candidate_effective_from"
+    PROMOTION_CLAIM_WITHOUT_CANDIDATE = "promotion_claim_without_candidate"
+
+
+class ReferenceSuccessorFrontierReasonCode(StrEnum):
+    """Closed reason-code set for successor-reference frontier rows."""
+
+    MISSING_PROMOTED_SUCCESSOR_CLAIM = "missing_promoted_successor_claim"
+
+
+@dataclass(frozen=True, slots=True)
+class ReferenceSuccessorPromotionClaim:
+    """Explicit review/adjudication claim authorizing one candidate edge."""
+
+    predecessor_work_id: str
+    repealing_work_id: str
+    effective_from: str
+    candidate_rule_id: str
+    promotion_witness_id: str
+    promotion_witness_text: str
+    claim_status: ClaimStatus
+    review_status: ReviewStatus
+    validator_status: ValidatorStatus
+    promotion_rule_id: str = "fi.reference_successor.promoted_repealed_by_candidate"
+
+
+@dataclass(frozen=True, slots=True)
+class RejectedRepealedByCandidatePromotion:
+    """Visible receipt for a candidate that did not become a successor edge."""
+
+    candidate: FinlexRepealedByCandidateProjectionRow
+    reason_code: ReferenceSuccessorPromotionRejectionCode
+    reason: str
+    blocking: bool = True
+
+
+@dataclass(frozen=True, slots=True)
+class RejectedReferenceSuccessorPromotionClaim:
+    """Visible receipt for a promotion claim that matched no candidate."""
+
+    claim: ReferenceSuccessorPromotionClaim
+    reason_code: ReferenceSuccessorPromotionRejectionCode
+    reason: str
+    blocking: bool = True
+
+
+@dataclass(frozen=True, slots=True)
+class RepealedByCandidatePromotionResult:
+    """Promotion gate output: accepted edges plus rejected input receipts."""
+
+    accepted_edges: tuple["StatuteSuccessorEdge", ...]
+    rejected_candidates: tuple[RejectedRepealedByCandidatePromotion, ...]
+    rejected_claims: tuple[RejectedReferenceSuccessorPromotionClaim, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ReferenceSuccessorFrontierRow:
+    """Evidence-plane row for literal citations blocked on successor promotion.
+
+    The row says only: this source reference literally cites a work that has
+    non-authorizing ``repealedBy`` candidate evidence, but no promoted successor
+    edge was accepted for that predecessor in this export slice. It never carries
+    an operative work id and never claims replay/query authority.
+    """
+
+    source_work_id: str
+    source_provision_ref_str: str
+    source_span_file: str
+    source_span_byte_offset: int | None
+    source_span_len: int | None
+    surface_text: str
+    literal_work_id: str
+    successor_as_of: str
+    candidate_repealing_work_ids: tuple[str, ...]
+    candidate_effective_from: tuple[str, ...]
+    candidate_rule_ids: tuple[str, ...]
+    candidate_promotion_rejection_codes: tuple[
+        ReferenceSuccessorPromotionRejectionCode, ...
+    ] = ()
+    reason_code: ReferenceSuccessorFrontierReasonCode = (
+        ReferenceSuccessorFrontierReasonCode.MISSING_PROMOTED_SUCCESSOR_CLAIM
+    )
+    replay_authorized: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -126,6 +281,382 @@ def _get_statute_xml(statute_id: str, store: Any) -> Optional[bytes]:
         return store.read_oracle(statute_id)
     except Exception:
         return None
+
+
+def _required_edge_str(row: Dict[str, Any], key: str, *, line_no: int) -> str:
+    value = row.get(key)
+    if not isinstance(value, str) or not value:
+        raise ValueError(
+            "load_reference_successor_edges: "
+            f"line {line_no} field {key!r} must be a non-empty string"
+        )
+    return value
+
+
+def _required_claim_str(row: Dict[str, Any], key: str, *, line_no: int) -> str:
+    value = row.get(key)
+    if not isinstance(value, str) or not value:
+        raise ValueError(
+            "load_reference_successor_promotion_claims: "
+            f"line {line_no} field {key!r} must be a non-empty string"
+        )
+    return value
+
+
+def _required_claim_status(row: Dict[str, Any], *, line_no: int) -> ClaimStatus:
+    raw = _required_claim_str(row, "claim_status", line_no=line_no)
+    try:
+        return ClaimStatus(raw)
+    except ValueError as exc:
+        raise ValueError(
+            "load_reference_successor_promotion_claims: "
+            f"line {line_no} field 'claim_status' is not a known ClaimStatus"
+        ) from exc
+
+
+def _required_review_status(row: Dict[str, Any], *, line_no: int) -> ReviewStatus:
+    raw = _required_claim_str(row, "review_status", line_no=line_no)
+    try:
+        return ReviewStatus(raw)
+    except ValueError as exc:
+        raise ValueError(
+            "load_reference_successor_promotion_claims: "
+            f"line {line_no} field 'review_status' is not a known ReviewStatus"
+        ) from exc
+
+
+def _required_validator_status(
+    row: Dict[str, Any], *, line_no: int
+) -> ValidatorStatus:
+    raw = _required_claim_str(row, "validator_status", line_no=line_no)
+    try:
+        return ValidatorStatus(raw)
+    except ValueError as exc:
+        raise ValueError(
+            "load_reference_successor_promotion_claims: "
+            f"line {line_no} field 'validator_status' is not a known "
+            "ValidatorStatus"
+        ) from exc
+
+
+def load_reference_successor_edges(path: str | Path) -> list["StatuteSuccessorEdge"]:
+    """Load explicit witnessed successor edges from JSONL.
+
+    This is an input boundary, not an acquisition heuristic. Each row must carry
+    the exact :class:`StatuteSuccessorEdge` fields; the loader does not infer a
+    successor from title equality, repeal date, or current citation state.
+    """
+    from lawvm.finland.references.resolve import StatuteSuccessorEdge
+
+    edges: list[StatuteSuccessorEdge] = []
+    edge_path = Path(path)
+    for line_no, raw in enumerate(edge_path.read_text(encoding="utf-8").splitlines(), 1):
+        if not raw.strip():
+            continue
+        try:
+            obj = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                "load_reference_successor_edges: "
+                f"line {line_no} is not valid JSON: {exc.msg}"
+            ) from exc
+        if not isinstance(obj, dict):
+            raise ValueError(
+                "load_reference_successor_edges: "
+                f"line {line_no} must be a JSON object"
+            )
+        raw_effective = _required_edge_str(obj, "effective_from", line_no=line_no)
+        try:
+            effective_from = date.fromisoformat(raw_effective)
+        except ValueError as exc:
+            raise ValueError(
+                "load_reference_successor_edges: "
+                f"line {line_no} field 'effective_from' must be an ISO date"
+            ) from exc
+        edges.append(
+            StatuteSuccessorEdge(
+                predecessor_work_id=_required_edge_str(
+                    obj, "predecessor_work_id", line_no=line_no
+                ),
+                successor_work_id=_required_edge_str(
+                    obj, "successor_work_id", line_no=line_no
+                ),
+                effective_from=effective_from,
+                witness_id=_required_edge_str(obj, "witness_id", line_no=line_no),
+                witness_text=_required_edge_str(obj, "witness_text", line_no=line_no),
+                rule_id=(
+                    _required_edge_str(obj, "rule_id", line_no=line_no)
+                    if "rule_id" in obj
+                    else "fi.reference_successor.witnessed_edge"
+                ),
+            )
+        )
+    return edges
+
+
+def load_reference_successor_promotion_claims(
+    path: str | Path,
+) -> list[ReferenceSuccessorPromotionClaim]:
+    """Load explicit reviewed promotion claims from JSONL.
+
+    This loader does not read Finlex metadata and does not mint successor edges.
+    It only parses the adjudication input consumed by
+    :func:`promote_repealed_by_candidates_to_successor_edges`.
+    """
+    claims: list[ReferenceSuccessorPromotionClaim] = []
+    claim_path = Path(path)
+    for line_no, raw in enumerate(claim_path.read_text(encoding="utf-8").splitlines(), 1):
+        if not raw.strip():
+            continue
+        try:
+            obj = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                "load_reference_successor_promotion_claims: "
+                f"line {line_no} is not valid JSON: {exc.msg}"
+            ) from exc
+        if not isinstance(obj, dict):
+            raise ValueError(
+                "load_reference_successor_promotion_claims: "
+                f"line {line_no} must be a JSON object"
+            )
+        raw_effective = _required_claim_str(obj, "effective_from", line_no=line_no)
+        try:
+            date.fromisoformat(raw_effective)
+        except ValueError as exc:
+            raise ValueError(
+                "load_reference_successor_promotion_claims: "
+                f"line {line_no} field 'effective_from' must be an ISO date"
+            ) from exc
+        claims.append(
+            ReferenceSuccessorPromotionClaim(
+                predecessor_work_id=_required_claim_str(
+                    obj, "predecessor_work_id", line_no=line_no
+                ),
+                repealing_work_id=_required_claim_str(
+                    obj, "repealing_work_id", line_no=line_no
+                ),
+                effective_from=raw_effective,
+                candidate_rule_id=_required_claim_str(
+                    obj, "candidate_rule_id", line_no=line_no
+                ),
+                promotion_witness_id=_required_claim_str(
+                    obj, "promotion_witness_id", line_no=line_no
+                ),
+                promotion_witness_text=_required_claim_str(
+                    obj, "promotion_witness_text", line_no=line_no
+                ),
+                claim_status=_required_claim_status(obj, line_no=line_no),
+                review_status=_required_review_status(obj, line_no=line_no),
+                validator_status=_required_validator_status(obj, line_no=line_no),
+                promotion_rule_id=(
+                    _required_claim_str(obj, "promotion_rule_id", line_no=line_no)
+                    if "promotion_rule_id" in obj
+                    else "fi.reference_successor.promoted_repealed_by_candidate"
+                ),
+            )
+        )
+    return claims
+
+
+def _promotion_key(
+    predecessor_work_id: str,
+    repealing_work_id: str,
+    effective_from: str,
+) -> tuple[str, str, str]:
+    return (predecessor_work_id, repealing_work_id, effective_from)
+
+
+def promote_repealed_by_candidates_to_successor_edges(
+    candidates: Sequence[FinlexRepealedByCandidateProjectionRow],
+    promotion_claims: Sequence[ReferenceSuccessorPromotionClaim],
+) -> RepealedByCandidatePromotionResult:
+    """Promote reviewed Finlex candidates to successor edges.
+
+    ``FinlexRepealedByCandidate`` proves only that Finlex exposes repeal
+    metadata. This gate requires an explicit promotion claim for the exact
+    predecessor/repealing/date tuple and returns receipts for every candidate it
+    refuses. The output edges are suitable for the existing explicit
+    ``StatuteSuccessorEdge`` input boundary; rejected candidates remain evidence
+    and carry no replay authority.
+    """
+    from lawvm.finland.references.resolve import StatuteSuccessorEdge
+
+    claims_by_key: dict[tuple[str, str, str], list[int]] = {}
+    for claim_index, claim in enumerate(promotion_claims):
+        claims_by_key.setdefault(
+            _promotion_key(
+                claim.predecessor_work_id,
+                claim.repealing_work_id,
+                claim.effective_from,
+            ),
+            [],
+        ).append(claim_index)
+
+    accepted_edges: list[StatuteSuccessorEdge] = []
+    rejected: list[RejectedRepealedByCandidatePromotion] = []
+    consumed_claim_indexes: set[int] = set()
+    for candidate in candidates:
+        key = _promotion_key(
+            candidate.predecessor_work_id,
+            candidate.repealing_work_id,
+            candidate.effective_from,
+        )
+        matching_claim_indexes = claims_by_key.get(key, [])
+        consumed_claim_indexes.update(matching_claim_indexes)
+        if candidate.replay_authorized:
+            rejected.append(
+                RejectedRepealedByCandidatePromotion(
+                    candidate=candidate,
+                    reason_code=(
+                        ReferenceSuccessorPromotionRejectionCode
+                        .CANDIDATE_ALREADY_CLAIMS_REPLAY_AUTHORITY
+                    ),
+                    reason=(
+                        "Finlex repealedBy candidates must arrive as evidence "
+                        "with replay_authorized=false before promotion."
+                    ),
+                )
+            )
+            continue
+        if not matching_claim_indexes:
+            rejected.append(
+                RejectedRepealedByCandidatePromotion(
+                    candidate=candidate,
+                    reason_code=(
+                        ReferenceSuccessorPromotionRejectionCode
+                        .MISSING_PROMOTION_CLAIM
+                    ),
+                    reason=(
+                        "No explicit promotion claim matched this "
+                        "predecessor/repealing/effective_from candidate."
+                    ),
+                )
+            )
+            continue
+        if len(matching_claim_indexes) > 1:
+            rejected.append(
+                RejectedRepealedByCandidatePromotion(
+                    candidate=candidate,
+                    reason_code=(
+                        ReferenceSuccessorPromotionRejectionCode
+                        .AMBIGUOUS_PROMOTION_CLAIM
+                    ),
+                    reason=(
+                        "More than one promotion claim matched this candidate; "
+                        "successor authority is ambiguous."
+                    ),
+                )
+            )
+            continue
+        claim = promotion_claims[matching_claim_indexes[0]]
+        if claim.claim_status is not ClaimStatus.ACCEPTED:
+            rejected.append(
+                RejectedRepealedByCandidatePromotion(
+                    candidate=candidate,
+                    reason_code=(
+                        ReferenceSuccessorPromotionRejectionCode
+                        .PROMOTION_CLAIM_NOT_ACCEPTED
+                    ),
+                    reason=(
+                        "Promotion claim claim_status must be 'accepted' "
+                        "before it can mint a successor edge."
+                    ),
+                )
+            )
+            continue
+        if claim.review_status is not ReviewStatus.VERIFIED_MANUAL:
+            rejected.append(
+                RejectedRepealedByCandidatePromotion(
+                    candidate=candidate,
+                    reason_code=(
+                        ReferenceSuccessorPromotionRejectionCode
+                        .PROMOTION_CLAIM_NOT_VERIFIED_MANUAL
+                    ),
+                    reason=(
+                        "Promotion claim review_status must be "
+                        "'verified_manual' before it can mint a successor edge."
+                    ),
+                )
+            )
+            continue
+        if claim.validator_status is not ValidatorStatus.MIGRATION_REVALIDATED:
+            rejected.append(
+                RejectedRepealedByCandidatePromotion(
+                    candidate=candidate,
+                    reason_code=(
+                        ReferenceSuccessorPromotionRejectionCode
+                        .PROMOTION_CLAIM_NOT_MIGRATION_REVALIDATED
+                    ),
+                    reason=(
+                        "Promotion claim validator_status must be "
+                        "'migration_revalidated' before it can mint a "
+                        "successor edge."
+                    ),
+                )
+            )
+            continue
+        if claim.candidate_rule_id != candidate.rule_id:
+            rejected.append(
+                RejectedRepealedByCandidatePromotion(
+                    candidate=candidate,
+                    reason_code=(
+                        ReferenceSuccessorPromotionRejectionCode
+                        .CANDIDATE_RULE_MISMATCH
+                    ),
+                    reason=(
+                        "Promotion claim did not cite the candidate rule id "
+                        "that produced this witness."
+                    ),
+                )
+            )
+            continue
+        try:
+            effective_from = date.fromisoformat(candidate.effective_from)
+        except ValueError:
+            rejected.append(
+                RejectedRepealedByCandidatePromotion(
+                    candidate=candidate,
+                    reason_code=(
+                        ReferenceSuccessorPromotionRejectionCode
+                        .INVALID_CANDIDATE_EFFECTIVE_FROM
+                    ),
+                    reason="Candidate effective_from is not an ISO date.",
+                )
+            )
+            continue
+        accepted_edges.append(
+            StatuteSuccessorEdge(
+                predecessor_work_id=candidate.predecessor_work_id,
+                successor_work_id=candidate.repealing_work_id,
+                effective_from=effective_from,
+                witness_id=claim.promotion_witness_id,
+                witness_text=claim.promotion_witness_text,
+                rule_id=claim.promotion_rule_id,
+            )
+        )
+
+    rejected_claims = [
+        RejectedReferenceSuccessorPromotionClaim(
+            claim=claim,
+            reason_code=(
+                ReferenceSuccessorPromotionRejectionCode
+                .PROMOTION_CLAIM_WITHOUT_CANDIDATE
+            ),
+            reason=(
+                "Promotion claim did not match any Finlex repealedBy "
+                "candidate in the corpus slice."
+            ),
+        )
+        for claim_index, claim in enumerate(promotion_claims)
+        if claim_index not in consumed_claim_indexes
+    ]
+
+    return RepealedByCandidatePromotionResult(
+        accepted_edges=tuple(accepted_edges),
+        rejected_candidates=tuple(rejected),
+        rejected_claims=tuple(rejected_claims),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -255,6 +786,70 @@ def _project_refs_for_statute_via_graph(
 
     diag_rows: List[Dict[str, Any]] = []
     return mention_rows, diag_rows
+
+
+def _project_reference_successors_for_statute_via_graph(
+    statute_id: str,
+    store: Any,
+    *,
+    successor_edges: Sequence["StatuteSuccessorEdge"],
+    successor_as_of: date | str,
+    statute_registry: "StatuteNameRegistry | None" = None,
+) -> list["ReferenceSuccessorProjectionRow"]:
+    """Project dated successor rows for one statute via the Legal Surface Graph.
+
+    This is a sibling projection to ``fi_refs``: it never changes the literal
+    citation rows or the legacy parquet schema. ``successor_edges`` are supplied
+    typed witness records; absence of a witness yields no operative rewrite.
+    When no statute-name registry is supplied, an empty registry is used so
+    explicit ``NNN/YYYY`` citations can still be resolved as literals while
+    by-name mentions remain unresolved rather than guessed.
+    """
+    from lawvm.finland.legal_surface.graph_build import build_legal_surface_graph
+    from lawvm.finland.legal_surface.lenses.references import ReferenceLens
+    from lawvm.finland.legal_surface.projection import graph_to_reference_successor_rows
+    from lawvm.finland.references.registries.statute_name import StatuteNameRegistry
+
+    xml_bytes = _get_statute_xml(statute_id, store)
+    if xml_bytes is None:
+        return []
+
+    registry = statute_registry if statute_registry is not None else StatuteNameRegistry()
+    graph = build_legal_surface_graph(
+        xml_bytes,
+        statute_id,
+        statute_registry=registry,
+        successor_edges=tuple(successor_edges),
+        successor_as_of=successor_as_of,
+        lenses=(ReferenceLens(),),
+        edge_passes=(),
+    )
+    return graph_to_reference_successor_rows(graph)
+
+
+def _project_repealed_by_candidate_for_statute(
+    statute_id: str,
+    store: Any,
+) -> FinlexRepealedByCandidateProjectionRow | None:
+    """Project Finlex ``repealedBy`` metadata as a non-authorizing candidate."""
+    from lawvm.finland.references.registries.statute_name import (
+        _extract_repealed_by_candidate,
+    )
+
+    xml_bytes = _get_statute_xml(statute_id, store)
+    if xml_bytes is None:
+        return None
+    candidate = _extract_repealed_by_candidate(xml_bytes)
+    if candidate is None:
+        return None
+    return FinlexRepealedByCandidateProjectionRow(
+        predecessor_work_id=statute_id,
+        repealing_work_id=candidate.repealing_work_id,
+        effective_from=candidate.effective_from.isoformat(),
+        witness_href=candidate.witness_href,
+        witness_text=candidate.witness_text,
+        rule_id=candidate.rule_id,
+    )
 
 
 def _project_refs_for_statute_deterministic(
@@ -419,6 +1014,132 @@ def _write_jsonl(path: Path, rows: List[Dict[str, Any]]) -> int:
     return len(rows)
 
 
+def _reference_successor_row_to_dict(
+    row: "ReferenceSuccessorProjectionRow",
+) -> Dict[str, Any]:
+    """Serialize the typed successor projection row without changing its shape."""
+    return {
+        "source_work_id": row.source_work_id,
+        "source_provision_ref_str": row.source_provision_ref_str,
+        "source_span_file": row.source_span_file,
+        "source_span_byte_offset": row.source_span_byte_offset,
+        "source_span_len": row.source_span_len,
+        "surface_text": row.surface_text,
+        "literal_work_id": row.literal_work_id,
+        "operative_work_id": row.operative_work_id,
+        "successor_as_of": row.successor_as_of,
+        "successor_status": row.successor_status.value,
+        "successor_resolution_basis": row.successor_resolution_basis.value,
+        "successor_candidates": list(row.successor_candidates),
+        "successor_rejected_candidates": list(row.successor_rejected_candidates),
+        "successor_reason_code": row.successor_reason_code.value,
+        "successor_chain": [
+            {
+                "predecessor_work_id": witness.predecessor_work_id,
+                "successor_work_id": witness.successor_work_id,
+                "effective_from": witness.effective_from.isoformat(),
+                "witness_id": witness.witness_id,
+                "witness_text": witness.witness_text,
+                "rule_id": witness.rule_id,
+            }
+            for witness in row.successor_chain
+        ],
+    }
+
+
+def _repealed_by_candidate_row_to_dict(
+    row: FinlexRepealedByCandidateProjectionRow,
+) -> Dict[str, Any]:
+    """Serialize a non-authorizing Finlex repealedBy candidate row."""
+    return {
+        "predecessor_work_id": row.predecessor_work_id,
+        "repealing_work_id": row.repealing_work_id,
+        "effective_from": row.effective_from,
+        "witness_href": row.witness_href,
+        "witness_text": row.witness_text,
+        "rule_id": row.rule_id,
+        "candidate_status": row.candidate_status.value,
+        "promotion_status": row.promotion_status.value,
+        "replay_authorized": row.replay_authorized,
+    }
+
+
+def _successor_edge_to_dict(row: "StatuteSuccessorEdge") -> Dict[str, Any]:
+    """Serialize an accepted successor edge without changing its authority shape."""
+    return {
+        "predecessor_work_id": row.predecessor_work_id,
+        "successor_work_id": row.successor_work_id,
+        "effective_from": row.effective_from.isoformat(),
+        "witness_id": row.witness_id,
+        "witness_text": row.witness_text,
+        "rule_id": row.rule_id,
+    }
+
+
+def _promotion_claim_to_dict(row: ReferenceSuccessorPromotionClaim) -> Dict[str, Any]:
+    """Serialize a reviewed promotion claim without changing its shape."""
+    return {
+        "predecessor_work_id": row.predecessor_work_id,
+        "repealing_work_id": row.repealing_work_id,
+        "effective_from": row.effective_from,
+        "candidate_rule_id": row.candidate_rule_id,
+        "promotion_witness_id": row.promotion_witness_id,
+        "promotion_witness_text": row.promotion_witness_text,
+        "claim_status": row.claim_status.value,
+        "review_status": row.review_status.value,
+        "validator_status": row.validator_status.value,
+        "promotion_rule_id": row.promotion_rule_id,
+    }
+
+
+def _rejected_repealed_by_promotion_to_dict(
+    rejection: RejectedRepealedByCandidatePromotion,
+) -> Dict[str, Any]:
+    """Serialize a rejected candidate-promotion receipt."""
+    return {
+        "candidate": _repealed_by_candidate_row_to_dict(rejection.candidate),
+        "reason_code": rejection.reason_code.value,
+        "reason": rejection.reason,
+        "blocking": rejection.blocking,
+    }
+
+
+def _rejected_promotion_claim_to_dict(
+    rejection: RejectedReferenceSuccessorPromotionClaim,
+) -> Dict[str, Any]:
+    """Serialize a promotion-claim rejection receipt."""
+    return {
+        "claim": _promotion_claim_to_dict(rejection.claim),
+        "reason_code": rejection.reason_code.value,
+        "reason": rejection.reason,
+        "blocking": rejection.blocking,
+    }
+
+
+def _reference_successor_frontier_row_to_dict(
+    row: ReferenceSuccessorFrontierRow,
+) -> Dict[str, Any]:
+    """Serialize a non-authorizing successor frontier row."""
+    return {
+        "source_work_id": row.source_work_id,
+        "source_provision_ref_str": row.source_provision_ref_str,
+        "source_span_file": row.source_span_file,
+        "source_span_byte_offset": row.source_span_byte_offset,
+        "source_span_len": row.source_span_len,
+        "surface_text": row.surface_text,
+        "literal_work_id": row.literal_work_id,
+        "successor_as_of": row.successor_as_of,
+        "candidate_repealing_work_ids": list(row.candidate_repealing_work_ids),
+        "candidate_effective_from": list(row.candidate_effective_from),
+        "candidate_rule_ids": list(row.candidate_rule_ids),
+        "candidate_promotion_rejection_codes": [
+            code.value for code in row.candidate_promotion_rejection_codes
+        ],
+        "reason_code": row.reason_code.value,
+        "replay_authorized": row.replay_authorized,
+    }
+
+
 def _attach_compile_metadata(table: Any, compile_metadata: Any) -> Any:
     """Attach CompileMetadata fields to a pyarrow Table's schema metadata."""
     if compile_metadata is None:
@@ -477,6 +1198,51 @@ def _fi_refs_arrow_schema(pa: Any) -> Any:
     ])
 
 
+def _reference_successors_arrow_schema(pa: Any) -> Any:
+    """Build the explicit, pinned fi_reference_successors parquet schema."""
+    return pa.schema([
+        pa.field("source_work_id", pa.string()),
+        pa.field("source_provision_ref_str", pa.string()),
+        pa.field("surface_text", pa.string()),
+        pa.field("literal_work_id", pa.string()),
+        pa.field("operative_work_id", pa.string()),
+        pa.field("successor_as_of", pa.string()),
+        pa.field("successor_status", pa.string()),
+        pa.field("successor_resolution_basis", pa.string()),
+        pa.field("successor_candidates", pa.list_(pa.string())),
+        pa.field("successor_rejected_candidates", pa.list_(pa.string())),
+        pa.field("successor_reason_code", pa.string()),
+        pa.field(
+            "successor_chain",
+            pa.list_(
+                pa.struct([
+                    pa.field("predecessor_work_id", pa.string()),
+                    pa.field("successor_work_id", pa.string()),
+                    pa.field("effective_from", pa.string()),
+                    pa.field("witness_id", pa.string()),
+                    pa.field("witness_text", pa.string()),
+                    pa.field("rule_id", pa.string()),
+                ])
+            ),
+        ),
+    ])
+
+
+def _repealed_by_candidates_arrow_schema(pa: Any) -> Any:
+    """Build the explicit, pinned fi_repealed_by_candidates parquet schema."""
+    return pa.schema([
+        pa.field("predecessor_work_id", pa.string()),
+        pa.field("repealing_work_id", pa.string()),
+        pa.field("effective_from", pa.string()),
+        pa.field("witness_href", pa.string()),
+        pa.field("witness_text", pa.string()),
+        pa.field("rule_id", pa.string()),
+        pa.field("candidate_status", pa.string()),
+        pa.field("promotion_status", pa.string()),
+        pa.field("replay_authorized", pa.bool_()),
+    ])
+
+
 def _try_write_parquet(
     path: Path,
     rows: List[Dict[str, Any]],
@@ -531,6 +1297,97 @@ def _try_write_parquet(
         ) from exc
     table = _attach_profile_metadata(table, profile)
     table = _attach_compile_metadata(table, compile_metadata)
+    pq.write_table(table, str(path), compression="zstd")
+    return True
+
+
+def _try_write_reference_successors_parquet(
+    path: Path,
+    rows: List[Dict[str, Any]],
+    compile_metadata: Any = None,
+) -> bool:
+    """Try to write successor rows as Parquet with pinned schema metadata."""
+    try:
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+    except ImportError:
+        return False
+
+    schema = _reference_successors_arrow_schema(pa)
+    expected_cols = {f.name for f in schema}
+
+    if not rows:
+        table = pa.table({col: [] for col in schema.names}, schema=schema)
+        table = _attach_compile_metadata(table, compile_metadata)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        pq.write_table(table, str(path), compression="zstd")
+        return True
+
+    row_cols = set(rows[0].keys())
+    if row_cols != expected_cols:
+        missing = expected_cols - row_cols
+        extra = row_cols - expected_cols
+        raise ValueError(
+            "export_fi_reference_successors: parquet row schema drift — "
+            "projected rows no longer match the pinned successor-reference "
+            f"schema. missing_columns={sorted(missing)} "
+            f"extra_columns={sorted(extra)}."
+        )
+    try:
+        table = pa.Table.from_pylist(rows, schema=schema)
+    except (pa.lib.ArrowInvalid, pa.lib.ArrowTypeError) as exc:
+        raise ValueError(
+            "export_fi_reference_successors: parquet column TYPE drift — a "
+            "value in the projected rows no longer matches the pinned schema "
+            f"type. Underlying: {exc}"
+        ) from exc
+    table = _attach_compile_metadata(table, compile_metadata)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pq.write_table(table, str(path), compression="zstd")
+    return True
+
+
+def _try_write_repealed_by_candidates_parquet(
+    path: Path,
+    rows: List[Dict[str, Any]],
+    compile_metadata: Any = None,
+) -> bool:
+    """Try to write Finlex repealedBy candidate rows with pinned schema."""
+    try:
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+    except ImportError:
+        return False
+
+    schema = _repealed_by_candidates_arrow_schema(pa)
+    expected_cols = {f.name for f in schema}
+
+    if not rows:
+        table = pa.table({col: [] for col in schema.names}, schema=schema)
+        table = _attach_compile_metadata(table, compile_metadata)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        pq.write_table(table, str(path), compression="zstd")
+        return True
+
+    row_cols = set(rows[0].keys())
+    if row_cols != expected_cols:
+        missing = expected_cols - row_cols
+        extra = row_cols - expected_cols
+        raise ValueError(
+            "export_fi_repealed_by_candidates: parquet row schema drift — "
+            "projected rows no longer match the pinned candidate schema. "
+            f"missing_columns={sorted(missing)} extra_columns={sorted(extra)}."
+        )
+    try:
+        table = pa.Table.from_pylist(rows, schema=schema)
+    except (pa.lib.ArrowInvalid, pa.lib.ArrowTypeError) as exc:
+        raise ValueError(
+            "export_fi_repealed_by_candidates: parquet column TYPE drift — a "
+            "value in the projected rows no longer matches the pinned schema "
+            f"type. Underlying: {exc}"
+        ) from exc
+    table = _attach_compile_metadata(table, compile_metadata)
+    path.parent.mkdir(parents=True, exist_ok=True)
     pq.write_table(table, str(path), compression="zstd")
     return True
 
@@ -693,6 +1550,364 @@ def export_fi_refs(
         _write_jsonl(out / "fi_refs_diagnostics.jsonl", all_diag_rows)
 
     return jsonl_count
+
+
+def export_fi_reference_successors(
+    corpus: List[Tuple[int, str]],
+    *,
+    successor_edges: Sequence["StatuteSuccessorEdge"],
+    successor_as_of: date | str,
+    data_dir: str = ".tmp/projections",
+    use_parquet: bool = True,
+    limit: Optional[int] = None,
+    statute_registry: "StatuteNameRegistry | None" = None,
+    compile_metadata: Optional[Any] = None,
+) -> int:
+    """Export dated successor-reference projection rows for a Finnish corpus.
+
+    This writes ``fi_reference_successors.jsonl`` and, when available,
+    ``fi_reference_successors.parquet``. It is a separate artifact from
+    ``fi_refs``: literal citations remain literal, and this table carries only
+    the dated operative-endpoint projection authorized by typed
+    ``StatuteSuccessorEdge`` witnesses supplied by the caller.
+    """
+    store = None
+    try:
+        store = _load_corpus_store()
+    except Exception as exc:
+        print(f"  warning: could not load corpus store: {exc}", file=sys.stderr)
+        return 0
+
+    if limit:
+        corpus = corpus[:limit]
+
+    out = Path(data_dir)
+    out.mkdir(parents=True, exist_ok=True)
+
+    total = len(corpus)
+    all_successor_rows: List[Dict[str, Any]] = []
+    for i, (_, statute_id) in enumerate(corpus, 1):
+        rows = _project_reference_successors_for_statute_via_graph(
+            statute_id,
+            store,
+            successor_edges=successor_edges,
+            successor_as_of=successor_as_of,
+            statute_registry=statute_registry,
+        )
+        all_successor_rows.extend(
+            _reference_successor_row_to_dict(row) for row in rows
+        )
+        if i % 50 == 0 or i == total:
+            print(
+                "  "
+                f"[{i}/{total}] fi_reference_successors: "
+                f"{len(all_successor_rows):,} total"
+            )
+
+    jsonl_count = _write_jsonl(
+        out / "fi_reference_successors.jsonl", all_successor_rows
+    )
+    if use_parquet:
+        ok = _try_write_reference_successors_parquet(
+            out / "fi_reference_successors.parquet",
+            all_successor_rows,
+            compile_metadata,
+        )
+        if ok:
+            print(
+                "  "
+                f"fi_reference_successors: {jsonl_count:,} rows "
+                "(Parquet + JSONL)"
+            )
+        else:
+            print(
+                "  "
+                f"fi_reference_successors: {jsonl_count:,} rows "
+                "(JSONL only; pyarrow not installed)"
+            )
+    else:
+        print(f"  fi_reference_successors: {jsonl_count:,} rows (JSONL)")
+
+    return jsonl_count
+
+
+def _project_repealed_by_candidates_for_corpus(
+    corpus: List[Tuple[int, str]],
+    store: Any,
+) -> list[FinlexRepealedByCandidateProjectionRow]:
+    rows: list[FinlexRepealedByCandidateProjectionRow] = []
+    for _, statute_id in corpus:
+        row = _project_repealed_by_candidate_for_statute(statute_id, store)
+        if row is not None:
+            rows.append(row)
+    return rows
+
+
+def _row_literal_work_id(row: Mapping[str, Any]) -> str | None:
+    """Return the literal target work id from a fi_refs-style row, if present."""
+    value = row.get("target_statute_id")
+    if not value:
+        value = row.get("target_statute_id_str")
+    return str(value) if value else None
+
+
+def _optional_int_row_value(row: Mapping[str, Any], key: str) -> int | None:
+    """Return an optional integer row value from a projection-boundary row."""
+    value = row.get(key)
+    return int(value) if value is not None else None
+
+
+def project_reference_successor_frontier_rows(
+    mention_rows: Sequence[Mapping[str, Any]],
+    *,
+    candidates: Sequence[FinlexRepealedByCandidateProjectionRow],
+    accepted_edges: Sequence["StatuteSuccessorEdge"],
+    candidate_rejections: Sequence[RejectedRepealedByCandidatePromotion],
+    successor_as_of: date | str,
+) -> tuple[ReferenceSuccessorFrontierRow, ...]:
+    """Project literal references blocked on missing successor promotion claims.
+
+    Candidate rows are evidence only. An accepted edge for a predecessor removes
+    that predecessor from this missing-promotion frontier; the ordinary
+    ``fi_reference_successors`` artifact will own those resolved references.
+    """
+    accepted_predecessors = {
+        edge.predecessor_work_id for edge in accepted_edges
+    }
+    candidates_by_predecessor: dict[str, list[FinlexRepealedByCandidateProjectionRow]] = {}
+    for candidate in candidates:
+        if candidate.predecessor_work_id in accepted_predecessors:
+            continue
+        candidates_by_predecessor.setdefault(
+            candidate.predecessor_work_id, []
+        ).append(candidate)
+    rejection_codes_by_candidate_key: dict[
+        tuple[str, str, str, str], list[ReferenceSuccessorPromotionRejectionCode]
+    ] = {}
+    for rejection in candidate_rejections:
+        candidate = rejection.candidate
+        rejection_codes_by_candidate_key.setdefault(
+            (
+                candidate.predecessor_work_id,
+                candidate.repealing_work_id,
+                candidate.effective_from,
+                candidate.rule_id,
+            ),
+            [],
+        ).append(rejection.reason_code)
+
+    rows: list[ReferenceSuccessorFrontierRow] = []
+    as_of_text = (
+        successor_as_of.isoformat()
+        if isinstance(successor_as_of, date)
+        else str(successor_as_of)
+    )
+    for row in mention_rows:
+        literal_work_id = _row_literal_work_id(row)
+        if literal_work_id is None:
+            continue
+        predecessor_candidates = candidates_by_predecessor.get(literal_work_id)
+        if not predecessor_candidates:
+            continue
+        source_work_id = str(row.get("source_statute_id") or "")
+        source_provision_ref_str = str(row.get("source_provision_ref_str") or "")
+        source_span_file = str(row.get("source_span_file") or "")
+        surface_text = str(row.get("surface_text") or row.get("phrase_lemma") or "")
+        rows.append(
+            ReferenceSuccessorFrontierRow(
+                source_work_id=source_work_id,
+                source_provision_ref_str=source_provision_ref_str,
+                source_span_file=source_span_file,
+                source_span_byte_offset=_optional_int_row_value(
+                    row, "source_span_byte_offset"
+                ),
+                source_span_len=_optional_int_row_value(row, "source_span_len"),
+                surface_text=surface_text,
+                literal_work_id=literal_work_id,
+                successor_as_of=as_of_text,
+                candidate_repealing_work_ids=tuple(
+                    dict.fromkeys(c.repealing_work_id for c in predecessor_candidates)
+                ),
+                candidate_effective_from=tuple(
+                    dict.fromkeys(c.effective_from for c in predecessor_candidates)
+                ),
+                candidate_rule_ids=tuple(
+                    dict.fromkeys(c.rule_id for c in predecessor_candidates)
+                ),
+                candidate_promotion_rejection_codes=tuple(
+                    dict.fromkeys(
+                        code
+                        for c in predecessor_candidates
+                        for code in rejection_codes_by_candidate_key.get(
+                            (
+                                c.predecessor_work_id,
+                                c.repealing_work_id,
+                                c.effective_from,
+                                c.rule_id,
+                            ),
+                            [],
+                        )
+                    )
+                ),
+            )
+        )
+    return tuple(rows)
+
+
+def export_fi_repealed_by_candidates(
+    corpus: List[Tuple[int, str]],
+    *,
+    data_dir: str = ".tmp/projections",
+    use_parquet: bool = True,
+    limit: Optional[int] = None,
+    compile_metadata: Optional[Any] = None,
+) -> int:
+    """Export Finlex ``repealedBy`` candidate witness rows for a Finnish corpus.
+
+    This writes ``fi_repealed_by_candidates.jsonl`` and, when available,
+    ``fi_repealed_by_candidates.parquet``. The rows are evidence-plane
+    candidates only: they record Finlex metadata that may later support a
+    promoted ``StatuteSuccessorEdge``, but this function never emits such an
+    edge and every row carries ``replay_authorized=false``.
+    """
+    store = None
+    try:
+        store = _load_corpus_store()
+    except Exception as exc:
+        print(f"  warning: could not load corpus store: {exc}", file=sys.stderr)
+        return 0
+
+    if limit:
+        corpus = corpus[:limit]
+
+    out = Path(data_dir)
+    out.mkdir(parents=True, exist_ok=True)
+
+    total = len(corpus)
+    all_candidate_rows: List[Dict[str, Any]] = []
+    for i, (_, statute_id) in enumerate(corpus, 1):
+        row = _project_repealed_by_candidate_for_statute(statute_id, store)
+        if row is not None:
+            all_candidate_rows.append(_repealed_by_candidate_row_to_dict(row))
+        if i % 50 == 0 or i == total:
+            print(
+                "  "
+                f"[{i}/{total}] fi_repealed_by_candidates: "
+                f"{len(all_candidate_rows):,} total"
+            )
+
+    jsonl_count = _write_jsonl(
+        out / "fi_repealed_by_candidates.jsonl", all_candidate_rows
+    )
+    if use_parquet:
+        ok = _try_write_repealed_by_candidates_parquet(
+            out / "fi_repealed_by_candidates.parquet",
+            all_candidate_rows,
+            compile_metadata,
+        )
+        if ok:
+            print(
+                "  "
+                f"fi_repealed_by_candidates: {jsonl_count:,} rows "
+                "(Parquet + JSONL)"
+            )
+        else:
+            print(
+                "  "
+                f"fi_repealed_by_candidates: {jsonl_count:,} rows "
+                "(JSONL only; pyarrow not installed)"
+            )
+    else:
+        print(f"  fi_repealed_by_candidates: {jsonl_count:,} rows (JSONL)")
+
+    return jsonl_count
+
+
+def export_fi_reference_successors_from_promoted_candidates(
+    corpus: List[Tuple[int, str]],
+    *,
+    promotion_claims: Sequence[ReferenceSuccessorPromotionClaim],
+    successor_as_of: date | str,
+    data_dir: str = ".tmp/projections",
+    use_parquet: bool = True,
+    limit: Optional[int] = None,
+    statute_registry: "StatuteNameRegistry | None" = None,
+    compile_metadata: Optional[Any] = None,
+) -> int:
+    """Export successor rows using only explicitly promoted Finlex candidates.
+
+    The function scans corpus ``repealedBy`` candidate witnesses, applies the
+    explicit promotion gate, writes rejected-promotion receipts, and then calls
+    the normal successor-reference projection with the accepted
+    ``StatuteSuccessorEdge`` rows. Candidate metadata that lacks a matching
+    promotion claim never becomes replay/query authority.
+    """
+    store = None
+    try:
+        store = _load_corpus_store()
+    except Exception as exc:
+        print(f"  warning: could not load corpus store: {exc}", file=sys.stderr)
+        return 0
+
+    if limit:
+        corpus = corpus[:limit]
+
+    out = Path(data_dir)
+    out.mkdir(parents=True, exist_ok=True)
+
+    candidates = _project_repealed_by_candidates_for_corpus(corpus, store)
+    promotion = promote_repealed_by_candidates_to_successor_edges(
+        candidates, promotion_claims
+    )
+    all_mention_rows: list[dict[str, Any]] = []
+    for _, statute_id in corpus:
+        mention_rows, _diag_rows = _project_refs_for_statute(
+            statute_id, store, ProfileTag.DETERMINISTIC_ONLY
+        )
+        all_mention_rows.extend(mention_rows)
+    frontier_rows = project_reference_successor_frontier_rows(
+        all_mention_rows,
+        candidates=candidates,
+        accepted_edges=promotion.accepted_edges,
+        candidate_rejections=promotion.rejected_candidates,
+        successor_as_of=successor_as_of,
+    )
+    _write_jsonl(
+        out / "fi_reference_successor_edges_from_promotions.jsonl",
+        [_successor_edge_to_dict(edge) for edge in promotion.accepted_edges],
+    )
+    _write_jsonl(
+        out / "fi_repealed_by_candidate_promotion_rejections.jsonl",
+        [
+            _rejected_repealed_by_promotion_to_dict(rejection)
+            for rejection in promotion.rejected_candidates
+        ],
+    )
+    _write_jsonl(
+        out / "fi_reference_successor_promotion_claim_rejections.jsonl",
+        [
+            _rejected_promotion_claim_to_dict(rejection)
+            for rejection in promotion.rejected_claims
+        ],
+    )
+    _write_jsonl(
+        out / "fi_reference_successor_frontier.jsonl",
+        [
+            _reference_successor_frontier_row_to_dict(row)
+            for row in frontier_rows
+        ],
+    )
+
+    return export_fi_reference_successors(
+        corpus,
+        successor_edges=promotion.accepted_edges,
+        successor_as_of=successor_as_of,
+        data_dir=data_dir,
+        use_parquet=use_parquet,
+        limit=None,
+        statute_registry=statute_registry,
+        compile_metadata=compile_metadata,
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -9804,6 +9804,48 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         ),
     )
     ep_p.add_argument(
+        "--include-repealed-by-candidates",
+        dest="include_repealed_by_candidates",
+        action="store_true",
+        help=(
+            "also export fi_repealed_by_candidates from Finlex repealedBy "
+            "metadata without granting successor/replay authority"
+        ),
+    )
+    ep_p.add_argument(
+        "--include-reference-successors",
+        dest="include_reference_successors",
+        action="store_true",
+        help=(
+            "also export fi_reference_successors from explicit witnessed "
+            "successor-edge JSONL"
+        ),
+    )
+    ep_p.add_argument(
+        "--reference-successor-edges",
+        dest="reference_successor_edges",
+        metavar="PATH",
+        help=(
+            "JSONL file of StatuteSuccessorEdge rows for "
+            "--include-reference-successors"
+        ),
+    )
+    ep_p.add_argument(
+        "--reference-successor-promotion-claims",
+        dest="reference_successor_promotion_claims",
+        metavar="PATH",
+        help=(
+            "JSONL file of reviewed ReferenceSuccessorPromotionClaim rows for "
+            "--include-reference-successors"
+        ),
+    )
+    ep_p.add_argument(
+        "--reference-successor-as-of",
+        dest="reference_successor_as_of",
+        metavar="YYYY-MM-DD",
+        help="dated query instant for --include-reference-successors",
+    )
+    ep_p.add_argument(
         "--he-farchive",
         dest="he_farchive",
         default=None,

@@ -36,7 +36,10 @@ each).
 from __future__ import annotations
 
 import os
+import datetime as dt
 from collections import Counter
+from dataclasses import replace
+from typing import Any, cast
 
 import pytest
 
@@ -49,8 +52,17 @@ from lawvm.finland.legal_surface.graph_build import build_legal_surface_graph
 from lawvm.finland.legal_surface.projection import (
     PAYLOAD_GAP_ROW_FIELDS,
     ROUND_TRIPPABLE_ROW_FIELDS,
+    ReferenceSuccessorChainWitness,
+    ReferenceSuccessorProjectionRow,
     graph_to_fi_refs_rows,
+    graph_to_reference_successor_rows,
     graph_to_reference_mentions,
+)
+from lawvm.finland.references.resolve import (
+    StatuteSuccessorEdge,
+    SuccessorReferenceReasonCode,
+    SuccessorReferenceResolutionBasis,
+    SuccessorReferenceStatus,
 )
 from lawvm.finland.references.elliptical_resolve import resolve_elliptical_mentions
 from lawvm.finland.references.ref_mention_extractor import (
@@ -74,6 +86,27 @@ def _pipeline_mentions(xml_bytes: bytes, statute_id: str) -> list[ReferenceMenti
         res.mention
         for res in resolve_elliptical_mentions(list(result.mentions), xml_bytes)
     ]
+
+
+def _assert_successor_projection_span_slices_to_text(
+    row: ReferenceSuccessorProjectionRow,
+    *,
+    xml_bytes: bytes,
+    expected_text: str,
+) -> None:
+    """Assert the successor row keeps a usable byte-span witness."""
+    assert row.source_span_file
+    assert row.source_span_byte_offset is not None
+    assert row.source_span_len is not None
+    assert row.source_span_len > 0
+    assert (
+        xml_bytes[
+            row.source_span_byte_offset : row.source_span_byte_offset
+            + row.source_span_len
+        ]
+        == expected_text.encode("utf-8")
+    )
+
 
 _AKN = "http://docs.oasis-open.org/legaldocml/ns/akn/3.0"
 
@@ -107,6 +140,14 @@ _XML_VAGUE = f"""<?xml version="1.0" encoding="UTF-8"?>
   <act><body><section eId="sec_1"><num>1 §</num><content>
     <p>Jollei muussa laissa toisin saadeta, sovelletaan tata lakia.</p>
     <p>Sovelletaan myos tieliikennelain (729/2018) 12 §:aa.</p>
+  </content></section></body></act>
+</akomaNtoso>
+""".encode("utf-8")
+
+_XML_RADIATION_SUCCESSOR = f"""<?xml version="1.0" encoding="UTF-8"?>
+<akomaNtoso xmlns="{_AKN}">
+  <act><body><section eId="sec_3"><num>3 §</num><content>
+    <p>Tätä lakia ei sovelleta säteilylaissa (592/1991) tarkoitettuun toimintaan.</p>
   </content></section></body></act>
 </akomaNtoso>
 """.encode("utf-8")
@@ -243,6 +284,145 @@ def test_graph_to_reference_mentions_returns_valid_records() -> None:
     assert mentions
     for m in mentions:
         assert isinstance(m, ReferenceMention)
+
+
+def test_graph_projects_reference_successor_rows_without_rewriting_fi_refs() -> None:
+    """B5 successor rows are public projection rows, not fi_refs rewrites."""
+    edge = StatuteSuccessorEdge(
+        predecessor_work_id="1991/592",
+        successor_work_id="859/2018",
+        effective_from=dt.date(2018, 12, 15),
+        witness_id="finlex:1991/592:repealed-by:859/2018",
+        witness_text="Tämä laki on kumottu lailla 859/2018.",
+    )
+    graph = build_legal_surface_graph(
+        _XML_RADIATION_SUCCESSOR,
+        "527/2014",
+        statute_registry=object(),
+        successor_edges=(edge,),
+        successor_as_of="2026-01-01",
+        surface_time="2026-01-01",
+    )
+
+    successor_rows = graph_to_reference_successor_rows(graph)
+    assert len(successor_rows) == 1
+    successor_row = successor_rows[0]
+    assert successor_row.source_work_id == "527/2014"
+    assert successor_row.source_provision_ref_str == "527/2014"
+    _assert_successor_projection_span_slices_to_text(
+        successor_row,
+        xml_bytes=_XML_RADIATION_SUCCESSOR,
+        expected_text="säteilylaissa (592/1991)",
+    )
+    assert successor_row.surface_text == "säteilylaissa (592/1991)"
+    assert successor_row.literal_work_id == "1991/592"
+    assert successor_row.operative_work_id == "859/2018"
+    assert successor_row.successor_as_of == "2026-01-01"
+    assert successor_row.successor_status is SuccessorReferenceStatus.RESOLVED
+    assert (
+        successor_row.successor_resolution_basis
+        is SuccessorReferenceResolutionBasis.SUCCESSOR_CHAIN
+    )
+    assert successor_row.successor_candidates == ("859/2018",)
+    assert successor_row.successor_rejected_candidates == ()
+    assert (
+        successor_row.successor_reason_code
+        is SuccessorReferenceReasonCode.UNIQUE_WITNESSED_SUCCESSOR_CHAIN
+    )
+    assert successor_row.successor_chain == (
+        ReferenceSuccessorChainWitness(
+            predecessor_work_id="1991/592",
+            successor_work_id="859/2018",
+            effective_from=dt.date(2018, 12, 15),
+            witness_id="finlex:1991/592:repealed-by:859/2018",
+            witness_text="Tämä laki on kumottu lailla 859/2018.",
+            rule_id="fi.reference_successor.witnessed_edge",
+        ),
+    )
+
+    fi_refs_rows = graph_to_fi_refs_rows(graph)
+    assert len(fi_refs_rows) == 1
+    assert fi_refs_rows[0]["target_statute_id"] == "1991/592"
+    assert fi_refs_rows[0]["target_provision_ref_str"] == "1991/592"
+
+
+def test_reference_successor_projection_rejects_unknown_status_payload() -> None:
+    """Successor graph payload strings are retyped before row projection."""
+    edge = StatuteSuccessorEdge(
+        predecessor_work_id="1991/592",
+        successor_work_id="859/2018",
+        effective_from=dt.date(2018, 12, 15),
+        witness_id="finlex:1991/592:repealed-by:859/2018",
+        witness_text="Tämä laki on kumottu lailla 859/2018.",
+    )
+    graph = build_legal_surface_graph(
+        _XML_RADIATION_SUCCESSOR,
+        "527/2014",
+        statute_registry=object(),
+        successor_edges=(edge,),
+        successor_as_of="2026-01-01",
+        surface_time="2026-01-01",
+    )
+    nodes = dict(graph.nodes)
+    resolution_node = next(
+        node
+        for node in nodes.values()
+        if "successor_resolution_status" in node.payload
+    )
+    bad_payload = dict(resolution_node.payload)
+    bad_payload["successor_resolution_status"] = "handwaved"
+    nodes[resolution_node.node_id] = replace(
+        resolution_node,
+        payload=bad_payload,
+    )
+    bad_graph = replace(graph, nodes=nodes)
+
+    with pytest.raises(ValueError, match="handwaved"):
+        graph_to_reference_successor_rows(bad_graph)
+
+
+def test_reference_successor_projection_rejects_invalid_chain_date() -> None:
+    """Successor chain witnesses retype effective_from before row projection."""
+    edge = StatuteSuccessorEdge(
+        predecessor_work_id="1991/592",
+        successor_work_id="859/2018",
+        effective_from=dt.date(2018, 12, 15),
+        witness_id="finlex:1991/592:repealed-by:859/2018",
+        witness_text="Tämä laki on kumottu lailla 859/2018.",
+    )
+    graph = build_legal_surface_graph(
+        _XML_RADIATION_SUCCESSOR,
+        "527/2014",
+        statute_registry=object(),
+        successor_edges=(edge,),
+        successor_as_of="2026-01-01",
+        surface_time="2026-01-01",
+    )
+    nodes = dict(graph.nodes)
+    resolution_node = next(
+        node
+        for node in nodes.values()
+        if "successor_resolution_status" in node.payload
+    )
+    bad_payload = dict(resolution_node.payload)
+    chain = list(cast(list[dict[str, Any]], bad_payload["successor_chain"]))
+    first = dict(chain[0])
+    first["effective_from"] = "15.12.2018"
+    chain[0] = first
+    bad_payload["successor_chain"] = chain
+    nodes[resolution_node.node_id] = replace(
+        resolution_node,
+        payload=bad_payload,
+    )
+    bad_graph = replace(graph, nodes=nodes)
+
+    with pytest.raises(ValueError, match="effective_from must be an ISO date"):
+        graph_to_reference_successor_rows(bad_graph)
+
+
+def test_graph_without_successor_context_projects_no_successor_rows() -> None:
+    graph = build_legal_surface_graph(_XML_RADIATION_SUCCESSOR, "527/2014")
+    assert graph_to_reference_successor_rows(graph) == []
 
 
 # An internal cite plus discourse anaphors (``tämän lain`` / ``mainitun lain``).
