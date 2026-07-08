@@ -48,15 +48,19 @@ is byte-identical).
 
 from __future__ import annotations
 
+from lawvm.core.cross_act_same_moment import same_moment_conflict_finding_kind
 from lawvm.core.ir import LegalOperation
 from lawvm.core.op_ordering import OrderedOps, OrderingProfile, order_ops
 
 __all__ = [
+    "US_SAME_MOMENT_CONFLICT_KIND",
     "us_temporal_key",
     "us_same_moment_effective_date",
     "us_ordering_profile",
     "order_us_ops",
 ]
+
+US_SAME_MOMENT_CONFLICT_KIND = same_moment_conflict_finding_kind("us")
 
 
 def us_temporal_key(op: LegalOperation) -> tuple[str, str, int]:

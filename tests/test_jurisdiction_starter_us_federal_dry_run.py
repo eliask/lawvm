@@ -74,6 +74,7 @@ from lawvm.us_federal.dry_run import (
     build_us_dry_run,
     build_us_dry_run_conserved_account,
 )
+from lawvm.us_federal.us_ordering import US_SAME_MOMENT_CONFLICT_KIND
 from lawvm.us_federal.source_tree import UscSection, parse_usc_title_document, synthetic_usc_section, split_statutory_subsections
 
 FIXTURES = Path(__file__).parent / "fixtures" / "us_federal"
@@ -1013,7 +1014,7 @@ def test_build_us_dry_run_carries_same_moment_findings_through_the_report(
 
     assert report.summary()["same_moment_finding_count"] == 1
     finding = report.same_moment_findings[0]
-    assert finding.kind == "us_same_moment_cross_act_incompatible_payload_ambiguous"
+    assert finding.kind == US_SAME_MOMENT_CONFLICT_KIND
     assert finding.blocking is True
     assert finding.op_id == ""
     assert set(finding.detail["conflicting_affecting_acts"]) == {

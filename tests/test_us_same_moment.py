@@ -33,13 +33,12 @@ from lawvm.core.ir import (
 )
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.us_federal.us_ordering import (
+    US_SAME_MOMENT_CONFLICT_KIND,
     order_us_ops,
     us_ordering_profile,
     us_same_moment_effective_date,
     us_temporal_key,
 )
-
-US_SAME_MOMENT_KIND = "us_same_moment_cross_act_incompatible_payload_ambiguous"
 
 
 # ── op builders (mirror the US lowered op shape) ─────────────────────────────
@@ -177,7 +176,7 @@ def test_same_enacted_date_incompatible_replace_emits_blocking_finding():
     result = order_us_ops(ops)
     assert len(result.findings) == 1
     finding = result.findings[0]
-    assert finding.kind == US_SAME_MOMENT_KIND
+    assert finding.kind == US_SAME_MOMENT_CONFLICT_KIND
     assert finding.blocking is True
     assert finding.op_id == ""  # cross-act evidence row, not a per-op skip
     assert finding.detail["effective_date"] == "2024-01-15"
@@ -194,7 +193,7 @@ def test_repeal_vs_replace_same_enacted_date_emits_finding():
     ]
     result = order_us_ops(ops)
     assert len(result.findings) == 1
-    assert result.findings[0].kind == US_SAME_MOMENT_KIND
+    assert result.findings[0].kind == US_SAME_MOMENT_CONFLICT_KIND
 
 
 def test_explicit_same_effective_date_emits_finding():
