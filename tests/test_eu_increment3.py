@@ -299,6 +299,65 @@ def test_nested_alpha_points_under_numeric_point_parse_and_apply(tmp_path) -> No
     assert "new NPA text" in replaced.text
 
 
+def test_point_of_article_repeal_preserves_host_for_later_insert(tmp_path) -> None:
+    """Real 32009R0754 closure shape: 32011R0057 deletes Article 1 point h.
+    It must not delete Article 1 itself, because 32012R1040 later inserts
+    points j/k/l under that same article."""
+    base_xml = tmp_path / "base_point_repeal_then_insert.fmx4.xml"
+    base_xml.write_bytes(
+        b"""<?xml version="1.0"?>
+<ACT><TITLE><TI>base</TI></TITLE><ENACTING.TERMS>
+  <ARTICLE><TI.ART>Article 1</TI.ART>
+    <ALINEA><P>Groups excluded:</P><LIST TYPE="alpha">
+      <ITEM><NP><NO.P>(a)</NO.P><TXT>point a;</TXT></NP></ITEM>
+      <ITEM><NP><NO.P>(h)</NO.P><TXT>point h;</TXT></NP></ITEM>
+    </LIST></ALINEA>
+  </ARTICLE>
+</ENACTING.TERMS></ACT>"""
+    )
+    base = parse_eu_regulation_ir(base_xml, celex="32009R0754")
+    repeal = lower_amending_act(
+        b"""<?xml version="1.0"?>
+<ACT><ENACTING.TERMS>
+  <ARTICLE><TI.ART>Article 38</TI.ART>
+    <ALINEA>Point (h) of Article 1 of Regulation (EC) No 754/2009 is deleted.</ALINEA>
+  </ARTICLE>
+</ENACTING.TERMS></ACT>""",
+        "32011R0057",
+        base_celex="32009R0754",
+    )
+    insert = lower_amending_act(
+        b"""<?xml version="1.0"?>
+<ACT><ENACTING.TERMS>
+  <ARTICLE><TI.ART>Article 1</TI.ART>
+    <ALINEA><P>In Article 1 of Regulation (EC) No 754/2009, the following points are added:</P>
+      <QUOT.S LEVEL="1"><LIST TYPE="alpha">
+        <ITEM><NP><NO.P><QUOT.START/>(j)</NO.P><TXT>point j;<QUOT.END/></TXT></NP></ITEM>
+      </LIST></QUOT.S>
+    </ALINEA>
+  </ARTICLE>
+</ENACTING.TERMS></ACT>""",
+        "32012R1040",
+        base_celex="32009R0754",
+    )
+    ops = [*repeal.ops, *insert.ops]
+    result = apply_eu_ops_conserved(base, list(order_eu_ops(ops).ops))
+
+    assert result.skipped_items == ()
+    article_1 = tree_ops.resolve(result.statute.body, (("section", "1"),))
+    assert article_1 is not None
+    assert tree_ops.resolve(
+        result.statute.body,
+        (("section", "1"), ("item", "h")),
+    ) is None
+    inserted = tree_ops.resolve(
+        result.statute.body,
+        (("section", "1"), ("item", "j")),
+    )
+    assert inserted is not None
+    assert "point j" in inserted.text
+
+
 def test_alinea_point_list_followed_by_p_blocks_materializes_subparagraphs(
     tmp_path,
 ) -> None:

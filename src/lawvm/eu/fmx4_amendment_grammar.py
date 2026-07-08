@@ -1150,6 +1150,39 @@ def _parse_points_of_point_replace(rem: str) -> Optional[tuple[list[str], str]]:
     return labels, parent
 
 
+def _parse_point_of_article_repeal(instr: str) -> Optional[tuple[str, str]]:
+    """Parse "Point (h) of Article 1 ... is deleted" as a point repeal."""
+    text = instr.strip()
+    folded = text.casefold()
+    if not folded.startswith("point "):
+        return None
+    marker = " of article "
+    marker_at = folded.find(marker)
+    if marker_at < 0:
+        return None
+    point_raw = text[len("point ") : marker_at].strip()
+    labels = _parse_label_list(point_raw)
+    if labels is None or len(labels) != 1:
+        return None
+    after_marker = text[marker_at + len(marker) :].lstrip()
+    article_chars: list[str] = []
+    for ch in after_marker:
+        if ch.isalnum():
+            article_chars.append(ch)
+            continue
+        break
+    article = "".join(article_chars)
+    if not article or len(article) > 6:
+        return None
+    tail = after_marker[len(article) :].casefold()
+    if not any(
+        phrase in tail
+        for phrase in (" is deleted", " is repealed", " shall be deleted", " shall be repealed")
+    ):
+        return None
+    return article, labels[0]
+
+
 def _extract_np_context(
     text: str, context: tuple[tuple[str, str], ...]
 ) -> tuple[tuple[tuple[str, str], ...], str]:
@@ -2276,6 +2309,20 @@ def _lower_one_instruction(
     # Order matters (most specific first). Point-level edits are checked before
     # paragraph- and whole-article rules so "in Article N, point (b) ..." is not
     # captured by the broader patterns.
+    point_of_article_repeal = _parse_point_of_article_repeal(instr)
+    if point_of_article_repeal is not None:
+        art, point = point_of_article_repeal
+        path = (("article", art), ("point", point))
+        return LegalOperation(
+            op_id=f"{amending_celex}-{seq}",
+            sequence=seq,
+            action=StructuralAction.REPEAL,
+            target=LegalAddress(path=path),
+            source=src,
+            witness_rule_id="EU_FMX4.SUBART_POINT_REPEAL",
+            provenance_tags=("ir_apply_class=point_repeal",),
+        )
+
     m = _RE_SUBART_POINT_REPEAL.search(instr)
     if m:
         path = (("article", m.group("art")), ("point", m.group("point")))

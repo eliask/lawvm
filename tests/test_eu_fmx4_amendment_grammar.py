@@ -505,6 +505,21 @@ def test_points_of_point_replace_carries_parent_point_context() -> None:
     ]
 
 
+def test_point_of_article_repeal_does_not_become_whole_article_repeal() -> None:
+    """Real 32011R0057 shape: "Point (h) of Article 1 ... is deleted" must
+    repeal only the point, not the host Article 1."""
+    fmx = b"""<?xml version="1.0"?>
+<ACT><ENACTING.TERMS>
+  <ARTICLE><TI.ART>Article 38</TI.ART>
+    <ALINEA>Point (h) of Article 1 of Regulation (EC) No 754/2009 is deleted.</ALINEA>
+  </ARTICLE>
+</ENACTING.TERMS></ACT>"""
+    r = lower_amending_act(fmx, "32011R0057", base_celex="32009R0754")
+    assert [str(op.target) for op in r.ops] == ["article:1/point:h"]
+    assert r.ops[0].action == StructuralAction.REPEAL
+    assert r.ops[0].witness_rule_id == "EU_FMX4.SUBART_POINT_REPEAL"
+
+
 def test_non_amending_provision_typed_not_gap() -> None:
     """An amender's OWN substantive article (definitions, duties) is typed
     non_amending_provision -- it cannot touch the base act."""
