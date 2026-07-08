@@ -268,6 +268,8 @@ def _eu_typed_op_skip_bucket(
     if reason_code == "eu_replay_text_payload_missing":
         return EU_TYPED_SKIP_BUCKET_PAYLOAD_MISSING
     if reason_code == "eu_replay_parent_not_found":
+        if target is not None and target.root_kind() == "supplements":
+            return EU_TYPED_SKIP_BUCKET_ANNEX_LANE_TARGET_ABSENT
         return EU_TYPED_SKIP_BUCKET_PARENT_UNRESOLVED
     if reason_code == "eu_replay_insert_parent_scope_unresolved":
         return EU_TYPED_SKIP_BUCKET_PARENT_SCOPE_UNRESOLVED

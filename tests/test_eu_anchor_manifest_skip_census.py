@@ -20,6 +20,7 @@ from lawvm.core.semantic_types import IRNodeKind
 from lawvm.eu.pipeline import apply_eu_ops_conserved
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.tools.eu_anchor_manifest import (
+    EU_TYPED_SKIP_BUCKET_ANNEX_LANE_TARGET_ABSENT,
     EU_TYPED_SKIP_BUCKET_EMPTY_TARGET_LABEL,
     EU_TYPED_SKIP_BUCKET_TARGET_KIND_LABEL_ABSENT,
     EU_TYPED_SKIP_BUCKET_UNBUCKETED,
@@ -96,6 +97,29 @@ def test_eu_typed_skip_census_distinguishes_plain_absent_target() -> None:
     evidence = _eu_typed_op_skip_evidence_record(result.skipped_items[0], adjudications[0])
     assert evidence.skip_bucket == EU_TYPED_SKIP_BUCKET_TARGET_KIND_LABEL_ABSENT
     assert evidence.reason_code == result.skipped_items[0].reason_code
+
+
+def test_eu_typed_skip_census_buckets_annex_parent_absent_by_lane() -> None:
+    op = LegalOperation(
+        op_id="eu-annex-point-parent-absent",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(
+            path=(("annex", "I"), ("point", "9a")),
+            root="supplements",
+        ),
+        payload=IRNode(kind=IRNodeKind.ITEM, label="9a", text="9a. Inserted point."),
+        source=OperationSource(statute_id="32026R0001"),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    result = apply_eu_ops_conserved(
+        _baseline_statute(), [op], adjudications_out=adjudications
+    )
+
+    evidence = _eu_typed_op_skip_evidence_record(result.skipped_items[0], adjudications[0])
+    assert evidence.skip_bucket == EU_TYPED_SKIP_BUCKET_ANNEX_LANE_TARGET_ABSENT
+    assert evidence.reason_code == "eu_replay_parent_not_found"
 
 
 def test_eu_typed_skip_bucket_summary_uses_typed_carrier() -> None:

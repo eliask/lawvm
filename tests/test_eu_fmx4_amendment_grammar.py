@@ -595,6 +595,29 @@ def test_sole_annex_as_set_out_has_no_empty_executable_target() -> None:
     assert r.diagnostics[0].family == "annex_extraction_gap"
 
 
+def test_annex_context_np_insert_targets_supplements_root() -> None:
+    """Real 32019R0787/32024R1143 shape: an annex-lane NP insert must target
+    the supplements root, not the article body."""
+    fmx = b"""<?xml version="1.0"?>
+<ACT><ENACTING.TERMS>
+  <ARTICLE><TI.ART>Article 85</TI.ART>
+    <ALINEA><P>Regulation (EU) 2019/787 is amended as follows:</P>
+      <LIST TYPE="ARAB"><ITEM><NP><NO.P>(9)</NO.P><TXT>Annex I is amended as follows:</TXT><P>
+        <LIST TYPE="alpha"><ITEM><NP><NO.P>(a)</NO.P><TXT>the following point is inserted:</TXT>
+          <P><QUOT.S><NP><NO.P><QUOT.START/>9a.</NO.P><TXT>Potato spirit text.<QUOT.END/></TXT></NP></QUOT.S></P>
+        </NP></ITEM></LIST>
+      </P></NP></ITEM></LIST>
+    </ALINEA></ARTICLE>
+</ENACTING.TERMS></ACT>"""
+    r = lower_amending_act(fmx, "32024R1143", base_celex="32019R0787")
+    assert [str(op.target) for op in r.ops] == ["@supplements annex:I/point:9a"]
+    op = r.ops[0]
+    assert op.action == StructuralAction.INSERT
+    assert op.witness_rule_id == "EU_FMX4.SUBART_POINT_INSERT"
+    assert op.payload is not None
+    assert op.payload.text == "9a. Potato spirit text."
+
+
 def test_numberless_article_insert_number_from_quoted_heading() -> None:
     """'The following article is inserted in Regulation X:' -- the number lives
     on the quoted body's own heading (the real 32019R1778 shape)."""

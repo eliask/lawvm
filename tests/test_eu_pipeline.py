@@ -1331,3 +1331,43 @@ def test_end_to_end_indirect_annex_amendment_resolves_and_applies() -> None:
     supp = {s.label: (s.text or "") for s in result.statute.supplements}
     assert "List replacing" in supp["II"]
     assert "List replacing" in supp["III"]
+
+
+def test_annex_context_np_insert_resolves_against_supplements() -> None:
+    """Full path: Annex-context NP inserts are rooted in supplements and resolve
+    against a base annex, not the article body."""
+    from lawvm.eu.fmx4_amendment_grammar import lower_amending_act
+    from lawvm.eu.pipeline import apply_eu_ops_conserved
+
+    base_fmx = (
+        b'<?xml version="1.0"?>'
+        b"<ACT><TITLE><TI>Base</TI></TITLE>"
+        b"<ENACTING.TERMS><ARTICLE><TI.ART>Article 1</TI.ART>"
+        b"<PARAG><ALINEA>x</ALINEA></PARAG></ARTICLE></ENACTING.TERMS>"
+        b'<ANNEX IDENTIFIER="I"><TITLE><TI>ANNEX I</TI></TITLE>'
+        b"<CONTENTS><P>Original Annex I.</P></CONTENTS></ANNEX>"
+        b"</ACT>"
+    )
+    base = _parse_fmx(base_fmx, "32019R0787")
+    amender = b"""<?xml version="1.0"?>
+<ACT><ENACTING.TERMS>
+  <ARTICLE><TI.ART>Article 85</TI.ART>
+    <ALINEA><P>Regulation (EU) 2019/787 is amended as follows:</P>
+      <LIST TYPE="ARAB"><ITEM><NP><NO.P>(9)</NO.P><TXT>Annex I is amended as follows:</TXT><P>
+        <LIST TYPE="alpha"><ITEM><NP><NO.P>(a)</NO.P><TXT>the following point is inserted:</TXT>
+          <P><QUOT.S><NP><NO.P><QUOT.START/>9a.</NO.P><TXT>Potato spirit text.<QUOT.END/></TXT></NP></QUOT.S></P>
+        </NP></ITEM></LIST>
+      </P></NP></ITEM></LIST>
+    </ALINEA></ARTICLE>
+</ENACTING.TERMS></ACT>"""
+    lowered = lower_amending_act(amender, "32024R1143", base_celex="32019R0787")
+    result = apply_eu_ops_conserved(base, list(lowered.ops))
+
+    assert result.skipped_items == ()
+    assert [str(op.target) for op in result.applied_ops] == [
+        "@supplements annex:I/point:9a"
+    ]
+    annex_i = result.statute.supplements[0]
+    assert [(child.kind, child.label, child.text) for child in annex_i.children] == [
+        (IRNodeKind.ITEM, "9a", "9a. Potato spirit text.")
+    ]

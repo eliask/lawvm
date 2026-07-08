@@ -512,7 +512,8 @@ def apply_eu_ops(
             return ("supplements", in_supp)
 
         def _resolve_insert_parent_path(
-            parent_path: list[tuple[str, str]]
+            parent_path: list[tuple[str, str]],
+            container: IRNode,
         ) -> Optional[TreePath]:
             """Resolve an INSERT parent, allowing anonymous wrapper prefixes.
 
@@ -523,7 +524,7 @@ def apply_eu_ops(
             path is a unique suffix under its stated first scope, so unrelated
             lookalike parents remain rejected by the existing scope diagnostics.
             """
-            exact = tree_ops.resolve(body, parent_path)
+            exact = tree_ops.resolve(container, parent_path)
             if exact is not None:
                 return tuple(parent_path)
             if not parent_path:
@@ -533,10 +534,10 @@ def apply_eu_ops(
             if not last_label:
                 return None
             if len(parent_path) == 1:
-                candidates = tree_ops.find_all(body, last_kind, last_label)
+                candidates = tree_ops.find_all(container, last_kind, last_label)
             else:
                 candidates = tree_ops.find_all(
-                    body,
+                    container,
                     last_kind,
                     last_label,
                     scope_kind=first_kind,
@@ -711,9 +712,21 @@ def apply_eu_ops(
                 parent_path = path_steps[:-1]
                 parent_kind = parent_path[-1][0]
                 parent_label = parent_path[-1][1]
-                resolved_parent_path = _resolve_insert_parent_path(parent_path)
+                parent_lane = "body"
+                resolved_parent_path = _resolve_insert_parent_path(parent_path, body)
+                if resolved_parent_path is None and annex_rooted:
+                    resolved_parent_path = _resolve_insert_parent_path(
+                        parent_path, _supplements_container()
+                    )
+                    if resolved_parent_path is not None:
+                        parent_lane = "supplements"
                 if resolved_parent_path is None:
-                    unscoped_parent_candidates = tree_ops.find_all(body, parent_kind, parent_label)
+                    parent_candidate_container = (
+                        _supplements_container() if annex_rooted else body
+                    )
+                    unscoped_parent_candidates = tree_ops.find_all(
+                        parent_candidate_container, parent_kind, parent_label
+                    )
                     if unscoped_parent_candidates and len(parent_path) > 1:
                         # θ: (INSERT, parent_scope_unresolved) — table-sourced
                         # Reject (§2.3); the scope miss, distinct code from the
@@ -766,7 +779,15 @@ def apply_eu_ops(
                     return MaterializeResult(new_state=body, applied=False)
             else:
                 resolved_parent_path = ()  # insert at body level
-            body = tree_ops.insert_sorted(body, resolved_parent_path, op.payload)
+                parent_lane = "supplements" if annex_rooted else "body"
+            if parent_lane == "supplements":
+                _write_supplements(
+                    tree_ops.insert_sorted(
+                        _supplements_container(), resolved_parent_path, op.payload
+                    )
+                )
+            else:
+                body = tree_ops.insert_sorted(body, resolved_parent_path, op.payload)
             _mark_applied()
 
         elif action in ("text_replace", "text_repeal", "renumber"):

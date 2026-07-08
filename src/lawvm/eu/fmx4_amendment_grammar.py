@@ -1412,11 +1412,14 @@ def _lower_np_leaf(
         extra_tags: tuple[str, ...] = (),
     ) -> LegalOperation:
         op_id, sequence = op_ids()
+        target_root = root
+        if target_root is None and path and path[0][0] == "annex":
+            target_root = "supplements"
         return LegalOperation(
             op_id=op_id,
             sequence=sequence,
             action=action,
-            target=LegalAddress(path=path, root=root),
+            target=LegalAddress(path=path, root=target_root),
             payload=payload,
             source=src,
             witness_rule_id=witness,
