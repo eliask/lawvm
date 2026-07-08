@@ -179,6 +179,14 @@ US_DRY_RUN_RESIDUAL_SOURCE_TRUNCATED_PAYLOAD_RULE_ID = (
 US_DRY_RUN_RESIDUAL_OLRC_GRAMMAR_CLEANUP_RULE_ID = (
     "us_dry_run_residual_olrc_grammar_cleanup"
 )
+# A same-window inserted section may contain "of this title" in its enacted text,
+# then a later title-wide each-place strike removes that phrase. When the official
+# Code retains the phrase, LawVM's materialization is source-faithful to the applied
+# operation and the residual is oracle-suspect, not a replay bug. Guarded by the
+# fanned title-scope op id for this exact section.
+US_DRY_RUN_RESIDUAL_ORACLE_RETAINED_TITLE_SCOPE_STRIKE_RULE_ID = (
+    "us_dry_run_residual_oracle_retained_title_scope_strike"
+)
 # The USC annual edition's source tree does not expose the structural level the
 # amendment names: the target level is absent from the parsed section (e.g. a
 # non-positive-law title that omits subsection/paragraph markers but renders
@@ -484,6 +492,34 @@ def _has_olrc_grammar_cleanup(
         return False
     return _norm_olrc_grammar_cleanup(materialized) == _norm_olrc_grammar_cleanup(
         oracle_text
+    )
+
+
+def _has_oracle_retained_title_scope_strike(
+    *,
+    op_id: str,
+    section: str,
+    match_text: str,
+    materialized: str,
+    oracle_text: str,
+) -> bool:
+    """True when the oracle retained text a proven title-scope strike removed.
+
+    Classification-only. The dry-run has already applied a section-fanned
+    title-wide each-place op (``...@s<section>``) whose match text is present in
+    ``row_match``. This predicate only asks whether deleting that exact phrase
+    from the oracle explains LawVM's materialized text after ordinary editorial
+    quote/spacing projection.
+    """
+    phrase = "of this title"
+    if phrase not in match_text:
+        return False
+    if f"@s{section}" not in op_id:
+        return False
+    if phrase in materialized or phrase not in oracle_text:
+        return False
+    return _norm_editorial(materialized) == _norm_editorial(
+        oracle_text.replace(phrase, "")
     )
 
 
@@ -3808,6 +3844,34 @@ def build_us_dry_run(
                     section_key=section_key,
                     row_status=USDryRunRowStatus.RESIDUAL,
                     rule_id=US_DRY_RUN_RESIDUAL_OLRC_GRAMMAR_CLEANUP_RULE_ID,
+                    disposition=DISPOSITION_ORACLE_SUSPECT,
+                    match_text=row_match,
+                    replacement=row_replacement,
+                    before_text=before_text,
+                    materialized_text=materialized,
+                    oracle_text=oracle_text,
+                    oracle_changed=oracle_changed_here,
+                )
+            )
+        elif _has_oracle_retained_title_scope_strike(
+            op_id=row_op_id,
+            section=section,
+            match_text=row_match,
+            materialized=materialized,
+            oracle_text=oracle_text,
+        ):
+            # A same-window inserted section was touched by a later title-wide
+            # each-place strike, but the oracle retained the struck phrase. The
+            # materialized text follows the enacted op; classify the oracle
+            # retention instead of suppressing the source-authorized strike.
+            rows.append(
+                USDryRunSectionRow(
+                    op_id=row_op_id,
+                    action=row_action,
+                    target_address=target_address,
+                    section_key=section_key,
+                    row_status=USDryRunRowStatus.RESIDUAL,
+                    rule_id=US_DRY_RUN_RESIDUAL_ORACLE_RETAINED_TITLE_SCOPE_STRIKE_RULE_ID,
                     disposition=DISPOSITION_ORACLE_SUSPECT,
                     match_text=row_match,
                     replacement=row_replacement,

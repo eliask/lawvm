@@ -556,6 +556,12 @@ _US_RULE_SPECS: Dict[str, str] = {
         "materialization and classifies the residual as oracle_suspect rather than "
         "using the oracle as authority to mutate retained text."
     ),
+    "us_dry_run_residual_oracle_retained_title_scope_strike": (
+        "Contradiction: a same-window inserted section was touched by a later "
+        "title-wide each-place strike, but the oracle retained the struck phrase. "
+        "The dry-run keeps the source-authorized strike and classifies the retained "
+        "oracle phrase as oracle_suspect rather than suppressing the operation."
+    ),
     "us_dry_run_surface_not_replay_authorized": (
         "Invariant: the dry-run surface never authorizes actual replay — the gate is "
         "always closed (replay_authorized is False)."
@@ -946,6 +952,7 @@ _US_RULE_CONFIDENCE: Dict[str, str] = {
     "us_dry_run_residual_materialized_text_mismatch_with_oracle": US_CONFIDENCE_HEURISTIC,
     "us_dry_run_residual_source_truncated_payload": US_CONFIDENCE_HEURISTIC,
     "us_dry_run_residual_olrc_grammar_cleanup": US_CONFIDENCE_HEURISTIC,
+    "us_dry_run_residual_oracle_retained_title_scope_strike": US_CONFIDENCE_HEURISTIC,
     "us_dry_run_recovered_bare_leaf_target_via_unique_suffix_match": US_CONFIDENCE_HEURISTIC,
     "us_amendatory_deferred_amend_to_read": US_CONFIDENCE_HEURISTIC,
     "us_amendatory_unrecognized_redesignate_shape": US_CONFIDENCE_HEURISTIC,

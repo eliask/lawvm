@@ -50,6 +50,7 @@ from lawvm.us_federal.dry_run import (
     US_DRY_RUN_DEFERRED_OP_INFLATED_AS_MISSING_SOURCE_RULE_ID,
     US_DRY_RUN_RESIDUAL_ORACLE_CHANGED_NOT_CLAIMED_RULE_ID,
     US_DRY_RUN_RESIDUAL_OLRC_GRAMMAR_CLEANUP_RULE_ID,
+    US_DRY_RUN_RESIDUAL_ORACLE_RETAINED_TITLE_SCOPE_STRIKE_RULE_ID,
     US_DRY_RUN_RESIDUAL_SOURCE_TRUNCATED_PAYLOAD_RULE_ID,
     US_DRY_RUN_RESIDUAL_SUBSECTION_NODE_NOT_LOCATED_RULE_ID,
     US_DRY_RUN_RESIDUAL_PARTIAL_COMPOSITION_MID_CHAIN_GAP_RULE_ID,
@@ -1721,6 +1722,24 @@ def _title11_after_with_new_section_12_and_title_strike() -> bytes:
     ).encode("utf-8")
 
 
+def _title11_after_with_new_section_12_retaining_title_phrase() -> bytes:
+    return (
+        '<!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml"><head>'
+        '<title>T11 after</title><!-- AUTHORITIES-USC-TITLE-ENUM:11 --></head><body><div>'
+        '<!-- expcite:TITLE 11!@!CHAPTER 1!@!Sec. 10 -->'
+        '<!-- field-start:head --><h3 class="section-head">&sect;10. Existing</h3>'
+        '<!-- field-end:head --><!-- field-start:statute -->'
+        '<p class="statutory-body">Base body.</p>'
+        '<!-- field-end:statute -->'
+        '<!-- expcite:TITLE 11!@!CHAPTER 1!@!Sec. 12 -->'
+        '<!-- field-start:head --><h3 class="section-head">&sect;12. New section</h3>'
+        '<!-- field-end:head --><!-- field-start:statute -->'
+        '<p class="statutory-body">(a) Same effect as section 252 of this title '
+        'for reissued patents.</p>'
+        '<!-- field-end:statute --></div></body></html>'
+    ).encode("utf-8")
+
+
 def test_new_section_insert_after_section_materializes_in_agreement() -> None:
     # A section-level insert anchored after an existing section lowers to an INSERT
     # addressed at the new section number, and the dry-run materializes it from an
@@ -1824,6 +1843,85 @@ def test_title_each_place_strike_reaches_same_window_inserted_section(
     assert row.rule_id == US_DRY_RUN_SECTION_AGREES_RULE_ID
     assert "section 252 for reissued patents" in row.materialized_text
     assert "of this title" not in row.materialized_text
+    assert "title-strike-of-this-title@s12" in row.op_id
+
+
+def test_oracle_retained_same_window_title_strike_is_oracle_suspect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Same source facts as the prior test, but the oracle keeps "of this title".
+    # The source-authorized title-wide strike is still applied; the retained oracle
+    # phrase is classified as oracle_suspect, not as a replay bug and not by
+    # suppressing the operation.
+    insert_op = LegalOperation(
+        op_id="insert-s12",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("title", "11"), ("section", "12"))),
+        payload=IRNode(
+            kind=IRNodeKind.SECTION,
+            label="12",
+            text=(
+                "“§ 12. New section“ (a) Same effect as section 252 of this title "
+                "for reissued patents."
+            ),
+        ),
+        source=OperationSource(statute_id="PL 116-902", enacted="2024-01-01"),
+    )
+    title_each_place_op = LegalOperation(
+        op_id="title-strike-of-this-title",
+        sequence=2,
+        action=StructuralAction.TEXT_PATCH,
+        target=LegalAddress(path=(("title", "11"),)),
+        source=OperationSource(
+            statute_id="PL 116-902",
+            enacted="2024-01-01",
+            raw_text=(
+                'Title 11, United States Code, is amended by striking "of this title" '
+                "each place that term appears."
+            ),
+        ),
+        applicability=(
+            ScopePredicate(
+                dimension=US_EACH_PLACE_STRIKE_EXCEPTION_DIMENSION,
+                includes=frozenset(),
+            ),
+        ),
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.DELETE,
+            selector=TextSelector(match_text="of this title", occurrence=-1),
+        ),
+    )
+
+    class _Report:
+        enacted = "2024-01-01"
+        findings = ()
+        title_targets = ("title 11",)
+
+        @staticmethod
+        def operations() -> tuple[LegalOperation, ...]:
+            return (insert_op, title_each_place_op)
+
+    monkeypatch.setattr(
+        "lawvm.us_federal.dry_run.lower_plaw_amendatory",
+        lambda *_args, **_kwargs: _Report(),
+    )
+
+    report = build_us_dry_run(
+        before_htm=_title11_before_with_section_10(),
+        after_htm=_title11_after_with_new_section_12_retaining_title_phrase(),
+        plaw_blobs={"PL 116-902": b"<lawDoc/>"},
+        title=11,
+        before_year="2023",
+        after_year="2024",
+    )
+
+    row = {row.section_key: row for row in report.rows}["11:12"]
+    assert row.row_status == "residual"
+    assert row.disposition == DISPOSITION_ORACLE_SUSPECT
+    assert row.rule_id == US_DRY_RUN_RESIDUAL_ORACLE_RETAINED_TITLE_SCOPE_STRIKE_RULE_ID
+    assert "of this title" not in row.materialized_text
+    assert "of this title" in row.oracle_text
     assert "title-strike-of-this-title@s12" in row.op_id
 
 
