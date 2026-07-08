@@ -116,6 +116,9 @@ RULE_REDESIGNATE_ORDINAL_DROPPED = "us_amend_redesignate_ordinal_dropped"
 UNDESIGNATED_PARAGRAPH_OCCURRENCE_PROVENANCE = (
     "undesignated_paragraph_occurrence"
 )
+HEADING_BODY_DUPLICATE_ANCHOR_OCCURRENCE_PROVENANCE = (
+    "heading_body_duplicate_anchor_occurrence"
+)
 # 'redesignating clauses (i) and (ii) and subclauses (I) and (II) as subclauses
 # (I) and (II) and items (aa) and (bb), respectively' — a compound of two paired
 # relabel groups whose source/destination kinds cycle within a single
@@ -2307,6 +2310,25 @@ def _quoted_content_node(elem: ET.Element) -> IRNode | None:
     return None
 
 
+def _is_heading_body_duplicate_anchor_payload(
+    *, target: LegalAddress, match_text: str, payload_text: str
+) -> bool:
+    """True when a heading/body duplicate anchor should select the body token.
+
+    Source witness: 23 U.S.C. §109(o) before text has
+    ``... Non-NHS Projects.—Projects ...``. PL 117-58 §11129(2)(A) strikes
+    quoted ``Projects`` and inserts structural subparagraph ``(A) In
+    general.—Projects``. The source is striking the body-start token after the
+    heading dash, not the identical word in the subsection heading.
+    """
+    if not target.path or target.path[-1][0] != "subsection":
+        return False
+    if not match_text.isalpha() or " " in match_text:
+        return False
+    stripped_payload = payload_text.rstrip(' "\u201d')
+    return stripped_payload.endswith(match_text)
+
+
 def _direct_target_title(target_phrase: str, target_href: str) -> str:
     """The title the unit's OWN absolute prose / href would resolve to, or "".
 
@@ -4273,6 +4295,7 @@ def _lower_instruction(
         *,
         end_match_text: str | None = None,
         each_place: bool | None = None,
+        occurrence: int | None = None,
     ) -> TextSelector:
         each = _is_each_place_instruction(raw_text) if each_place is None else each_place
         if each:
@@ -4283,7 +4306,7 @@ def _lower_instruction(
             )
         return TextSelector(
             match_text=match_text,
-            occurrence=undesignated_occurrence,
+            occurrence=undesignated_occurrence if occurrence is None else occurrence,
             end_match_text=end_match_text,
             occurrence_mode=undesignated_occurrence_mode,
         )
@@ -4569,16 +4592,28 @@ def _lower_instruction(
             # boundary. Replacing the enclosing subsection would silently delete
             # text outside the quoted match.
             old = quoted[0]
+            heading_body_duplicate = _is_heading_body_duplicate_anchor_payload(
+                target=address,
+                match_text=old,
+                payload_text=payload_node.text or "",
+            )
             op = _make_op(
                 StructuralAction.TEXT_PATCH,
                 rule_id=RULE_STRIKE_INSERT,
                 text_patch=TextPatchSpec(
                     kind=TextPatchKindEnum.REPLACE,
-                    selector=_text_selector(old),
+                    selector=_text_selector(
+                        old,
+                        occurrence=1 if heading_body_duplicate else None,
+                    ),
                     replacement=payload_node.text or "",
                 ),
                 target=_text_strike_target,
-                extra_provenance_tags=_selector_provenance(),
+                extra_provenance_tags=_selector_provenance(
+                    (HEADING_BODY_DUPLICATE_ANCHOR_OCCURRENCE_PROVENANCE,)
+                    if heading_body_duplicate
+                    else ()
+                ),
             )
             witness_rule_id = RULE_STRIKE_INSERT
         elif payload_node is not None and quoted:

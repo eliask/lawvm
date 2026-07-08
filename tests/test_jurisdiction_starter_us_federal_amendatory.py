@@ -27,6 +27,7 @@ from lawvm.us_federal.amendatory import (
     DEFERRED_AMEND_TO_READ_FINDING_RULE_ID,
     DESIGNATION_STRIKE_FINDING_RULE_ID,
     HEADING_STRIKE_FINDING_RULE_ID,
+    HEADING_BODY_DUPLICATE_ANCHOR_OCCURRENCE_PROVENANCE,
     INSERT_AFTER_MISSING_OPERANDS_FINDING_RULE_ID,
     NON_TITLE_TARGET_RULE_ID,
     RULE_ADD_AT_END,
@@ -3974,6 +3975,37 @@ def test_strike_insert_structural_payload_after_quoted_phrase_stays_text_patch()
     assert op.text_patch.selector.match_text == "Nothing in this subsection"
     assert op.text_patch.replacement == "(b) Savings Provision.—Nothing in this section"
     assert RULE_RECONSTITUTED_TARGET_LABEL not in op.provenance_tags
+
+
+def test_strike_insert_heading_body_duplicate_anchor_selects_body_occurrence():
+    # PL 117-58 §11129(2)(A) / 23 U.S.C. §109(o): before text has both the
+    # subsection heading word and body-start word: "Non-NHS Projects.—Projects".
+    # The structural inserted payload ends with "Projects", proving the strike
+    # targets the body-start occurrence, not the heading token.
+    body = (
+        '<section identifier="/us/pl/117/58/dA/tI/stA/s11129/2/A" role="instruction">'
+        "<num>(A)</num><content>"
+        '<ref href="/us/usc/t23/s109/o">Section 109(o) of title 23, United States Code</ref> '
+        "is amended by "
+        '<amendingAction type="delete">striking</amendingAction> '
+        "“<quotedText>Projects</quotedText>” and "
+        '<amendingAction type="insert">inserting</amendingAction>:'
+        '<quotedContent><subparagraph><num value="A">“(A) </num>'
+        "<heading>In general</heading>"
+        "<content>.—Projects”</content></subparagraph></quotedContent>."
+        "</content></section>"
+    )
+    instr = _accepted_instr(lower_plaw_amendatory(_synthetic_plaw(body), proof_title="23"))
+
+    op = instr.operation
+    assert op is not None
+    assert op.action is StructuralAction.TEXT_PATCH
+    assert str(op.target) == "title:23/section:109/subsection:o"
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == "Projects"
+    assert op.text_patch.selector.occurrence == 1
+    assert op.text_patch.replacement == "(A) In general.—Projects"
+    assert HEADING_BODY_DUPLICATE_ANCHOR_OCCURRENCE_PROVENANCE in op.provenance_tags
 
 
 @pytest.mark.skip(reason="agent feature incomplete")

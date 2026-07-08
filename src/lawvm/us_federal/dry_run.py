@@ -65,6 +65,7 @@ from lawvm.core.semantic_types import StructuralAction, TextPatchKindEnum
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.us_federal.amendatory import (
     DEFERRED_AMEND_TO_READ_FINDING_RULE_ID,
+    HEADING_BODY_DUPLICATE_ANCHOR_OCCURRENCE_PROVENANCE,
     RULE_STRIKE_INSERT_TAIL,
     RULE_STRIKE_INSERT_THROUGH_TAIL,
     SENTENCE_ANCHOR_INSERT_FINDING_RULE_ID,
@@ -2147,6 +2148,22 @@ def _replace_token_in_text(
     return text.replace(match_text, replacement or "", count)
 
 
+def _replace_nth_token_in_text(
+    text: str, *, match_text: str, replacement: str, occurrence: int
+) -> str:
+    """Replace one zero-based occurrence using the normal token boundaries."""
+    if occurrence < 0:
+        return text
+    if match_text.isalpha():
+        matches = list(_word_boundary_pattern(match_text).finditer(text))
+    else:
+        matches = list(re.finditer(re.escape(match_text), text))
+    if occurrence >= len(matches):
+        return text
+    match = matches[occurrence]
+    return text[: match.start()] + replacement + text[match.end() :]
+
+
 def _replace_token_tail_in_text(text: str, match_text: str, replacement: str, count: int) -> str:
     """Open-ended tail strike: replace from the anchor to the node end.
 
@@ -2774,13 +2791,30 @@ def _materialize_one(
                 # rewrites the leftmost match here and records the result in
                 # node_overrides; patch 1 then sees the post-patch node and rewrites
                 # the NEXT match — each consumes its own occurrence in source order.
-                new_node_text = _apply_text_patch_with_tail_dispatch(
-                    operation,
-                    node_text,
-                    match_text=match_text,
-                    replacement=replacement or "",
-                    count=count,
-                )
+                if (
+                    HEADING_BODY_DUPLICATE_ANCHOR_OCCURRENCE_PROVENANCE
+                    in operation.provenance_tags
+                ):
+                    new_node_text = _replace_nth_token_in_text(
+                        node_text,
+                        match_text=match_text,
+                        replacement=replacement or "",
+                        occurrence=patch.selector.occurrence,
+                    )
+                    if new_node_text == node_text:
+                        return _refuse_absent_text_target(
+                            operation,
+                            absent_kind="heading/body duplicate anchor occurrence",
+                            absent_text=match_text,
+                        )
+                else:
+                    new_node_text = _apply_text_patch_with_tail_dispatch(
+                        operation,
+                        node_text,
+                        match_text=match_text,
+                        replacement=replacement or "",
+                        count=count,
+                    )
                 if new_node_text is None:
                     # Bounded through-tail: refuse when either anchor is absent from
                     # the running node, or when out of order; never fall through to a

@@ -32,6 +32,7 @@ from lawvm.core.ir import (
 )
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction, TextPatchKindEnum
 from lawvm.us_federal.amendatory import (
+    HEADING_BODY_DUPLICATE_ANCHOR_OCCURRENCE_PROVENANCE,
     RULE_STRIKE_INSERT_THROUGH_TAIL,
     SENTENCE_ANCHOR_INSERT_FINDING_RULE_ID,
     SENTENCE_STRIKE_FINDING_RULE_ID,
@@ -1429,6 +1430,17 @@ def test_real_title23_section102_structural_payload_phrase_swap_agrees_when_arch
     assert "(b) Savings Provision" in row.materialized_text
 
 
+def test_real_title23_section109_heading_body_duplicate_anchor_is_oracle_suspect_when_archive_present() -> None:
+    report = _build_real_title23_2020_2022_report_or_skip()
+
+    row = {r.section_key: r for r in report.rows}["23:109"]
+    assert row.rule_id == US_DRY_RUN_RESIDUAL_TEXT_MISMATCH_RULE_ID
+    assert row.disposition == DISPOSITION_ORACLE_SUSPECT
+    assert "Non-NHS Projects.—(A) In general.—Projects" in row.materialized_text
+    assert "Non-NHS (A) In general.—Projects.—Projects" not in row.materialized_text
+    assert _norm_editorial(row.materialized_text) == _norm_editorial(row.oracle_text)
+
+
 # ---------------------------------------------------------------------------
 # Real Title 11 / PL 118-42 / 2023->2024 window (archive-gated, no network)
 # ---------------------------------------------------------------------------
@@ -2594,6 +2606,41 @@ def test_node_scoped_single_occurrence_patch_edits_only_inside_the_target_node()
     # Inside (b)(1) the first occurrence is replaced; the second stays (a multi-
     # occurrence edit would be lowered as a separate op per occurrence).
     assert "(1) the count of members shall not exceed the number set by rule;" in materialized
+
+
+def test_heading_body_duplicate_anchor_patch_edits_body_occurrence_only() -> None:
+    before = (
+        '<!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml"><head>'
+        "<title>T23</title><!-- AUTHORITIES-USC-TITLE-ENUM:23 --></head><body><div>"
+        "<!-- expcite:TITLE 23!@!CHAPTER 1!@!Sec. 109 -->"
+        '<!-- field-start:head --><h3 class="section-head">&sect;109. Standards</h3>'
+        "<!-- field-end:head --><!-- field-start:statute -->"
+        '<p class="statutory-body">(o) Compliance With State Laws for Non-NHS '
+        "Projects.&mdash;Projects shall be designed under State standards.</p>"
+        "<!-- field-end:statute --></div></body></html>"
+    ).encode("utf-8")
+    doc = parse_usc_title_document(before, title=23, year="2020")
+    section = doc.section_by_number("109")
+    assert section is not None
+    op = LegalOperation(
+        op_id="heading-body-duplicate-anchor",
+        sequence=1,
+        action=StructuralAction.TEXT_PATCH,
+        target=LegalAddress(path=(("title", "23"), ("section", "109"), ("subsection", "o"))),
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(match_text="Projects", occurrence=1),
+            replacement="(A) In general.—Projects",
+        ),
+        provenance_tags=(HEADING_BODY_DUPLICATE_ANCHOR_OCCURRENCE_PROVENANCE,),
+    )
+
+    outcome = _materialize_one(op, section.statutory_text, before_section=section)
+    assert not isinstance(outcome, USDryRunRefusal)
+    materialized, signal_rule_id, _disp = outcome
+    assert signal_rule_id == ""
+    assert "Non-NHS Projects.—(A) In general.—Projects shall be designed" in materialized
+    assert "Non-NHS (A) In general" not in materialized
 
 
 def test_node_scoped_each_place_patch_with_repeated_anchor_replaces_every_node_occurrence() -> None:
