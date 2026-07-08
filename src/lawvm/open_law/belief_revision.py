@@ -452,9 +452,25 @@ def _short(commit: str) -> str:
 
 
 def _report(pair_reports: Tuple[CrossBranchPairReport, ...]) -> CrossBranchBeliefReport:
-    silent = sum(
-        1 for report in pair_reports for finding in report.findings if not finding.explained
+    silent_findings = [
+        finding
+        for report in pair_reports
+        for finding in report.findings
+        if not finding.explained
+    ]
+    # A silent revision from a pair whose two branches share the SAME source commit
+    # is the strong claim: identical source produced different codified output, so the
+    # delta cannot be source-derived (a cross-version reproducibility gap). A silent
+    # revision across DIFFERENT source commits is softer: the source did change but no
+    # declared editorial action covers this delta -- either a genuine silent change or
+    # an editorial-action shape the codify parser did not recognise (needs review).
+    silent_same_source = sum(
+        1
+        for finding in silent_findings
+        if finding.earlier_source_commit == finding.later_source_commit
+        and bool(finding.earlier_source_commit)
     )
+    silent = len(silent_findings)
     explained = sum(
         1 for report in pair_reports for finding in report.findings if finding.explained
     )
@@ -464,6 +480,8 @@ def _report(pair_reports: Tuple[CrossBranchPairReport, ...]) -> CrossBranchBelie
         "documents_compared": sum(report.documents_compared for report in pair_reports),
         "documents_diverged": sum(report.documents_diverged for report in pair_reports),
         "silent_revisions": silent,
+        "silent_revisions_same_source_commit": silent_same_source,
+        "silent_revisions_different_source_commit": silent - silent_same_source,
         "explained_revisions": explained,
     }
     return CrossBranchBeliefReport(pair_reports=pair_reports, summary=summary)

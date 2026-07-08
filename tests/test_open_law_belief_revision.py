@@ -147,6 +147,9 @@ def test_same_source_commit_belief_delta_is_silent_revision(tmp_path) -> None:
     assert report.summary["pairs_audited"] == 1
     assert report.summary["pairs_same_source_commit"] == 1
     assert report.summary["silent_revisions"] == 1
+    # identical source commit => the strong, reproducibility-gap subset
+    assert report.summary["silent_revisions_same_source_commit"] == 1
+    assert report.summary["silent_revisions_different_source_commit"] == 0
     assert report.summary["explained_revisions"] == 0
     finding = report.pair_reports[0].findings[0]
     assert finding.kind == "open_law_cross_branch_silent_revision"
