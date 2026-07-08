@@ -43,6 +43,7 @@ Two honest proofs are produced and projected onto the shared core objects:
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping as MappingABC
 from dataclasses import dataclass, field
 from dataclasses import replace as _dc_replace
 from datetime import date
@@ -66,6 +67,8 @@ from lawvm.us_federal.amendatory import (
     DEFERRED_AMEND_TO_READ_FINDING_RULE_ID,
     RULE_STRIKE_INSERT_TAIL,
     RULE_STRIKE_INSERT_THROUGH_TAIL,
+    SENTENCE_ANCHOR_INSERT_FINDING_RULE_ID,
+    SENTENCE_STRIKE_FINDING_RULE_ID,
     US_EACH_PLACE_STRIKE_EXCEPTION_DIMENSION,
     USAmendatoryReport,
     lower_plaw_amendatory,
@@ -166,6 +169,15 @@ US_DRY_RUN_RESIDUAL_PARTIAL_COMPOSITION_MID_CHAIN_GAP_RULE_ID = (
 # rather than lawvm_wrong.
 US_DRY_RUN_RESIDUAL_SOURCE_TRUNCATED_PAYLOAD_RULE_ID = (
     "us_dry_run_residual_source_truncated_payload"
+)
+# The enacted source can delete an intervening clause and leave a grammatically
+# stale verb in the retained before-text; OLRC may silently correct that grammar in
+# the consolidated Code. Example: AIA §20(j) deletes "and such error arose..."
+# from 35 U.S.C. §256, leaving source-faithful "may ... issued a certificate";
+# OLRC renders "may ... issue a certificate". This is oracle editorial cleanup,
+# not replay authority to mutate the retained verb.
+US_DRY_RUN_RESIDUAL_OLRC_GRAMMAR_CLEANUP_RULE_ID = (
+    "us_dry_run_residual_olrc_grammar_cleanup"
 )
 # The USC annual edition's source tree does not expose the structural level the
 # amendment names: the target level is absent from the parsed section (e.g. a
@@ -426,6 +438,37 @@ def _norm_editorial(text: str) -> str:
     respaced = _EDITORIAL_INSERT_AFTER_ANCHOR_SPACE_RE.sub(r"\1", respaced)
     respaced = _EDITORIAL_HYPHEN_WRAP_SPACE_RE.sub("", respaced)
     return _norm(respaced)
+
+
+def _norm_certificate_grammar_cleanup(text: str) -> str:
+    respaced = re.sub(r"\s+([,;:.])", r"\1", text)
+    respaced = respaced.replace(
+        "issued a certificate correcting such error",
+        "issue a certificate correcting such error",
+    )
+    return _norm_editorial(respaced)
+
+
+def _has_olrc_certificate_grammar_cleanup(
+    materialized: str,
+    oracle_text: str,
+    before_text: str,
+) -> bool:
+    """True when the residual is only OLRC's retained-verb grammar cleanup.
+
+    Classification-only. The dry-run materialization remains the source-faithful
+    text produced by enacted operations; this predicate only prevents the oracle's
+    grammatical cleanup from being billed as a replay bug.
+    """
+    stale = "issued a certificate correcting such error"
+    cleaned = "issue a certificate correcting such error"
+    if stale not in before_text or stale not in materialized or cleaned not in oracle_text:
+        return False
+    if _norm(materialized) == _norm(oracle_text):
+        return False
+    return _norm_certificate_grammar_cleanup(materialized) == _norm_certificate_grammar_cleanup(
+        oracle_text
+    )
 
 
 def _is_subsection_target(address: LegalAddress) -> bool:
@@ -975,6 +1018,12 @@ class USDryRunReport:
     # :meth:`deferred_op_section_keys` so the ROW typing and the north-star count use
     # ONE deferred set (they must reconcile, else the residue leaks to unclassified).
     lowering_deferred_sections: tuple[str, ...] = ()
+    # Sections whose lowerer emitted a typed sentence-position surgery finding.
+    # The section-text dry-run surface cannot locate "the third sentence" /
+    # "between the third and fourth sentences" without a sentence-ordinal legal
+    # op, so a same-section oracle-changed mismatch is a source/lowering
+    # capability gap, not a wrong landed text op.
+    lowering_sentence_strike_sections: tuple[str, ...] = ()
     replay_authorized: bool = False
 
     def sunset_reversion_section_keys(self) -> frozenset[str]:
@@ -1291,6 +1340,9 @@ class USDryRunReport:
             "sunset_finding_count": len(self.sunset_findings),
             "same_moment_finding_count": len(self.same_moment_findings),
             "target_recovery_count": len(self.target_recoveries),
+            "lowering_sentence_strike_sections": list(
+                self.lowering_sentence_strike_sections
+            ),
             "north_star": self.north_star(),
             "boundary_status": self.boundary_proof.boundary_proof_status,
             # Dry-run gate: replay stays blocked here.
@@ -1331,6 +1383,53 @@ class USDryRunReport:
             for f in self.same_moment_findings
         ]
         return payload
+
+
+@dataclass(frozen=True, slots=True)
+class USDryRunConservedAccount:
+    """Typed accounting carrier for the US dry-run section surface.
+
+    US is a char-span section materializer, not an IR/tree grafter. Its conserved
+    unit is therefore the dry-run account: claimed section rows, refused ops, and
+    the agreement-surface residuals that also account for oracle-changed but
+    unclaimed sections. This is evidence only; ``replay_authorized`` remains
+    false.
+    """
+
+    section_rows: tuple[USDryRunSectionRow, ...]
+    refused_ops: tuple[USDryRunRefusal, ...]
+    agreement_surface_residuals: tuple[Mapping[str, Any], ...]
+    replay_authorized: bool
+
+    @property
+    def row_count(self) -> int:
+        return len(self.section_rows)
+
+    @property
+    def refused_count(self) -> int:
+        return len(self.refused_ops)
+
+    @property
+    def residual_count(self) -> int:
+        return len(self.agreement_surface_residuals)
+
+    @property
+    def has_accounting_surface(self) -> bool:
+        return self.residual_count >= self.row_count
+
+
+def build_us_dry_run_conserved_account(report: USDryRunReport) -> USDryRunConservedAccount:
+    """Project a :class:`USDryRunReport` into its explicit accounting carrier."""
+    surface = report.agreement_surface()
+    residuals = tuple(
+        r for r in surface.get("residuals", ()) if isinstance(r, MappingABC)
+    )
+    return USDryRunConservedAccount(
+        section_rows=report.rows,
+        refused_ops=report.refusals,
+        agreement_surface_residuals=residuals,
+        replay_authorized=report.replay_authorized,
+    )
 
 
 def _residual_family(disposition: str) -> AgreementResidualFamily:
@@ -2117,6 +2216,7 @@ def _apply_text_patch_to_target_subtree(
     match_text: str,
     replacement: str,
     count: int,
+    last_occurrence: bool = False,
     node_overrides: NodeOverrides,
 ) -> str | None:
     """Apply a token-level text patch across the target node's subtree.
@@ -2191,6 +2291,35 @@ def _apply_text_patch_to_target_subtree(
     hits.sort(key=lambda h: h[1])
 
     materialized = before_text
+    if last_occurrence:
+        # ``occurrence_mode="Last"`` is not an each-place instruction. It names
+        # the terminal/rightmost occurrence inside the proven target subtree, so
+        # only the rightmost descendant span may be edited.
+        for key, start, end, node_text in sorted(hits, key=lambda h: h[1], reverse=True):
+            new_node_text = _replace_token_in_text(
+                node_text,
+                match_text,
+                replacement or "",
+                -1,
+                last_occurrence=True,
+            )
+            if new_node_text == node_text:
+                continue
+            materialized = materialized[:start] + new_node_text + materialized[end:]
+            node_overrides[key] = new_node_text
+            for k in list(node_overrides):
+                if (
+                    len(k) > len(target_segments)
+                    and k[: len(target_segments)] == target_segments
+                    and node_overrides[k] == node_text
+                ):
+                    node_overrides[k] = new_node_text
+            _refresh_ancestor_overrides(
+                node_overrides, key, node_text, new_node_text, materialized
+            )
+            return materialized
+        return None
+
     if count == -1:
         # Process right-to-left so earlier span indices stay valid after edits.
         for key, start, end, node_text in sorted(hits, key=lambda h: h[1], reverse=True):
@@ -2401,6 +2530,7 @@ def _materialize_one(
         replacement = patch.replacement if patch.kind is TextPatchKindEnum.REPLACE else ""
         # occurrence: -1 (each place) -> replace all; 0 or 1 -> first occurrence.
         count = -1 if patch.selector.occurrence == -1 else 1
+        last_occurrence = patch.selector.occurrence_mode == "Last"
 
         if is_subsection:
             # Sub-section-scoped text patch: confine the match/replace to the
@@ -2431,6 +2561,7 @@ def _materialize_one(
                             match_text=match_text,
                             replacement=replacement or "",
                             count=count,
+                            last_occurrence=last_occurrence,
                             node_overrides=node_overrides,
                         )
                         if subtree_materialized is not None:
@@ -2505,12 +2636,17 @@ def _materialize_one(
                     )
                 return (materialized, "", "")
             # Sub-section node not locatable (the split did not expose it cleanly).
-            # Fall back to a section-level string replace when the anchor is
-            # UNAMBIGUOUS — each-place, or a single occurrence in the section: a
-            # precise match_text needs no node location. Only a multi-occurrence
-            # anchor we cannot place stays a typed residual (genuinely ambiguous).
-            if _token_in_text(before_text, match_text) and (
-                count == -1 or _token_count_in_text(before_text, match_text) == 1
+            # Fall back to a section-level string replace only when the anchor is
+            # target-independent: true each-place, or a single first-occurrence
+            # anchor in the section. ``occurrence_mode="Last"`` is node-relative
+            # terminal-punctuation semantics; if the named node is not locatable,
+            # whole-section rightmost punctuation is target hijacking (F3 §3505).
+            if (
+                not last_occurrence
+                and _token_in_text(before_text, match_text)
+                and (
+                    count == -1 or _token_count_in_text(before_text, match_text) == 1
+                )
             ):
                 materialized = _apply_text_patch_with_tail_dispatch(
                     operation,
@@ -3141,6 +3277,10 @@ def build_us_dry_run(
     # (``lowering_deferred_sections``) and ``deferred_op_section_keys`` reconciles
     # the ROW typing with the north-star count from ONE source of truth.
     lowering_deferred_sections: set[str] = set()
+    # Sections whose lowerer recognized ordinal-sentence surgery but withheld it as
+    # not representable by the section-text op surface.
+    lowering_sentence_strike_sections: set[str] = set()
+    lowering_sentence_surgery_rule_by_section: dict[str, str] = {}
     lowered_reports: list[tuple[str, str, bytes, USAmendatoryReport]] = []
     for statute_id, blob in plaw_blobs.items():
         report = lower_plaw_amendatory(
@@ -3169,12 +3309,26 @@ def build_us_dry_run(
         # carrying no deferred findings (there is nothing to seed).
         for instruction in getattr(report, "instructions", ()) or ():
             f = instruction.finding
-            if f is None or f.rule_id != DEFERRED_AMEND_TO_READ_FINDING_RULE_ID:
+            if f is None:
                 continue
             ta = instruction.target_address
             if ta is None:
                 continue
             fkey = _section_key_from_address(ta)
+            if f.rule_id in (
+                SENTENCE_ANCHOR_INSERT_FINDING_RULE_ID,
+                SENTENCE_STRIKE_FINDING_RULE_ID,
+            ):
+                if (
+                    fkey is not None
+                    and fkey[0].isdigit()
+                    and int(fkey[0]) == int(title)
+                ):
+                    lowering_sentence_strike_sections.add(fkey[1])
+                    lowering_sentence_surgery_rule_by_section.setdefault(fkey[1], f.rule_id)
+                continue
+            if f.rule_id != DEFERRED_AMEND_TO_READ_FINDING_RULE_ID:
+                continue
             if fkey is not None and fkey[0].isdigit() and int(fkey[0]) == int(title):
                 deferred_refusal_sections.add(fkey[1])
                 lowering_deferred_sections.add(fkey[1])
@@ -3572,6 +3726,32 @@ def build_us_dry_run(
                     oracle_changed=oracle_changed_here,
                 )
             )
+        elif _has_olrc_certificate_grammar_cleanup(
+            materialized,
+            oracle_text,
+            before_text,
+        ):
+            # Source-faithful clause deletion retained "issued a certificate"; the
+            # OLRC consolidation silently renders the grammatical "issue a
+            # certificate". Classify, do not repair: LawVM has no source authority
+            # to mutate the retained verb.
+            rows.append(
+                USDryRunSectionRow(
+                    op_id=row_op_id,
+                    action=row_action,
+                    target_address=target_address,
+                    section_key=section_key,
+                    row_status=USDryRunRowStatus.RESIDUAL,
+                    rule_id=US_DRY_RUN_RESIDUAL_OLRC_GRAMMAR_CLEANUP_RULE_ID,
+                    disposition=DISPOSITION_ORACLE_SUSPECT,
+                    match_text=row_match,
+                    replacement=row_replacement,
+                    before_text=before_text,
+                    materialized_text=materialized,
+                    oracle_text=oracle_text,
+                    oracle_changed=oracle_changed_here,
+                )
+            )
         elif refused_structural_repeal and not _norm(oracle_text):
             # The oracle EMPTIED this section (a repeal) and the on-target REPEAL op
             # was refused as not representable at section-text granularity (there is
@@ -3632,6 +3812,18 @@ def build_us_dry_run(
                 # not apply, not (provably) by a wrong materialization.
                 rule_id = US_DRY_RUN_RESIDUAL_TEXT_MISMATCH_RULE_ID
                 disposition = DISPOSITION_DEFERRED_OP
+            elif section in lowering_sentence_strike_sections:
+                # The lowerer recognized on-target ordinal-sentence surgery but
+                # withheld it as not section-representable. If some other op still
+                # claimed the section and the composed text mismatches an oracle
+                # change, the gap is the held-out sentence-surgery capability, not a
+                # wrong landed materialization. Preserve a typed sentence-surgery
+                # witness; do not synthesize a sentence op or repair to oracle.
+                rule_id = lowering_sentence_surgery_rule_by_section.get(
+                    section,
+                    SENTENCE_STRIKE_FINDING_RULE_ID,
+                )
+                disposition = DISPOSITION_MISSING_SOURCE
             elif partial_composition_gap:
                 # SHARED MID-CHAIN RESOLVER outcome. One compound-chain op could not
                 # resolve its sub-section target against the running composition (its
@@ -3719,6 +3911,9 @@ def build_us_dry_run(
         same_moment_findings=same_moment_findings,
         lowering_deferred_sections=tuple(
             sorted(f"{title}:{s}" for s in lowering_deferred_sections)
+        ),
+        lowering_sentence_strike_sections=tuple(
+            sorted(f"{title}:{s}" for s in lowering_sentence_strike_sections)
         ),
     )
 

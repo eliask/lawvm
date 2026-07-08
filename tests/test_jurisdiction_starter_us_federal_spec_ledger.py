@@ -23,11 +23,12 @@ from __future__ import annotations
 
 import ast
 import os
+import sys
 from pathlib import Path
 
 import pytest
 
-from lawvm.tools.spec_ledger import SpecLedger
+from lawvm.tools.spec_ledger import SpecLedger, StatuteLedgerInput, build_ledger
 from lawvm.tools.spec_ledger_discovery import format_uncataloged, locate_rule_ids
 from lawvm.tools.spec_ledger_us_catalog import (
     _US_RULE_SPECS,
@@ -298,6 +299,66 @@ def test_uncataloged_rule_is_a_loud_legacy_unknown_blind_spot() -> None:
 def test_skipped_result_contributes_nothing() -> None:
     skipped = _result(None, status=WindowStatus.SKIPPED)
     assert us_ledger_inputs_from_reports([skipped]) == []
+
+
+def test_us_spec_ledger_cli_persists_shared_diffable_report(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from lawvm.tools import cli
+
+    ledger = build_ledger(
+        [
+            StatuteLedgerInput(
+                sid="us:test-window",
+                rule_firings={US_DRY_RUN_SECTION_AGREES_RULE_ID: 1},
+                divergences=[],
+            )
+        ],
+        jurisdiction="us",
+        mode="dry_run_section_text_vs_usc_after_edition",
+        catalog=_US_RULE_SPECS,
+    )
+
+    class _Archive:
+        def close(self) -> None:
+            pass
+
+    corpus = tmp_path / "corpus.csv"
+    corpus.write_text("title,before_year,after_year,include\n", encoding="utf-8")
+    out_dir = tmp_path / "ledger-out"
+
+    monkeypatch.setattr(
+        "lawvm.us_federal.bench.load_corpus",
+        lambda path: [_window()],
+    )
+    monkeypatch.setattr(
+        "lawvm.us_federal.sources.open_us_federal_farchive",
+        lambda readonly=True: _Archive(),
+    )
+    monkeypatch.setattr(
+        "lawvm.us_federal.spec_ledger_adapter.build_us_spec_ledger",
+        lambda archive, windows: ledger,
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "lawvm",
+            "us-spec-ledger",
+            "--corpus",
+            str(corpus),
+            "--out-dir",
+            str(out_dir),
+        ],
+    )
+
+    cli._main_impl()
+
+    assert (out_dir / "spec_ledger.json").exists()
+    assert (out_dir / "spec_ledger.md").exists()
+    assert "wrote" in capsys.readouterr().err
 
 
 # ---------------------------------------------------------------------------

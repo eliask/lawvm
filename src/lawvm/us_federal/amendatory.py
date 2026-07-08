@@ -2815,15 +2815,21 @@ _CHAPTER_ANALYSIS_INSERT_RE = compile_classifier_regex(
     classifier_id="us_amendatory_chapter_analysis_insert",
 )
 # Sentence-anchor insert: "inserting after the first/second/third/last sentence
-# the following: '<X>'" / "inserting '<X>' before the first sentence". A
-# sentence's offset in the rendered text is editorial (AGENTS.md §2.1); LawVM
-# cannot deterministically locate a sentence boundary from prose alone. The
-# instruction is a typed finding, not a phrase swap. Recognizer is a hot-path
-# classifier on every insert_after instruction; routed through
-# ``compile_classifier_regex`` per AGENTS.md §2.4.
+# the following: '<X>'" / "inserting '<X>' before the first sentence" / "inserting
+# between the third and fourth sentences the following: '<X>'". A sentence's
+# offset in the rendered text is editorial (AGENTS.md §2.1); LawVM cannot
+# deterministically locate a sentence boundary from prose alone. The instruction
+# is a typed finding, not a phrase swap. Recognizer is a hot-path classifier on
+# every insert_after instruction.
 _SENTENCE_ANCHOR_INSERT_RE = re.compile(
     r"\binserting\s+"
     r"(?:"
+    # "between the third and fourth sentences" — source witness: AIA §2(k)(1)
+    # (35 U.S.C. §32). This is a sentence-position insert, not a quoted-anchor
+    # phrase swap.
+    r"between\s+the\s+(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|last|final)\s+"
+    r"and\s+(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|last|final)\s+sentences?"
+    r"|"
     # "after the first sentence [in paragraph (N)]" — merges the bare-sentence
     # and the trailing "in <kind> (label)" qualifier forms into ONE alternative
     # so the regex engine does not have two alternation members with the SAME
@@ -5119,65 +5125,76 @@ def _lower_instruction(
                     "insert-after without both inserted text and anchor text",
                 )
     elif family == "add_at_end":
-        add_payload_text = payload_node.text if payload_node is not None else (quoted[0] if quoted else "")
-        if _payload_opens_new_section(add_payload_text):
-            # "by adding at the end the following: '§ 1181. ... § 1182. ...'" — a
-            # container-level (usually chapter) insertion of one or more new sections.
-            # Split the block and emit one INSERT per enacted section number so the
-            # dry-run can materialize each new section against its after-edition oracle.
-            section_slices = _split_new_section_payload(add_payload_text or "")
-            if section_slices:
-                insert_title = _address_title(address)
-                if not insert_title:
-                    insert_title = _address_title(inherited_address)
-                for idx, (section_number, section_payload) in enumerate(section_slices):
-                    section_node = IRNode(kind=IRNodeKind.CONTENT, text=section_payload)
-                    insert_op = _make_op(
-                        StructuralAction.INSERT,
-                        rule_id=RULE_ADD_AT_END_NEW_SECTIONS,
-                        payload=section_node,
-                        target=LegalAddress(
-                            path=(
-                                (("title", insert_title), ("section", section_number))
-                                if insert_title
-                                else (("section", section_number),)
-                            )
-                        ),
+        if _SENTENCE_ANCHOR_INSERT_RE.search(raw_text) is not None:
+            finding = _finding(
+                SENTENCE_ANCHOR_INSERT_FINDING_RULE_ID,
+                "insert relative to a SENTENCE anchor/interval (the "
+                "first/second/.../last sentence, or between two sentence "
+                "ordinals); a sentence's offset is editorial, not enacted "
+                "(AGENTS.md §2.1); held out as a typed residual",
+            )
+        else:
+            add_payload_text = (
+                payload_node.text if payload_node is not None else (quoted[0] if quoted else "")
+            )
+            if _payload_opens_new_section(add_payload_text):
+                # "by adding at the end the following: '§ 1181. ... § 1182. ...'" — a
+                # container-level (usually chapter) insertion of one or more new sections.
+                # Split the block and emit one INSERT per enacted section number so the
+                # dry-run can materialize each new section against its after-edition oracle.
+                section_slices = _split_new_section_payload(add_payload_text or "")
+                if section_slices:
+                    insert_title = _address_title(address)
+                    if not insert_title:
+                        insert_title = _address_title(inherited_address)
+                    for idx, (section_number, section_payload) in enumerate(section_slices):
+                        section_node = IRNode(kind=IRNodeKind.CONTENT, text=section_payload)
+                        insert_op = _make_op(
+                            StructuralAction.INSERT,
+                            rule_id=RULE_ADD_AT_END_NEW_SECTIONS,
+                            payload=section_node,
+                            target=LegalAddress(
+                                path=(
+                                    (("title", insert_title), ("section", section_number))
+                                    if insert_title
+                                    else (("section", section_number),)
+                                )
+                            ),
+                        )
+                        if idx == 0:
+                            op = insert_op
+                            witness_rule_id = RULE_ADD_AT_END_NEW_SECTIONS
+                        else:
+                            # Each additional section is emitted as part of the same
+                            # source instruction but as its own LegalOperation.
+                            extra_ops.append(insert_op)
+                else:
+                    finding = _finding(
+                        NEW_SECTION_INSERT_FINDING_RULE_ID,
+                        "add-at-end payload opens with a new section/chapter head "
+                        "but the block could not be split into per-section slices",
                     )
-                    if idx == 0:
-                        op = insert_op
-                        witness_rule_id = RULE_ADD_AT_END_NEW_SECTIONS
-                    else:
-                        # Each additional section is emitted as part of the same
-                        # source instruction but as its own LegalOperation.
-                        extra_ops.append(insert_op)
+            elif payload_node is not None:
+                op = _make_op(
+                    StructuralAction.INSERT,
+                    rule_id=RULE_ADD_AT_END,
+                    payload=payload_node,
+                    anchor=address,
+                )
+                witness_rule_id = RULE_ADD_AT_END
+            elif quoted:
+                op = _make_op(
+                    StructuralAction.INSERT,
+                    rule_id=RULE_ADD_AT_END,
+                    payload=IRNode(kind=IRNodeKind.CONTENT, text=quoted[0]),
+                    anchor=address,
+                )
+                witness_rule_id = RULE_ADD_AT_END
             else:
                 finding = _finding(
-                    NEW_SECTION_INSERT_FINDING_RULE_ID,
-                    "add-at-end payload opens with a new section/chapter head "
-                    "but the block could not be split into per-section slices",
+                    ADD_AT_END_MISSING_PAYLOAD_FINDING_RULE_ID,
+                    "add-at-end without a quoted payload",
                 )
-        elif payload_node is not None:
-            op = _make_op(
-                StructuralAction.INSERT,
-                rule_id=RULE_ADD_AT_END,
-                payload=payload_node,
-                anchor=address,
-            )
-            witness_rule_id = RULE_ADD_AT_END
-        elif quoted:
-            op = _make_op(
-                StructuralAction.INSERT,
-                rule_id=RULE_ADD_AT_END,
-                payload=IRNode(kind=IRNodeKind.CONTENT, text=quoted[0]),
-                anchor=address,
-            )
-            witness_rule_id = RULE_ADD_AT_END
-        else:
-            finding = _finding(
-                ADD_AT_END_MISSING_PAYLOAD_FINDING_RULE_ID,
-                "add-at-end without a quoted payload",
-            )
     elif family == "amend_to_read":
         # Future-effective amend-to-read: prefer the TYPED temporal path (the op
         # lowers normally; ``source.effective`` / PENDING_CONDITION make the

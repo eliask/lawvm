@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -24,11 +25,16 @@ from lawvm.core.ir import (
     IRNode,
     LegalAddress,
     LegalOperation,
+    OperationSource,
     TextPatchSpec,
     TextSelector,
 )
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction, TextPatchKindEnum
-from lawvm.us_federal.amendatory import lower_plaw_amendatory
+from lawvm.us_federal.amendatory import (
+    SENTENCE_ANCHOR_INSERT_FINDING_RULE_ID,
+    SENTENCE_STRIKE_FINDING_RULE_ID,
+    lower_plaw_amendatory,
+)
 from lawvm.us_federal.dry_run import (
     DISPOSITION_LAWVM_WRONG,
     DISPOSITION_MISSING_SOURCE,
@@ -41,6 +47,7 @@ from lawvm.us_federal.dry_run import (
     US_DRY_RUN_REFUSED_DEFERRED_OP_NOT_YET_EFFECTIVE_RULE_ID,
     US_DRY_RUN_DEFERRED_OP_INFLATED_AS_MISSING_SOURCE_RULE_ID,
     US_DRY_RUN_RESIDUAL_ORACLE_CHANGED_NOT_CLAIMED_RULE_ID,
+    US_DRY_RUN_RESIDUAL_OLRC_GRAMMAR_CLEANUP_RULE_ID,
     US_DRY_RUN_RESIDUAL_SOURCE_TRUNCATED_PAYLOAD_RULE_ID,
     US_DRY_RUN_RESIDUAL_SUBSECTION_NODE_NOT_LOCATED_RULE_ID,
     US_DRY_RUN_RESIDUAL_PARTIAL_COMPOSITION_MID_CHAIN_GAP_RULE_ID,
@@ -50,6 +57,7 @@ from lawvm.us_federal.dry_run import (
     US_DRY_RUN_RESIDUAL_TEXT_MISMATCH_RULE_ID,
     US_DRY_RUN_SECTION_AGREES_RULE_ID,
     US_DRY_RUN_RECOVERED_BARE_LEAF_TARGET_VIA_UNIQUE_SUFFIX_RULE_ID,
+    USDryRunConservedAccount,
     USDryRunRefusal,
     USDryRunReport,
     USDryRunTargetRecovery,
@@ -64,6 +72,7 @@ from lawvm.us_federal.dry_run import (
     _running_node_text,
     _subsection_segments,
     build_us_dry_run,
+    build_us_dry_run_conserved_account,
 )
 from lawvm.us_federal.source_tree import UscSection, parse_usc_title_document, synthetic_usc_section, split_statutory_subsections
 
@@ -82,6 +91,34 @@ def _build(plaw_blobs: dict[str, bytes] | None = None) -> USDryRunReport:
         before_year="2023",
         after_year="2024",
     )
+
+
+def test_us_dry_run_conserved_account_projects_section_surface_accounting():
+    report = _build()
+
+    account = build_us_dry_run_conserved_account(report)
+
+    assert isinstance(account, USDryRunConservedAccount)
+    assert account.section_rows == report.rows
+    assert account.refused_ops == report.refusals
+    assert account.row_count == len(report.rows)
+    assert account.refused_count == len(report.refusals)
+    assert account.has_accounting_surface
+    assert account.replay_authorized is False
+
+    families = {
+        residual["family"]
+        for residual in account.agreement_surface_residuals
+        if isinstance(residual.get("family"), str)
+    }
+    rule_ids = {
+        residual["rule_id"]
+        for residual in account.agreement_surface_residuals
+        if isinstance(residual.get("rule_id"), str)
+    }
+    assert "agreement" in families
+    assert "source_footing_gap" in families
+    assert US_DRY_RUN_RESIDUAL_ORACLE_CHANGED_NOT_CLAIMED_RULE_ID in rule_ids
 
 
 # ---------------------------------------------------------------------------
@@ -911,6 +948,201 @@ def test_build_us_dry_run_default_report_has_no_target_recoveries() -> None:
     assert report.target_recoveries == ()
     assert report.to_jsonable()["summary"]["target_recovery_count"] == 0
     assert report.to_jsonable()["target_recoveries"] == []
+
+
+def test_build_us_dry_run_carries_same_moment_findings_through_the_report(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Guard-liveness: same-moment findings survive the full dry-run report path."""
+
+    class _LoweredReport:
+        def __init__(self, op: LegalOperation) -> None:
+            self.enacted = op.source.enacted if op.source is not None else ""
+            self.instructions = ()
+            self._op = op
+
+        def operations(self) -> tuple[LegalOperation, ...]:
+            return (self._op,)
+
+    def _replace_op(statute_id: str, text: str) -> LegalOperation:
+        section = "10"
+        return LegalOperation(
+            op_id=f"{statute_id}#replace-10",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("title", "99"), ("section", section))),
+            payload=IRNode(kind=IRNodeKind.SECTION, label=section, text=text),
+            source=OperationSource(
+                statute_id=statute_id,
+                enacted="2024-01-01",
+                effective="",
+            ),
+        )
+
+    lowered = {
+        "PL 99-100": _LoweredReport(_replace_op("PL 99-100", "Alpha body.")),
+        "PL 99-101": _LoweredReport(_replace_op("PL 99-101", "Beta body.")),
+    }
+
+    def _fake_lower(
+        _blob: bytes,
+        *,
+        statute_id: str,
+        enacted: str = "",
+        proof_title: str = "",
+        classification_index: object = None,
+    ) -> _LoweredReport:
+        assert enacted == ""
+        assert proof_title == "99"
+        assert classification_index is None
+        return lowered[statute_id]
+
+    monkeypatch.setattr(
+        "lawvm.us_federal.dry_run.lower_plaw_amendatory",
+        _fake_lower,
+    )
+
+    report = build_us_dry_run(
+        before_htm=BEFORE_HTM,
+        after_htm=AFTER_HTM,
+        plaw_blobs={"PL 99-100": b"<plaw/>", "PL 99-101": b"<plaw/>"},
+        title=99,
+        before_year="2023",
+        after_year="2024",
+    )
+
+    assert report.summary()["same_moment_finding_count"] == 1
+    finding = report.same_moment_findings[0]
+    assert finding.kind == "us_same_moment_cross_act_incompatible_payload_ambiguous"
+    assert finding.blocking is True
+    assert finding.op_id == ""
+    assert set(finding.detail["conflicting_affecting_acts"]) == {
+        "PL 99-100",
+        "PL 99-101",
+    }
+
+    payload = report.to_jsonable()
+    serialized = payload["same_moment_findings"][0]
+    assert payload["summary"]["same_moment_finding_count"] == 1
+    assert serialized["kind"] == finding.kind
+    assert serialized["blocking"] is True
+    assert serialized["detail"]["effective_date"] == "2024-01-01"
+    assert {op["op_id"] for op in serialized["detail"]["conflicting_ops"]} == {
+        "PL 99-100#replace-10",
+        "PL 99-101#replace-10",
+    }
+
+
+def test_sentence_surgery_finding_reclassifies_same_section_mismatch_as_missing_source(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Guard-liveness for the AIA §35:143 / §35:32 sentence-surgery family.
+
+    The lowerer already recognizes "striking the third sentence" as a typed
+    non-representable sentence-surgery finding, and "inserting between the third
+    and fourth sentences" is the same positional-sentence capability gap. If
+    another same-section op still claims the section and the composed text
+    mismatches an oracle change, dry-run must preserve that gap as
+    ``missing_source`` rather than billing the landed sibling op as
+    ``lawvm_wrong``.
+    """
+
+    op = LegalOperation(
+        op_id="PL 99-200#replace-10",
+        sequence=1,
+        action=StructuralAction.TEXT_PATCH,
+        target=LegalAddress(path=(("title", "99"), ("section", "10"))),
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(match_text="15-year", occurrence=1),
+            replacement="17-year",
+        ),
+        source=OperationSource(
+            statute_id="PL 99-200",
+            enacted="2024-01-01",
+            effective="",
+        ),
+    )
+    target = LegalAddress(path=(("title", "99"), ("section", "10")))
+
+    class _Report:
+        enacted = "2024-01-01"
+
+        def __init__(self, *, finding_rule_id: str = "") -> None:
+            finding = SimpleNamespace(rule_id=finding_rule_id) if finding_rule_id else None
+            self.instructions = (
+                SimpleNamespace(finding=finding, target_address=target),
+            ) if finding_rule_id else ()
+
+        def operations(self) -> tuple[LegalOperation, ...]:
+            return (op,)
+
+    reports = {
+        "PL 99-200": _Report(finding_rule_id=SENTENCE_STRIKE_FINDING_RULE_ID),
+        "PL 99-201": _Report(),
+        "PL 99-202": _Report(finding_rule_id=SENTENCE_ANCHOR_INSERT_FINDING_RULE_ID),
+    }
+
+    def _fake_lower(
+        _blob: bytes,
+        *,
+        statute_id: str,
+        enacted: str = "",
+        proof_title: str = "",
+        classification_index: object = None,
+    ) -> _Report:
+        assert enacted == ""
+        assert proof_title == "99"
+        assert classification_index is None
+        return reports[statute_id]
+
+    monkeypatch.setattr(
+        "lawvm.us_federal.dry_run.lower_plaw_amendatory",
+        _fake_lower,
+    )
+    with_finding = build_us_dry_run(
+        before_htm=BEFORE_HTM,
+        after_htm=AFTER_HTM,
+        plaw_blobs={"PL 99-200": b"<uslm/>"},
+        title=99,
+        before_year="2023",
+        after_year="2024",
+    )
+    without_finding = build_us_dry_run(
+        before_htm=BEFORE_HTM,
+        after_htm=AFTER_HTM,
+        plaw_blobs={"PL 99-201": b"<uslm/>"},
+        title=99,
+        before_year="2023",
+        after_year="2024",
+    )
+    with_sentence_insert = build_us_dry_run(
+        before_htm=BEFORE_HTM,
+        after_htm=AFTER_HTM,
+        plaw_blobs={"PL 99-202": b"<uslm/>"},
+        title=99,
+        before_year="2023",
+        after_year="2024",
+    )
+
+    row = {r.section_key: r for r in with_finding.rows}["99:10"]
+    assert row.row_status == "residual"
+    assert row.rule_id == SENTENCE_STRIKE_FINDING_RULE_ID
+    assert row.disposition == DISPOSITION_MISSING_SOURCE
+    assert with_finding.summary()["lowering_sentence_strike_sections"] == ["99:10"]
+    assert "99:10" in with_finding.north_star()["missing_source_sections"]
+
+    insert_row = {r.section_key: r for r in with_sentence_insert.rows}["99:10"]
+    assert insert_row.row_status == "residual"
+    assert insert_row.rule_id == SENTENCE_ANCHOR_INSERT_FINDING_RULE_ID
+    assert insert_row.disposition == DISPOSITION_MISSING_SOURCE
+    assert with_sentence_insert.summary()["lowering_sentence_strike_sections"] == ["99:10"]
+    assert "99:10" in with_sentence_insert.north_star()["missing_source_sections"]
+
+    negative = {r.section_key: r for r in without_finding.rows}["99:10"]
+    assert negative.row_status == "residual"
+    assert negative.rule_id == US_DRY_RUN_RESIDUAL_TEXT_MISMATCH_RULE_ID
+    assert negative.disposition == DISPOSITION_LAWVM_WRONG
 
 
 def test_report_never_authorizes_replay() -> None:
@@ -1961,6 +2193,100 @@ def test_node_scoped_each_place_patch_with_repeated_anchor_replaces_every_node_o
     assert "the count of members shall not exceed the count set by rule;" in materialized
 
 
+def test_unlocated_subsection_last_occurrence_patch_does_not_fallback_to_section_final_period() -> None:
+    # F3 §3505 shape: a terminal-punctuation edit targeting a subparagraph whose
+    # node cannot be located must not rewrite the whole section's rightmost period.
+    # ``occurrence=-1`` + ``occurrence_mode="Last"`` means the target node's terminal
+    # punctuation, not true each-place over the section.
+    op = LegalOperation(
+        op_id="subparagraph-e-last-period",
+        sequence=1,
+        action=StructuralAction.TEXT_PATCH,
+        target=LegalAddress(
+            path=(
+                ("title", "50"),
+                ("section", "3505"),
+                ("subsection", "a"),
+                ("paragraph", "1"),
+                ("subparagraph", "E"),
+            )
+        ),
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(
+                match_text=".",
+                occurrence=-1,
+                occurrence_mode="Last",
+            ),
+            replacement="; and",
+        ),
+    )
+    before = (
+        "(E) coordinate with applicable law. "
+        "(F) submit a plan that shall take effect."
+    )
+
+    outcome = _materialize_one(op, before)
+
+    assert not isinstance(outcome, USDryRunRefusal)
+    materialized, signal_rule_id, disposition = outcome
+    assert materialized == ""
+    assert signal_rule_id == US_DRY_RUN_RESIDUAL_SUBSECTION_NODE_NOT_LOCATED_RULE_ID
+    assert disposition == DISPOSITION_LAWVM_WRONG
+
+
+def test_subtree_last_occurrence_patch_edits_rightmost_descendant_once() -> None:
+    # If the target subtree is proven, ``Last`` can still be honored inside that
+    # subtree. It edits the rightmost descendant occurrence once, not every period
+    # under the paragraph and not the section-final period outside the paragraph.
+    section = synthetic_usc_section(
+        title=50,
+        section="3505",
+        text=(
+            "(1) The plan shall include— "
+            "(A) coordination with agencies. "
+            "(B) consultation with partners. "
+            "(2) The plan shall take effect."
+        ),
+    )
+    nodes, _ = split_statutory_subsections(section)
+    node_overrides: dict[tuple[tuple[str, str], ...], str] = {
+        _subsection_segments(n.address): n.text for n in nodes
+    }
+    op = LegalOperation(
+        op_id="paragraph-1-last-period",
+        sequence=1,
+        action=StructuralAction.TEXT_PATCH,
+        target=LegalAddress(
+            path=(("title", "50"), ("section", "3505"), ("paragraph", "1"))
+        ),
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(
+                match_text=".",
+                occurrence=-1,
+                occurrence_mode="Last",
+            ),
+            replacement="; and",
+        ),
+    )
+
+    outcome = _materialize_one(
+        op,
+        section.statutory_text,
+        before_section=section,
+        node_overrides=node_overrides,
+    )
+
+    assert not isinstance(outcome, USDryRunRefusal), outcome
+    materialized, signal_rule_id, disposition = outcome
+    assert signal_rule_id == ""
+    assert disposition == ""
+    assert "(A) coordination with agencies." in materialized
+    assert "(B) consultation with partners; and" in materialized
+    assert "(2) The plan shall take effect." in materialized
+
+
 def test_section_level_insert_with_plain_text_payload_still_materializes() -> None:
     # An INSERT whose target IS the section (add-at-end of the section body) remains
     # representable: the payload is appended. Only sub-section targets are refused.
@@ -2513,6 +2839,95 @@ def test_quoted_block_insert_residual_is_typed_oracle_suspect_not_lawvm_wrong(
     # so the residual is still editorial (F1), not repaired to the oracle.
     assert "“(2) second" in row.materialized_text
     assert "“(1)" not in row.materialized_text
+
+
+def test_olrc_grammar_cleanup_after_clause_deletion_is_oracle_suspect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AIA §256 family: source-faithful deletion can leave stale grammar.
+
+    The enacted op deletes an intervening clause and leaves the retained before
+    text's "issued a certificate" untouched. The OLRC consolidation renders
+    "issue a certificate". Dry-run must keep the source-faithful materialization
+    and type the difference as oracle/editorial, not mutate the retained verb.
+    """
+
+    before_text = (
+        "Whenever through error an inventor is not named in an issued patent "
+        "and such error arose without any deceptive intention on his part, "
+        "the Director may, on application, issued a certificate correcting such error."
+    )
+    oracle_text = (
+        "Whenever through error an inventor is not named in an issued patent, "
+        "the Director may, on application, issue a certificate correcting such error."
+    )
+    wrong_oracle_text = oracle_text.replace("application", "verified application")
+
+    def _htm(text: str) -> bytes:
+        return (
+            '<!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml"><head>'
+            "<title>T99</title><!-- AUTHORITIES-USC-TITLE-ENUM:99 --></head><body><div>"
+            "<!-- expcite:TITLE 99!@!CHAPTER 1!@!Sec. 256 -->"
+            '<!-- field-start:head --><h3 class="section-head">&sect;256. Correction</h3>'
+            "<!-- field-end:head --><!-- field-start:statute -->"
+            f'<p class="statutory-body">{text}</p>'
+            "<!-- field-end:statute --></div></body></html>"
+        ).encode("utf-8")
+
+    op = LegalOperation(
+        op_id="PL 99-256#delete-clause",
+        sequence=1,
+        action=StructuralAction.TEXT_PATCH,
+        target=LegalAddress(path=(("title", "99"), ("section", "256"))),
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.DELETE,
+            selector=TextSelector(
+                match_text="and such error arose without any deceptive intention on his part",
+                occurrence=1,
+            ),
+            replacement=None,
+        ),
+        source=OperationSource(statute_id="PL 99-256", enacted="2024-01-01"),
+    )
+
+    class _Report:
+        enacted = "2024-01-01"
+        instructions = ()
+
+        def operations(self) -> tuple[LegalOperation, ...]:
+            return (op,)
+
+    monkeypatch.setattr(
+        "lawvm.us_federal.dry_run.lower_plaw_amendatory",
+        lambda *a, **k: _Report(),
+    )
+
+    report = build_us_dry_run(
+        before_htm=_htm(before_text),
+        after_htm=_htm(oracle_text),
+        plaw_blobs={"PL 99-256": b"<uslm/>"},
+        title=99,
+        before_year="2023",
+        after_year="2024",
+    )
+    row = report.rows[0]
+    assert row.section_key == "99:256"
+    assert row.rule_id == US_DRY_RUN_RESIDUAL_OLRC_GRAMMAR_CLEANUP_RULE_ID
+    assert row.disposition == DISPOSITION_ORACLE_SUSPECT
+    assert "issued a certificate correcting such error" in row.materialized_text
+    assert "issue a certificate correcting such error" in row.oracle_text
+
+    negative = build_us_dry_run(
+        before_htm=_htm(before_text),
+        after_htm=_htm(wrong_oracle_text),
+        plaw_blobs={"PL 99-256": b"<uslm/>"},
+        title=99,
+        before_year="2023",
+        after_year="2024",
+    )
+    negative_row = negative.rows[0]
+    assert negative_row.rule_id == US_DRY_RUN_RESIDUAL_TEXT_MISMATCH_RULE_ID
+    assert negative_row.disposition == DISPOSITION_LAWVM_WRONG
 
 
 # ---------------------------------------------------------------------------

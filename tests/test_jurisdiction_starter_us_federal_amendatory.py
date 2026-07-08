@@ -3675,6 +3675,31 @@ def test_sentence_anchor_insert_in_paragraph_lowers_to_typed_finding():
     assert instr.finding.rule_id == SENTENCE_ANCHOR_INSERT_FINDING_RULE_ID
 
 
+def test_sentence_position_between_sentences_insert_lowers_to_typed_finding():
+    # "inserting between the third and fourth sentences the following: '<X>'" —
+    # the anchor is a sentence interval by ordinal name. LawVM cannot faithfully
+    # locate that interval at section-text granularity, so it must remain a typed
+    # sentence-anchor insert finding rather than erode into the generic
+    # insert_after_missing_operands bucket. Source witness: AIA §2(k)(1) on
+    # 35 U.S.C. §32.
+    body = (
+        '<section identifier="/us/pl/116/900/s1" role="instruction"><num>1.</num>'
+        "<content>"
+        '<ref href="/us/usc/t35/s32">Section 32 of title 35, United States Code</ref>, '
+        '<amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="insert">inserting</amendingAction> between the third '
+        "and fourth sentences the following: "
+        "“<quotedText>A proceeding under this section shall be commenced timely.</quotedText>”."
+        "</content></section>"
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body), proof_title="35")
+    instr = report.instructions[0]
+    assert instr.instruction_status != "accepted"
+    assert instr.finding is not None
+    assert instr.finding.rule_id == SENTENCE_ANCHOR_INSERT_FINDING_RULE_ID
+    assert instr.finding.rule_id != INSERT_AFTER_MISSING_OPERANDS_FINDING_RULE_ID
+
+
 @pytest.mark.skip(reason="agent feature incomplete")
 def test_insert_quoted_after_term_each_place_lowers_to_phrase_swap():
     # "by inserting '<X>' after the term '<Y>' each place such term appears" —

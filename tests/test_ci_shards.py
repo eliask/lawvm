@@ -50,6 +50,14 @@ def _ci_sharded_static_check_paths() -> list[str]:
 
 def _without_path_expanded_shards(plan: dict[str, object]) -> dict[str, object]:
     stripped = dict(plan)
+    if stripped.get("blocking_paths") == []:
+        stripped.pop("blocking_paths")
+    elif "blocking_paths" in stripped:
+        blocking = cast(list[dict[str, Any]], stripped["blocking_paths"])
+        stripped["blocking_paths"] = [
+            {key: value for key, value in item.items() if key != "expanded_shards"}
+            for item in blocking
+        ]
     paths = cast(list[dict[str, Any]], plan["paths"])
     stripped["paths"] = [
         {key: value for key, value in item.items() if key != "expanded_shards"}
@@ -194,6 +202,7 @@ def test_test_shard_named_groups_expand_to_stable_shards() -> None:
         "starter",
         *SWEDEN_EXECUTION_SHARDS,
         "uk",
+        "us_federal",
     ]
     assert module.expand_shard_names(["frontends", "modules", "finland"]) == [
         *ESTONIA_EXECUTION_SHARDS,
@@ -206,6 +215,7 @@ def test_test_shard_named_groups_expand_to_stable_shards() -> None:
         "starter",
         *SWEDEN_EXECUTION_SHARDS,
         "uk",
+        "us_federal",
         "core_discipline_gates",
         "core_ir_contracts",
         "core_tree_apply",
@@ -237,7 +247,12 @@ def test_ci_default_bounded_shards_cover_frontends_and_modules() -> None:
     })
 
     assert sorted(default_shards) == expected_default_shards
-    assert {"new_zealand_sources", "new_zealand_effects", "new_zealand_reports"} <= set(default_shards)
+    assert {
+        "new_zealand_sources",
+        "new_zealand_effects",
+        "new_zealand_reports",
+        "us_federal",
+    } <= set(default_shards)
 
 
 def test_ci_static_checks_cover_uk_acquisition_scripts() -> None:
@@ -646,17 +661,17 @@ def test_test_shard_maps_source_modules_to_frontend_shards() -> None:
         "finland_replay_products_support",
         "finland_replay_rules",
         "finland_sources",
-        *TOOLS_EXECUTION_SHARDS_SORTED,
+        "tools_audit_release",
     ]
     assert module.affected_shards(["src/lawvm/tools/ee_replay.py"]) == [
         "estonia_replay_logic",
         "estonia_replay_semantics",
         "estonia_sources",
-        *TOOLS_EXECUTION_SHARDS_SORTED,
+        "tools_cli_debug",
     ]
     assert module.affected_shards(["src/lawvm/tools/eu_replay.py"]) == [
         "eu",
-        *TOOLS_EXECUTION_SHARDS_SORTED,
+        "tools_cli_debug",
     ]
     assert module.affected_shards(["src/lawvm/tools/finland_rulebook.py"]) == [
         "finland_parse_payload",
@@ -666,7 +681,7 @@ def test_test_shard_maps_source_modules_to_frontend_shards() -> None:
         "finland_replay_products_support",
         "finland_replay_rules",
         "finland_sources",
-        *TOOLS_EXECUTION_SHARDS_SORTED,
+        "tools_cli_debug",
     ]
 
 
@@ -699,11 +714,11 @@ def test_test_shard_maps_uk_living_notes_to_uk_shard() -> None:
         "finland_replay_products_support",
         "finland_replay_rules",
         "finland_sources",
-        *TOOLS_EXECUTION_SHARDS_SORTED,
+        "tools_runtime_io",
     ]
     assert module.affected_shards(["src/lawvm/tools/no_op_trace.py"]) == [
         "norway",
-        *TOOLS_EXECUTION_SHARDS_SORTED,
+        "tools_cli_debug",
     ]
     assert module.affected_shards(["src/lawvm/new_zealand/acquisition.py"]) == [
         "new_zealand_effects",
@@ -712,23 +727,30 @@ def test_test_shard_maps_uk_living_notes_to_uk_shard() -> None:
     ]
     assert module.affected_shards(["src/lawvm/tools/sweden.py"]) == [
         *SWEDEN_EXECUTION_SHARDS,
-        *TOOLS_EXECUTION_SHARDS_SORTED,
+        "tools_cli_debug",
     ]
     assert module.affected_shards(["src/lawvm/tools/uk_replay.py"]) == [
-        *TOOLS_EXECUTION_SHARDS_SORTED,
+        "tools_cli_debug",
         "uk",
     ]
     assert module.affected_shards(["src/lawvm/tools/evidence.py"]) == [
         *EVIDENCE_EXECUTION_SHARDS,
-        *TOOLS_EXECUTION_SHARDS_SORTED,
+        "tools_cli_debug",
     ]
     assert module.affected_shards(["src/lawvm/tools/evidence_claims.py"]) == [
         *EVIDENCE_EXECUTION_SHARDS,
-        *TOOLS_EXECUTION_SHARDS_SORTED,
+        "tools_cli_debug",
     ]
     assert module.affected_shards(["src/lawvm/tools/strict_report.py"]) == [
         *EVIDENCE_EXECUTION_SHARDS,
-        *TOOLS_EXECUTION_SHARDS_SORTED,
+        "tools_cli_debug",
+    ]
+    assert module.affected_shards(["src/lawvm/tools/spec_ledger_us_catalog.py"]) == [
+        "us_federal"
+    ]
+    assert module.affected_shards(["src/lawvm/tools/us_anchor_manifest.py"]) == [
+        "tools_cli_debug",
+        "us_federal",
     ]
 
 
@@ -739,9 +761,81 @@ def test_test_shard_maps_core_and_dependency_changes_to_all() -> None:
     assert module.affected_shards(["pyproject.toml"]) == ["all"]
 
 
+def test_test_shard_maps_readonly_core_audits_to_bounded_shards() -> None:
+    module = _load_test_shard_module()
+
+    assert module.affected_shards(["src/lawvm/core/cross_jurisdiction_parity.py"]) == [
+        "core_tree_apply"
+    ]
+    assert _without_path_expanded_shards(
+        module.affected_plan(["src/lawvm/core/cross_jurisdiction_parity.py"])
+    ) == {
+        "kind": "lawvm_pytest_affected_shards",
+        "input_paths": ["src/lawvm/core/cross_jurisdiction_parity.py"],
+        "shards": ["core_tree_apply"],
+        "paths": [
+            {
+                "path": "src/lawvm/core/cross_jurisdiction_parity.py",
+                "shards": ["core_tree_apply"],
+                "reason": (
+                    "known source path src/lawvm/core/cross_jurisdiction_parity.py "
+                    "maps to core_tree_apply"
+                ),
+            }
+        ],
+    }
+
+
+def test_test_shard_maps_repo_hygiene_and_ratchet_baselines_narrowly() -> None:
+    module = _load_test_shard_module()
+
+    assert module.affected_shards([".gitignore"]) == ["tools_audit_release"]
+    assert module.affected_shards([
+        "tests/data/classifier_wrap_ratchet_baseline.json",
+        "tests/data/regex_ratchet_baseline.json",
+    ]) == ["core_ir_contracts"]
+    assert _without_path_expanded_shards(module.affected_plan([
+        ".gitignore",
+        "tests/data/classifier_wrap_ratchet_baseline.json",
+    ])) == {
+        "kind": "lawvm_pytest_affected_shards",
+        "input_paths": [
+            ".gitignore",
+            "tests/data/classifier_wrap_ratchet_baseline.json",
+        ],
+        "shards": ["core_ir_contracts", "tools_audit_release"],
+        "paths": [
+            {
+                "path": ".gitignore",
+                "shards": ["tools_audit_release"],
+                "reason": "known tooling path .gitignore maps to tools_audit_release",
+            },
+            {
+                "path": "tests/data/classifier_wrap_ratchet_baseline.json",
+                "shards": ["core_ir_contracts"],
+                "reason": (
+                    "known source path tests/data/classifier_wrap_ratchet_baseline.json "
+                    "maps to core_ir_contracts"
+                ),
+            },
+        ],
+    }
+
+
+def test_test_shard_maps_nested_test_paths_by_relative_test_name() -> None:
+    module = _load_test_shard_module()
+
+    assert module.affected_shards(["tests/substrate/test_canonical_json.py"]) == [
+        "substrate"
+    ]
+
+
 def test_test_shard_maps_finland_source_defect_fixes_to_bounded_fi_shards() -> None:
     module = _load_test_shard_module()
 
+    assert module.affected_shards(
+        ["data/finland/reference_successor_promotion_claims_fi.jsonl"]
+    ) == ["core_surface_semantic"]
     assert module.affected_shards(
         [
             "data/finland/source_defect_fixes_fi.yaml",
@@ -784,7 +878,7 @@ def test_test_shard_maps_shared_non_core_modules_to_bounded_shards() -> None:
     ]
     assert module.affected_shards(["src/lawvm/graph_build.py"]) == [
         *CORE_EXECUTION_SHARDS_SORTED,
-        *TOOLS_EXECUTION_SHARDS_SORTED,
+        "tools_cli_debug",
     ]
     assert module.affected_shards(["src/lawvm/semantic/model.py"]) == [
         *CORE_EXECUTION_SHARDS_SORTED,
@@ -795,7 +889,7 @@ def test_test_shard_maps_shared_non_core_modules_to_bounded_shards() -> None:
         "finland_replay_products_support",
         "finland_replay_rules",
         "finland_sources",
-        *TOOLS_EXECUTION_SHARDS_SORTED,
+        "tools_cli_debug",
     ]
     assert module.affected_shards(["src/lawvm/xml_ingest.py"]) == [
         *CORE_EXECUTION_SHARDS_SORTED,
@@ -806,26 +900,32 @@ def test_test_shard_maps_shared_non_core_modules_to_bounded_shards() -> None:
         "finland_replay_products_support",
         "finland_replay_rules",
         "finland_sources",
-        *TOOLS_EXECUTION_SHARDS_SORTED,
+        "tools_cli_debug",
     ]
     assert module.affected_shards(["src/lawvm/us_federal/bootstrap.py"]) == ["us_federal"]
 
 
-def test_test_shard_affected_plan_defaults_to_all_for_unknown_paths() -> None:
+def test_test_shard_affected_plan_ignores_generic_notes_paths() -> None:
     module = _load_test_shard_module()
 
     assert _without_path_expanded_shards(module.affected_plan(["notes/ARCHITECTURE.md"])) == {
         "kind": "lawvm_pytest_affected_shards",
         "input_paths": ["notes/ARCHITECTURE.md"],
-        "shards": ["all"],
+        "shards": [],
         "paths": [
             {
                 "path": "notes/ARCHITECTURE.md",
-                "shards": ["all"],
-                "reason": "unknown path is not mapped to a bounded shard; run all affected shards",
+                "shards": [],
+                "reason": "documentation path has no bounded pytest shard impact",
             }
         ],
     }
+    assert module.affected_shards(
+        [
+            "src/lawvm/us_federal/dry_run.py",
+            "notes/DEFERRED_ROADMAP.md",
+        ]
+    ) == ["us_federal"]
 
 
 def test_test_shard_affected_plan_explains_core_and_dependency_all() -> None:
@@ -885,7 +985,8 @@ def test_test_shard_affected_plan_explains_frontend_and_tool_shards() -> None:
             "finland_replay_rules",
             "finland_sources",
             "norway",
-            *TOOLS_EXECUTION_SHARDS_SORTED,
+            "tools_audit_release",
+            "tools_cli_debug",
             "uk",
         ],
         "paths": [
@@ -896,18 +997,24 @@ def test_test_shard_affected_plan_explains_frontend_and_tool_shards() -> None:
             },
             {
                 "path": "src/lawvm/tools/no_op_trace.py",
-                "shards": ["norway", "tools"],
-                "reason": "known frontend prefix src/lawvm/tools/no_ maps to norway, tools",
+                "shards": ["norway", "tools_cli_debug"],
+                "reason": (
+                    "known tool source path src/lawvm/tools/no_op_trace.py maps to "
+                    "norway, tools_cli_debug"
+                ),
             },
             {
                 "path": "src/lawvm/tools/uk_replay.py",
-                "shards": ["uk", "tools"],
-                "reason": "known frontend prefix src/lawvm/tools/uk_ maps to uk, tools",
+                "shards": ["uk", "tools_cli_debug"],
+                "reason": (
+                    "known tool source path src/lawvm/tools/uk_replay.py maps to "
+                    "uk, tools_cli_debug"
+                ),
             },
             {
                 "path": "scripts/ci.sh",
-                "shards": ["tools"],
-                "reason": "tools prefix scripts/ maps to tools",
+                "shards": ["tools_audit_release"],
+                "reason": "known tooling path scripts/ci.sh maps to tools_audit_release",
             },
         ],
     }
@@ -936,9 +1043,9 @@ def test_test_shard_affected_plan_exposes_expanded_execution_shards() -> None:
     ]
     assert plan["paths"][1]["shards"] == ["estonia"]
     assert plan["paths"][1]["expanded_shards"] == ["estonia_replay_logic", "estonia_replay_semantics", "estonia_sources"]
-    assert plan["paths"][2]["shards"] == ["uk", "tools"]
+    assert plan["paths"][2]["shards"] == ["uk", "tools_cli_debug"]
     assert plan["paths"][2]["expanded_shards"] == [
-        *TOOLS_EXECUTION_SHARDS_SORTED,
+        "tools_cli_debug",
         "uk",
     ]
     assert plan["shards"] == [
@@ -952,7 +1059,7 @@ def test_test_shard_affected_plan_exposes_expanded_execution_shards() -> None:
         "finland_replay_products_support",
         "finland_replay_rules",
         "finland_sources",
-        *TOOLS_EXECUTION_SHARDS_SORTED,
+        "tools_cli_debug",
         "uk",
     ]
 
@@ -986,24 +1093,24 @@ def test_test_shard_affected_plan_explains_shared_non_core_shards() -> None:
             "finland_replay_products_support",
             "finland_replay_rules",
             "finland_sources",
-            *TOOLS_EXECUTION_SHARDS_SORTED,
+            "tools_cli_debug",
             "us_federal",
         ],
         "paths": [
             {
                 "path": "src/lawvm/semantic/model.py",
-                "shards": ["core", "finland", "tools"],
-                "reason": "known frontend prefix src/lawvm/semantic/ maps to core, finland, tools",
+                "shards": ["core", "finland", "tools_cli_debug"],
+                "reason": "known frontend prefix src/lawvm/semantic/ maps to core, finland, tools_cli_debug",
             },
             {
                 "path": "src/lawvm/xml_ingest.py",
-                "shards": ["core", "finland", "tools"],
-                "reason": "known frontend prefix src/lawvm/xml_ingest.py maps to core, finland, tools",
+                "shards": ["core", "finland", "tools_cli_debug"],
+                "reason": "known frontend prefix src/lawvm/xml_ingest.py maps to core, finland, tools_cli_debug",
             },
             {
                 "path": "src/lawvm/graph_build.py",
-                "shards": ["core", "tools"],
-                "reason": "known frontend prefix src/lawvm/graph_build.py maps to core, tools",
+                "shards": ["core", "tools_cli_debug"],
+                "reason": "known frontend prefix src/lawvm/graph_build.py maps to core, tools_cli_debug",
             },
             {
                 "path": "src/lawvm/contracts.py",
@@ -1019,7 +1126,7 @@ def test_test_shard_affected_plan_explains_shared_non_core_shards() -> None:
     }
 
 
-def test_test_shard_affected_plan_explains_unknown_and_excluded_all() -> None:
+def test_test_shard_affected_plan_explains_excluded_all_and_unknown_blocking() -> None:
     module = _load_test_shard_module()
 
     assert module.affected_shards(
@@ -1027,7 +1134,15 @@ def test_test_shard_affected_plan_explains_unknown_and_excluded_all() -> None:
             "src/lawvm/finland/frontend_compile.py",
             "notes/ARCHITECTURE.md",
         ]
-    ) == ["all"]
+    ) == [
+        "finland_parse_payload",
+        "finland_replay_compile",
+        "finland_replay_grafter",
+        "finland_replay_products_core",
+        "finland_replay_products_support",
+        "finland_replay_rules",
+        "finland_sources",
+    ]
     assert module.affected_shards(
         [
             "src/lawvm/finland/frontend_compile.py",
@@ -1049,8 +1164,8 @@ def test_test_shard_affected_plan_explains_unknown_and_excluded_all() -> None:
         "paths": [
             {
                 "path": "notes/ARCHITECTURE.md",
-                "shards": ["all"],
-                "reason": "unknown path is not mapped to a bounded shard; run all affected shards",
+                "shards": [],
+                "reason": "documentation path has no bounded pytest shard impact",
             },
             {
                 "path": "tests/test_fi_pipeline_gold.py",
@@ -1059,6 +1174,103 @@ def test_test_shard_affected_plan_explains_unknown_and_excluded_all() -> None:
             },
         ],
     }
+    unknown_plan = _without_path_expanded_shards(
+        module.affected_plan(["docs/unmapped.md"])
+    )
+    assert unknown_plan == {
+        "kind": "lawvm_pytest_affected_shards",
+        "input_paths": ["docs/unmapped.md"],
+        "shards": [],
+        "blocking_paths": [
+            {
+                "path": "docs/unmapped.md",
+                "shards": [],
+                "reason": "unknown path is not mapped to a bounded shard",
+                "blocking": True,
+                "fix": (
+                    "add an affected-shard mapping in scripts/test_shard.py, or run "
+                    "./scripts/ci.sh / ./scripts/ci.sh --shards 'frontends modules' explicitly"
+                ),
+            }
+        ],
+        "paths": [
+            {
+                "path": "docs/unmapped.md",
+                "shards": [],
+                "reason": "unknown path is not mapped to a bounded shard",
+                "blocking": True,
+                "fix": (
+                    "add an affected-shard mapping in scripts/test_shard.py, or run "
+                    "./scripts/ci.sh / ./scripts/ci.sh --shards 'frontends modules' explicitly"
+                ),
+            }
+        ],
+    }
+    with pytest.raises(ValueError, match="docs/unmapped.md"):
+        module.affected_shards(["docs/unmapped.md"])
+
+
+def test_test_shard_affected_cli_rejects_unknown_paths() -> None:
+    root = Path(__file__).resolve().parents[1]
+
+    result = subprocess.run(
+        ["./scripts/test_shard.sh", "affected", "docs/unmapped.md"],
+        cwd=root,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 2
+    assert "Cannot compute --affected shard set for unknown path" in result.stderr
+    assert "docs/unmapped.md" in result.stderr
+    assert "add an affected-shard mapping" in result.stderr
+
+
+def test_test_shard_affected_cli_rejects_unmapped_tooling_paths() -> None:
+    root = Path(__file__).resolve().parents[1]
+
+    for path in ("scripts/new_tool.py", "src/lawvm/tools/new_tool.py"):
+        result = subprocess.run(
+            ["./scripts/test_shard.sh", "affected", path],
+            cwd=root,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        assert result.returncode == 2
+        assert path in result.stderr
+        assert "no explicit affected-shard mapping" in result.stderr
+
+
+def test_test_shard_tool_source_paths_are_exact_not_prefix_wildcards() -> None:
+    module = _load_test_shard_module()
+
+    assert module.affected_shards(["src/lawvm/tools/no_op_trace.py"]) == [
+        "norway",
+        "tools_cli_debug",
+    ]
+    with pytest.raises(ValueError, match="src/lawvm/tools/no_new_probe.py"):
+        module.affected_shards(["src/lawvm/tools/no_new_probe.py"])
+
+
+def test_test_shard_tool_source_mapping_covers_every_existing_tool_file_once() -> None:
+    module = _load_test_shard_module()
+    repo_root = Path(__file__).resolve().parents[1]
+    tool_files = {
+        str(path.relative_to(repo_root)).replace("\\", "/")
+        for path in (repo_root / "src" / "lawvm" / "tools").glob("*.py")
+    }
+    grouped_paths = [
+        path
+        for paths in module.TOOL_SOURCE_SHARD_GROUPS.values()
+        for path in paths
+    ] + list(module._GENERAL_TOOL_SOURCE_PATHS)
+
+    assert sorted(grouped_paths) == sorted(set(grouped_paths))
+    assert set(grouped_paths) == tool_files
+    assert set(module.TOOL_SOURCE_SHARD_PATHS) == tool_files
 
 
 def test_ci_sharded_accepts_explicit_shard_flags_and_rejects_affected_mix() -> None:

@@ -1190,7 +1190,17 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
 }
 
 SHARD_GROUPS: dict[str, tuple[str, ...]] = {
-    "frontends": ("estonia", "eu", "finland", "new_zealand", "norway", "starter", "sweden", "uk"),
+    "frontends": (
+        "estonia",
+        "eu",
+        "finland",
+        "new_zealand",
+        "norway",
+        "starter",
+        "sweden",
+        "uk",
+        "us_federal",
+    ),
     "modules": ("core", "evidence", "properties", "properties_timeline", "substrate", "tools"),
     "evidence": ("evidence_claims", "evidence_core", "evidence_reports"),
     "core": (
@@ -1235,10 +1245,14 @@ SOURCE_SHARD_PREFIXES: tuple[tuple[str, tuple[str, ...]], ...] = (
         "data/finland/source_defect_fixes_fi.yaml",
         ("finland_replay_products_core", "finland_replay_rules"),
     ),
+    (
+        "data/finland/reference_successor_promotion_claims_fi.jsonl",
+        ("core_surface_semantic",),
+    ),
     ("src/lawvm/contracts.py", ("core",)),
-    ("src/lawvm/graph_build.py", ("core", "tools")),
-    ("src/lawvm/semantic/", ("core", "finland", "tools")),
-    ("src/lawvm/xml_ingest.py", ("core", "finland", "tools")),
+    ("src/lawvm/graph_build.py", ("core", "tools_cli_debug")),
+    ("src/lawvm/semantic/", ("core", "finland", "tools_cli_debug")),
+    ("src/lawvm/xml_ingest.py", ("core", "finland", "tools_cli_debug")),
     ("src/lawvm/estonia/", ("estonia",)),
     ("src/lawvm/eu/", ("eu",)),
     ("src/lawvm/finland/", ("finland",)),
@@ -1248,27 +1262,363 @@ SOURCE_SHARD_PREFIXES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("src/lawvm/sweden/", ("sweden",)),
     ("src/lawvm/uk_legislation/", ("uk",)),
     ("src/lawvm/us_federal/", ("us_federal",)),
-    ("src/lawvm/tools/ee_", ("estonia", "tools")),
-    ("src/lawvm/tools/eu_", ("eu", "tools")),
-    ("src/lawvm/tools/finland_", ("finland", "tools")),
-    ("src/lawvm/tools/sync_finlex_", ("finland", "tools")),
-    ("src/lawvm/tools/no_", ("norway", "tools")),
-    ("src/lawvm/tools/sweden.py", ("sweden", "tools")),
-    ("src/lawvm/tools/uk_", ("uk", "tools")),
-    ("src/lawvm/tools/_evidence_helpers.py", ("evidence", "tools")),
-    ("src/lawvm/tools/bisect_support.py", ("evidence", "tools")),
-    ("src/lawvm/tools/evidence", ("evidence", "tools")),
-    ("src/lawvm/tools/strict_report.py", ("evidence", "tools")),
-    ("src/lawvm/tools/", ("tools",)),
     ("notes/UK_", ("uk", "tools_cli_debug")),
     ("src/lawvm/core/", ("all",)),
     ("src/lawvm/jurisdiction_starter/", ("starter",)),
     ("src/lawvm/substrate/", ("substrate",)),
 )
 
-TOOLING_SHARD_PREFIXES = (
-    "scripts/",
+TOOLING_SHARD_PATHS: dict[str, tuple[str, ...]] = {
+    ".gitignore": ("tools_audit_release",),
+    "scripts/ci.sh": ("tools_audit_release",),
+    "scripts/ci_sharded.sh": ("tools_audit_release",),
+    "scripts/test_shard.py": ("tools_audit_release",),
+    "scripts/test_shard.sh": ("tools_audit_release",),
+    "scripts/release_hygiene.sh": ("tools_audit_release",),
+}
+TOOL_SOURCE_SHARD_GROUPS: dict[tuple[str, ...], tuple[str, ...]] = {
+    ("estonia", "tools_cli_debug"): (
+        "src/lawvm/tools/ee_anchor_manifest.py",
+        "src/lawvm/tools/ee_bench.py",
+        "src/lawvm/tools/ee_blame.py",
+        "src/lawvm/tools/ee_chain_quality.py",
+        "src/lawvm/tools/ee_consolidation_candidates.py",
+        "src/lawvm/tools/ee_corpus.py",
+        "src/lawvm/tools/ee_explain.py",
+        "src/lawvm/tools/ee_frontier.py",
+        "src/lawvm/tools/ee_inspect_source.py",
+        "src/lawvm/tools/ee_pair_status.py",
+        "src/lawvm/tools/ee_publication_db.py",
+        "src/lawvm/tools/ee_replay.py",
+        "src/lawvm/tools/ee_reporting.py",
+        "src/lawvm/tools/ee_residual_inventory.py",
+        "src/lawvm/tools/ee_residual_proposal.py",
+        "src/lawvm/tools/ee_self_consistency.py",
+    ),
+    ("eu", "tools_cli_debug"): (
+        "src/lawvm/tools/eu_anchor_manifest.py",
+        "src/lawvm/tools/eu_reference_report.py",
+        "src/lawvm/tools/eu_replay.py",
+        "src/lawvm/tools/eu_reul.py",
+        "src/lawvm/tools/mine_eu_nicknames.py",
+    ),
+    ("evidence", "tools_cli_debug"): (
+        "src/lawvm/tools/_evidence_helpers.py",
+        "src/lawvm/tools/evidence.py",
+        "src/lawvm/tools/evidence_claim_algebra.py",
+        "src/lawvm/tools/evidence_claims.py",
+        "src/lawvm/tools/evidence_context.py",
+        "src/lawvm/tools/evidence_render.py",
+        "src/lawvm/tools/evidence_section_rules.py",
+        "src/lawvm/tools/evidence_statute_rules.py",
+        "src/lawvm/tools/strict_report.py",
+    ),
+    ("finland", "tools_cli_debug"): (
+        "src/lawvm/tools/fi_adjudication_audit.py",
+        "src/lawvm/tools/fi_anchor_manifest.py",
+        "src/lawvm/tools/fi_aux_pit_probe.py",
+        "src/lawvm/tools/fi_invariant_audit.py",
+        "src/lawvm/tools/fi_parse_explain.py",
+        "src/lawvm/tools/fi_parse_view.py",
+        "src/lawvm/tools/fi_periodic_table.py",
+        "src/lawvm/tools/fi_proposal_bundle.py",
+        "src/lawvm/tools/fi_proposal_history.py",
+        "src/lawvm/tools/fi_proposal_show.py",
+        "src/lawvm/tools/fi_proposals_competing.py",
+        "src/lawvm/tools/fi_proposals_query.py",
+        "src/lawvm/tools/fi_refs_view.py",
+        "src/lawvm/tools/fi_source_label_audit.py",
+        "src/lawvm/tools/fi_timeline_robust_sweep.py",
+        "src/lawvm/tools/finland_rulebook.py",
+        "src/lawvm/tools/sync_fi_proposals.py",
+    ),
+    ("finland", "tools_runtime_io"): (
+        "src/lawvm/tools/branch_demo.py",
+        "src/lawvm/tools/build_index_db.py",
+        "src/lawvm/tools/certificate_bundle.py",
+        "src/lawvm/tools/corpus_io.py",
+        "src/lawvm/tools/export_fi_actors.py",
+        "src/lawvm/tools/export_fi_he_branch_ops.py",
+        "src/lawvm/tools/export_fi_he_corpus.py",
+        "src/lawvm/tools/export_fi_inline_citations.py",
+        "src/lawvm/tools/export_fi_interlinks.py",
+        "src/lawvm/tools/export_fi_pools.py",
+        "src/lawvm/tools/export_fi_preparatory_refs.py",
+        "src/lawvm/tools/export_fi_refs.py",
+        "src/lawvm/tools/export_fi_sections_text.py",
+        "src/lawvm/tools/export_markdown_git.py",
+        "src/lawvm/tools/export_parquet.py",
+        "src/lawvm/tools/export_persistence.py",
+        "src/lawvm/tools/export_transition_graph.py",
+        "src/lawvm/tools/import_zip.py",
+        "src/lawvm/tools/projection_freshness.py",
+        "src/lawvm/tools/sync_finlex_latest.py",
+        "src/lawvm/tools/tier2_state.py",
+    ),
+    ("new_zealand", "tools_cli_debug"): (
+        "src/lawvm/tools/nz_anchor_manifest.py",
+        "src/lawvm/tools/nz_bench.py",
+        "src/lawvm/tools/nz_self_consistency.py",
+    ),
+    ("norway", "tools_cli_debug"): (
+        "src/lawvm/tools/no_anchor_manifest.py",
+        "src/lawvm/tools/no_bench.py",
+        "src/lawvm/tools/no_blockers.py",
+        "src/lawvm/tools/no_commencement_backfill.py",
+        "src/lawvm/tools/no_commencement_candidates.py",
+        "src/lawvm/tools/no_commencement_evidence_plan.py",
+        "src/lawvm/tools/no_commencement_phrases.py",
+        "src/lawvm/tools/no_commencement_report.py",
+        "src/lawvm/tools/no_commencement_validate.py",
+        "src/lawvm/tools/no_coverage.py",
+        "src/lawvm/tools/no_debug.py",
+        "src/lawvm/tools/no_divergence.py",
+        "src/lawvm/tools/no_frontier.py",
+        "src/lawvm/tools/no_impact.py",
+        "src/lawvm/tools/no_index.py",
+        "src/lawvm/tools/no_ingest.py",
+        "src/lawvm/tools/no_inventory.py",
+        "src/lawvm/tools/no_law.py",
+        "src/lawvm/tools/no_missing_base.py",
+        "src/lawvm/tools/no_op_trace.py",
+        "src/lawvm/tools/no_progress.py",
+        "src/lawvm/tools/no_replay.py",
+        "src/lawvm/tools/no_source.py",
+        "src/lawvm/tools/no_source_excerpt.py",
+        "src/lawvm/tools/no_statsrad.py",
+        "src/lawvm/tools/no_verify.py",
+        "src/lawvm/tools/no_verify_partition.py",
+        "src/lawvm/tools/no_verify_scan.py",
+        "src/lawvm/tools/no_verify_workqueue.py",
+        "src/lawvm/tools/no_workqueue.py",
+    ),
+    ("sweden", "tools_cli_debug"): (
+        "src/lawvm/tools/se_anchor_manifest.py",
+        "src/lawvm/tools/se_bench.py",
+        "src/lawvm/tools/sweden.py",
+    ),
+    ("tools_audit_blame",): ("src/lawvm/tools/blame.py",),
+    ("tools_audit_release",): (
+        "src/lawvm/tools/audit.py",
+        "src/lawvm/tools/audit_channels.py",
+        "src/lawvm/tools/audit_trail.py",
+        "src/lawvm/tools/failures.py",
+        "src/lawvm/tools/freshness.py",
+        "src/lawvm/tools/invariant_harvest.py",
+        "src/lawvm/tools/recall_audit.py",
+        "src/lawvm/tools/step_attribution.py",
+        "src/lawvm/tools/structural_grep.py",
+    ),
+    ("tools_audit_restructure",): ("src/lawvm/tools/structural_review.py",),
+    ("tools_bench_inventory",): (
+        "src/lawvm/tools/bench.py",
+        "src/lawvm/tools/bench_curate.py",
+        "src/lawvm/tools/bench_diagnostic_tiers.py",
+        "src/lawvm/tools/bench_hydrate.py",
+        "src/lawvm/tools/bench_regression_guard.py",
+        "src/lawvm/tools/bench_report.py",
+        "src/lawvm/tools/bench_triage.py",
+        "src/lawvm/tools/parse_bench.py",
+        "src/lawvm/tools/refs_bench.py",
+        "src/lawvm/tools/seeded_fault_study.py",
+    ),
+    ("tools_runtime_io",): (
+        "src/lawvm/tools/_parallel_corpus.py",
+        "src/lawvm/tools/_worker_pool.py",
+        "src/lawvm/tools/corpus_sweep.py",
+        "src/lawvm/tools/rebuild_indexes.py",
+    ),
+    ("uk", "tools_cli_debug"): (
+        "src/lawvm/tools/uk_acquire.py",
+        "src/lawvm/tools/uk_anchor_manifest.py",
+        "src/lawvm/tools/uk_bench.py",
+        "src/lawvm/tools/uk_branch_demo.py",
+        "src/lawvm/tools/uk_branch_import.py",
+        "src/lawvm/tools/uk_candidates.py",
+        "src/lawvm/tools/uk_claim_templates.py",
+        "src/lawvm/tools/uk_corpus.py",
+        "src/lawvm/tools/uk_cross_statute_graph.py",
+        "src/lawvm/tools/uk_effect.py",
+        "src/lawvm/tools/uk_effects.py",
+        "src/lawvm/tools/uk_eids.py",
+        "src/lawvm/tools/uk_live_targets.py",
+        "src/lawvm/tools/uk_manual_frontier.py",
+        "src/lawvm/tools/uk_misses.py",
+        "src/lawvm/tools/uk_oracle_check.py",
+        "src/lawvm/tools/uk_replay.py",
+        "src/lawvm/tools/uk_replay_regime.py",
+        "src/lawvm/tools/uk_self_consistency.py",
+        "src/lawvm/tools/uk_semantic_claims.py",
+        "src/lawvm/tools/uk_structural_review.py",
+    ),
+    ("us_federal",): (
+        "src/lawvm/tools/spec_ledger_us_catalog.py",
+    ),
+    ("us_federal", "tools_cli_debug"): (
+        "src/lawvm/tools/us_anchor_manifest.py",
+        "src/lawvm/tools/us_classification.py",
+        "src/lawvm/tools/us_self_consistency.py",
+    ),
+}
+_GENERAL_TOOL_SOURCE_PATHS = (
+    "src/lawvm/tools/__init__.py",
+    "src/lawvm/tools/_cli_duckdb.py",
+    "src/lawvm/tools/_cli_output.py",
+    "src/lawvm/tools/_compile_report_record.py",
+    "src/lawvm/tools/_section_debug.py",
+    "src/lawvm/tools/actors_query.py",
+    "src/lawvm/tools/all_pit_driver.py",
+    "src/lawvm/tools/bilingual.py",
+    "src/lawvm/tools/bill_analysis.py",
+    "src/lawvm/tools/bill_counterfactual_effects.py",
+    "src/lawvm/tools/bisect.py",
+    "src/lawvm/tools/bisect_section.py",
+    "src/lawvm/tools/bisect_support.py",
+    "src/lawvm/tools/bitemporal_refs.py",
+    "src/lawvm/tools/build.py",
+    "src/lawvm/tools/build_statute_name_registry.py",
+    "src/lawvm/tools/capture.py",
+    "src/lawvm/tools/capture_models.py",
+    "src/lawvm/tools/census.py",
+    "src/lawvm/tools/cite.py",
+    "src/lawvm/tools/classify.py",
+    "src/lawvm/tools/classify_result.py",
+    "src/lawvm/tools/cli.py",
+    "src/lawvm/tools/cmd_claim.py",
+    "src/lawvm/tools/cmd_follow_refs.py",
+    "src/lawvm/tools/cmd_migrate_manual_claims.py",
+    "src/lawvm/tools/cmd_pit_diff.py",
+    "src/lawvm/tools/cmd_pit_timeline.py",
+    "src/lawvm/tools/cmd_propose_claims.py",
+    "src/lawvm/tools/cmd_recipes.py",
+    "src/lawvm/tools/cmd_telos.py",
+    "src/lawvm/tools/cmd_topic.py",
+    "src/lawvm/tools/cmd_validate_claims.py",
+    "src/lawvm/tools/consistency.py",
+    "src/lawvm/tools/corpus_surface_graph.py",
+    "src/lawvm/tools/corrigendum.py",
+    "src/lawvm/tools/coverage.py",
+    "src/lawvm/tools/coverage_totality_report.py",
+    "src/lawvm/tools/cross_reference_integrity_report.py",
+    "src/lawvm/tools/dangling_references.py",
+    "src/lawvm/tools/dangling_temporal_cause.py",
+    "src/lawvm/tools/delegate.py",
+    "src/lawvm/tools/destructive_repair_ledger.py",
+    "src/lawvm/tools/diagnose_phase.py",
+    "src/lawvm/tools/diff.py",
+    "src/lawvm/tools/disagreement.py",
+    "src/lawvm/tools/divergence_core.py",
+    "src/lawvm/tools/divergence_heuristics.py",
+    "src/lawvm/tools/drift.py",
+    "src/lawvm/tools/dump.py",
+    "src/lawvm/tools/editorial_hygiene.py",
+    "src/lawvm/tools/explain.py",
+    "src/lawvm/tools/export.py",
+    "src/lawvm/tools/faults.py",
+    "src/lawvm/tools/frontier.py",
+    "src/lawvm/tools/gold.py",
+    "src/lawvm/tools/graph_query.py",
+    "src/lawvm/tools/hyperlinks.py",
+    "src/lawvm/tools/inline_citations_query.py",
+    "src/lawvm/tools/inspect_amendment.py",
+    "src/lawvm/tools/invariant_bisect.py",
+    "src/lawvm/tools/lower_audit.py",
+    "src/lawvm/tools/open_law.py",
+    "src/lawvm/tools/ops.py",
+    "src/lawvm/tools/oracle_check.py",
+    "src/lawvm/tools/oracle_classify.py",
+    "src/lawvm/tools/oracle_context.py",
+    "src/lawvm/tools/oracle_defect_confirmation.py",
+    "src/lawvm/tools/oracle_defect_confirmation_cli.py",
+    "src/lawvm/tools/oracle_text.py",
+    "src/lawvm/tools/parse_characterize.py",
+    "src/lawvm/tools/parse_johto.py",
+    "src/lawvm/tools/peg_audit.py",
+    "src/lawvm/tools/peg_rules.py",
+    "src/lawvm/tools/phase_witness.py",
+    "src/lawvm/tools/pit_projection.py",
+    "src/lawvm/tools/pools_query.py",
+    "src/lawvm/tools/preparatory_refs_query.py",
+    "src/lawvm/tools/product_debug.py",
+    "src/lawvm/tools/profile.py",
+    "src/lawvm/tools/provenance.py",
+    "src/lawvm/tools/provenance_totality_report.py",
+    "src/lawvm/tools/provision_state.py",
+    "src/lawvm/tools/query.py",
+    "src/lawvm/tools/read_provision.py",
+    "src/lawvm/tools/reconcile.py",
+    "src/lawvm/tools/reconcile_sweep.py",
+    "src/lawvm/tools/reference_integrity_demo_report.py",
+    "src/lawvm/tools/refs_query.py",
+    "src/lawvm/tools/replay_all.py",
+    "src/lawvm/tools/replay_debug.py",
+    "src/lawvm/tools/replay_inspect.py",
+    "src/lawvm/tools/replay_mode_arg.py",
+    "src/lawvm/tools/replay_payloads.py",
+    "src/lawvm/tools/replay_plan.py",
+    "src/lawvm/tools/report_models.py",
+    "src/lawvm/tools/report_query.py",
+    "src/lawvm/tools/residual_ledger.py",
+    "src/lawvm/tools/resolution_miss_analysis.py",
+    "src/lawvm/tools/scaffold.py",
+    "src/lawvm/tools/section_keys.py",
+    "src/lawvm/tools/self_consistency.py",
+    "src/lawvm/tools/show.py",
+    "src/lawvm/tools/simulate.py",
+    "src/lawvm/tools/snapshot_debug.py",
+    "src/lawvm/tools/solver_slot_assignment.py",
+    "src/lawvm/tools/source_dump.py",
+    "src/lawvm/tools/spec_authority.py",
+    "src/lawvm/tools/spec_ledger.py",
+    "src/lawvm/tools/spec_ledger_discovery.py",
+    "src/lawvm/tools/spec_ledger_ee_catalog.py",
+    "src/lawvm/tools/spec_ledger_eu_catalog.py",
+    "src/lawvm/tools/spec_ledger_eu_catalog_meta.py",
+    "src/lawvm/tools/spec_ledger_fi_catalog_meta.py",
+    "src/lawvm/tools/spec_ledger_fi_catalog_supplement.py",
+    "src/lawvm/tools/spec_ledger_glue.py",
+    "src/lawvm/tools/spec_ledger_no_catalog.py",
+    "src/lawvm/tools/spec_ledger_nz_catalog.py",
+    "src/lawvm/tools/spec_ledger_report.py",
+    "src/lawvm/tools/spec_ledger_se_catalog.py",
+    "src/lawvm/tools/spec_ledger_uk_catalog.py",
+    "src/lawvm/tools/spec_ledger_uk_catalog_meta.py",
+    "src/lawvm/tools/spec_ledger_uk_catalog_supplement.py",
+    "src/lawvm/tools/sql_query.py",
+    "src/lawvm/tools/surface_graph.py",
+    "src/lawvm/tools/surface_lints.py",
+    "src/lawvm/tools/temporal_holdout.py",
+    "src/lawvm/tools/timeline.py",
+    "src/lawvm/tools/timeline_integrity.py",
+    "src/lawvm/tools/trace_section.py",
+    "src/lawvm/tools/transition_graph_interlinks.py",
+    "src/lawvm/tools/transition_graph_jurisdictions.py",
+    "src/lawvm/tools/transition_graph_overlays.py",
+    "src/lawvm/tools/transition_graph_profile.py",
+    "src/lawvm/tools/verify.py",
+    "src/lawvm/tools/verify_chain.py",
+    "src/lawvm/tools/verify_consistency.py",
+    "src/lawvm/tools/version_drift.py",
 )
+TOOL_SOURCE_SHARD_PATHS: dict[str, tuple[str, ...]] = {
+    path: shards
+    for shards, paths in {
+        **TOOL_SOURCE_SHARD_GROUPS,
+        ("tools_cli_debug",): _GENERAL_TOOL_SOURCE_PATHS,
+    }.items()
+    for path in paths
+}
+TOOLING_BLOCKED_PREFIXES = (
+    "scripts/",
+    "src/lawvm/tools/",
+)
+SOURCE_SHARD_PATHS: dict[str, tuple[str, ...]] = {
+    "tests/data/classifier_wrap_ratchet_baseline.json": ("core_ir_contracts",),
+    "tests/data/regex_ratchet_baseline.json": ("core_ir_contracts",),
+    # XP-06 parity is read-mostly audit/report code. It is not on the replay
+    # execution path, so edits need the parity shard, not every frontend shard.
+    "src/lawvm/core/cross_jurisdiction_parity.py": ("core_tree_apply",),
+}
 GLOBAL_CHANGE_PATHS = frozenset({"pyproject.toml", "uv.lock"})
 
 ALL_SHARDS = ("all",)
@@ -1805,6 +2155,11 @@ def affected_path_plan(raw_path: str) -> dict[str, Any]:
     normalized = path.replace("\\", "/")
     selector_path = normalized.split("::", 1)[0]
     filename = Path(selector_path).name
+    test_selector = (
+        selector_path.removeprefix("tests/")
+        if selector_path.startswith("tests/")
+        else filename
+    )
 
     def plan(shards: list[str], reason: str) -> dict[str, Any]:
         return {
@@ -1814,6 +2169,19 @@ def affected_path_plan(raw_path: str) -> dict[str, Any]:
             "reason": reason,
         }
 
+    def unknown(reason: str) -> dict[str, Any]:
+        return {
+            "path": raw_path,
+            "shards": [],
+            "expanded_shards": [],
+            "reason": reason,
+            "blocking": True,
+            "fix": (
+                "add an affected-shard mapping in scripts/test_shard.py, or run "
+                "./scripts/ci.sh / ./scripts/ci.sh --shards 'frontends modules' explicitly"
+            ),
+        }
+
     if not path:
         return plan(
             list(ALL_SHARDS),
@@ -1821,13 +2189,22 @@ def affected_path_plan(raw_path: str) -> dict[str, Any]:
         )
     if normalized in GLOBAL_CHANGE_PATHS:
         return plan(list(ALL_SHARDS), "global dependency change forces all affected shards")
+    if normalized in TOOLING_SHARD_PATHS:
+        shards = TOOLING_SHARD_PATHS[normalized]
+        return plan(list(shards), f"known tooling path {normalized} maps to {', '.join(shards)}")
+    if normalized in SOURCE_SHARD_PATHS:
+        shards = SOURCE_SHARD_PATHS[normalized]
+        return plan(list(shards), f"known source path {normalized} maps to {', '.join(shards)}")
+    if normalized in TOOL_SOURCE_SHARD_PATHS:
+        shards = TOOL_SOURCE_SHARD_PATHS[normalized]
+        return plan(list(shards), f"known tool source path {normalized} maps to {', '.join(shards)}")
     if selector_path.startswith("tests/") and filename.startswith("test_") and filename.endswith(".py"):
         if filename in EXCLUDED_TESTS:
             return plan(
                 list(ALL_SHARDS),
                 f"excluded test: {EXCLUDED_TESTS[filename]}; run all affected shards",
             )
-        matches = explicit_matches(filename)
+        matches = explicit_matches(test_selector)
         if matches:
             return plan(sorted(matches), "test file matches explicit shard pattern")
         return plan(["misc"], "test file has no explicit shard pattern and maps to misc")
@@ -1839,25 +2216,32 @@ def affected_path_plan(raw_path: str) -> dict[str, Any]:
                     f"core/dependency prefix {prefix} forces all affected shards",
                 )
             return plan(list(shards), f"known frontend prefix {prefix} maps to {', '.join(shards)}")
-    if normalized.startswith(TOOLING_SHARD_PREFIXES):
-        prefixes = ", ".join(TOOLING_SHARD_PREFIXES)
-        return plan(["tools"], f"tools prefix {prefixes} maps to tools")
-    return plan(
-        list(ALL_SHARDS),
-        "unknown path is not mapped to a bounded shard; run all affected shards",
-    )
+    if normalized.startswith("notes/"):
+        return plan([], "documentation path has no bounded pytest shard impact")
+    if normalized.startswith(TOOLING_BLOCKED_PREFIXES):
+        prefixes = ", ".join(TOOLING_BLOCKED_PREFIXES)
+        return unknown(
+            f"tooling path under {prefixes} has no explicit affected-shard mapping"
+        )
+    return unknown("unknown path is not mapped to a bounded shard")
 
 
 def affected_path_plans(paths: list[str]) -> list[dict[str, Any]]:
     return [affected_path_plan(path) for path in paths]
 
 
+def _blocking_affected_path_plans(path_plans: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [item for item in path_plans if item.get("blocking") is True]
+
+
 def _affected_shards_from_path_plans(path_plans: list[dict[str, Any]]) -> list[str]:
     affected: set[str] = set()
     for item in path_plans:
         affected.update(item["shards"])
-    if not affected or "all" in affected:
+    if "all" in affected:
         return ["all"]
+    if not affected:
+        return []
     return sorted(expand_shard_names(sorted(affected)))
 
 
@@ -1866,7 +2250,12 @@ def affected_shards(paths: list[str]) -> list[str]:
 
     if not paths:
         return ["all"]
-    return _affected_shards_from_path_plans(affected_path_plans(paths))
+    path_plans = affected_path_plans(paths)
+    blocking = _blocking_affected_path_plans(path_plans)
+    if blocking:
+        joined = "; ".join(f"{item['path']}: {item['reason']}" for item in blocking)
+        raise ValueError(f"cannot compute affected shards for unknown path(s): {joined}")
+    return _affected_shards_from_path_plans(path_plans)
 
 
 def affected_plan(paths: list[str]) -> dict[str, Any]:
@@ -1876,15 +2265,23 @@ def affected_plan(paths: list[str]) -> dict[str, Any]:
         "kind": "lawvm_pytest_affected_shards",
         "input_paths": list(paths),
         "shards": shards,
+        "blocking_paths": _blocking_affected_path_plans(path_plans),
         "paths": path_plans,
     }
 
 
 def print_affected(paths: list[str], *, json_output: bool = False) -> int:
     plan = affected_plan(paths)
+    blocking = plan["blocking_paths"]
     if json_output:
         print(json.dumps(plan, indent=2, sort_keys=True))
-        return 0
+        return 2 if blocking else 0
+    if blocking:
+        print("Cannot compute --affected shard set for unknown path(s):", file=sys.stderr)
+        for item in blocking:
+            print(f"  {item['path']}: {item['reason']}", file=sys.stderr)
+            print(f"    fix: {item['fix']}", file=sys.stderr)
+        return 2
     for shard in plan["shards"]:
         print(shard)
     return 0
