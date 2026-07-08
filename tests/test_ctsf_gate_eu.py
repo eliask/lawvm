@@ -43,6 +43,7 @@ from __future__ import annotations
 import json
 
 import pytest
+from farchive import Farchive
 
 from lawvm.core.ctsf_gate import (
     FAIL_FAMILIES,
@@ -61,11 +62,16 @@ from lawvm.core.ctsf_gate import (
     write_eu_baseline,
 )
 from lawvm.core.ctsf_residual_report import RESIDUAL_VERDICT_FAMILIES
+from lawvm.eu.eu_oracle_divergence import _articles
 from lawvm.tools.eu_anchor_manifest import (
+    EU_TYPED_SKIP_BUCKET_TARGET_KIND_LABEL_ABSENT,
     REAL_ANCHOR_EU_AMENDMENT_CLOSURE,
     REAL_ANCHOR_EU_ORACLE_BASES,
     EUAmendmentEdgeRef,
+    _default_db,
+    _graft_dated,
     _typography_commensurable_equal,
+    attribute_base_consolidations,
 )
 
 # The EU corpus is scored via offline replay over the EU Cellar Farchive; skip the
@@ -307,6 +313,57 @@ def test_eu_real_corpus_is_zero_billable():
         for fam in FAIL_FAMILIES
     )
     assert billable == 0
+
+
+@requires_eu_corpus
+def test_32013R1022_same_day_anchor_is_real_payload_structure_frontier():
+    """Diagnostic stop for the 32010R1093/32013R1022 payload-structure frontier.
+
+    The current same-day anchor is deliberately typed ``temporal_mismatch`` because
+    Article 4 point (2)(i) cannot resolve as a coordinate yet. The evidence below
+    pins why the next repair is a real payload-structure/grafter gap, not an
+    oracle-typography cleanup: the replay still carries the old Article 4 point (i)
+    wording while the same-day consolidation carries the source replacement text.
+    """
+
+    archive = Farchive(str(_default_db()), readonly=True)
+    try:
+        attribution = attribute_base_consolidations("32010R1093", archive=archive)
+        anchor = next(
+            a for a in attribution.anchors if a.version_tag == "02010R1093-20131030"
+        )
+        skip = next(
+            obs
+            for obs in attribution.eu_observations
+            if (
+                obs.verdict == "eu_replay_typed_op_skip"
+                and obs.section_key == "32013R1022-1.6"
+            )
+        )
+        consolidated = _graft_dated(archive, "32010R1093", "20131030")
+    finally:
+        archive.close()
+
+    assert anchor.as_of == "2013-10-30"
+    assert anchor.amendment_id == "32013R1022"
+    assert anchor.oracle_suspect == (
+        "op 32013R1022-1.6 typed-skipped (eu_replay_target_not_found)"
+    )
+    assert "4" in anchor.penalized_keys
+
+    assert skip.typed_skip_evidence is not None
+    assert (
+        skip.typed_skip_evidence.skip_bucket
+        == EU_TYPED_SKIP_BUCKET_TARGET_KIND_LABEL_ABSENT
+    )
+    assert skip.typed_skip_evidence.target == "article:4/point:2/point:i"
+
+    replay_article_4 = anchor.replay_text["4"]
+    assert consolidated is not None
+    oracle_article_4 = _articles(consolidated)["4"]
+    assert "competent authorities as defined in Directives 2006/48/EC" in replay_article_4
+    assert "point (40) of Article 4(1) of Regulation (EU) No 575/2013" not in replay_article_4
+    assert "point (40) of Article 4(1) of Regulation (EU) No 575/2013" in oracle_article_4
 
 
 @requires_eu_corpus
