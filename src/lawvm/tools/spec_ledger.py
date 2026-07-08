@@ -556,8 +556,8 @@ _LEDGER_ADAPTERS: Dict[str, LedgerAdapter] = {}
 
 # Jurisdiction -> the module that, when imported, self-registers that adapter.  The core
 # loads these lazily (never at import time) so it carries no compile-time dependency on a
-# jurisdiction package.  US/NZ are standalone (their own CLIs) and are not dispatched
-# through ``run_ledger``; they are intentionally absent.
+# jurisdiction package.  Standalone jurisdiction CLIs may still exist; this table is the
+# shared cross-jurisdiction spine used by ``run_ledger`` / ``lawvm spec-ledger``.
 _ADAPTER_MODULES: Dict[str, str] = {
     "fi": "lawvm.finland.spec_ledger_adapter",
     "uk": "lawvm.uk_legislation.spec_ledger_adapter",
@@ -565,6 +565,8 @@ _ADAPTER_MODULES: Dict[str, str] = {
     "no": "lawvm.norway.spec_ledger_adapter",
     "se": "lawvm.sweden.spec_ledger_adapter",
     "eu": "lawvm.eu.spec_ledger_adapter",
+    "us": "lawvm.us_federal.spec_ledger_adapter",
+    "nz": "lawvm.new_zealand.spec_ledger_adapter",
 }
 
 
@@ -625,13 +627,15 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(description="Witness-attribution spec-discovery ledger")
     ap.add_argument("sids", nargs="*", help="statute ids, e.g. 1958/370")
     ap.add_argument("-j", "--jurisdiction", default="fi",
-                    help="frontend adapter (fi/uk/ee/no/se/eu)")
+                    help="frontend adapter (fi/uk/ee/no/se/eu/us/nz)")
     ap.add_argument("--corpus-bench", action="store_true",
                     help="[-j fi] data/finland/bench_core.csv  "
                          "[-j uk] data/uk/bench_corpus_smoke.csv  "
                          "[-j ee] data/estonia/bench_corpus.csv  "
                          "[-j no] most-amended replayable base acts (inventory scan)  "
-                         "[-j se] amending SFS ids with compiled ops (archive)")
+                         "[-j se] amending SFS ids with compiled ops (archive)  "
+                         "[-j us] included US bench windows  "
+                         "[-j nz] NZ smoke-corpus work ids")
     ap.add_argument("--corpus-full", action="store_true",
                     help="[-j ee] data/estonia/current_replayable_corpus.csv")
     ap.add_argument("--mode", default="official_consolidation",

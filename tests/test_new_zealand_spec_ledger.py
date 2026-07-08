@@ -14,6 +14,8 @@ spec-ledger core read-only. These tests pin:
 """
 from __future__ import annotations
 
+import dataclasses
+from pathlib import Path
 from types import SimpleNamespace
 from typing import List
 
@@ -50,7 +52,14 @@ from lawvm.new_zealand.spec_ledger_adapter import (
     nz_ledger_inputs_from_reports,
     render_text,
 )
-from lawvm.tools.spec_ledger import build_ledger
+from lawvm.tools.spec_ledger import (
+    DivergenceRow,
+    StatuteLedgerInput,
+    build_ledger,
+    get_ledger_adapter,
+    register_ledger_adapter,
+    run_ledger,
+)
 
 
 # Every oracle rule_id a dry-run kernel can emit (agree + residual). If a new
@@ -302,6 +311,62 @@ def test_render_text_marks_uncataloged_rule() -> None:
     text = render_text(ledger)
     assert "[UNCATALOGED!]" in text
     assert "LEGACY_UNKNOWN" in text
+
+
+def test_shared_run_ledger_dispatches_nz_without_archive() -> None:
+    """The top-level spec-ledger registry reaches NZ; this test stays synthetic."""
+    original = get_ledger_adapter("nz")
+
+    def fake_inputs(sids, mode):
+        assert sids == ["act_public_2001_1"]
+        assert mode == "official_consolidation"
+        return [
+            StatuteLedgerInput(
+                sid="act_public_2001_1",
+                rule_firings={NZ_DRY_RUN_REPEAL_TOMBSTONE_AGREES_RULE_ID: 2},
+                divergences=[
+                    DivergenceRow(
+                        "act_public_2001_1",
+                        "section:1",
+                        "target_not_tombstone",
+                        "lawvm_wrong",
+                        NZ_DRY_RUN_RESIDUAL_TARGET_NOT_TOMBSTONE_IN_ORACLE_RULE_ID,
+                    )
+                ],
+            )
+        ]
+
+    register_ledger_adapter(dataclasses.replace(original, ledger_inputs=fake_inputs))
+    try:
+        ledger = run_ledger("nz", ["act_public_2001_1"], "official_consolidation")
+    finally:
+        register_ledger_adapter(original)
+
+    assert ledger.jurisdiction == "nz"
+    assert ledger.statutes == 1
+    assert ledger.rules[NZ_DRY_RUN_REPEAL_TOMBSTONE_AGREES_RULE_ID].firings == 2
+    assert (
+        ledger.rules[NZ_DRY_RUN_RESIDUAL_TARGET_NOT_TOMBSTONE_IN_ORACLE_RULE_ID]
+        .contradicted
+        == 1
+    )
+
+
+def test_nz_shared_adapter_skips_unavailable_work(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import lawvm.new_zealand.spec_ledger_adapter as adapter
+
+    db_path = tmp_path / "nz.farchive"
+    db_path.touch()
+    monkeypatch.setattr(adapter, "DEFAULT_DB_PATH", db_path)
+
+    def _raise(*args, **kwargs):
+        raise RuntimeError("no archived latest source")
+
+    monkeypatch.setattr(adapter, "build_nz_dry_run_repeal_corpus_report", _raise)
+
+    assert adapter.nz_ledger_inputs(["fake_work_id"], "official_consolidation") == []
 
 
 def test_nz_spec_ledger_main_persists_shared_diffable_report(

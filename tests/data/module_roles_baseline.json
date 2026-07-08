@@ -1,9 +1,9 @@
 {
   "_doc": "Monotone module-role baseline. The `dead` and `test_only_live` sets may only SHRINK: a module born dead must be wired or deleted, never added to the population. The `replay_exercised` map is a SNAPSHOT: a module flipping replay-exercised status (either direction) fails the ratchet until re-baselined. Regenerate with `uv run python scripts/inventory_module_roles.py --update-baseline` after legitimately retiring (deleting) a dead/test-only module, wiring it to a production consumer, or refreshing the replay-coverage snapshot (tests/data/replay_coverage_snapshot.json — see its provenance.refresh_command).",
   "counts": {
-    "dead": 81,
-    "live": 1127,
-    "test_only_live": 39
+    "dead": 78,
+    "live": 1140,
+    "test_only_live": 29
   },
   "replay_counts": {
     "exercised": 170,
@@ -26,7 +26,6 @@
     "lawvm.estonia.replayability_frontier",
     "lawvm.estonia.witness_attribution",
     "lawvm.eu.acquire_corpus",
-    "lawvm.eu.spec_ledger_adapter",
     "lawvm.finland.conformance_corpus.actors.fixtures",
     "lawvm.finland.conformance_corpus.he_projection.fixtures",
     "lawvm.finland.conformance_corpus.inline.fixtures",
@@ -62,13 +61,11 @@
     "lawvm.finland.references.surface_totality",
     "lawvm.finland.timeline_export_plan",
     "lawvm.new_zealand.commencement",
-    "lawvm.norway.spec_ledger_adapter",
     "lawvm.substrate.eu_ingest",
     "lawvm.substrate.locus_links",
     "lawvm.substrate.model_code_derivation",
     "lawvm.substrate.signature_attestation",
     "lawvm.sweden.se_assumptions",
-    "lawvm.sweden.spec_ledger_adapter",
     "lawvm.tools.audit_channels",
     "lawvm.tools.cmd_migrate_manual_claims",
     "lawvm.tools.coverage_totality_report",
@@ -103,14 +100,8 @@
     "lawvm.core.fire_drill_registry",
     "lawvm.core.invariant_spec",
     "lawvm.core.proof_surfaces",
-    "lawvm.eu.eu_acquire",
     "lawvm.eu.eu_acquire_closure",
-    "lawvm.eu.eu_amendment_graph",
-    "lawvm.eu.eu_consolidation_oracle",
     "lawvm.eu.eu_enumerate",
-    "lawvm.eu_lex",
-    "lawvm.eu_lex.bundle",
-    "lawvm.eu_lex.celex",
     "lawvm.finland.conformance_corpus.actors",
     "lawvm.finland.conformance_corpus.he_projection",
     "lawvm.finland.conformance_corpus.inline",
@@ -128,11 +119,7 @@
     "lawvm.tools.corpus_sweep",
     "lawvm.tools.fi_adjudication_audit",
     "lawvm.tools.fi_invariant_audit",
-    "lawvm.tools.oracle_defect_confirmation",
-    "lawvm.tools.spec_ledger_eu_catalog",
-    "lawvm.tools.spec_ledger_eu_catalog_meta",
-    "lawvm.tools.spec_ledger_no_catalog",
-    "lawvm.tools.spec_ledger_se_catalog"
+    "lawvm.tools.oracle_defect_confirmation"
   ],
   "live_replay_cold": [
     "lawvm.finland._compile",

@@ -22,11 +22,13 @@ undifferentiated 23/231 coverage number becomes a ranked table of *specific hypo
 about US amendment law, with how often the oracle corroborates vs contradicts each one*.
 
 It is read-only and additive: it never edits ``tools/spec_ledger.py`` (no dispatch
-registration there — the US ledger is standalone, exposed via the ``us-spec-ledger`` CLI
-subcommand), never enables actual replay (``replay_authorized`` stays False throughout),
-and never mutates the archive. It only IMPORTS the us_federal bench/dry-run modules.
+authority there — the shared registry dispatches this adapter lazily, and the legacy
+``us-spec-ledger`` CLI remains a thin convenience wrapper), never enables actual replay
+(``replay_authorized`` stays False throughout), and never mutates the archive. It only
+IMPORTS the us_federal bench/dry-run modules.
 
 Run:  python -m lawvm.us_federal.spec_ledger_adapter
+      lawvm spec-ledger -j us --corpus-bench
       python -m lawvm.us_federal.spec_ledger_adapter --json
       python -m lawvm.us_federal.spec_ledger_adapter --corpus us/bench/us_bench_corpus.csv
 """
@@ -42,11 +44,14 @@ from typing import Any, Dict, List, Mapping, Sequence, cast
 
 from lawvm.tools.spec_ledger import (
     DivergenceRow,
+    LedgerAdapter,
+    Mode,
     SpecLedger,
     StatuteLedgerInput,
     WitnessDisposition,
     build_ledger,
     disposition_for,
+    register_ledger_adapter,
 )
 from lawvm.tools.spec_ledger_us_catalog import (
     _US_RULE_SPECS,
@@ -472,6 +477,50 @@ def build_us_spec_ledger_parallel(
     return ledger
 
 
+def _load_us_bench_window_keys() -> List[str]:
+    """Return shared-dispatch SIDs for included US bench windows.
+
+    The shared ``spec-ledger`` CLI speaks in ``sids``. For US the natural unit is a
+    bench window, so the SID is ``BenchWindow.key`` (for example
+    ``title11:2023->2024``). Loading the committed CSV is cheap and does not open the
+    farchive.
+    """
+    return [window.key for window in load_corpus(DEFAULT_CORPUS_PATH) if window.include]
+
+
+def us_ledger_inputs(sids: List[str], mode: Mode) -> List[StatuteLedgerInput]:
+    """Shared-registry adapter: selected US bench-window keys -> neutral inputs.
+
+    ``mode`` is accepted for signature parity with the neutral registry; the US witness
+    surface is always the dry-run section text vs USC after-edition oracle. Unknown
+    window keys produce no input, so ``run_ledger`` reports them as statute_errors
+    instead of silently inventing a row.
+    """
+    from lawvm.us_federal.sources import open_us_federal_farchive
+
+    requested = set(sids)
+    windows_by_key = {
+        window.key: window
+        for window in load_corpus(DEFAULT_CORPUS_PATH)
+        if window.include
+    }
+    windows = [windows_by_key[key] for key in sids if key in windows_by_key]
+    if not windows and requested:
+        return []
+    archive = open_us_federal_farchive(readonly=True)
+    try:
+        results = [evaluate_window(archive, window) for window in windows]
+        amendatory_firings = {
+            window.key: _amendatory_witness_firings(archive, window)
+            for window in windows
+        }
+    finally:
+        archive.close()
+    return us_ledger_inputs_from_reports(
+        results, amendatory_firings=amendatory_firings
+    )
+
+
 def ledger_to_dict(ledger: SpecLedger) -> Dict[str, Any]:
     """Project the ledger to a JSON artifact, enriched with US confidence tiers.
 
@@ -546,6 +595,16 @@ def _top_contradicting_windows(exemplars: List[Mapping[str, str]]) -> List[str]:
         if len(seen) >= 5:
             break
     return seen
+
+
+register_ledger_adapter(
+    LedgerAdapter(
+        jurisdiction="us",
+        ledger_inputs=us_ledger_inputs,
+        catalog=_US_RULE_SPECS,
+        corpus_loaders={"bench": _load_us_bench_window_keys},
+    )
+)
 
 
 # ---------------------------------------------------------------------------
@@ -626,6 +685,7 @@ __all__ = [
     "ledger_to_dict",
     "main",
     "render_text",
+    "us_ledger_inputs",
     "us_ledger_inputs_from_reports",
 ]
 

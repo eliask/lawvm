@@ -13021,19 +13021,19 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
 
     spec_ledger_p = sub.add_parser(
         "spec-ledger",
-        help="build the FI/UK/EE witness-attribution spec-discovery ledger",
+        help="build the cross-jurisdiction witness-attribution spec-discovery ledger",
         description=(
             "Build the per-rule discovered-spec ledger for a registry-dispatched "
-            "frontend (-j fi/uk/ee): rank every witness rule by how often the "
+            "frontend (-j fi/uk/ee/no/se/eu/us/nz): rank every witness rule by how often the "
             "oracle corroborates vs contradicts its believed_spec. Thin shim over "
             "lawvm.tools.spec_ledger; read-only, never authorizes replay or mutates "
-            "the archive. (US/NZ have their own us-spec-ledger / nz-corpus "
-            "spec-ledger commands.)"
+            "the archive. Legacy us-spec-ledger / nz-corpus spec-ledger commands "
+            "remain available as jurisdiction-specific convenience wrappers."
         ),
     )
     spec_ledger_p.add_argument("sids", nargs="*", help="statute ids, e.g. 1958/370")
     spec_ledger_p.add_argument(
-        "-j", "--jurisdiction", default="fi", help="frontend adapter (fi/uk/ee)"
+        "-j", "--jurisdiction", default="fi", help="frontend adapter (fi/uk/ee/no/se/eu/us/nz)"
     )
     spec_ledger_p.add_argument(
         "--corpus-bench", action="store_true", help="use the jurisdiction bench corpus"
@@ -15141,17 +15141,18 @@ def _main_impl() -> None:
                 print(_sec.statutory_text)
 
     elif args.command == "spec-ledger":
-        # Importing each adapter module self-registers it into the spec_ledger
-        # registry (the module-level register_ledger_adapter call) — the exact
-        # registration tools.spec_ledger.main triggers lazily via its
-        # jurisdiction->module map. Doing it here with LITERAL imports keeps the
-        # jurisdiction-neutral core (tools.spec_ledger) import-free of the
-        # jurisdiction packages while giving each adapter a traceable production
-        # consumer edge (mirrors the us-spec-ledger / nz-corpus spec-ledger
-        # handlers). Behavior-identical: the registry overwrites idempotently.
+        # Literal imports are a production consumer edge for the module-role ratchet.
+        # ``tools.spec_ledger.main`` also lazy-loads through its registry map; these
+        # imports are idempotent self-registration and keep every adapter visibly wired
+        # without making the neutral core import jurisdiction packages at module import.
         import lawvm.estonia.spec_ledger_adapter  # noqa: F401  (self-registers ee)
+        import lawvm.eu.spec_ledger_adapter  # noqa: F401  (self-registers eu)
         import lawvm.finland.spec_ledger_adapter  # noqa: F401  (self-registers fi)
+        import lawvm.new_zealand.spec_ledger_adapter  # noqa: F401  (self-registers nz)
+        import lawvm.norway.spec_ledger_adapter  # noqa: F401  (self-registers no)
+        import lawvm.sweden.spec_ledger_adapter  # noqa: F401  (self-registers se)
         import lawvm.uk_legislation.spec_ledger_adapter  # noqa: F401  (self-registers uk)
+        import lawvm.us_federal.spec_ledger_adapter  # noqa: F401  (self-registers us)
         from lawvm.tools.spec_ledger import main as spec_ledger_main
 
         _argv = ["-j", args.jurisdiction]

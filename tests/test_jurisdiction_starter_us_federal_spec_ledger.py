@@ -22,13 +22,22 @@ Three layers, mirroring the US bench/dry-run test discipline (no network anywher
 from __future__ import annotations
 
 import ast
+import dataclasses
 import os
 import sys
 from pathlib import Path
 
 import pytest
 
-from lawvm.tools.spec_ledger import SpecLedger, StatuteLedgerInput, build_ledger
+from lawvm.tools.spec_ledger import (
+    DivergenceRow,
+    SpecLedger,
+    StatuteLedgerInput,
+    build_ledger,
+    get_ledger_adapter,
+    register_ledger_adapter,
+    run_ledger,
+)
 from lawvm.tools.spec_ledger_discovery import format_uncataloged, locate_rule_ids
 from lawvm.tools.spec_ledger_us_catalog import (
     _US_RULE_SPECS,
@@ -359,6 +368,59 @@ def test_us_spec_ledger_cli_persists_shared_diffable_report(
     assert (out_dir / "spec_ledger.json").exists()
     assert (out_dir / "spec_ledger.md").exists()
     assert "wrote" in capsys.readouterr().err
+
+
+def test_shared_run_ledger_dispatches_us_without_archive() -> None:
+    """The top-level spec-ledger registry reaches US; this test stays synthetic."""
+    original = get_ledger_adapter("us")
+
+    def fake_inputs(sids, mode):
+        assert sids == ["title11:2023->2024"]
+        assert mode == "official_consolidation"
+        return [
+            StatuteLedgerInput(
+                sid="title11:2023->2024",
+                rule_firings={US_DRY_RUN_SECTION_AGREES_RULE_ID: 3},
+                divergences=[
+                    DivergenceRow(
+                        "title11:2023->2024",
+                        "11:20",
+                        DISPOSITION_LAWVM_WRONG,
+                        "lawvm_wrong",
+                        US_DRY_RUN_RESIDUAL_TEXT_MISMATCH_RULE_ID,
+                    )
+                ],
+            )
+        ]
+
+    register_ledger_adapter(dataclasses.replace(original, ledger_inputs=fake_inputs))
+    try:
+        ledger = run_ledger("us", ["title11:2023->2024"], "official_consolidation")
+    finally:
+        register_ledger_adapter(original)
+
+    assert ledger.jurisdiction == "us"
+    assert ledger.statutes == 1
+    assert ledger.rules[US_DRY_RUN_SECTION_AGREES_RULE_ID].firings == 3
+    assert ledger.rules[US_DRY_RUN_RESIDUAL_TEXT_MISMATCH_RULE_ID].contradicted == 1
+
+
+def test_us_shared_bench_loader_returns_window_keys_without_archive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import lawvm.us_federal.spec_ledger_adapter as adapter
+
+    monkeypatch.setattr(
+        adapter,
+        "load_corpus",
+        lambda path: [
+            _window(title=11, before=2023, after=2024),
+            dataclasses.replace(_window(title=42, before=2020, after=2021), include=False),
+        ],
+    )
+
+    registered = get_ledger_adapter("us")
+    assert registered.corpus_loaders["bench"]() == ["title11:2023->2024"]
 
 
 # ---------------------------------------------------------------------------

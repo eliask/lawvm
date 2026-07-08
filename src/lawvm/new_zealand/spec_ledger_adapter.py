@@ -16,13 +16,13 @@ This adapter accumulates those per-op outcomes into the neutral ledger so an
 undifferentiated agreement-rate becomes a ranked table of *specific hypotheses
 about NZ amendment law, with how often the oracle corroborates each one*.
 
-It is read-only and additive: it never edits ``tools/spec_ledger.py`` (no dispatch
-registration there — the NZ ledger is standalone, exposed via the ``nz-corpus
-spec-ledger`` subcommand), never enables actual replay, and never mutates the
-archive. It only consumes the dry-run corpus surface; it does not change its
-semantics.
+It is read-only and additive: the shared registry dispatches this adapter lazily, and
+the legacy ``nz-corpus spec-ledger`` command remains a thin convenience wrapper. It
+never enables actual replay, and never mutates the archive. It only consumes the dry-run
+corpus surface; it does not change its semantics.
 
 Run:  lawvm nz-corpus spec-ledger --corpus data/nz/bench_corpus_smoke.csv
+      lawvm spec-ledger -j nz --corpus-bench
 """
 from __future__ import annotations
 
@@ -58,12 +58,18 @@ from lawvm.new_zealand.dry_run import (
 from lawvm.new_zealand.dry_run_corpus import build_nz_dry_run_repeal_corpus_report
 from lawvm.tools.spec_ledger import (
     DivergenceRow,
+    LedgerAdapter,
+    Mode,
     SpecLedger,
     StatuteLedgerInput,
     WitnessDisposition,
     build_ledger,
     disposition_for,
+    register_ledger_adapter,
 )
+
+DEFAULT_DB_PATH = Path("data/nz_legislation.farchive")
+DEFAULT_SMOKE_CORPUS_PATH = Path("data/nz/bench_corpus_smoke.csv")
 
 # ---------------------------------------------------------------------------
 # The NZ dry-run rule catalog: each oracle-semantic rule as a named hypothesis.
@@ -369,6 +375,38 @@ def build_nz_spec_ledger(
     return ledger
 
 
+def _load_nz_bench_work_ids() -> List[str]:
+    """Return shared-dispatch SIDs for the curated NZ smoke corpus."""
+    from lawvm.new_zealand.bench_corpus import read_corpus_work_ids
+
+    return list(read_corpus_work_ids(DEFAULT_SMOKE_CORPUS_PATH))
+
+
+def nz_ledger_inputs(sids: List[str], mode: Mode) -> List[StatuteLedgerInput]:
+    """Shared-registry adapter: NZ work ids -> neutral ledger inputs.
+
+    ``mode`` is accepted for signature parity; NZ's spec-ledger witness is always the
+    dry-run after-tree vs archived on-or-after XML oracle. Missing local farchive or
+    unsupported work ids produce no inputs, so ``run_ledger`` reports the requested ids
+    as errors instead of emitting guessed rows.
+    """
+    if not DEFAULT_DB_PATH.exists():
+        return []
+    all_inputs: List[StatuteLedgerInput] = []
+    for scope in _NZ_LEDGER_SCOPES:
+        for sid in sids:
+            try:
+                report = build_nz_dry_run_repeal_corpus_report(
+                    DEFAULT_DB_PATH,
+                    work_ids=(sid,),
+                    scope=scope,
+                )
+            except (FileNotFoundError, RuntimeError, ValueError, KeyError):
+                continue
+            all_inputs.extend(nz_ledger_inputs_from_reports(list(report.work_reports)))
+    return all_inputs
+
+
 def ledger_to_dict(ledger: SpecLedger) -> Dict[str, Any]:
     """Project the ledger to a JSON artifact, enriched with NZ confidence tiers.
 
@@ -441,6 +479,16 @@ def _top_contradicting_works(exemplars: List[Mapping[str, str]]) -> List[str]:
         if len(seen) >= 5:
             break
     return seen
+
+
+register_ledger_adapter(
+    LedgerAdapter(
+        jurisdiction="nz",
+        ledger_inputs=nz_ledger_inputs,
+        catalog=NZ_RULE_SPECS,
+        corpus_loaders={"bench": _load_nz_bench_work_ids},
+    )
+)
 
 
 def main(args: Any) -> None:
