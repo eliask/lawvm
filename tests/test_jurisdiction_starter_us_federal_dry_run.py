@@ -1351,6 +1351,54 @@ def test_window_error_is_raised_for_a_missing_archive_source() -> None:
         )
 
 
+def test_real_title23_sentence_scoped_punct_insert_is_missing_source_when_archive_present() -> None:
+    from lawvm.tools.us_anchor_manifest import _repo_root
+    from lawvm.us_federal.bench import (
+        DEFAULT_CORPUS_PATH,
+        derive_window_law_locators,
+        load_corpus,
+    )
+    from lawvm.us_federal.dry_run import build_us_dry_run_from_archive
+    from lawvm.us_federal.sources import (
+        open_us_federal_farchive,
+        resolve_us_federal_farchive_path,
+    )
+
+    archive_path, _rule = resolve_us_federal_farchive_path()
+    if not archive_path.exists():
+        pytest.skip("us_federal.farchive absent; Title 23 dry-run witness unavailable")
+
+    window = next(
+        w
+        for w in load_corpus(_repo_root() / DEFAULT_CORPUS_PATH)
+        if w.key == "title23:2020->2022"
+    )
+    archive = open_us_federal_farchive(readonly=True)
+    try:
+        locators = derive_window_law_locators(
+            archive,
+            title=window.title,
+            before_year=window.before_year,
+            after_year=window.after_year,
+        )
+        report = build_us_dry_run_from_archive(
+            archive,
+            title=window.title,
+            before_year=window.before_year,
+            after_year=window.after_year,
+            plaw_locators=locators or {},
+            prior_edition_years=window.prior_edition_years,
+        )
+    finally:
+        archive.close()
+
+    rows = {r.section_key: r for r in report.rows}
+    assert "23:140" not in rows
+    assert "23:140" not in report.claimed_sections
+    assert "23:140" in report.north_star()["missing_source_sections"]
+    assert "23:140" in report.summary()["lowering_sentence_strike_sections"]
+
+
 # ---------------------------------------------------------------------------
 # Real Title 11 / PL 118-42 / 2023->2024 window (archive-gated, no network)
 # ---------------------------------------------------------------------------

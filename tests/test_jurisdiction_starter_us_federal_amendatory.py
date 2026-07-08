@@ -3917,6 +3917,31 @@ def test_sentence_position_between_sentences_insert_lowers_to_typed_finding():
     assert instr.finding.rule_id != INSERT_AFTER_MISSING_OPERANDS_FINDING_RULE_ID
 
 
+def test_sentence_scoped_punct_word_insert_lowers_to_typed_finding():
+    # PL 117-58 §11525(i) / 23 U.S.C. §140(a): "in the third sentence, by
+    # inserting a comma after 'Secretary'." The operands are otherwise complete
+    # enough for the punct-word phrase-swap recognizer, but the source scope is a
+    # sentence ordinal. Do not lower it as a section-level first "Secretary"
+    # replacement.
+    body = (
+        '<section identifier="/us/pl/117/58/dA/tI/stE/s11525/i" role="instruction">'
+        "<num>(i)</num><content>"
+        '<ref href="/us/usc/t23/s140/a">Section 140(a) of title 23, United States Code</ref>, '
+        '<amendingAction type="amend">is amended</amendingAction>, in the third sentence, by '
+        '<amendingAction type="insert">inserting</amendingAction> a comma after '
+        "“<quotedText>Secretary</quotedText>”."
+        "</content></section>"
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body), proof_title="23")
+    instr = report.instructions[0]
+
+    assert instr.instruction_status != "accepted"
+    assert instr.finding is not None
+    assert instr.finding.rule_id == SENTENCE_ANCHOR_INSERT_FINDING_RULE_ID
+    assert instr.finding.rule_id != INSERT_AFTER_MISSING_OPERANDS_FINDING_RULE_ID
+    assert not report.operations()
+
+
 @pytest.mark.skip(reason="agent feature incomplete")
 def test_insert_quoted_after_term_each_place_lowers_to_phrase_swap():
     # "by inserting '<X>' after the term '<Y>' each place such term appears" —

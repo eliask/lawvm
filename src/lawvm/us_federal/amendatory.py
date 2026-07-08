@@ -2827,13 +2827,15 @@ _CHAPTER_ANALYSIS_INSERT_RE = compile_classifier_regex(
 )
 # Sentence-anchor insert: "inserting after the first/second/third/last sentence
 # the following: '<X>'" / "inserting '<X>' before the first sentence" / "inserting
-# between the third and fourth sentences the following: '<X>'". A sentence's
-# offset in the rendered text is editorial (AGENTS.md §2.1); LawVM cannot
+# between the third and fourth sentences the following: '<X>'" / "in the third
+# sentence, by inserting a comma after '<X>'". A sentence's offset in the rendered
+# text is editorial (AGENTS.md §2.1); LawVM cannot
 # deterministically locate a sentence boundary from prose alone. The instruction
 # is a typed finding, not a phrase swap. Recognizer is a hot-path classifier on
 # every insert_after instruction.
 # lawvm-regex: prefilter typed sentence-anchor holdout recognizer; never authorizes replay
 _SENTENCE_ANCHOR_INSERT_RE = re.compile(
+    r"(?:"
     r"\binserting\s+"
     r"(?:"
     # "between the third and fourth sentences" — source witness: AIA §2(k)(1)
@@ -2856,6 +2858,15 @@ _SENTENCE_ANCHOR_INSERT_RE = re.compile(
     r"|"
     # "'<X>' before the first sentence" (single-quoted phrase swap form)
     r"[\"\u201c\u201d][^\"\u201c\u201d]{0,400}[\"\u201c\u201d]\s+(?:after|before)\s+the\s+(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|last|final)\s+sentence"
+    r")"
+    r"|"
+    # "in the third sentence, by inserting a comma after 'Secretary'" — source
+    # witness: PL 117-58 §11525(i) / 23 U.S.C. §140(a). This has complete
+    # punct-word operands but still names a sentence ordinal, so the punct-word
+    # branch must not guess a section-level first occurrence.
+    r"\bin\s+the\s+(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|last|final)\s+"
+    r"sentence,\s+by\s+inserting\s+(?:a\s+|an\s+)?(?:comma|semicolon|period|em[ -]dash|closing\s+parenthesis|closing\s+quotation\s+mark|hyphen)\s+"
+    r"(?:after|before)\s+[\"\u201c\u201d][^\"\u201c\u201d]{0,400}[\"\u201c\u201d]"
     r")",
     re.IGNORECASE,
 )
@@ -5092,6 +5103,14 @@ def _lower_instruction(
                             target=LegalAddress(path=(("title", insert_title), ("section", new_section_number))),
                         )
                 witness_rule_id = rule_id
+        elif _SENTENCE_ANCHOR_INSERT_RE.search(raw_text) is not None:
+            finding = _finding(
+                SENTENCE_ANCHOR_INSERT_FINDING_RULE_ID,
+                "insert scoped to a SENTENCE ordinal (the "
+                "first/second/.../last sentence); a sentence's offset is "
+                "editorial, not enacted (AGENTS.md §2.1); held out as a typed "
+                "residual rather than guessed into a section-level phrase swap",
+            )
         elif (m := _INSERT_PUNCT_WORD_ANCHOR_RE.search(raw_text)) is not None:
             # "inserting a comma/semicolon/period/em dash/closing parenthesis
             # after/before '<X>'" — a phrase-swap whose INSERTED operand is a

@@ -243,10 +243,11 @@ def test_us_excluded_billable_windows_convict():
     are rightly kept OUT of the 0-billable corpus (not frozen green).
 
     These are ``us_dry_run_lawvm_wrong`` (replay_bug) windows the #205 US metric
-    surfaces: title23:2020->2022 (7, down from 13 after §176's ``non- Federal``
+    surfaces: title23:2020->2022 (6, down from 13 after §176's ``non- Federal``
     hyphen-wrap ``oracle_suspect``, then 12, then 8 after the shared resolver diverted
     §133/§148/§515's compound-chain empty-materializations to source-truncated
-    oracle_suspect / missing_source, then 7 after §151's quoted strike-at-end),
+    oracle_suspect / missing_source, then 7 after §151's quoted strike-at-end,
+    then 6 after §140's sentence-scoped comma insert moved to ``missing_source``),
     title50:2022->2023 (8 after §3919's terminal-period-strike courtesy space was
     materialized and later F3 cleanup). The residual counts are the
     DEFERRED_ROADMAP F2-F3 backlog; they still convict (billable > 0), which is
