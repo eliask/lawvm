@@ -1925,6 +1925,7 @@ def _running_subtree_text(
     *,
     op_id: str = "",
     recoveries: list[USDryRunTargetRecovery] | None = None,
+    include_unlabeled_tail_descendants: bool = False,
 ) -> str | None:
     """Return the target node and its current descendants as one contiguous span.
 
@@ -1996,7 +1997,9 @@ def _running_subtree_text(
             # Synthetic flush-block nodes have an empty label; they are structural
             # siblings, not descendants of the anchor node, so they must not be
             # included in the anchor's subtree span.
-            if any(label == "" for _kind, label in key[len(segments) :]):
+            if any(label == "" for _kind, label in key[len(segments) :]) and not (
+                include_unlabeled_tail_descendants and not text.lstrip().startswith("(")
+            ):
                 continue
             descendant_texts.add(text)
     # When the node overrides are empty or stale (e.g. a direct unit test calling
@@ -2008,7 +2011,15 @@ def _running_subtree_text(
             if (
                 len(node_segments) > len(segments)
                 and node_segments[: len(segments)] == segments
-                and not any(label == "" for _kind, label in node_segments[len(segments):])
+                and (
+                    not any(
+                        label == "" for _kind, label in node_segments[len(segments):]
+                    )
+                    or (
+                        include_unlabeled_tail_descendants
+                        and not node.text.lstrip().startswith("(")
+                    )
+                )
             ):
                 descendant_texts.add(node.text)
     for text in descendant_texts:
@@ -3008,6 +3019,7 @@ def _materialize_one(
             node_overrides,
             op_id=op_id,
             recoveries=recoveries,
+            include_unlabeled_tail_descendants=True,
         )
         if anchor_text is None:
             rule_id = US_DRY_RUN_RESIDUAL_SUBSECTION_NODE_NOT_LOCATED_RULE_ID

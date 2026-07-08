@@ -1351,7 +1351,7 @@ def test_window_error_is_raised_for_a_missing_archive_source() -> None:
         )
 
 
-def test_real_title23_sentence_scoped_punct_insert_is_missing_source_when_archive_present() -> None:
+def _build_real_title23_2020_2022_report_or_skip() -> USDryRunReport:
     from lawvm.tools.us_anchor_manifest import _repo_root
     from lawvm.us_federal.bench import (
         DEFAULT_CORPUS_PATH,
@@ -1391,12 +1391,30 @@ def test_real_title23_sentence_scoped_punct_insert_is_missing_source_when_archiv
         )
     finally:
         archive.close()
+    return report
+
+
+def test_real_title23_sentence_scoped_punct_insert_is_missing_source_when_archive_present() -> None:
+    report = _build_real_title23_2020_2022_report_or_skip()
 
     rows = {r.section_key: r for r in report.rows}
     assert "23:140" not in rows
     assert "23:140" not in report.claimed_sections
     assert "23:140" in report.north_star()["missing_source_sections"]
     assert "23:140" in report.summary()["lowering_sentence_strike_sections"]
+
+
+def test_real_title23_insert_after_subsection_tail_is_oracle_suspect_when_archive_present() -> None:
+    report = _build_real_title23_2020_2022_report_or_skip()
+
+    row = {r.section_key: r for r in report.rows}["23:313"]
+    assert row.rule_id == US_DRY_RUN_RESIDUAL_TEXT_MISMATCH_RULE_ID
+    assert row.disposition == DISPOSITION_ORACLE_SUSPECT
+    assert (
+        "the provisions of subsection (b) shall not apply to products produced "
+        "in that foreign country. (g) Waivers"
+    ) in row.materialized_text
+    assert _norm_editorial(row.materialized_text) == _norm_editorial(row.oracle_text)
 
 
 # ---------------------------------------------------------------------------
@@ -2745,6 +2763,59 @@ def test_through_tail_patch_can_span_target_heading_into_descendant() -> None:
         "shall be authorized in writing."
     ) in materialized
     assert "(2) Written notice shall be retained." in materialized
+
+
+def test_insert_after_subsection_splices_after_unlabeled_tail_descendant() -> None:
+    # PL 117-58 §11513 / 23:313 witness: subsection (f)'s final legal text is an
+    # unlabeled tail paragraph after paragraphs (1) and (2). "Inserting after
+    # subsection (f)" must splice after that tail, not between paragraph (2) and
+    # the tail.
+    section = synthetic_usc_section(
+        title=23,
+        section="313",
+        text=(
+            "(f) Limitation.—If the Secretary determines that— "
+            "(1) a country is a party to an agreement, and "
+            "(2) the country has violated the agreement, "
+            "the waiver provisions shall not apply to products "
+            "produced in that foreign country. "
+            "(g) Application.—The requirements apply."
+        ),
+    )
+    nodes, _ = split_statutory_subsections(section)
+    node_overrides: dict[tuple[tuple[str, str], ...], str] = {
+        _subsection_segments(n.address): n.text for n in nodes
+    }
+    op = LegalOperation(
+        op_id="insert-after-f",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("title", "23"), ("section", "313"))),
+        anchor=LegalAddress(
+            path=(("title", "23"), ("section", "313"), ("subsection", "f"))
+        ),
+        payload=IRNode(
+            kind=IRNodeKind.SUBSECTION,
+            label="g",
+            text="(g) Waivers.—Not less than 15 days before issuing a waiver.",
+        ),
+    )
+
+    outcome = _materialize_one(
+        op,
+        section.statutory_text,
+        before_section=section,
+        node_overrides=node_overrides,
+    )
+
+    assert not isinstance(outcome, USDryRunRefusal)
+    materialized, signal_rule_id, disposition = outcome
+    assert signal_rule_id == ""
+    assert disposition == ""
+    assert (
+        "the waiver provisions shall not apply to products produced "
+        "in that foreign country. (g) Waivers.—"
+    ) in materialized
 
 
 def test_section_level_insert_with_plain_text_payload_still_materializes() -> None:
