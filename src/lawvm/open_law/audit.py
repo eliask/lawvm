@@ -10,7 +10,13 @@ from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import _kind_str
 from lawvm.core.mutation_boundary import TreePath, TreePaths, TreePathStep, build_mutation_boundary_report
 from lawvm.core.tree_ops import insert_sorted_required, replace_at_required, resolve_required
-from lawvm.open_law.models import OpenLawAction, OpenLawAnnotationLane, OpenLawFinding, OpenLawOperation
+from lawvm.open_law.models import (
+    OpenLawAction,
+    OpenLawAnnotationLane,
+    OpenLawFinding,
+    OpenLawLifecycleTombstone,
+    OpenLawOperation,
+)
 
 
 @dataclass(frozen=True)
@@ -30,6 +36,7 @@ class OpenLawReplayResult:
     tree: IRNode
     mutations: Tuple[OpenLawAppliedMutation, ...]
     findings: Tuple[OpenLawFinding, ...]
+    tombstones: Tuple[OpenLawLifecycleTombstone, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -43,12 +50,53 @@ class OpenLawSnapshotAuditResult:
     findings: Tuple[OpenLawFinding, ...]
 
 
+def failed_codification_findings(
+    findings: Sequence[OpenLawFinding],
+) -> Tuple[OpenLawFinding, ...]:
+    """Umbrella ``open_law_failed_codification_source_bug`` findings.
+
+    Open Law is a cooperative structured-source regime: the publisher receives a
+    compile-time error when a codification instruction fails, so a failed
+    instruction that survives into published data is a SOURCE bug, never a
+    replay-side recovery target (regime contract §3). Every blocking
+    ``source_pathology`` finding is a distinct, already-typed failure witness
+    (missing/ambiguous target, payload/target identity mismatch, missing or
+    multiple/unsupported payload, unplannable locator). This function attaches a
+    single named umbrella finding per such failure so the source-bug lane is
+    directly queryable by rule id, without dropping the specific witness and
+    without ever broadening a target to "rescue" the instruction.
+    """
+
+    out: list[OpenLawFinding] = []
+    for finding in findings:
+        if finding.kind == "open_law_failed_codification_source_bug":
+            continue
+        if finding.source_pathology and finding.blocking:
+            out.append(
+                OpenLawFinding(
+                    kind="open_law_failed_codification_source_bug",
+                    message=(
+                        "Open Law codification instruction failed to apply "
+                        f"({finding.kind}); in this cooperative regime a failed "
+                        "codification is a source bug in the published artifact, "
+                        "not a replay-side recovery target."
+                    ),
+                    op_id=finding.op_id,
+                    path=finding.path,
+                    blocking=finding.blocking,
+                    source_pathology=True,
+                )
+            )
+    return tuple(out)
+
+
 def replay_open_law_ops(tree: IRNode, ops: Sequence[OpenLawOperation], *, strict: bool = False) -> OpenLawReplayResult:
     """Replay supported Open Law operations and emit audit findings for the rest."""
 
     current = tree
     mutations: list[OpenLawAppliedMutation] = []
     findings: list[OpenLawFinding] = []
+    tombstones: list[OpenLawLifecycleTombstone] = []
     for op in ops:
         if op.diagnostics:
             findings.extend(op.diagnostics)
@@ -59,6 +107,11 @@ def replay_open_law_ops(tree: IRNode, ops: Sequence[OpenLawOperation], *, strict
             continue
         if op.action is OpenLawAction.REPLACE_OR_INSERT:
             current = _apply_replace_or_insert(current, op, mutations, findings)
+            continue
+        if op.action is OpenLawAction.EXPIRE:
+            tombstone, finding = execute_open_law_expiry(op)
+            tombstones.append(tombstone)
+            findings.append(finding)
             continue
         if op.action is OpenLawAction.UNSUPPORTED:
             findings.append(
@@ -83,7 +136,46 @@ def replay_open_law_ops(tree: IRNode, ops: Sequence[OpenLawOperation], *, strict
                 blocking=strict,
             )
         )
-    return OpenLawReplayResult(tree=current, mutations=tuple(mutations), findings=tuple(findings))
+    return OpenLawReplayResult(
+        tree=current,
+        mutations=tuple(mutations),
+        findings=tuple(findings),
+        tombstones=tuple(tombstones),
+    )
+
+
+def execute_open_law_expiry(op: OpenLawOperation) -> Tuple[OpenLawLifecycleTombstone, OpenLawFinding]:
+    """Execute a ``codify:expire`` op into a typed jurisdiction tombstone.
+
+    Expiry is a lifecycle operation whose deletion semantics are
+    jurisdiction-dependent (regime contract §5.1). Rather than leaving it as an
+    unexecuted ``open_law_expire_lifecycle_not_replayed`` gap, this produces an
+    owned ``OpenLawLifecycleTombstone`` marking the declared target expired at
+    ``op.expire_date`` and a non-blocking ``open_law_expire_tombstoned`` finding
+    recording the replayed lifecycle result. The Maryland tombstone is a
+    standalone lifecycle marker (the expire targets are Register
+    emergency/proposed-regulation identifiers, not persistent COMAR chapter
+    nodes); it never silently deletes unrelated tree state.
+    """
+
+    tombstone = OpenLawLifecycleTombstone(
+        op_id=op.op_id,
+        doc=op.doc,
+        open_law_path=op.path,
+        expire_date=op.expire_date,
+        history=op.history,
+    )
+    finding = OpenLawFinding(
+        kind="open_law_expire_tombstoned",
+        message=(
+            "Open Law codify:expire replayed as a jurisdiction tombstone; target "
+            f"{'|'.join(op.path) or '-'} marked expired at {op.expire_date or '-'}."
+        ),
+        op_id=op.op_id,
+        path=op.path,
+        blocking=False,
+    )
+    return tombstone, finding
 
 
 def _apply_replace(

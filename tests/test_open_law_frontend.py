@@ -10,7 +10,13 @@ import pytest
 from lawvm.core.evidence_contracts import validate_corpus_finding_evidence_row, validate_corpus_operation_evidence_row
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.semantic_types import IRNodeKind
-from lawvm.open_law.audit import audit_open_law_snapshot, replay_open_law_ops, resolve_open_law_path
+from lawvm.open_law.audit import (
+    audit_open_law_snapshot,
+    execute_open_law_expiry,
+    failed_codification_findings,
+    replay_open_law_ops,
+    resolve_open_law_path,
+)
 from lawvm.open_law.corpus_audit import (
     OpenLawOperationAuditRow,
     _finding_evidence_row,
@@ -241,18 +247,30 @@ def test_replay_unsupported_payload_child_diagnostic_blocks_mutation() -> None:
     assert result.findings[0].blocking is True
 
 
-def test_unsupported_codify_action_is_visible_and_non_mutating_in_quirks_mode() -> None:
+def test_expire_replays_as_tombstone_without_body_mutation() -> None:
     tree = parse_open_law_xml(_BASE_XML)
-    xml = _REPLACE_XML.replace("codify:replace", "codify:expire").replace("</codify:replace>", "</codify:expire>")
-    ops = parse_open_law_codify_ops(xml, source_id="editorial-actions/2026-01-22.xml")
+    xml = (
+        """
+        <document xmlns="https://open.law/schemas/library" xmlns:codify="https://open.law/schemas/codify">
+          <codify:expire doc="Maryland Register, Volume 52, Issue 26" path="regulations|emergency|25-138-E" date="2026-11-20"/>
+        </document>
+        """
+    )
+    ops = parse_open_law_codify_ops(xml, source_id="editorial-actions/expire.xml")
 
     result = replay_open_law_ops(tree, ops)
 
+    # Expiry is a jurisdiction tombstone, not a deletion of unrelated tree state.
     assert result.tree == tree
     assert not result.mutations
     assert ops[0].action is OpenLawAction.EXPIRE
-    assert [finding.kind for finding in result.findings] == ["open_law_unsupported_codify_action"]
+    assert [finding.kind for finding in result.findings] == ["open_law_expire_tombstoned"]
     assert result.findings[0].blocking is False
+    assert len(result.tombstones) == 1
+    tombstone = result.tombstones[0]
+    assert tombstone.open_law_path == ("regulations", "emergency", "25-138-E")
+    assert tombstone.expire_date == "2026-11-20"
+    assert tombstone.jurisdiction == "maryland_register"
 
 
 def test_replace_or_insert_inserts_missing_target_with_visible_finding() -> None:
@@ -292,16 +310,25 @@ def test_replace_or_insert_rejects_missing_target_payload_label_mismatch() -> No
     assert "expected label '.06', got section:'.04'" in result.findings[0].message
 
 
-def test_unsupported_codify_action_blocks_in_strict_mode() -> None:
+def test_expire_tombstone_is_non_blocking_even_in_strict_mode() -> None:
+    # A replayed lifecycle result is a proven replay, not an unproven recovery;
+    # strict mode does not block it (unlike an unknown/unhandled action).
     tree = parse_open_law_xml(_BASE_XML)
-    xml = _REPLACE_XML.replace("codify:replace", "codify:expire").replace("</codify:replace>", "</codify:expire>")
-    ops = parse_open_law_codify_ops(xml, source_id="editorial-actions/2026-01-22.xml")
+    xml = (
+        """
+        <document xmlns="https://open.law/schemas/library" xmlns:codify="https://open.law/schemas/codify">
+          <codify:expire doc="Maryland Register, Volume 52, Issue 26" path="regulations|emergency|25-138-E" date="2026-11-20"/>
+        </document>
+        """
+    )
+    ops = parse_open_law_codify_ops(xml, source_id="editorial-actions/expire.xml")
 
     result = replay_open_law_ops(tree, ops, strict=True)
 
     assert ops[0].action is OpenLawAction.EXPIRE
-    assert [finding.kind for finding in result.findings] == ["open_law_unsupported_codify_action"]
-    assert result.findings[0].blocking is True
+    assert [finding.kind for finding in result.findings] == ["open_law_expire_tombstoned"]
+    assert result.findings[0].blocking is False
+    assert len(result.tombstones) == 1
 
 
 def test_open_law_finding_evidence_row_uses_shared_disposition_envelope() -> None:
@@ -707,7 +734,7 @@ def test_corpus_audit_does_not_project_generic_display_false_metadata(tmp_path) 
     assert [finding.kind for finding in report.operation_rows[0].findings] == ["open_law_metadata_snapshot_mismatch"]
 
 
-def test_corpus_audit_records_register_expire_as_lifecycle_lane(tmp_path) -> None:
+def test_corpus_audit_replays_register_expire_as_lifecycle_tombstone(tmp_path) -> None:
     source_repo = tmp_path / "law-xml"
     codified_repo = tmp_path / "law-xml-codified"
     _git_init(source_repo)
@@ -731,9 +758,11 @@ def test_corpus_audit_records_register_expire_as_lifecycle_lane(tmp_path) -> Non
 
     report = audit_maryland_transition("publication/before", "publication/after", repos=make_maryland_repos(source_repo, codified_repo))
 
-    assert report.summary["lifecycle_unsupported"] == 1
-    assert report.operation_rows[0].audit_status == "lifecycle_unsupported"
+    assert report.summary["lifecycle_tombstoned"] == 1
+    assert report.summary["lifecycle_unsupported"] == 0
+    assert report.operation_rows[0].audit_status == "lifecycle_tombstoned"
     assert report.operation_rows[0].expire_date == "2026-11-20"
+    assert [finding.kind for finding in report.operation_rows[0].findings] == ["open_law_expire_tombstoned"]
 
 
 def test_evidence_pack_writes_summary_and_machine_reports(tmp_path) -> None:
@@ -889,6 +918,7 @@ def test_open_law_verify_pack_can_require_clean_generator(tmp_path, capsys) -> N
         "metadata_matched": 0,
         "metadata_diverged": 0,
         "lifecycle_unsupported": 0,
+        "lifecycle_tombstoned": 0,
         "snapshot_missing": 0,
         "findings": 0,
         "unexplained_paths": 0,
@@ -939,6 +969,7 @@ def test_open_law_verify_pack_rejects_developer_local_generator_repository(tmp_p
         "metadata_matched": 0,
         "metadata_diverged": 0,
         "lifecycle_unsupported": 0,
+        "lifecycle_tombstoned": 0,
         "snapshot_missing": 0,
         "findings": 0,
         "unexplained_paths": 0,
@@ -983,6 +1014,7 @@ def test_open_law_verify_pack_requires_canonical_manifest_file_set(tmp_path) -> 
         "metadata_matched": 0,
         "metadata_diverged": 0,
         "lifecycle_unsupported": 0,
+        "lifecycle_tombstoned": 0,
         "snapshot_missing": 0,
         "findings": 0,
         "unexplained_paths": 0,
@@ -1158,16 +1190,25 @@ def test_unknown_codify_action_blocks_in_strict_mode() -> None:
     assert result.findings[0].blocking is True
 
 
-def test_recognized_unsupported_action_keeps_its_own_finding() -> None:
+def test_recognized_expire_action_replays_as_tombstone_not_unknown_action() -> None:
+    # A recognized codify verb (expire) is replayed on its own lifecycle lane; it
+    # must never fall through to the unknown-action finding reserved for verbs
+    # outside the stable vocabulary.
     tree = parse_open_law_xml(_BASE_XML)
-    xml = _REPLACE_XML.replace("codify:replace", "codify:expire").replace("</codify:replace>", "</codify:expire>")
-    ops = parse_open_law_codify_ops(xml, source_id="editorial-actions/2026-01-22.xml")
+    xml = (
+        """
+        <document xmlns="https://open.law/schemas/library" xmlns:codify="https://open.law/schemas/codify">
+          <codify:expire doc="Maryland Register, Volume 52, Issue 26" path="regulations|emergency|25-138-E" date="2026-11-20"/>
+        </document>
+        """
+    )
+    ops = parse_open_law_codify_ops(xml, source_id="editorial-actions/expire.xml")
 
     result = replay_open_law_ops(tree, ops)
 
     assert ops[0].action is OpenLawAction.EXPIRE
-    assert [finding.kind for finding in result.findings] == ["open_law_unsupported_codify_action"]
-    assert "recognized but not yet replayed" in result.findings[0].message
+    assert [finding.kind for finding in result.findings] == ["open_law_expire_tombstoned"]
+    assert "open_law_unknown_codify_action" not in [finding.kind for finding in result.findings]
 
 
 def test_failed_codification_instruction_is_marked_source_pathology() -> None:
@@ -1387,6 +1428,117 @@ def test_corpus_body_lane_projects_annotations_when_action_mixes_body_and_metada
     assert "open_law_unexplained_publication_mutation" not in [finding.kind for finding in body_row.findings]
     assert "open_law_annotation_lane_policy_unset" not in [finding.kind for finding in body_row.findings]
     assert metadata_row.audit_status == "metadata_matched"
+
+
+def test_failed_codification_findings_umbrella_wraps_blocking_source_pathology() -> None:
+    # Item 3: a failed codification instruction is a SOURCE bug, surfaced under a
+    # dedicated named rule id, never a replay-side recovery.
+    tree = parse_open_law_xml(_BASE_XML)
+    xml = _REPLACE_XML.replace("10|41|02|.04", "10|41|99|.04")
+    ops = parse_open_law_codify_ops(xml, source_id="editorial-actions/2026-01-22.xml")
+    result = replay_open_law_ops(tree, ops)
+
+    umbrella = failed_codification_findings(result.findings)
+
+    assert [finding.kind for finding in result.findings] == ["open_law_target_missing"]
+    assert [finding.kind for finding in umbrella] == ["open_law_failed_codification_source_bug"]
+    assert umbrella[0].source_pathology is True
+    assert umbrella[0].blocking is True
+    assert "source bug" in umbrella[0].message
+    # Idempotent: re-classifying does not stack umbrella findings.
+    assert failed_codification_findings(result.findings + umbrella) == umbrella
+
+
+def test_failed_codification_findings_ignores_non_pathology_findings() -> None:
+    # A clean typography projection is not a failed codification and must not be
+    # promoted into the source-bug lane.
+    findings = (
+        OpenLawFinding(
+            kind="open_law_snapshot_typography_projection",
+            message="typography.",
+            blocking=False,
+            source_pathology=False,
+        ),
+    )
+    assert failed_codification_findings(findings) == ()
+
+
+def test_corpus_audit_surfaces_failed_codification_source_bug_lane(tmp_path) -> None:
+    # Item 3 at corpus level: a body op whose declared target is absent in the
+    # source tree surfaces the named source-bug finding and never mutates.
+    source_repo = tmp_path / "law-xml"
+    codified_repo = tmp_path / "law-xml-codified"
+    _git_init(source_repo)
+    _git_init(codified_repo)
+    missing_target_action = _REPLACE_XML.replace("10|41|02|.04", "10|41|02|.99")
+    _write(source_repo / "editorial-actions" / "miss.xml", missing_target_action)
+    _git_commit_all(source_repo, "source")
+
+    _write(codified_repo / "index.xml", _index_xml("publication/before", ()))
+    _write(codified_repo / "us/md/exec/comar/10/41/02.xml", _chapter_xml("Old text."))
+    _git_commit_all(codified_repo, "before")
+    _git_branch(codified_repo, "publication/before")
+
+    _write(codified_repo / "index.xml", _index_xml("publication/after", ("editorial-actions/miss.xml",)))
+    _write(codified_repo / "editorial-actions" / "miss.xml", missing_target_action)
+    _write(codified_repo / "us/md/exec/comar/10/41/02.xml", _chapter_xml("Old text."))
+    _git_commit_all(codified_repo, "after")
+    _git_branch(codified_repo, "publication/after")
+
+    report = audit_maryland_transition(
+        "publication/before", "publication/after", repos=make_maryland_repos(source_repo, codified_repo)
+    )
+
+    row = report.operation_rows[0]
+    finding_kinds = [finding.kind for finding in row.findings]
+    assert "open_law_target_missing" in finding_kinds
+    assert "open_law_failed_codification_source_bug" in finding_kinds
+    source_bug = next(f for f in row.findings if f.kind == "open_law_failed_codification_source_bug")
+    assert source_bug.source_pathology is True
+
+
+def test_expire_tombstone_carrier_is_self_describing() -> None:
+    # Item 5: the executed tombstone is a typed, owned lifecycle carrier.
+    ops = parse_open_law_codify_ops(
+        """
+        <document xmlns="https://open.law/schemas/library" xmlns:codify="https://open.law/schemas/codify">
+          <codify:expire doc="Maryland Register, Volume 52, Issue 26" path="regulations|emergency|25-138-E" date="2026-11-20"/>
+        </document>
+        """,
+        source_id="editorial-actions/expire.xml",
+    )
+
+    tombstone, finding = execute_open_law_expiry(ops[0])
+
+    assert tombstone.doc == "Maryland Register, Volume 52, Issue 26"
+    assert tombstone.open_law_path == ("regulations", "emergency", "25-138-E")
+    assert tombstone.expire_date == "2026-11-20"
+    assert tombstone.jurisdiction == "maryland_register"
+    assert finding.kind == "open_law_expire_tombstoned"
+    assert finding.blocking is False
+
+
+def test_compiled_snapshot_never_authorizes_source_replay(tmp_path) -> None:
+    # Item 6 invariant: the compiled (after) tree is only a comparison surface;
+    # it must never change what source replay produces. Replaying the same source
+    # ops against the same source (before) tree yields identical mutations and
+    # identical replay tree regardless of which compiled snapshot it is later
+    # compared against.
+    before = parse_open_law_xml(_BASE_XML)
+    ops = parse_open_law_codify_ops(_REPLACE_XML, source_id="editorial-actions/2026-01-22.xml")
+
+    faithful_after = parse_open_law_xml(_BASE_XML.replace("Old text.", "New text."))
+    wrong_after = parse_open_law_xml(_BASE_XML.replace("Maryland Department of Health", "Tampered Title"))
+
+    faithful = audit_open_law_snapshot(before, faithful_after, ops)
+    tampered = audit_open_law_snapshot(before, wrong_after, ops)
+
+    # Source-lane replay is a pure function of (source tree, declared ops); the
+    # compiled snapshot only flips the comparison verdict, never the replay.
+    assert faithful.replay.tree == tampered.replay.tree
+    assert faithful.replay.mutations == tampered.replay.mutations
+    assert faithful.snapshot_matches_replay is True
+    assert tampered.snapshot_matches_replay is False
 
 
 def _chapter_xml(text: str) -> str:

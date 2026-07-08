@@ -107,7 +107,7 @@ def _pick_exemplars(rows: Tuple[OpenLawOperationAuditRow, ...]) -> dict[str, Evi
         ("clean_replace", lambda row: row.audit_status == "matched" and row.action == "replace"),
         ("replace_or_insert", lambda row: row.audit_status == "matched" and row.action == "replace-or-insert"),
         ("metadata_lane", lambda row: row.audit_status == "metadata_matched"),
-        ("lifecycle_lane", lambda row: row.audit_status == "lifecycle_unsupported"),
+        ("lifecycle_lane", lambda row: row.audit_status in {"lifecycle_tombstoned", "lifecycle_unsupported"}),
         ("divergence", lambda row: row.audit_status == "diverged"),
     )
     for name, predicate in wanted:
@@ -178,6 +178,7 @@ def _summary_markdown(
         "metadata_matched",
         "metadata_diverged",
         "lifecycle_unsupported",
+        "lifecycle_tombstoned",
         "snapshot_missing",
         "findings",
         "unexplained_paths",
@@ -198,7 +199,7 @@ def _summary_markdown(
             "",
             "- It does not independently interpret Maryland Register prose.",
             "- It does not treat Open Law annotation metadata as legal body text.",
-            "- It records but does not yet apply non-COMAR emergency-register expiry semantics.",
+            "- It replays codify:expire into a jurisdiction lifecycle tombstone (a typed expiry marker), not a tree deletion of unrelated state.",
             "- It does not treat git diffs alone as legal proof.",
             "",
             "## Exemplars",

@@ -18,6 +18,8 @@ from lawvm.core.tree_ops import resolve_required
 from lawvm.open_law.audit import (
     OpenLawSnapshotAuditResult,
     audit_open_law_snapshot,
+    execute_open_law_expiry,
+    failed_codification_findings,
     replay_open_law_ops,
     resolve_open_law_path,
 )
@@ -84,8 +86,33 @@ def audit_maryland_transition(
         ops = parse_open_law_codify_ops(action_xml, source_id=action_path)
         rows.extend(_audit_action_operations(repos, before_branch, after_branch, action_path, ops, strict=strict))
         if limit is not None and len(rows) >= limit:
-            return _report(_apply_reproducibility_gate(tuple(rows[:limit]), after_metadata))
-    return _report(_apply_reproducibility_gate(tuple(rows), after_metadata))
+            return _report(_apply_reproducibility_gate(_apply_failed_codification_gate(tuple(rows[:limit])), after_metadata))
+    return _report(_apply_reproducibility_gate(_apply_failed_codification_gate(tuple(rows)), after_metadata))
+
+
+def _apply_failed_codification_gate(
+    rows: Tuple[OpenLawOperationAuditRow, ...],
+) -> Tuple[OpenLawOperationAuditRow, ...]:
+    """Attach the named failed-codification-source-bug lane to failed rows.
+
+    A codify instruction that failed to apply already carries a specific,
+    blocking ``source_pathology`` finding (missing/ambiguous target, payload
+    mismatch, unplannable locator, ...). Open Law is cooperative structured
+    source: the publisher would have seen a compile-time error, so such a
+    failure surviving into published data is a source bug, not a replay-side
+    recovery target. This gate surfaces the failure once under the dedicated
+    ``open_law_failed_codification_source_bug`` rule id (the source-bug lane),
+    keeping the specific witness and never broadening a target to rescue it.
+    """
+
+    gated: list[OpenLawOperationAuditRow] = []
+    for row in rows:
+        umbrella = failed_codification_findings(row.findings)
+        if umbrella:
+            gated.append(replace(row, findings=row.findings + umbrella))
+        else:
+            gated.append(row)
+    return tuple(gated)
 
 
 def _apply_reproducibility_gate(
@@ -532,16 +559,7 @@ def _lifecycle_lane_row(
     action_path: str,
     op: OpenLawOperation,
 ) -> OpenLawOperationAuditRow:
-    finding = OpenLawFinding(
-        kind="open_law_expire_lifecycle_not_replayed",
-        message=(
-            "Open Law codify:expire is a lifecycle operation; this frontend records it "
-            f"with expire_date={op.expire_date or '-'} but does not replay expiry semantics yet."
-        ),
-        op_id=op.op_id,
-        path=op.path,
-        blocking=True,
-    )
+    _tombstone, finding = execute_open_law_expiry(op)
     return OpenLawOperationAuditRow(
         before_branch=before_branch,
         after_branch=after_branch,
@@ -550,7 +568,7 @@ def _lifecycle_lane_row(
         action=op.action.value,
         codify_path=op.path,
         xml_path="",
-        audit_status="lifecycle_unsupported",
+        audit_status="lifecycle_tombstoned",
         expire_date=op.expire_date,
         findings=(finding,),
     )
@@ -598,6 +616,7 @@ def _report(rows: Tuple[OpenLawOperationAuditRow, ...]) -> OpenLawCorpusAuditRep
         "metadata_matched": sum(1 for row in rows if row.audit_status == "metadata_matched"),
         "metadata_diverged": sum(1 for row in rows if row.audit_status == "metadata_diverged"),
         "lifecycle_unsupported": sum(1 for row in rows if row.audit_status == "lifecycle_unsupported"),
+        "lifecycle_tombstoned": sum(1 for row in rows if row.audit_status == "lifecycle_tombstoned"),
         "snapshot_missing": sum(1 for row in rows if row.audit_status == "snapshot_missing"),
         "findings": sum(len(row.findings) for row in rows),
         "unexplained_paths": sum(row.unexplained_path_count for row in rows),
@@ -642,7 +661,7 @@ def _operation_evidence_row(row: OpenLawOperationAuditRow) -> CorpusOperationEvi
         source_unit_id=f"{row.before_branch}->{row.after_branch}",
         source_locator="|".join(row.codify_path),
         effect_family=row.action,
-        canonical_family=row.action if row.audit_status in {"matched", "metadata_matched"} else "",
+        canonical_family=row.action if row.audit_status in {"matched", "metadata_matched", "lifecycle_tombstoned"} else "",
         original_target="|".join(row.codify_path),
         resolved_target=row.xml_path,
         evidence_status=_shared_status(row.audit_status),
@@ -727,7 +746,7 @@ def _finding_phase(finding_status: str) -> str:
         return "audit"
     if finding_status.startswith("metadata_"):
         return "metadata_audit"
-    if finding_status == "lifecycle_unsupported":
+    if finding_status in {"lifecycle_unsupported", "lifecycle_tombstoned"}:
         return "lifecycle"
     if finding_status == "planning_failed":
         return "planning"

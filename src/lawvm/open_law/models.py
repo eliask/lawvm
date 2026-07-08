@@ -68,6 +68,32 @@ class OpenLawOperation:
 
 
 @dataclass(frozen=True)
+class OpenLawLifecycleTombstone:
+    """A replayed ``codify:expire`` lifecycle result.
+
+    Open Law expiry produces a jurisdiction-dependent tombstone rather than a
+    single universal deletion semantics (regime contract §5.1). For Maryland the
+    declared ``codify:expire`` targets are Register emergency/proposed-regulation
+    identifiers (``regulations|emergency|<id>``) that are not nodes in the
+    persistent COMAR chapter tree, so the tombstone is a standalone typed
+    lifecycle marker: it records that the identified target became expired at
+    ``expire_date`` in this observer-time slice. It is emitted, owned, and
+    replayed — not left as an unexecuted lifecycle gap. It is never a silent
+    deletion of unrelated tree state.
+
+    ``jurisdiction`` names the tombstone regime that produced this marker so the
+    result is self-describing; core does not interpret frontend-local values.
+    """
+
+    op_id: str
+    doc: str
+    open_law_path: Tuple[str, ...]
+    expire_date: str
+    history: bool
+    jurisdiction: str = "maryland_register"
+
+
+@dataclass(frozen=True)
 class OpenLawFinding:
     """Audit observation emitted by the Open Law frontend.
 

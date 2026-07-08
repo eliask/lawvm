@@ -107,10 +107,15 @@ annotations with `display="false"`, a `doc`, a `path` attribute, and `eff` or
 `effective` date evidence; generic `display="false"` metadata is preserved and
 can still cause a metadata-lane divergence.
 
-`codify:expire` operations are visible in a lifecycle lane with their declared
-expiry date. The current frontend records
-`open_law_expire_lifecycle_not_replayed` and does not mutate COMAR or Maryland
-Register text until a tombstone/lifecycle lowering rule exists.
+`codify:expire` operations are replayed on a lifecycle lane into an owned,
+jurisdiction-dependent tombstone (`execute_open_law_expiry` →
+`OpenLawLifecycleTombstone`), recorded with `open_law_expire_tombstoned` and
+corpus status `lifecycle_tombstoned`. For Maryland the expire targets are
+Register emergency/proposed-regulation identifiers that are not COMAR chapter
+nodes, so the tombstone is a standalone typed lifecycle marker (target expired at
+the declared date); it never mutates or deletes unrelated COMAR or Maryland
+Register tree state. Full bitemporal materialization of tombstones is future
+work.
 
 ## 5. Snapshot Audit
 
