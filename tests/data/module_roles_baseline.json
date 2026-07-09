@@ -2,13 +2,13 @@
   "_doc": "Monotone module-role baseline. The `dead` and `test_only_live` sets may only SHRINK: a module born dead must be wired or deleted, never added to the population. The `replay_exercised` map is a SNAPSHOT: a module flipping replay-exercised status (either direction) fails the ratchet until re-baselined. Regenerate with `uv run python scripts/inventory_module_roles.py --update-baseline` after legitimately retiring (deleting) a dead/test-only module, wiring it to a production consumer, or refreshing the replay-coverage snapshot (tests/data/replay_coverage_snapshot.json — see its provenance.refresh_command).",
   "counts": {
     "dead": 78,
-    "live": 1140,
-    "test_only_live": 29
+    "live": 1143,
+    "test_only_live": 46
   },
   "replay_counts": {
     "exercised": 170,
-    "cold": 259,
-    "in_scope": 429
+    "cold": 269,
+    "in_scope": 439
   },
   "dead": [
     "lawvm.core.claim_assumption_binding",
@@ -100,6 +100,15 @@
     "lawvm.core.fire_drill_registry",
     "lawvm.core.invariant_spec",
     "lawvm.core.proof_surfaces",
+    "lawvm.core.source_document",
+    "lawvm.core.source_document.adjudication",
+    "lawvm.core.source_document.anchors",
+    "lawvm.core.source_document.composition",
+    "lawvm.core.source_document.coverage",
+    "lawvm.core.source_document.extraction",
+    "lawvm.core.source_document.ir",
+    "lawvm.core.source_document.proposal",
+    "lawvm.core.source_document.validation",
     "lawvm.eu.eu_acquire_closure",
     "lawvm.eu.eu_enumerate",
     "lawvm.finland.conformance_corpus.actors",
@@ -115,6 +124,14 @@
     "lawvm.finland.legal_surface.family_census",
     "lawvm.finland.references.annotation_independence_census",
     "lawvm.finland.references.annotation_witness_census",
+    "lawvm.finland.source_document",
+    "lawvm.finland.source_document.adjudicated_ingest",
+    "lawvm.finland.source_document.branch_conflicts",
+    "lawvm.finland.source_document.branch_lowering",
+    "lawvm.finland.source_document.he_draft",
+    "lawvm.finland.source_document.lausuntopalvelu",
+    "lawvm.finland.source_document.materialize",
+    "lawvm.finland.source_document.pdf_profiles",
     "lawvm.tools.corpus_io",
     "lawvm.tools.corpus_sweep",
     "lawvm.tools.fi_adjudication_audit",
@@ -227,7 +244,9 @@
     "lawvm.finland.legal_surface.tokenize",
     "lawvm.finland.legal_surface.union_ownership_census",
     "lawvm.finland.llm_backends",
+    "lawvm.finland.llm_backends.llm_adjudicator",
     "lawvm.finland.llm_backends.qwen_local",
+    "lawvm.finland.llm_backends.vision_producer",
     "lawvm.finland.morphology",
     "lawvm.finland.morphology.analyze",
     "lawvm.finland.morphology.lemma_index",
@@ -343,7 +362,9 @@
     "lawvm.us_federal.bootstrap"
   ],
   "optional_backend_modules": [
-    "lawvm.finland.llm_backends.qwen_local"
+    "lawvm.finland.llm_backends.llm_adjudicator",
+    "lawvm.finland.llm_backends.qwen_local",
+    "lawvm.finland.llm_backends.vision_producer"
   ],
   "unresolved_owner_residual": [
     "audit",
@@ -602,7 +623,9 @@
     "lawvm.finland.legal_surface.tokenize": false,
     "lawvm.finland.legal_surface.union_ownership_census": false,
     "lawvm.finland.llm_backends": false,
+    "lawvm.finland.llm_backends.llm_adjudicator": false,
     "lawvm.finland.llm_backends.qwen_local": false,
+    "lawvm.finland.llm_backends.vision_producer": false,
     "lawvm.finland.lowering_scope_recovery": true,
     "lawvm.finland.materialization_totality": false,
     "lawvm.finland.merge": true,
@@ -753,6 +776,14 @@
     "lawvm.finland.section_resolver": false,
     "lawvm.finland.section_text_extractor": false,
     "lawvm.finland.source_adjudication": true,
+    "lawvm.finland.source_document": false,
+    "lawvm.finland.source_document.adjudicated_ingest": false,
+    "lawvm.finland.source_document.branch_conflicts": false,
+    "lawvm.finland.source_document.branch_lowering": false,
+    "lawvm.finland.source_document.he_draft": false,
+    "lawvm.finland.source_document.lausuntopalvelu": false,
+    "lawvm.finland.source_document.materialize": false,
+    "lawvm.finland.source_document.pdf_profiles": false,
     "lawvm.finland.source_model": false,
     "lawvm.finland.source_normalization_kinds": true,
     "lawvm.finland.source_normalize": true,

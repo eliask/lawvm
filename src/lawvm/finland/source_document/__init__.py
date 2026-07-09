@@ -12,6 +12,21 @@ from lawvm.finland.source_document.adjudicated_ingest import (
     adjudicated_document_ingest,
     reading_order_pages_from_pdf,
 )
+from lawvm.finland.source_document.branch_conflicts import (
+    BranchConflictFinding,
+    BranchConflictKind,
+    BranchConflictSeverity,
+    diagnose_branch_conflicts,
+)
+from lawvm.finland.source_document.branch_lowering import (
+    candidate_op_to_legal_operation,
+    conditional_branch_to_legal_branch,
+)
+from lawvm.finland.source_document.lausuntopalvelu import (
+    HeFetchError,
+    fetch_he_draft,
+    resolve_dossier,
+)
 from lawvm.finland.source_document.materialize import (
     MaterializedProvision,
     apply_candidate_op,
@@ -35,6 +50,15 @@ from lawvm.finland.source_document.pdf_profiles import (
 )
 
 __all__ = [
+    "BranchConflictFinding",
+    "BranchConflictKind",
+    "BranchConflictSeverity",
+    "HeFetchError",
+    "candidate_op_to_legal_operation",
+    "conditional_branch_to_legal_branch",
+    "diagnose_branch_conflicts",
+    "fetch_he_draft",
+    "resolve_dossier",
     "HeDocKind",
     "MaterializedProvision",
     "apply_candidate_op",

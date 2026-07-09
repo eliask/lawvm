@@ -134,6 +134,11 @@ _REPLAY_EXEC_FLOOR = 0
 OPTIONAL_BACKEND_MODULES: frozenset[str] = frozenset(
     {
         "lawvm.finland.llm_backends.qwen_local",
+        # Draft-HE adjudication + vision transcription backends: env-gated on a
+        # local llama.cpp/OpenAI server (:8080), lazy-imported, 0% coverage
+        # EXPECTED offline — optional, never dead (like qwen_local).
+        "lawvm.finland.llm_backends.llm_adjudicator",
+        "lawvm.finland.llm_backends.vision_producer",
     }
 )
 
