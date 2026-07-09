@@ -178,7 +178,7 @@ def test_finding_rejects_bad_kind_and_severity() -> None:
 
     with pytest.raises(TypeError):
         BranchConflictFinding(
-            kind="duplicate_target",  # type: ignore[arg-type]
+            kind="duplicate_target",  # ty: ignore[invalid-argument-type]
             detail="x",
             severity=BranchConflictSeverity.INFO,
         )
