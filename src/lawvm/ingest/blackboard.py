@@ -26,9 +26,34 @@ discipline). ``verify_ledger`` remains the hard gate — a failed model ledger n
 reaches output; the promoted ledger is re-verified and, on failure, the whole
 region degrades to the deterministic fallback.
 
+SEAM NORM (architecture review, non-negotiable): **Level 1 owns BYTES (what text a
+region contains); Level 2 owns ARRANGEMENT (which nodes survive, in what order).
+Level 2 may NEVER originate or alter text.** The fold copies node text VERBATIM (a
+REJOIN is exact concatenation); ``verify_ledger``'s word-multiset containment
+MECHANICALLY enforces this. Two consequences:
+  * The composer DETECTS a garble (a ``GARBLE`` routing mark) but NEVER repairs it —
+    a garble is a FINDING routed BACK to Level 1's §8 re-read (through the existing
+    ``ExtractionAssertion`` → ``core.source_document.adjudication`` kernel), which
+    mints a NEW versioned simulacrum; then the cheap cached fold re-runs. There is
+    NO "visual transcriber" subagent (it would originate off-simulacrum text and
+    ``verify_ledger`` check 4 must reject it).
+  * ``VIEW`` is a DETECTION-ONLY context read; it can inform a GARBLE finding but
+    never originates composed text.
+
+The composer's real residual value (after conservative M1 + §8) is narrow and is
+delivered as small verifiable increments: (a) 3+-page structures (multi-page
+tables) via the bounded ``EXPAND`` affordance + the carried-open-tail fold; (b)
+``CONTESTED`` resolution. Plus an ESCALATE lane (below).
+
+ESCALATE = a first-class conditions-and-restarts lane (spec §10.1): an unexpected,
+out-of-vocabulary concern is SIGNALED (the signaler does not unwind — it stays live
+carrying resume state + the RESTARTS it offers as data) and routed UP (composer →
+orchestrator → human, the terminal handler); the chosen ``(condition, restart,
+handler)`` resolution is journaled for byte-identical replay. Never swallowed.
+
 FROZEN §5.5 carriers (``DeFacsimileClaim`` / ``DeFacsimileOp`` / ``SpanRef``) are
 extended ONLY additively — every new type here is a NEW dataclass, never a
-field-mutation of a frozen one.
+field-mutation of a frozen one; ``DeFacsimileClaim`` NEVER carries corrected text.
 """
 from __future__ import annotations
 
@@ -72,9 +97,20 @@ class MarkKind(Enum):
 
     EPISTEMIC family (the region's live status):
       * ``OPEN`` — needs more work (e.g. an unresolved continuation chain).
-      * ``GARBLE`` — a freeform-flagged region (math / image-baked / garbled).
       * ``CONTESTED`` — two sources posted conflicting decisions.
       * ``DEFER`` — a source asked to be re-scheduled with more context.
+
+    ROUTING family (a finding that leaves the composer — NEVER a repair; the
+    composer detects, it does not correct — SEAM NORM: L2 owns arrangement, never
+    bytes):
+      * ``GARBLE`` — a freeform-flagged region (math / image-baked / garbled). This
+        is a FINDING routed BACK to Level 1: it triggers the §8 re-read (which
+        produces a NEW versioned simulacrum, then the cheap cached fold re-runs).
+        The blackboard may DETECT a garble; it may NOT repair it.
+      * ``ESCALATE`` — an UNEXPECTED concern the typed vocabulary can't express
+        (out-of-scope defect, contradiction, "this looks like a Level-1 problem").
+        Routes UPWARD (composer → orchestrator → human) and is NEVER silently
+        swallowed — a first-class lane distinct from claims/findings.
 
     Serialization uses the descriptive ``.value`` label (the LLM-guide rule:
     internal codes never leak; the journal blob carries descriptive labels).
@@ -95,9 +131,11 @@ class MarkKind(Enum):
     DECIDE_REORDER = "decide_reorder"
     # epistemic
     OPEN = "open"
-    GARBLE = "garble"
     CONTESTED = "contested"
     DEFER = "defer"
+    # routing (leaves the composer — never a repair)
+    GARBLE = "garble"
+    ESCALATE = "escalate"
 
     @override
     def __str__(self) -> str:
@@ -124,11 +162,16 @@ _DECISION_KINDS = frozenset(
     }
 )
 _EPISTEMIC_KINDS = frozenset(
-    {MarkKind.OPEN, MarkKind.GARBLE, MarkKind.CONTESTED, MarkKind.DEFER}
+    {MarkKind.OPEN, MarkKind.CONTESTED, MarkKind.DEFER}
 )
+# ROUTING marks LEAVE the composer (a finding routed elsewhere, never an in-tree
+# repair). GARBLE → back to Level 1 (§8 re-read); ESCALATE → up to orchestrator/
+# human. Neither is a decision; neither originates or alters composed text.
+_ROUTING_KINDS = frozenset({MarkKind.GARBLE, MarkKind.ESCALATE})
 
-# The three epistemic marks that make a region LIVE (the controller keeps
-# scheduling until no live region remains and a sweep adds nothing).
+# The epistemic marks that make a region LIVE (the controller keeps scheduling
+# until no live region remains and a sweep adds nothing). A ROUTING mark does NOT
+# make a region live for the composer — it is handed off, not re-scheduled.
 _LIVE_EPISTEMIC = frozenset({MarkKind.OPEN, MarkKind.CONTESTED})
 
 # Which decision mark a resolved op promotes from.
@@ -160,11 +203,88 @@ class Mark:
     evidence_refs: Tuple[SpanRef, ...] = ()
     rationale: str = ""
     claim: Optional[DeFacsimileClaim] = None
+    # Present only on an ESCALATE mark: the full condition carrier (restarts as
+    # data, resume state, suggested owner). A CONDITION stays live until a handler
+    # picks a restart (journaled as an ``EscalationResolution``).
+    escalation: Optional["Escalation"] = None
 
     @property
     def region_key(self) -> Tuple[Tuple[int, Tuple[int, ...]], ...]:
         """Order-independent canonical identity of the region (for grouping)."""
         return tuple(sorted((r.page_num, r.node_path) for r in self.region))
+
+
+# --------------------------------------------------------------------------- #
+# Escalation as a CONDITION (conditions-and-restarts, spec §10.1).             #
+# --------------------------------------------------------------------------- #
+
+
+# The closed set of RESTARTS a signaler may offer. Restarts are DATA — a handler
+# up the chain picks one and the signaler resumes from the signal point; the
+# choice is journaled for byte-identical replay.
+class Restart(Enum):
+    """A valid way for a handler to continue an escalated condition (offered as data)."""
+
+    ROUTE_TO_LEVEL_1 = "route-to-level-1"
+    RE_READ_REGION_HIGHER_DPI = "re-read-region-higher-dpi"
+    USE_FALLBACK_READER = "use-fallback-reader"
+    MARK_UNRESOLVED_AND_CONTINUE = "mark-unresolved-and-continue"
+    ABORT_REGION = "abort-region"
+    DEFER_TO_HUMAN = "defer-to-human"
+
+    @override
+    def __str__(self) -> str:
+        return self.value
+
+
+# Suggested owner level for a condition (who SHOULD handle it, advisory).
+class OwnerLevel(Enum):
+    LEVEL_1 = "level_1"
+    COMPOSER = "composer"
+    ORCHESTRATOR = "orchestrator"
+    HUMAN = "human"
+
+    @override
+    def __str__(self) -> str:
+        return self.value
+
+
+@dataclass(frozen=True, slots=True)
+class Escalation:
+    """A first-class ESCALATE CONDITION routed UP (composer → orchestrator → human).
+
+    Modeled on Common-Lisp conditions-and-restarts (spec §10.1), NOT a fire-and-
+    forget record: the signaler does NOT unwind — it stays live carrying its
+    ``resume_state`` so a handler can RESUME it by choosing one of the ``restarts``
+    it offers (restarts are DATA — the valid ways to continue). A handler up the
+    chain picks a restart; the signaler resumes from the signal point. NEVER
+    silently swallowed (``human`` is the terminal handler); never a composed-tree
+    edit. Every ``(condition, chosen_restart, handler)`` resolution is journaled
+    (``EscalationResolution``) so a cache-HIT re-run replays it byte-identically.
+    """
+
+    origin_producer: str
+    origin_level: OwnerLevel
+    region: Tuple[SpanRef, ...]
+    violated_expectation: str  # the violated expectation, or the literal "unanticipated"
+    restarts: Tuple[Restart, ...]  # the valid ways to continue (offered as data)
+    suggested_owner: OwnerLevel
+    resume_state: str = ""  # signaler state needed to resume (compact, serializable)
+    rationale: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class EscalationResolution:
+    """The journaled ``(condition, chosen_restart, handler)`` triple (deterministic).
+
+    Recorded so a cache-HIT re-run replays the SAME resolution byte-identically. A
+    condition with no resolution yet is UNHANDLED — surfaced upward until the
+    terminal (human) handler picks a restart.
+    """
+
+    condition: Escalation
+    chosen_restart: Restart
+    handler: OwnerLevel
 
 
 # --------------------------------------------------------------------------- #
@@ -178,13 +298,18 @@ class AffordanceKind(Enum):
     READS (bounded by budget):
       * ``PAGE`` — request one page's blocks be rendered into the next prompt.
       * ``EXPAND`` — widen the region window to pages [lo, hi] (``max_context_pages``).
-      * ``VIEW`` — request a rasterized crop of a page bbox (``max_views``, consumes
-        ``visual.render_region_crop``).
+        THE keystone increment: a multi-page (3+) table is joined by EXPANDing the
+        seam window across the carried-open table tail.
+      * ``VIEW`` — request a rasterized crop of a page bbox (``max_views``). A
+        DETECTION-ONLY context read: the crop can inform a GARBLE finding but NEVER
+        originates composed text (SEAM NORM — L2 owns arrangement, never bytes).
       * ``NOTES`` — read the notes already posted on a region.
       * ``PREFIX`` — read the reduced-so-far document prefix (running context).
     WRITES:
       * ``NOTE`` — post a free note onto a region (shared scratch).
       * ``DEFER`` — ask to be re-scheduled with more context.
+      * ``ESCALATE`` — raise an UNEXPECTED, out-of-vocabulary concern UP the stack
+        (composer → orchestrator → human); a first-class lane, never swallowed.
     """
 
     PAGE = "page"
@@ -194,6 +319,7 @@ class AffordanceKind(Enum):
     PREFIX = "prefix"
     NOTE = "note"
     DEFER = "defer"
+    ESCALATE = "escalate"
 
 
 @dataclass(frozen=True, slots=True)
@@ -266,6 +392,15 @@ class Workspace:
     notes: Dict[Tuple[Tuple[int, Tuple[int, ...]], ...], List[str]] = field(
         default_factory=dict
     )
+    # region_key → the set of extra page numbers an EXPAND affordance widened the
+    # region's window to (the multi-page-table carried-open-tail increment). Persisted
+    # so a re-scheduling of the region sees the widened window.
+    expansions: Dict[Tuple[Tuple[int, Tuple[int, ...]], ...], List[int]] = field(
+        default_factory=dict
+    )
+    # The journaled (condition, chosen_restart, handler) resolutions — a cache-HIT
+    # re-run replays the same resolution byte-identically (conditions-and-restarts).
+    resolutions: List["EscalationResolution"] = field(default_factory=list)
     round: int = 0
 
     def post(self, mark: Mark) -> bool:
@@ -289,6 +424,70 @@ class Workspace:
     def notes_for(self, region: Tuple[SpanRef, ...]) -> Tuple[str, ...]:
         key = tuple(sorted((r.page_num, r.node_path) for r in region))
         return tuple(self.notes.get(key, ()))
+
+    def add_expansion(self, region: Tuple[SpanRef, ...], pages: Sequence[int]) -> None:
+        key = tuple(sorted((r.page_num, r.node_path) for r in region))
+        cur = self.expansions.setdefault(key, [])
+        for p in pages:
+            if p not in cur:
+                cur.append(p)
+        cur.sort()
+
+    def expansion_for(self, region: Tuple[SpanRef, ...]) -> Tuple[int, ...]:
+        key = tuple(sorted((r.page_num, r.node_path) for r in region))
+        return tuple(self.expansions.get(key, ()))
+
+    def signal_escalation(self, condition: "Escalation") -> bool:
+        """SIGNAL an escalation CONDITION onto the journal (does NOT unwind).
+
+        The condition stays live (carrying its ``resume_state`` + offered
+        ``restarts``) until a handler resolves it. Idempotent per
+        (producer, region, expectation). Returns whether it was newly signaled.
+        """
+        return self.post(
+            Mark(
+                kind=MarkKind.ESCALATE,
+                region=condition.region,
+                producer_id=condition.origin_producer,
+                round=self.round,
+                rationale=condition.rationale or condition.violated_expectation,
+                escalation=condition,
+            )
+        )
+
+    def resolve_escalation(
+        self, condition: "Escalation", chosen_restart: "Restart", handler: "OwnerLevel"
+    ) -> None:
+        """HANDLE a signaled condition by choosing one of its offered restarts.
+
+        Journals the ``(condition, chosen_restart, handler)`` triple so a cache-HIT
+        re-run replays the SAME resolution. Fail-loud if the chosen restart is not
+        one the signaler offered (a handler may only pick an offered restart).
+        """
+        if chosen_restart not in condition.restarts:
+            raise ValueError(
+                f"restart {chosen_restart} not offered by the condition "
+                f"(offered: {[str(r) for r in condition.restarts]})"
+            )
+        self.resolutions.append(
+            EscalationResolution(
+                condition=condition, chosen_restart=chosen_restart, handler=handler
+            )
+        )
+
+    def unhandled_escalations(self) -> Tuple["Escalation", ...]:
+        """The signaled conditions with NO journaled resolution (surfaced upward).
+
+        A condition with no resolution is UNHANDLED — routed up until the terminal
+        (human) handler picks a restart; NEVER silently swallowed.
+        """
+        resolved = {r.condition for r in self.resolutions}
+        out: List["Escalation"] = []
+        for m in self.marks:
+            if m.kind is MarkKind.ESCALATE and m.escalation is not None:
+                if m.escalation not in resolved:
+                    out.append(m.escalation)
+        return tuple(out)
 
     def marks_for_region(
         self, region_key: Tuple[Tuple[int, Tuple[int, ...]], ...]
@@ -505,7 +704,14 @@ def _handle_view(ctx: DispatchContext, req: AffordanceRequest) -> None:
 
 
 def _handle_expand(ctx: DispatchContext, req: AffordanceRequest) -> None:
-    """EXPAND <lo> <hi> — widen the region window (bounded by ``max_expansions``)."""
+    """EXPAND <lo> <hi> — widen the region window (bounded by ``max_expansions``).
+
+    THE keystone increment: a multi-page (3+) table is joined by EXPANDing the seam
+    window across the carried-open table tail. The widened page set is persisted on
+    the workspace (``add_expansion``) so the region's NEXT scheduling sees the full
+    3+-page window and the seam adjudicator folds the carried-open tail. Bounded by
+    ``max_expansions`` (and, via ``max_context_pages``, the total window width).
+    """
     if not ctx.used.can_expand(ctx.budget):
         return
     try:
@@ -513,10 +719,15 @@ def _handle_expand(ctx: DispatchContext, req: AffordanceRequest) -> None:
         hi = int(req.args[1])
     except (IndexError, ValueError):
         return
+    # Cap the widening at max_context_pages so a runaway EXPAND cannot blow the window.
+    hi = min(hi, lo + ctx.budget.max_context_pages - 1)
     ctx.used.expansions_used += 1
+    added: List[int] = []
     for n in range(lo, hi + 1):
         if n not in ctx.expanded_pages:
             ctx.expanded_pages.append(n)
+        added.append(n)
+    ctx.workspace.add_expansion(ctx.region, added)
 
 
 def _handle_page(ctx: DispatchContext, req: AffordanceRequest) -> None:
@@ -562,6 +773,40 @@ def _handle_defer(ctx: DispatchContext, req: AffordanceRequest) -> None:
     )
 
 
+# The default restarts a bare ESCALATE control line offers when the signaler did
+# not enumerate its own (a safe, non-destructive superset — the human terminal
+# handler can always DEFER_TO_HUMAN).
+_DEFAULT_ESCALATE_RESTARTS = (
+    Restart.ROUTE_TO_LEVEL_1,
+    Restart.MARK_UNRESOLVED_AND_CONTINUE,
+    Restart.DEFER_TO_HUMAN,
+)
+
+
+def _handle_escalate(ctx: DispatchContext, req: AffordanceRequest) -> None:
+    """ESCALATE — SIGNAL a first-class condition UP the stack (never swallowed).
+
+    An unexpected, out-of-vocabulary concern (an out-of-scope defect, a
+    contradiction, "this looks like a Level-1 problem") is SIGNALED as an
+    ``Escalation`` condition (conditions-and-restarts, spec §10.1): it carries the
+    violated expectation (here ``"unanticipated"`` for a bare control line), the
+    default restarts as data, and a suggested owner. It stays live until a handler
+    resolves it; the controller surfaces every unhandled condition in
+    ``BlackboardResult.escalations`` — NEVER silently dropped, never a tree edit.
+    """
+    ctx.workspace.signal_escalation(
+        Escalation(
+            origin_producer="affordance:escalate",
+            origin_level=OwnerLevel.COMPOSER,
+            region=ctx.region,
+            violated_expectation="unanticipated",
+            restarts=_DEFAULT_ESCALATE_RESTARTS,
+            suggested_owner=OwnerLevel.ORCHESTRATOR,
+            rationale=req.note_text or "source raised an out-of-vocabulary concern",
+        )
+    )
+
+
 # The EXTENSIBLE dispatch table: a new affordance is one registration here, not a
 # control-flow edit. Every handler is (DispatchContext, AffordanceRequest) -> None.
 AFFORDANCE_DISPATCH: Dict[
@@ -574,6 +819,7 @@ AFFORDANCE_DISPATCH: Dict[
     AffordanceKind.PREFIX: _handle_prefix,
     AffordanceKind.NOTE: _handle_note,
     AffordanceKind.DEFER: _handle_defer,
+    AffordanceKind.ESCALATE: _handle_escalate,
 }
 
 
@@ -590,7 +836,8 @@ def parse_affordance_line(line: str) -> Optional[AffordanceRequest]:
 
     Line grammar (the LLM-guide line-based discipline — never JSON):
       ``PAGE <n>`` · ``EXPAND <lo> <hi>`` · ``VIEW <n> [x0 y0 x1 y1]`` ·
-      ``NOTES`` · ``PREFIX`` · ``NOTE <text...>`` · ``DEFER [text...]``
+      ``NOTES`` · ``PREFIX`` · ``NOTE <text...>`` · ``DEFER [text...]`` ·
+      ``ESCALATE <text...>``
     """
     toks = line.strip().split()
     if not toks:
@@ -613,7 +860,7 @@ def parse_affordance_line(line: str) -> Optional[AffordanceRequest]:
     if kind is AffordanceKind.PAGE:
         page_num = int(rest[0]) if rest and rest[0].lstrip("-").isdigit() else None
         return AffordanceRequest(kind=kind, args=tuple(rest), page_num=page_num)
-    if kind in (AffordanceKind.NOTE, AffordanceKind.DEFER):
+    if kind in (AffordanceKind.NOTE, AffordanceKind.DEFER, AffordanceKind.ESCALATE):
         return AffordanceRequest(kind=kind, args=tuple(rest), note_text=" ".join(rest))
     return AffordanceRequest(kind=kind, args=tuple(rest))
 
@@ -711,14 +958,62 @@ def _detect_contests(ws: Workspace) -> bool:
     return added
 
 
+def _collect_routed_findings(
+    ws: Workspace,
+) -> Tuple[Tuple["RereadRequest", ...], Tuple["Escalation", ...]]:
+    """Lift every ROUTING mark (GARBLE / ESCALATE) off the journal — never swallowed.
+
+    GARBLE → a ``RereadRequest`` routed BACK to Level 1 (§8 re-read); ESCALATE → an
+    ``Escalation`` routed UP. Neither is a composed-tree edit; both LEAVE the
+    composer. Deterministic order (journal append order) so the routed set is
+    reproducible.
+    """
+    rereads: List["RereadRequest"] = []
+    for m in ws.marks:
+        if m.kind is MarkKind.GARBLE:
+            reason = m.rationale
+            if reason.startswith("freeform.reason="):
+                reason = reason[len("freeform.reason="):]
+            rereads.append(
+                RereadRequest(region=m.region, reason=reason or "garble", rationale=m.rationale)
+            )
+    # Only the UNHANDLED conditions are surfaced upward (a resolved one is journaled
+    # in ``workspace.resolutions`` and replays byte-identically on a cache HIT).
+    escalations = ws.unhandled_escalations()
+    return tuple(rereads), escalations
+
+
+@dataclass(frozen=True, slots=True)
+class RereadRequest:
+    """A GARBLE finding routed BACK to Level 1 — a re-read request, NOT a repair.
+
+    The blackboard DETECTED a garble (a math/image-baked/garbled-source region);
+    it hands the region back to Level 1's §8 re-read, which produces a NEW versioned
+    simulacrum (through the existing ``ExtractionAssertion`` → adjudication kernel),
+    after which the cheap cached fold re-runs. The composer NEVER repairs the text
+    itself (SEAM NORM — L2 owns arrangement, never bytes).
+    """
+
+    region: Tuple[SpanRef, ...]
+    reason: str
+    rationale: str = ""
+
+
 @dataclass
 class BlackboardResult:
-    """The blackboard run outcome: the promoted ledger + the workspace journal."""
+    """The blackboard run outcome: the promoted ledger + journal + routed findings.
+
+    ``rereads`` are the GARBLE findings handed BACK to Level 1 (§8 re-read); the
+    ``escalations`` are the ESCALATE findings routed UP — both LEAVE the composer
+    and are never silently swallowed (a first-class lane distinct from the ledger).
+    """
 
     ledger: DeFacsimileLedger
     workspace: Workspace
     termination: str  # fixpoint | budget_exhausted
     context_exhausted_regions: Tuple[Tuple[Tuple[int, Tuple[int, ...]], ...], ...]
+    rereads: Tuple[RereadRequest, ...] = ()
+    escalations: Tuple[Escalation, ...] = ()
 
 
 class BlackboardController:
@@ -778,8 +1073,13 @@ class BlackboardController:
                     crop_fn=self._crop_fn,
                     view_dpi=self._view_dpi,
                 )
+                expansion_before = workspace.expansion_for(target.region)
                 for req in out.affordances:
                     dispatch_affordance(ctx, req)
+                # An EXPAND that widened this region's window IS progress — the
+                # region will re-schedule next round with the fuller 3+-page window.
+                if workspace.expansion_for(target.region) != expansion_before:
+                    added_this_sweep = True
                 for mark in out.marks:
                     if workspace.post(mark):
                         added_this_sweep = True
@@ -792,11 +1092,14 @@ class BlackboardController:
             termination = "budget_exhausted"
 
         ledger, exhausted = self._promote(simulacra, workspace)
+        rereads, escalations = _collect_routed_findings(workspace)
         return BlackboardResult(
             ledger=ledger,
             workspace=workspace,
             termination=termination,
             context_exhausted_regions=tuple(exhausted),
+            rereads=rereads,
+            escalations=escalations,
         )
 
     def _promote(
@@ -892,20 +1195,24 @@ class SeamAdjudicatorSource(KnowledgeSource):
         self._adj = adjudicator
 
     def _window_for(
-        self, region: Tuple[SpanRef, ...], simulacra: Sequence[PageSimulacrum]
+        self,
+        region: Tuple[SpanRef, ...],
+        simulacra: Sequence[PageSimulacrum],
+        expansion: Sequence[int] = (),
     ) -> List[PageSimulacrum]:
         pages_in_region = sorted({r.page_num for r in region})
         by_num = {p.page_num: p for p in simulacra}
-        win: List[PageSimulacrum] = []
+        want: set[int] = set()
         for n in pages_in_region:
-            if n in by_num and by_num[n] not in win:
-                win.append(by_num[n])
-            # include the following page so a seam is a full 2-page window
-            if (n + 1) in by_num and by_num[n + 1] not in win:
-                win.append(by_num[n + 1])
+            want.add(n)
+            want.add(n + 1)  # the following page → a full 2-page seam window
+        # The carried-open-tail increment: an EXPAND widened this region to extra
+        # pages (a 3+-page table). Fold them into the window so the seam adjudicator
+        # joins the carried-open table tail across all of them.
+        want.update(expansion)
+        win = [by_num[n] for n in sorted(want) if n in by_num]
         if not win:
-            win = list(simulacra)
-        win.sort(key=lambda p: p.page_num)
+            win = sorted(simulacra, key=lambda p: p.page_num)
         return win
 
     def run(
@@ -914,7 +1221,9 @@ class SeamAdjudicatorSource(KnowledgeSource):
         region: Tuple[SpanRef, ...],
         simulacra: Sequence[PageSimulacrum],
     ) -> SourceOutput:
-        window = self._window_for(region, simulacra)
+        window = self._window_for(
+            region, simulacra, workspace.expansion_for(region)
+        )
         # The adjudicator's blackboard-aware entry returns (claims, affordances).
         result = self._adj.adjudicate_region(  # ty: ignore[unresolved-attribute]
             window, region, workspace.marks_for_region(_region_key(region)), workspace.notes_for(region)
@@ -1025,6 +1334,19 @@ def _claim_json(claim: DeFacsimileClaim) -> Dict[str, object]:
     }
 
 
+def _escalation_json(e: "Escalation") -> Dict[str, object]:
+    return {
+        "origin_producer": e.origin_producer,
+        "origin_level": e.origin_level.value,
+        "region": [_spanref_json(r) for r in e.region],
+        "violated_expectation": e.violated_expectation,
+        "restarts": [r.value for r in e.restarts],
+        "suggested_owner": e.suggested_owner.value,
+        "resume_state": e.resume_state,
+        "rationale": e.rationale,
+    }
+
+
 def _mark_json(mark: Mark) -> Dict[str, object]:
     return {
         "kind": mark.kind.value,
@@ -1034,22 +1356,38 @@ def _mark_json(mark: Mark) -> Dict[str, object]:
         "evidence_refs": [_spanref_json(e) for e in mark.evidence_refs],
         "rationale": mark.rationale,
         "claim": _claim_json(mark.claim) if mark.claim is not None else None,
+        "escalation": _escalation_json(mark.escalation) if mark.escalation is not None else None,
     }
 
 
 def serialize_workspace(ws: Workspace) -> bytes:
     """Workspace → deterministic sorted-keys JSON bytes (content-addressable).
 
-    The journal (marks, in append order) + the notes scratch. Same simulacra ⇒
+    The journal (marks, append order) + notes scratch + EXPAND widenings + the
+    (condition, chosen_restart, handler) resolution triples. Same simulacra ⇒
     byte-identical bytes ⇒ byte-identical digest — the determinism firewall.
     """
     notes_out = [
         {"region": [list(k) for k in region_key], "notes": list(texts)}
         for region_key, texts in sorted(ws.notes.items())
     ]
+    expansions_out = [
+        {"region": [list(k) for k in region_key], "pages": list(pages)}
+        for region_key, pages in sorted(ws.expansions.items())
+    ]
+    resolutions_out = [
+        {
+            "condition": _escalation_json(r.condition),
+            "chosen_restart": r.chosen_restart.value,
+            "handler": r.handler.value,
+        }
+        for r in ws.resolutions
+    ]
     payload = {
         "marks": [_mark_json(m) for m in ws.marks],
         "notes": notes_out,
+        "expansions": expansions_out,
+        "resolutions": resolutions_out,
     }
     return json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
 
@@ -1076,6 +1414,18 @@ def deserialize_workspace(data: bytes) -> Workspace:
             rationale=str(d.get("rationale", "")),
         )
 
+    def _escalation(d: Any) -> "Escalation":
+        return Escalation(
+            origin_producer=str(d["origin_producer"]),
+            origin_level=OwnerLevel(d["origin_level"]),
+            region=tuple(_ref(r) for r in d["region"]),
+            violated_expectation=str(d["violated_expectation"]),
+            restarts=tuple(Restart(r) for r in d["restarts"]),
+            suggested_owner=OwnerLevel(d["suggested_owner"]),
+            resume_state=str(d.get("resume_state", "")),
+            rationale=str(d.get("rationale", "")),
+        )
+
     marks: List[Mark] = []
     for md in payload.get("marks", ()):
         marks.append(
@@ -1087,6 +1437,7 @@ def deserialize_workspace(data: bytes) -> Workspace:
                 evidence_refs=tuple(_ref(e) for e in md.get("evidence_refs", ())),
                 rationale=str(md.get("rationale", "")),
                 claim=_claim(md["claim"]) if md.get("claim") is not None else None,
+                escalation=_escalation(md["escalation"]) if md.get("escalation") is not None else None,
             )
         )
     ws = Workspace(marks=marks)
@@ -1096,4 +1447,15 @@ def deserialize_workspace(data: bytes) -> Workspace:
             (int(k[0]), tuple(k[1])) for k in entry["region"]
         )
         ws.notes[region_key] = list(entry["notes"])  # type: ignore[index]
+    for entry in payload.get("expansions", ()):
+        region_key = tuple((int(k[0]), tuple(k[1])) for k in entry["region"])
+        ws.expansions[region_key] = [int(p) for p in entry["pages"]]
+    for entry in payload.get("resolutions", ()):
+        ws.resolutions.append(
+            EscalationResolution(
+                condition=_escalation(entry["condition"]),
+                chosen_restart=Restart(entry["chosen_restart"]),
+                handler=OwnerLevel(entry["handler"]),
+            )
+        )
     return ws

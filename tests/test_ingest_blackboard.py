@@ -29,9 +29,12 @@ from lawvm.ingest.blackboard import (
     BlackboardController,
     BudgetLedger,
     DispatchContext,
+    Escalation,
     KnowledgeSource,
     Mark,
     MarkKind,
+    OwnerLevel,
+    Restart,
     SeamAdjudicatorSource,
     SourceOutput,
     Workspace,
@@ -213,13 +216,15 @@ def _ctx(**kw) -> DispatchContext:
 
 
 def test_parse_affordance_lines() -> None:
-    assert parse_affordance_line("PAGE 3").kind is AffordanceKind.PAGE
-    assert parse_affordance_line("PAGE 3").page_num == 3
+    page = parse_affordance_line("PAGE 3")
+    assert page is not None and page.kind is AffordanceKind.PAGE and page.page_num == 3
     ex = parse_affordance_line("EXPAND 2 5")
-    assert ex.kind is AffordanceKind.EXPAND and ex.args == ("2", "5")
+    assert ex is not None and ex.kind is AffordanceKind.EXPAND and ex.args == ("2", "5")
     v = parse_affordance_line("VIEW 4 0.1 0.2 0.3 0.4")
+    assert v is not None
     assert v.kind is AffordanceKind.VIEW and v.page_num == 4 and v.bbox == (0.1, 0.2, 0.3, 0.4)
     note = parse_affordance_line("NOTE this is furniture")
+    assert note is not None
     assert note.kind is AffordanceKind.NOTE and note.note_text == "this is furniture"
     assert parse_affordance_line("DROP p1n0") is None  # an op line, not an affordance
 
@@ -486,3 +491,233 @@ def test_get_workspace_absent_is_none() -> None:
             assert store.get_workspace("parsed/nope/x@y/defacsimile_workspace.json") is None
         finally:
             store.close()
+
+
+# --------------------------------------------------------------------------- #
+# 7. SEAM NORM: L2 never originates text (fold copies verbatim)              #
+# --------------------------------------------------------------------------- #
+
+
+def test_seam_norm_composer_never_originates_text() -> None:
+    # Every word in the composed tree must appear in the simulacra (verify_ledger
+    # check 4). A REJOIN is exact concatenation; the fold copies node text verbatim.
+    pages = _seam_pages()
+    plan = {
+        frozenset({"p1n1", "p2n1"}): ((_rejoin_claim(SpanRef(1, (1,)), SpanRef(2, (1,))),), ()),
+    }
+    doc, _ = defacsimile_blackboard(pages, _ROOT_ANCHOR, adjudicator=_FakeAdjudicator(plan))
+    sim_words = set()
+    for p in pages:
+        for n in p.nodes:
+            sim_words.update(n.text.split())
+
+    def _walk(n):
+        for w in n.text.split():
+            assert w in sim_words, f"composer originated text: {w!r}"
+        for c in n.children:
+            _walk(c)
+
+    _walk(doc.root)
+
+
+# --------------------------------------------------------------------------- #
+# 8. EXPAND increment: multi-page (3+) table via carried-open-tail            #
+# --------------------------------------------------------------------------- #
+
+
+def _cell(text: str, page: int) -> SourceDocumentNode:
+    return SourceDocumentNode(
+        kind=SourceDocumentNodeKind.TABLE_CELL,
+        assurance_tier=AssuranceTier.SINGLE_WITNESS,
+        anchor=_anchor(page),
+        text=text,
+    )
+
+
+def _row(text: str, page: int) -> SourceDocumentNode:
+    return SourceDocumentNode(
+        kind=SourceDocumentNodeKind.TABLE_ROW,
+        assurance_tier=AssuranceTier.SINGLE_WITNESS,
+        anchor=_anchor(page),
+        children=(_cell(text, page),),
+    )
+
+
+def _table(text: str, page: int) -> SourceDocumentNode:
+    return SourceDocumentNode(
+        kind=SourceDocumentNodeKind.TABLE,
+        assurance_tier=AssuranceTier.SINGLE_WITNESS,
+        anchor=_anchor(page),
+        children=(_row(text, page),),
+        attrs=encode_metadata(NodeMetadata(y_order=0)),
+    )
+
+
+def _four_page_table() -> list[PageSimulacrum]:
+    return [
+        _page(1, (_table("alpha", 1),)),
+        _page(2, (_table("beta", 2),)),
+        _page(3, (_table("gamma", 3),)),
+        _page(4, (_table("delta", 4),)),
+    ]
+
+
+class _ExpandThenRejoinAdjudicator:
+    """First scheduling (window 1-3) emits EXPAND to reach the open tail on page 4;
+    the second (window 1-4) REJOINs all four table fragments into one table."""
+
+    def is_available(self) -> bool:
+        return True
+
+    def adjudicate_region(self, window, region, region_marks, region_notes):
+        page_nums = tuple(sorted(p.page_num for p in window))
+        if 4 not in page_nums:
+            # The carried-open table tail is still off-window → widen to reach page 4.
+            return _RegionResult(claims=(), affordances=(
+                AffordanceRequest(kind=AffordanceKind.EXPAND, args=("1", "4")),
+            ))
+        rejoin = DeFacsimileClaim(
+            op=DeFacsimileOp.REJOIN,
+            targets=tuple(SpanRef(n, (0,)) for n in (1, 2, 3, 4)),
+            tier=AssuranceTier.SINGLE_WITNESS,
+            corroborating_producers=("defacsimile_adjudicator",),
+            rationale="multi-page table rejoin after EXPAND",
+        )
+        return _RegionResult(claims=(rejoin,), affordances=())
+
+
+def test_expand_increment_joins_four_page_table() -> None:
+    pages = _four_page_table()
+    ws = preseed_workspace(pages)
+    region = (SpanRef(1, (0,)), SpanRef(2, (0,)))
+    # Seed an OPEN region on the first seam so the controller schedules it.
+    ws.post(Mark(kind=MarkKind.OPEN, region=region, producer_id="test", round=0))
+    controller = BlackboardController(
+        [SeamAdjudicatorSource(_ExpandThenRejoinAdjudicator())],
+        budget=BlackboardBudget(max_rounds=6, max_expansions=2, max_context_pages=4),
+    )
+    result = controller.run(pages, ws)
+    # The EXPAND was recorded on the workspace (reaching the page-4 open tail).
+    assert ws.expansion_for(region) == (1, 2, 3, 4)
+    reduced = apply_ledger(pages, result.ledger, _ROOT_ANCHOR)
+    assert verify_ledger(pages, result.ledger, reduced) == []
+    tables = [c for c in reduced.children if c.kind is SourceDocumentNodeKind.TABLE]
+    assert len(tables) == 1
+    rows = [cell.text for row in tables[0].children for cell in row.children]
+    assert rows == ["alpha", "beta", "gamma", "delta"]
+
+
+def test_expand_bounded_by_max_expansions() -> None:
+    ws = Workspace()
+    region = (SpanRef(1, (0,)),)
+    ctx = _ctx(workspace=ws, region=region, budget=BlackboardBudget(max_expansions=1))
+    dispatch_affordance(ctx, AffordanceRequest(kind=AffordanceKind.EXPAND, args=("1", "2")))
+    dispatch_affordance(ctx, AffordanceRequest(kind=AffordanceKind.EXPAND, args=("5", "6")))
+    # Only the first EXPAND consumed budget; the second is a no-op.
+    assert ctx.used.expansions_used == 1
+    assert ws.expansion_for(region) == (1, 2)
+
+
+# --------------------------------------------------------------------------- #
+# 9. GARBLE routed BACK to Level 1 (a finding, NOT a repair)                 #
+# --------------------------------------------------------------------------- #
+
+
+def test_garble_routes_back_to_level_1_as_reread_not_repair() -> None:
+    p = _page(
+        1,
+        (_node(SourceDocumentNodeKind.MATH_REGION, "sum", 1, meta=NodeMetadata(freeform_reason="garbled_source")),),
+    )
+    controller = BlackboardController([])  # no source needed; preseed already marked GARBLE
+    ws = preseed_workspace([p])
+    result = controller.run([p], ws)
+    assert len(result.rereads) == 1
+    rr = result.rereads[0]
+    assert rr.region == (SpanRef(1, (0,)),)
+    assert rr.reason == "garbled_source"
+    # The garble is a FINDING (re-read request) — it never became a claim/edit.
+    assert result.ledger.claims == ()
+
+
+# --------------------------------------------------------------------------- #
+# 10. ESCALATE as a condition-and-restarts carrier                          #
+# --------------------------------------------------------------------------- #
+
+
+def test_escalate_affordance_signals_condition_with_restarts() -> None:
+    ws = Workspace()
+    region = (SpanRef(1, (0,)),)
+    ctx = _ctx(workspace=ws, region=region)
+    dispatch_affordance(ctx, AffordanceRequest(
+        kind=AffordanceKind.ESCALATE, note_text="looks like a Level-1 read defect"))
+    esc = ws.unhandled_escalations()
+    assert len(esc) == 1
+    cond = esc[0]
+    assert cond.violated_expectation == "unanticipated"
+    assert Restart.DEFER_TO_HUMAN in cond.restarts
+    assert cond.suggested_owner is OwnerLevel.ORCHESTRATOR
+    assert "Level-1" in cond.rationale
+
+
+def test_escalate_parse_control_line() -> None:
+    req = parse_affordance_line("ESCALATE out of scope contradiction")
+    assert req is not None
+    assert req.kind is AffordanceKind.ESCALATE
+    assert req.note_text == "out of scope contradiction"
+
+
+def test_escalate_surfaced_in_result_when_unhandled() -> None:
+    pages = _seam_pages()
+    ws = preseed_workspace(pages)
+
+    class _Escalator(KnowledgeSource):
+        source_id = "escalator"
+
+        def run(self, workspace, region, simulacra):
+            return SourceOutput(affordances=(
+                AffordanceRequest(kind=AffordanceKind.ESCALATE, note_text="unexpected"),
+            ))
+
+    controller = BlackboardController([_Escalator()], budget=BlackboardBudget(max_rounds=3))
+    result = controller.run(pages, ws)
+    assert len(result.escalations) >= 1
+
+
+def test_escalate_resolution_journaled_and_replays() -> None:
+    ws = Workspace()
+    region = (SpanRef(1, (0,)),)
+    cond = Escalation(
+        origin_producer="seam_adjudicator",
+        origin_level=OwnerLevel.COMPOSER,
+        region=region,
+        violated_expectation="table has no header row",
+        restarts=(Restart.ROUTE_TO_LEVEL_1, Restart.DEFER_TO_HUMAN),
+        suggested_owner=OwnerLevel.LEVEL_1,
+        resume_state="seam=1-2;carried_open=table",
+        rationale="unexpected headerless table",
+    )
+    assert ws.signal_escalation(cond)
+    assert ws.unhandled_escalations() == (cond,)
+    # A handler picks an OFFERED restart → journaled triple; now handled.
+    ws.resolve_escalation(cond, Restart.ROUTE_TO_LEVEL_1, OwnerLevel.ORCHESTRATOR)
+    assert ws.unhandled_escalations() == ()
+    assert len(ws.resolutions) == 1
+    assert ws.resolutions[0].chosen_restart is Restart.ROUTE_TO_LEVEL_1
+    # The resolution round-trips byte-identically (deterministic replay).
+    blob = serialize_workspace(ws)
+    restored = deserialize_workspace(blob)
+    assert serialize_workspace(restored) == blob
+    assert restored.unhandled_escalations() == ()
+    assert restored.resolutions[0].chosen_restart is Restart.ROUTE_TO_LEVEL_1
+
+
+def test_resolve_rejects_unoffered_restart() -> None:
+    ws = Workspace()
+    cond = Escalation(
+        origin_producer="x", origin_level=OwnerLevel.COMPOSER, region=(SpanRef(1, (0,)),),
+        violated_expectation="unanticipated", restarts=(Restart.DEFER_TO_HUMAN,),
+        suggested_owner=OwnerLevel.HUMAN,
+    )
+    ws.signal_escalation(cond)
+    with pytest.raises(ValueError):
+        ws.resolve_escalation(cond, Restart.ABORT_REGION, OwnerLevel.HUMAN)
