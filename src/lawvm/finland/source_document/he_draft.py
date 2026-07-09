@@ -226,6 +226,8 @@ def _preamble_of(seg_low: str) -> str:
     """
     j = seg_low.find(_JOHTOLAUSE_MARK)
     rest = seg_low[j + len(_JOHTOLAUSE_MARK):] if j != -1 else seg_low
+    # bounded johtolause-preamble boundary locator (first seuraavasti:/§-head/luku-head)
+    # lawvm-regex: owning_parser — locates the preamble slice the verb classifier reads; does not interpret legal state
     m = re.search(_PREAMBLE_END_PATTERN, rest)
     return rest[: m.start()] if m else rest
 
