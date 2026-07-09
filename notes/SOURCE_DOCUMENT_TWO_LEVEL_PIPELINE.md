@@ -508,3 +508,133 @@ the whole-page read is the 1-region degenerate case.
 - **Sequencing:** track **P6**, stacks on P5 (reuses `ingest/visual.py` + the region-read
   + the intra-page span-copy stitch) and shares `page_level.py`/`vision_producer.py` with
   P5 — so it is Wave 3 (after P5 merges), not parallel to it.
+
+
+## 10. Review outcomes (Fable-5) — BINDING decisions
+
+Holistic architecture review (Fable-5, 2026-07-10). Verdict: the design is coherent
+but had begun to **fork into two adjudication universes** — the new converge/re-read/
+de-facsimile machinery was producing/mutating text through bespoke paths while the
+mature producer-neutral `core.source_document.adjudication` kernel (Nemotron /
+pdfplumber / reading-order witnesses → `ExtractionAssertion` → `assurance_for`) was
+sidelined. These decisions unfork it. User-ratified 2026-07-10.
+
+1. **Seam norm (binding):** **Level 1 owns BYTES** (what text a region contains);
+   **Level 2 owns ARRANGEMENT** (which nodes survive, in what order). **Level 2 may
+   never originate or alter text.** `verify_ledger`'s word-multiset containment is the
+   mechanical enforcement — never weaken it. Consequence: **§7.3's "visual transcriber"
+   is deleted** (it would emit text present in no simulacrum → `verify_ledger` must
+   reject). A L2 `GARBLE` mark is a **finding routed back to Level 1** (§8 re-read →
+   new versioned simulacrum → cheap cached fold re-run). The blackboard may DETECT, not
+   REPAIR.
+2. **Unification (adopted now):** §8/§9 reads and re-reads flow through the EXISTING
+   `ExtractionAssertion` → `core.source_document.adjudication` kernel — candidates
+   {original vision read, re-read@300dpi, pdfium line, docling/nemotron} adjudicated by
+   the core `Adjudicator`; the composed node's tier comes from `assurance_for` over
+   **genuinely distinct producers**. "Regional multi-witness tier" is then the existing
+   kernel doing its job, not new machinery. Retire `_page_assurance`'s 1500-char
+   page-prefix tier → weakest-of-regions. `DeFacsimileClaim` stays (arrangement) but
+   never carries corrected text.
+3. **§7 blackboard = DEFERRED / shrunk.** Largest surface, smallest measured defect
+   class after conservative M1 + §8. Ship only the narrow residual: a **bounded `EXPAND`
+   affordance** on the conservative seam adjudicator + the **carried-open-tail fold**
+   (3+-page tables) and `CONTESTED` resolution — NOT the full mark-journal /
+   subagent-scheduler apparatus. (P1 reshaped in place to this.)
+4. **Calibration reframe:** accuracy-vs-granularity is a **U-curve** (coarse → garble/
+   truncation; fine → lost linguistic context). Control variables are **pixels-per-glyph**
+   and **output-tokens-per-call** cliffs, not region count. Operate at **0.7× the cliff
+   load** (that is the home of the user's "−30% margin"). Emit a **deterministic adaptive
+   `subdivide(page_elements)` policy** (a pure function of geometry; thresholds folded
+   into the modality tag), not a global constant. Score **end-to-end post-stitch,
+   NUMERIC-exact primary**; gold = pdfium text layer (born-digital, free per-region,
+   geometry-aligned) + authoritative XML (document-level, and the only gold for scanned
+   pages). Validate the oracle-free proxies (overlap/cross-reader disagreement rates)
+   against gold in the SAME run — the experiment's real product is a validated monitoring
+   instrument, not a constant.
+5. **Modality:** reject "N adjacent crops → one joined-text call" as a primary regime
+   (breaks verifiability-by-reference; output-heavy; one bad crop poisons the call).
+   Use the hybrid the design already implements: read images per-region, make the JOIN
+   decision over TEXT. Multi-crop only as a bounded, anchored seam/re-read escalation
+   (patch-shaped output).
+6. **Overlap:** cut regions at semantic layout-element boundaries (no pixel tiles, no
+   mid-line); **1-line corroboration overlap**. **Agreement = self-consistency metadata,
+   NEVER a tier bump** (same producer, correlated failures — would debase the assurance
+   vocabulary); **disagreement = `SuspectRegion`** (a cheap strong localizer). Genuine
+   tier-raising corroboration requires a DIFFERENT producer. Freeze a `RegionRead`
+   carrier (region_id, page, bbox, covered element ids, overlap-zone element ids, edge
+   cues, col/y-order, crop digest+dpi) before P6.
+7. **Determinism pins:** fold a **digest of the prompt-constant set into the version tag**
+   (a prompt edit without a tag bump silently changes semantics under the same key);
+   **append-only store**, same-key re-run divergence surfaced as a first-class
+   self-consistency signal (temp=0 is not bit-stable on llama.cpp) — never a silent
+   overwrite; deterministic controller scheduling order with tie-breaks; **merge parallel
+   region reads by region id**, never completion order; all budgets count events, never
+   wall-clock.
+8. **Fix now — real bug:** `page_level._line_index_by_text` binds geometry to nodes by
+   exact normalized text, first-wins → any leaf the converge loop or §8 re-read CORRECTS
+   loses its `PageLine` bbox (→ un-re-readable, and L2 loses geometry exactly where the
+   page is hardest); recurring identical lines all bind to the first occurrence. Bind by
+   **source-line index captured at cold-read time**. Prerequisite for §8 to keep working;
+   applied to P5 at integration.
+9. **Latent fidelity gaps to schedule:** REJOIN `_rejoin_text` single-space join breaks
+   discretionary-hyphen seams (`valtio-` + `neuvosto` → `valtio- neuvosto`) while the
+   exact-concatenation gate forbids fixing it in the fold → **dehyphenate at L1** (bytes
+   are L1's job); document that `verify_ledger`'s numeric/word checks are **global
+   multiset (a ratchet, not positional proof)**; delete the dead `ContinuationJudge`
+   LLM-substitution hook (superseded by the L2 adjudicator).
+
+### 10.1 Escalation = a condition/restart protocol (all levels) — user directive 2026-07-10
+
+Escalation is not merely an upward-routed record; it is the pipeline's **condition
+system**, closer to Common Lisp's conditions-and-restarts (and its reflective
+metaobject flavor) than to Python's unwind-the-stack exceptions. The shape:
+
+- **Expectations are an explicit contract handed to each level.** Every producer /
+  subagent / level receives the invariants it must uphold and the assumptions it may rely
+  on (L1 read: "crop arrives at DPI≥θ; emit only governed kinds; every leaf witnessable";
+  L2 composer: "simulacra are faithful; never originate text; `verify_ledger` must pass").
+  The contract is **data, declared per level** (the MOP flavor) — the harness dispatches
+  generically and new expectation kinds are added declaratively, not by rewriting control
+  flow. This is the same "typed, extensible dispatch table" discipline as §7.2.
+- **Any violation of the contract — OR any unanticipated concern the typed vocabulary
+  can't express — SIGNALS a condition.** This is the catch-all *beyond* the known
+  pathology families (`SOURCE_PATHOLOGY_AND_ADJUDICATION_SPEC`); it fires on the
+  *unexpected*. Signaling does NOT force an unwind — the signaler stays live, carrying its
+  state, so a handler can resume it.
+- **The signaler offers RESTARTS** — the menu of valid ways to continue from the signal
+  point: e.g. `re-read-region-higher-dpi`, `route-to-level-1`, `use-fallback-reader`,
+  `mark-unresolved-and-continue`, `abort-region`, `defer-to-human`. Restarts are data too.
+- **Handlers up the chain (producer → composer → orchestrator → human) pick a restart.**
+  The nearest handler with enough context resolves it; if none can, it propagates upward,
+  never silently swallowed. A **human-in-the-loop handler is the first-class TERMINAL
+  handler.** The chosen restart resumes the signaler from the signal point — no lost work,
+  no blind retry-from-scratch (the Python-exception failure mode).
+- **Determinism preserved:** the handler POLICY (which restart for which condition) is
+  itself deterministic and versioned where automated, and every `(condition, chosen
+  restart, handler)` triple is recorded in the journal — a cache-HIT re-run replays the
+  same resolution byte-identically; only a genuinely new / human restart is a new journal
+  entry. This **subsumes today's hardcoded fallbacks**: backend-down → `compose_pages`
+  becomes the `use-fallback-reader` restart of an `extractor-unavailable` condition,
+  making all fallbacks uniform, auditable, and overridable.
+- **Relation to existing doctrine:** this is the operational form of "prefer explicit
+  pathology/adjudication over silent recovery" — a condition is the explicit signal, a
+  restart is the explicit provenance-carrying recovery, and refusal-to-guess is just the
+  `mark-unresolved` / `defer-to-human` restart.
+
+The `ESCALATE` mark of §7/P1 is the first concrete instance: it carries origin level /
+producer, region / anchor, the violated expectation (or `"unanticipated"`), the signaler
+state, **the offered restarts**, and a suggested owner level. Precedent: the
+de-facsimile-tuning agent correctly signalled "the garble is a Level-1 read defect, out
+of my (Level-2) scope" and offered the `route-to-level-1` restart — that class of signal
+must be structural, not incidental.
+
+### 10.2 Sequencing (Fable-5, ratified)
+
+NOW: adopt the seam norm + unification (decisions 1-2); reshape P1 (decision 3); land §8
+through the unified shape + the geometry-bridge fix (decision 8). NEXT: the calibration
+harness (decision 4) built on the P2 corpus e2e harness, BEFORE §9 implementation —
+born-digital pages may already be at ceiling, so calibration decides how much of §9 to
+build. THEN: §9 adaptive-only on the frozen `RegionRead` carrier (decision 6). The
+minimal accuracy-moving version — L1 converge + §8 re-read with one genuine cross-reader
++ conservative M1 + NUMERIC-exact e2e gate — is ~90% landed; marginal accuracy per hour
+is now in calibration + the geometry-bridge fix, not new composition machinery.
