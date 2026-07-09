@@ -1,11 +1,11 @@
-"""Bulk parse driver: bounded per-PDF concurrency + lane routing (hermetic).
+"""Bulk parse driver: bounded per-PDF concurrency + struct lane (hermetic).
 
 Exercises ``parse_attachments_into_store``'s ThreadPoolExecutor path with the LLM
 + farchive seams faked: correct hit/parsed/failure aggregation across workers, a
 per-worker store connection opened + closed inside each task (Farchive is
 thread-affine — one connection per thread), typed failure of a bad attachment
-(never a crash that sinks the pool), and struct-vs-flat lane routing. No server,
-no farchive, no PDF lib.
+(never a crash that sinks the pool), and the struct build-script routing. No
+server, no farchive, no PDF lib.
 """
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ class _Spec:
     pipeline_id = "adjudicated_vision"
     version = "vX"
 
-    def __init__(self, modality: str) -> None:
+    def __init__(self, modality: str = "struct_span") -> None:
         self.transcription_modality = modality
 
 
@@ -40,7 +40,7 @@ class _FakeStore:
         self.closed = True
 
 
-def _wire(monkeypatch, locs, *, modality: str, parse_fn=None, struct_fn=None):
+def _wire(monkeypatch, locs, *, modality: str = "struct_span", parse_fn=None):
     import lawvm.finland.source_document.pdf_profiles as pp
 
     monkeypatch.setattr(fpa, "resolve_pipeline", lambda **kw: _Spec(modality))
@@ -49,9 +49,7 @@ def _wire(monkeypatch, locs, *, modality: str, parse_fn=None, struct_fn=None):
     # ``_parse_one`` imports this inside; make the "manifestation" just be the locator.
     monkeypatch.setattr(pp, "load_manifestation_from_farchive", lambda loc, **kw: loc)
     if parse_fn is not None:
-        monkeypatch.setattr(fpa, "parse_and_cache", parse_fn)
-    if struct_fn is not None:
-        monkeypatch.setattr(fpa, "parse_struct_and_cache", struct_fn)
+        monkeypatch.setattr(fpa, "parse_struct_and_cache", parse_fn)
 
 
 def test_concurrent_run_aggregates_hits_parses_and_typed_failures(monkeypatch) -> None:
@@ -62,8 +60,8 @@ def test_concurrent_run_aggregates_hits_parses_and_typed_failures(monkeypatch) -
             raise ValueError("boom")  # a bad attachment → typed failure, not a crash
         return ParsedRecord(ir={}, manifest={}, cache_hit=m.endswith("/2.pdf"))
 
-    _wire(monkeypatch, locs, modality="full_transcription", parse_fn=parse_fn)
-    report = fpa.parse_attachments_into_store(modality="full_transcription", workers=4)
+    _wire(monkeypatch, locs, parse_fn=parse_fn)
+    report = fpa.parse_attachments_into_store(modality="struct_span", workers=4)
 
     assert report.scanned == 10
     assert report.failed == 1
@@ -72,23 +70,19 @@ def test_concurrent_run_aggregates_hits_parses_and_typed_failures(monkeypatch) -
     assert len(report.failures) == 1 and "ValueError" in report.failures[0]
 
 
-def test_struct_modality_routes_to_struct_and_cache(monkeypatch) -> None:
+def test_struct_lane_calls_parse_struct_and_cache(monkeypatch) -> None:
     locs = [("finlex://x/0.pdf", "attachment")]
-    called = {"flat": 0, "struct": 0}
+    called = {"struct": 0}
 
     def parse_fn(m, store, *, spec, force=False):
-        called["flat"] += 1
-        return ParsedRecord(ir={}, manifest={}, cache_hit=False)
-
-    def struct_fn(m, store, *, spec, force=False):
         called["struct"] += 1
         return ParsedRecord(ir={}, manifest={}, cache_hit=False)
 
-    _wire(monkeypatch, locs, modality="struct_span", parse_fn=parse_fn, struct_fn=struct_fn)
-    report = fpa.parse_attachments_into_store(modality="struct_span", workers=2)
+    _wire(monkeypatch, locs, modality="struct_patch", parse_fn=parse_fn)
+    report = fpa.parse_attachments_into_store(modality="struct_patch", workers=2)
 
     assert report.parsed == 1
-    assert called["struct"] == 1 and called["flat"] == 0  # struct lane, not flat
+    assert called["struct"] == 1
 
 
 def test_limit_caps_scanned(monkeypatch) -> None:
@@ -97,8 +91,8 @@ def test_limit_caps_scanned(monkeypatch) -> None:
     def parse_fn(m, store, *, spec, force=False):
         return ParsedRecord(ir={}, manifest={}, cache_hit=False)
 
-    _wire(monkeypatch, locs, modality="full_transcription", parse_fn=parse_fn)
-    report = fpa.parse_attachments_into_store(modality="full_transcription", limit=7, workers=4)
+    _wire(monkeypatch, locs, parse_fn=parse_fn)
+    report = fpa.parse_attachments_into_store(modality="struct_span", limit=7, workers=4)
     assert report.scanned == 7 and report.parsed == 7
 
 
@@ -117,9 +111,9 @@ def test_worker_opens_and_closes_its_own_store_per_task(monkeypatch) -> None:
         assert store.closed is False  # store is live during the parse
         return ParsedRecord(ir={}, manifest={}, cache_hit=False)
 
-    _wire(monkeypatch, locs, modality="full_transcription", parse_fn=parse_fn)
+    _wire(monkeypatch, locs, parse_fn=parse_fn)
     monkeypatch.setattr(fpa, "ParsedIrStore", _TrackStore)
-    report = fpa.parse_attachments_into_store(modality="full_transcription", workers=3)
+    report = fpa.parse_attachments_into_store(modality="struct_span", workers=3)
 
     assert report.parsed == 4
     assert len(opened) == 4  # one store per task

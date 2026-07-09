@@ -9,7 +9,7 @@ ISOLATION CONTRACT (the reason this module exists): the heavy torch/VLM stack
 lives in ``subprojects/nemotron_parse/`` with its OWN pyproject; this module
 NEVER imports it. The only coupling is a subprocess wire contract — the
 service CLI takes a page PNG on stdin and returns the SAME compact ``KIND:``
-block format ``vision_producer._parse_blocks`` already understands (contract
+block format ``_parse_blocks`` (below) understands (contract
 frozen in ``subprojects/nemotron_parse/README.md`` + golden, and pinned from
 both sides by ``tests/test_fi_nemotron_client.py`` here and the subproject's
 hermetic ``test_wire_contract.py``).
@@ -34,15 +34,58 @@ import shlex
 import subprocess
 from typing import Optional, Tuple
 
+from typing import Mapping
+
 from lawvm.core.source_document.anchors import SourceAnchor
 from lawvm.core.source_document.extraction import (
     ExtractionAssertion,
     SourceManifestation,
 )
-from lawvm.finland.llm_backends.vision_producer import _parse_blocks
 
 #: Env var naming the service command (shlex-split). Unset => unavailable.
 SERVICE_CMD_ENV = "LAWVM_NEMOTRON_PARSE_CMD"
+
+# Governed ``KIND: text`` block vocabulary this thin client's transcription
+# output uses (was shared with the removed flat vision lane; now local to the
+# sole remaining user).
+_VISION_KINDS: Mapping[str, str] = {
+    "HEADING": "heading",
+    "PARA": "paragraph",
+    "ITEM": "item",
+    "TABLE": "table",
+    "FOOTNOTE": "footnote",
+}
+
+
+def _parse_blocks(content: str) -> Tuple[Tuple[str, str], ...]:
+    """Parse ``KIND: text`` blocks (wrapped lines allowed). No JSON, no regex.
+
+    A line whose head before the first ``:`` is a governed KIND starts a block;
+    everything until the next such line is that block's (possibly multi-line)
+    text. A colon inside legal text (``4 §:ään``) never starts a block. An
+    un-governed KIND is dropped, never relabeled.
+    """
+    blocks: list[tuple[str, str]] = []
+    cur_kind: Optional[str] = None
+    cur_lines: list[str] = []
+
+    def flush() -> None:
+        if cur_kind is not None:
+            text = "\n".join(cur_lines).strip()
+            if text:
+                blocks.append((cur_kind, text))
+
+    for line in content.splitlines():
+        head, sep, rest = line.partition(":")
+        mapped = _VISION_KINDS.get(head.strip().upper()) if sep else None
+        if mapped is not None:
+            flush()
+            cur_kind = mapped
+            cur_lines = [rest.strip()]
+        elif cur_kind is not None:
+            cur_lines.append(line)
+    flush()
+    return tuple(blocks)
 
 
 class NemotronParseFailure(Exception):

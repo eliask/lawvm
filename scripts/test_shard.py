@@ -680,11 +680,6 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_he_conditional_branch.py",
         # Reproducible draft-HE acquisition (lausuntopalvelu / hankeikkuna URL).
         "test_fi_lausuntopalvelu.py",
-        # Vision page producer: compact-line transcription → anchored candidates.
-        "test_fi_vision_producer.py",
-        # Span-copy modality: model emits structure + line spans; the text is
-        # span-copied from the reading-order lines by code (output-sparse).
-        "test_fi_vision_span_copy.py",
         # Nemotron-Parse thin client: process-isolated vision producer
         # (subprojects/nemotron_parse) — wire contract + isolation ratchet.
         "test_fi_nemotron_client.py",
@@ -692,8 +687,6 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_docling_producer.py",
         # Cross-page composition: per-page trees → one whole-document IR.
         "test_source_document_composition.py",
-        # Per-page adjudicated ingest → composed whole-document IR.
-        "test_fi_adjudicated_ingest.py",
         # Materialize a conditional branch against enacted law (if-enacted diff).
         "test_fi_materialize.py",
         "test_fi_address_parse.py",

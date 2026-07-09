@@ -22,14 +22,17 @@ from lawvm.finland.source_document.parsed_store import (
     ParsedRecord,
     PipelineSpec,
     _serialize_parsed_record,
-    parse_and_cache,
+    parse_struct_and_cache,
     parsed_ir_locator,
     resolve_pipeline,
 )
 from lawvm.tools.fi_parse_attachments import _classify
 
 _DIGEST = "a" * 64
-_SPEC = PipelineSpec(pipeline_id="test", version="v0", vision=None, adjudicator=None)
+_SPEC = PipelineSpec(
+    pipeline_id="test", version="v0", vision=None, adjudicator=None,
+    transcription_modality="struct_span",
+)
 
 
 def _manifestation() -> SourceManifestation:
@@ -91,18 +94,18 @@ class _FakeStore:
         return "digest"
 
 
-def test_parse_and_cache_miss_then_hit(monkeypatch) -> None:
+def test_parse_struct_and_cache_miss_then_hit(monkeypatch) -> None:
     calls = {"n": 0}
 
-    def _fake_parse(manifestation, spec, *, max_pages=5000, parsed_at=None):
+    def _fake_parse(manifestation, spec, store, *, max_pages=5000, parsed_at=None):
         calls["n"] += 1
         return ParsedRecord(ir={"kind": "hcontainer"}, manifest={"source_digest": manifestation.artifact_digest}, cache_hit=False)
 
-    monkeypatch.setattr(ps, "parse_pdf_to_ir", _fake_parse)
+    monkeypatch.setattr(ps, "parse_struct_pdf_to_ir", _fake_parse)
     store = _FakeStore()
-    r1 = parse_and_cache(_manifestation(), store, spec=_SPEC)  # ty: ignore[invalid-argument-type]
+    r1 = parse_struct_and_cache(_manifestation(), store, spec=_SPEC)  # ty: ignore[invalid-argument-type]
     assert r1.cache_hit is False and calls["n"] == 1
-    r2 = parse_and_cache(_manifestation(), store, spec=_SPEC)
+    r2 = parse_struct_and_cache(_manifestation(), store, spec=_SPEC)
     assert r2.cache_hit is True and calls["n"] == 1  # not re-parsed
     assert r2.ir == r1.ir
 
@@ -110,14 +113,14 @@ def test_parse_and_cache_miss_then_hit(monkeypatch) -> None:
 def test_force_reparses_even_on_hit(monkeypatch) -> None:
     calls = {"n": 0}
 
-    def _fake_parse(manifestation, spec, *, max_pages=5000, parsed_at=None):
+    def _fake_parse(manifestation, spec, store, *, max_pages=5000, parsed_at=None):
         calls["n"] += 1
         return ParsedRecord(ir={"kind": "hcontainer"}, manifest={}, cache_hit=False)
 
-    monkeypatch.setattr(ps, "parse_pdf_to_ir", _fake_parse)
+    monkeypatch.setattr(ps, "parse_struct_pdf_to_ir", _fake_parse)
     store = _FakeStore()
-    parse_and_cache(_manifestation(), store, spec=_SPEC)  # ty: ignore[invalid-argument-type]
-    parse_and_cache(_manifestation(), store, spec=_SPEC, force=True)  # ty: ignore[invalid-argument-type]
+    parse_struct_and_cache(_manifestation(), store, spec=_SPEC)  # ty: ignore[invalid-argument-type]
+    parse_struct_and_cache(_manifestation(), store, spec=_SPEC, force=True)  # ty: ignore[invalid-argument-type]
     assert calls["n"] == 2
 
 

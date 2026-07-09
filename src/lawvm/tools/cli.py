@@ -9715,8 +9715,8 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
     parse_att_p.add_argument("--verbose", "-v", action="store_true", help="print per-batch progress")
     parse_att_p.add_argument(
         "--modality", default="struct_span",
-        choices=["struct_span", "struct_full", "struct_auto", "full_transcription", "span_copy", "auto"],
-        help="parse lane (default: struct_span — the v2 build-script; struct_* share one grammar)",
+        choices=["struct_span", "struct_full", "struct_auto", "struct_patch"],
+        help="build-script leaf-content lane (default: struct_span; all share one grammar)",
     )
     parse_att_p.add_argument(
         "--workers", type=int, default=None, metavar="N",
@@ -9745,8 +9745,8 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
     parse_cmp_p.add_argument("--lang", default="fin", help="HE language for the XML gold (default: fin)")
     parse_cmp_p.add_argument("--max-pages", type=int, default=6, dest="max_pages",
                              help="pages to compare (default: 6; the vision lane is ~15s/page)")
-    parse_cmp_p.add_argument("--no-flat", action="store_true",
-                             help="skip the legacy flat full-transcription reference lane")
+    parse_cmp_p.add_argument("--no-patch", action="store_true",
+                             help="skip the struct_patch reference lane")
     parse_cmp_p.add_argument("--json", action="store_true", help="emit JSON instead of the text report")
 
     # --- structural-review ---

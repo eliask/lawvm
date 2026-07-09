@@ -113,6 +113,50 @@ def test_sub_line_char_span_reorder() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# struct_patch: addressed char-span / whole-line deltas over the numbered lines #
+# --------------------------------------------------------------------------- #
+
+
+def test_patch_char_span_corrects_a_line_before_span_copy() -> None:
+    # Line 3 "valmisteveroa 4 senttiä litralta." — patch chars 0-13 (the first
+    # token) to a corrected form; a PARA that references L3 reads the corrected text.
+    wire = f"1 PATCH 0 L3.0-13: valmisteveroa{US}2 PARA 0 L3{US}"
+    r = parse_struct_wire(wire, _LINES)
+    assert r.patches_applied == 1
+    assert r.roots[0].text == "valmisteveroa 4 senttiä litralta."
+    # The PATCH itself is a delta, NOT a tree node — only the PARA is a root.
+    assert len(r.roots) == 1 and r.roots[0].kind is SourceDocumentNodeKind.PARAGRAPH
+
+
+def test_patch_whole_line_replaces_the_line() -> None:
+    wire = f"1 PATCH 0 L5: 42{US}2 PARA 0 L5{US}"
+    r = parse_struct_wire(wire, _LINES)
+    assert r.patches_applied == 1
+    assert r.roots[0].text == "42"
+
+
+def test_multiple_char_patches_on_one_line_apply_right_to_left() -> None:
+    # Two non-overlapping char patches on line 2; right-to-left application keeps
+    # the earlier span's offsets valid even when the later span changes length.
+    wire = (
+        f"1 PATCH 0 L2.0-3: XXXX{US}"   # replace "Sen" (0-3) with longer "XXXX"
+        f"2 PATCH 0 L2.4-11: YY{US}"    # replace "lisäksi" (4-11) with shorter "YY"
+        f"3 PARA 0 L2{US}"
+    )
+    r = parse_struct_wire(wire, _LINES)
+    assert r.patches_applied == 2
+    assert r.roots[0].text == "XXXX YY, mitä 1 momentissa säädetään, hakijalle palautetaan"
+
+
+def test_out_of_range_patch_is_a_finding_not_a_crash() -> None:
+    wire = f"1 PATCH 0 L99: x{US}2 PATCH 0 L2.500-600: y{US}3 PARA 0 L2{US}"
+    r = parse_struct_wire(wire, _LINES)
+    assert r.patches_applied == 0
+    assert any("out of range" in f for f in r.findings)
+    assert r.roots[0].text == _LINES[1]  # untouched
+
+
+# --------------------------------------------------------------------------- #
 # Wire parse: inline (full) leaves + images (same grammar)                    #
 # --------------------------------------------------------------------------- #
 
@@ -361,7 +405,7 @@ def test_struct_ingest_rejects_non_struct_modality() -> None:
     with pytest.raises(ValueError):
         ai.struct_document_ingest(
             _manifestation(), vision=object(), page_element_producer=object(),
-            transcription_modality="span_copy",
+            transcription_modality="not_a_struct_lane",
         )
 
 
@@ -382,18 +426,18 @@ def test_struct_modality_folds_into_a_distinct_coexisting_cache_key(monkeypatch)
     monkeypatch.setattr(vp_mod.VisionPageProducer, "_resolve_model", lambda self: "test-vlm")
     monkeypatch.setattr(la.LlmWorkflowAdjudicator, "is_available", lambda self: True)
 
-    span = resolve_pipeline(transcription_modality="span_copy")
     s_span = resolve_pipeline(transcription_modality="struct_span")
     s_full = resolve_pipeline(transcription_modality="struct_full")
+    s_patch = resolve_pipeline(transcription_modality="struct_patch")
     assert "+wire=structbuild.v1" in s_span.version and "+leaf=span" in s_span.version
     assert "+leaf=full" in s_full.version
-    # struct lanes get a page-element producer; the flat span lane does not.
+    assert "+leaf=patch" in s_patch.version
+    # Every struct lane gets a page-element producer (one shared grammar).
     assert s_span.page_element_producer is not None
-    assert span.page_element_producer is None
-    # All four keys COEXIST (distinct content-addressed records).
+    # Each leaf lane's key COEXISTS as a distinct content-addressed record.
     keys = {
         parsed_ir_locator("z" * 64, s.pipeline_id, s.version)
-        for s in (span, s_span, s_full)
+        for s in (s_span, s_full, s_patch)
     }
     assert len(keys) == 3
 

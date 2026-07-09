@@ -119,6 +119,7 @@ class StructBuildResult:
     terminator_used: bool = False
     total_command_lines: int = 0
     terminated_command_lines: int = 0
+    patches_applied: int = 0
 
 
 # --------------------------------------------------------------------------- #
@@ -290,6 +291,73 @@ def _resolve_src_text(
 
 
 # --------------------------------------------------------------------------- #
+# PATCH ops — addressed char-span corrections against the numbered lines        #
+# --------------------------------------------------------------------------- #
+#
+# A ``PATCH`` command is NOT a tree node — it is a DELTA: an addressed correction
+# to a numbered line, applied BEFORE the tree's text is span-copied. Its src is a
+# char span ``L5.10-25`` (replace those chars) or a whole line ``L5`` (replace the
+# line); the correction text follows in the inline payload. This is the
+# output-sparse alternative to inline re-transcription: the model emits ONLY the
+# deltas vs the extracted text, not a re-type. The same primitive lets a later
+# pass refine a PRIOR reconstruction (the numbered lines are just the current
+# state, whatever produced them) — iterated to an empty patch, it converges.
+#
+# Patches are single-line only, so applying them never shifts line indices other
+# refs depend on; multiple char patches on one line apply RIGHT-TO-LEFT to
+# preserve offsets (the mev insertion discipline).
+
+
+def _apply_patches(
+    lines: Sequence[str], patch_cmds: Sequence["_RawCommand"]
+) -> Tuple[List[str], List[str], int]:
+    """Apply PATCH deltas to a copy of ``lines`` → (patched_lines, findings, count).
+
+    A char-span patch ``L5.10-25`` replaces chars [10,25) of line 5; a whole-line
+    patch ``L5`` replaces line 5. Multi-line ``L2-5`` patches are DROPPED (they
+    would shift line indices). Char patches on one line apply right-to-left.
+    """
+    buf = list(lines)
+    findings: List[str] = []
+    per_line: Dict[int, List[Tuple[Optional[int], Optional[int], str]]] = {}
+    for cmd in patch_cmds:
+        char = _parse_char_ref(cmd.src_token)
+        if char is not None:
+            ln, cs, ce = char
+            per_line.setdefault(ln, []).append((cs, ce, cmd.inline_text))
+            continue
+        line = _parse_line_ref(cmd.src_token)
+        if line is not None:
+            a, b = line
+            if a != b:
+                findings.append(f"multi-line PATCH {cmd.src_token} dropped (would shift line indices)")
+                continue
+            per_line.setdefault(a, []).append((None, None, cmd.inline_text))
+            continue
+        findings.append(f"unresolvable PATCH src {cmd.src_token!r} dropped")
+
+    count = 0
+    for ln, ops in per_line.items():
+        if not (1 <= ln <= len(buf)):
+            findings.append(f"PATCH line {ln} out of range")
+            continue
+        s = buf[ln - 1]
+        whole = [t for (a, _b, t) in ops if a is None]
+        if whole:
+            s = whole[-1]  # last whole-line replacement wins
+            count += 1
+        spans = sorted(((a, b, t) for (a, b, t) in ops if a is not None), key=lambda x: -(x[0] or 0))
+        for a, b, t in spans:
+            if a is not None and b is not None and 0 <= a <= b <= len(s):
+                s = s[:a] + t + s[b:]
+                count += 1
+            else:
+                findings.append(f"PATCH char span {a}-{b} out of range on line {ln}")
+        buf[ln - 1] = s
+    return buf, findings, count
+
+
+# --------------------------------------------------------------------------- #
 # Tree assembly                                                                #
 # --------------------------------------------------------------------------- #
 
@@ -340,11 +408,20 @@ def parse_struct_wire(
             terminated_cmds += 1
         commands.append((cmd, terminated))
 
+    # PATCH pass: apply addressed char-span/whole-line deltas to the numbered
+    # lines BEFORE any node text is span-copied, so the tree reads the corrected
+    # text. PATCH commands are consumed here (not tree nodes).
+    patch_cmds = [c for c, _t in commands if c.kind_token == "PATCH"]
+    lines, patch_findings, patches_applied = _apply_patches(lines, patch_cmds)
+    findings.extend(patch_findings)
+
     # Pass 1: validate kind + resolve src → immutable payload; record emission order.
     payloads: Dict[int, _NodePayload] = {}
     parent_of: Dict[int, int] = {}
     emission_order: List[int] = []
     for cmd, _terminated in commands:
+        if cmd.kind_token == "PATCH":
+            continue  # already consumed by the PATCH pass
         kind = _STRUCT_KINDS.get(cmd.kind_token)
         if kind is None:
             findings.append(f"un-governed kind dropped: {cmd.kind_token!r}")
@@ -404,4 +481,5 @@ def parse_struct_wire(
         terminator_used=STRUCT_COMMAND_SEPARATOR in content,
         total_command_lines=total_cmds,
         terminated_command_lines=terminated_cmds,
+        patches_applied=patches_applied,
     )

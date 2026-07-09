@@ -12,10 +12,10 @@ full-transcription lane on the SAME PDF and reports, per page and total:
   * assurance-tier histogram per modality;
   * 0x1F terminator-compliance rate (the known small-VLM risk).
 
-The PRIMARY fair comparison is ``struct_span`` vs structured ``struct_full``:
-same build-script grammar, the ONLY difference is how a text leaf is populated
-(reading-order span-copy vs inline model transcription). ``full_flat`` (the
-legacy v1 flat lane) is reported for reference.
+The PRIMARY fair comparison is ``struct_span`` vs ``struct_full``: same
+build-script grammar, the ONLY difference is how a text leaf is populated
+(reading-order span-copy vs inline model transcription). ``struct_patch``
+(span-copy + addressed char-span deltas) is reported alongside.
 
 The vision backend is assumed present (localhost:8080); if it is unreachable the
 harness FAILS LOUD (``ParseBackendUnavailable``) — there is no deterministic
@@ -137,38 +137,6 @@ def _struct_lane_report(
     )
 
 
-def _full_flat_lane_report(
-    manifestation: SourceManifestation, max_pages: int, output_chars: List[int]
-) -> LaneReport:
-    """Run the legacy flat full-transcription lane over the whole PDF and summarize."""
-    from lawvm.finland.source_document.adjudicated_ingest import adjudicated_document_ingest
-    from lawvm.finland.llm_backends.llm_adjudicator import LlmWorkflowAdjudicator
-
-    vision = _CharCountingVision(output_chars, max_tokens=3000)
-    adjudicator = LlmWorkflowAdjudicator(verify_pass=False, max_tokens=2000)
-    doc = adjudicated_document_ingest(
-        manifestation,
-        vision=vision,  # ty: ignore[invalid-argument-type]
-        adjudicator=adjudicator if adjudicator.is_available() else None,
-        max_pages=max_pages,
-        transcription_modality="full_transcription",
-    )
-    node_count, depth, tables, headings, images, tiers, recon = _tree_stats(doc.root)
-    return LaneReport(
-        modality="full_flat",
-        output_chars=sum(output_chars),
-        reconstructed_chars=len(recon),
-        node_count=node_count,
-        tree_depth=depth,
-        n_tables=tables,
-        n_headings=headings,
-        n_images=images,
-        tier_histogram=tiers,
-        terminator_rate=None,  # flat lane has no build-script terminator
-        words=_words(recon),
-    )
-
-
 class _CharCountingVision:
     """VisionPageProducer wrapper that tallies the model's raw output chars per call."""
 
@@ -180,18 +148,6 @@ class _CharCountingVision:
 
     def is_available(self) -> bool:
         return self._inner.is_available()
-
-    def propose_page(self, manifestation, page_num):
-        from lawvm.finland.llm_backends.vision_producer import VisionProducerTruncated
-
-        before = len(self._sink)
-        try:
-            out = self._inner.propose_page(manifestation, page_num)
-        except VisionProducerTruncated:
-            return ()
-        if len(self._sink) == before:
-            self._sink.append(sum(len(a.text) for a in out))
-        return out
 
     def propose_page_struct(self, manifestation, page_num, page_elements, *, leaf_mode="span"):
         from lawvm.finland.llm_backends.vision_producer import VisionProducerTruncated
@@ -258,17 +214,17 @@ def run_compare(
     manifestation: SourceManifestation,
     *,
     max_pages: int = 6,
-    include_flat: bool = True,
+    include_patch: bool = True,
     xml_gold: Optional[frozenset] = None,
 ) -> CompareReport:
-    """Run struct_span, struct_full, and (optionally) full_flat over one PDF + report."""
+    """Run struct_span, struct_full, and (optionally) struct_patch over one PDF + report."""
     lanes: List[LaneReport] = []
     span_report = _struct_lane_report(manifestation, "struct_span", max_pages, [])
     lanes.append(span_report)
     full_report = _struct_lane_report(manifestation, "struct_full", max_pages, [])
     lanes.append(full_report)
-    if include_flat:
-        lanes.append(_full_flat_lane_report(manifestation, max_pages, []))
+    if include_patch:
+        lanes.append(_struct_lane_report(manifestation, "struct_patch", max_pages, []))
 
     ratio = (
         span_report.output_chars / full_report.output_chars
@@ -356,7 +312,7 @@ def main(args: argparse.Namespace) -> None:
     report = run_compare(
         manifestation,
         max_pages=args.max_pages,
-        include_flat=not args.no_flat,
+        include_patch=not args.no_patch,
         xml_gold=xml_gold,
     )
     if args.json:

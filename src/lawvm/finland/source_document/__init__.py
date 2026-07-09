@@ -9,8 +9,8 @@ for structured output (attachments, PDF-only bodies, draft HE bill text).
 See the approved plan at ``.claude/plans/calm-kindling-wand.md``.
 """
 from lawvm.finland.source_document.adjudicated_ingest import (
-    adjudicated_document_ingest,
     reading_order_pages_from_pdf,
+    struct_document_ingest,
 )
 from lawvm.finland.source_document.branch_conflicts import (
     BranchConflictFinding,
@@ -64,7 +64,7 @@ __all__ = [
     "apply_candidate_op",
     "load_enacted_provision",
     "materialize_conditional_provision",
-    "adjudicated_document_ingest",
+    "struct_document_ingest",
     "reading_order_pages_from_pdf",
     "HeDraftProposal",
     "PdfIngestResult",

@@ -36,7 +36,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from lawvm.core.source_document.extraction import SourceManifestation
 from lawvm.core.source_document.ir import SourceDocumentNode
@@ -121,26 +121,6 @@ class _TolerantVision:
     def is_available(self) -> bool:
         return self._inner.is_available()  # ty: ignore[unresolved-attribute]
 
-    def propose_page(self, manifestation: SourceManifestation, page_num: int) -> Tuple[Any, ...]:
-        from lawvm.finland.llm_backends.vision_producer import VisionProducerTruncated
-
-        try:
-            return self._inner.propose_page(manifestation, page_num)  # ty: ignore[unresolved-attribute]
-        except VisionProducerTruncated:
-            return ()
-
-    def propose_page_spans(
-        self, manifestation: SourceManifestation, page_num: int, reading_order_text: str
-    ) -> Tuple[Any, ...]:
-        from lawvm.finland.llm_backends.vision_producer import VisionProducerTruncated
-
-        try:
-            return self._inner.propose_page_spans(  # ty: ignore[unresolved-attribute]
-                manifestation, page_num, reading_order_text
-            )
-        except VisionProducerTruncated:
-            return ()
-
     def propose_page_struct(
         self, manifestation: SourceManifestation, page_num: int, page_elements: Any, *, leaf_mode: str = "span"
     ) -> Any:
@@ -211,40 +191,32 @@ class _TolerantAdjudicator:
             )
 
 
-# Modality → version-string tag. ``full_transcription`` stays UNTAGGED so the
-# pre-modality records (which were all full transcription) remain cache HITS for
-# that lane; span/auto records get a DISTINCT content-addressed key and COEXIST
-# with full-transcription records for the same source.
-#
-# Two families of lane coexist under distinct content-addressed tags:
-#   * LEGACY FLAT lanes (v1) — the original per-page flat-block reads. Their
-#     tags are UNCHANGED so their existing records stay byte-identical cache
-#     hits: ``full_transcription`` (untagged), ``span_copy``, ``auto``.
-#   * STRUCTURED BUILD-SCRIPT lanes (v2) — one SHARED build-script grammar
-#     (``struct_wire``); ``transcription_modality`` selects only how a TEXT LEAF
-#     is populated: ``struct_span`` uses ``L{N}`` reading-order refs (span-copied
-#     by code), ``struct_full`` uses inline ``T:`` model transcription, and
-#     ``struct_auto`` picks per page. Structure, tables, and images (``I{N}``,
-#     content-addressed) are identical across the three. The rasterization DPI is
-#     folded in so a crop re-rendered at a new DPI writes under a NEW path.
+# Modality → version-string tag. All lanes share ONE build-script grammar
+# (``struct_wire``); ``transcription_modality`` selects only how a TEXT LEAF is
+# populated — ``struct_span`` uses ``L{N}`` reading-order refs (span-copied by
+# code), ``struct_full`` uses inline ``T:`` model transcription, ``struct_auto``
+# picks per page, and ``struct_patch`` span-copies plus addressed ``PATCH``
+# deltas. Structure, tables, and images (``I{N}``, content-addressed) are
+# identical across all. Each lane's records COEXIST under a DISTINCT tag; the
+# rasterization DPI is folded in so a crop re-rendered at a new DPI writes under a
+# NEW path.
 _STRUCT_WIRE_TAG = f"+wire=structbuild.v1+rasterdpi={RASTERIZE_DPI}"
 _MODALITY_VERSION_TAG = {
-    "full_transcription": "",
-    "span_copy": "+modality=span",
-    "auto": "+modality=auto",
     "struct_span": _STRUCT_WIRE_TAG + "+leaf=span",
     "struct_full": _STRUCT_WIRE_TAG + "+leaf=full",
     "struct_auto": _STRUCT_WIRE_TAG + "+leaf=auto",
+    "struct_patch": _STRUCT_WIRE_TAG + "+leaf=patch",
 }
 
-# The v2 build-script lanes (share one grammar; differ in leaf-content source).
-STRUCT_BUILD_MODALITIES = ("struct_span", "struct_full", "struct_auto")
+# The build-script lanes (share one grammar; differ in leaf-content source).
+STRUCT_BUILD_MODALITIES = ("struct_span", "struct_full", "struct_auto", "struct_patch")
 
 # Per-lane leaf-content source (what a TEXT LEAF's ``.text`` resolves from).
 STRUCT_LEAF_SOURCE = {
     "struct_span": "span",
     "struct_full": "inline",
     "struct_auto": "auto",
+    "struct_patch": "patch",
 }
 
 
@@ -252,16 +224,16 @@ def resolve_pipeline(
     *,
     vision_max_tokens: int = 3000,
     adjudicator_max_tokens: int = 2000,
-    transcription_modality: str = "auto",
+    transcription_modality: str = "struct_span",
 ) -> PipelineSpec:
     """Resolve the adjudicated parse route. RAISES ``ParseBackendUnavailable`` if
     the LLM server is unreachable — parsing requires it, there is no fallback.
     Probes the server ONCE; reuse the returned spec across a bulk run.
 
-    ``transcription_modality`` (``auto`` | ``span_copy`` | ``full_transcription``)
-    picks the per-page vision output lane (see ``adjudicated_ingest``) and is
-    folded into the pipeline VERSION so each modality's records are separately
-    content-addressed.
+    ``transcription_modality`` (``struct_span`` | ``struct_full`` |
+    ``struct_auto`` | ``struct_patch``) picks the build-script leaf-content lane
+    (see ``adjudicated_ingest``) and is folded into the pipeline VERSION so each
+    lane's records are separately content-addressed.
     """
     from lawvm.finland.llm_backends.llm_adjudicator import LlmWorkflowAdjudicator
     from lawvm.finland.llm_backends.vision_producer import VisionPageProducer
@@ -311,45 +283,6 @@ def _assurance_summary(root: SourceDocumentNode) -> Dict[str, int]:
 
     _walk(root)
     return counts
-
-
-def parse_pdf_to_ir(
-    manifestation: SourceManifestation,
-    spec: PipelineSpec,
-    *,
-    max_pages: int = 5000,
-    parsed_at: Optional[datetime] = None,
-) -> ParsedRecord:
-    """Parse a PDF → canonical LawVM IR + provenance manifest via the adjudicated
-    route (vision + reading-order, adjudicated, composed). No cache lookup;
-    ``parse_and_cache`` wraps this with the content-addressed store.
-    """
-    from lawvm.finland.source_document.adjudicated_ingest import adjudicated_document_ingest
-    from lawvm.finland.source_document.pdf_profiles import source_document_to_ir_node
-
-    doc = adjudicated_document_ingest(
-        manifestation,
-        vision=spec.vision,  # ty: ignore[invalid-argument-type]
-        adjudicator=spec.adjudicator,  # ty: ignore[invalid-argument-type]
-        max_pages=max_pages,
-        transcription_modality=spec.transcription_modality,
-    )
-    irnode = source_document_to_ir_node(doc.root)
-    manifest = {
-        "source_digest": manifestation.artifact_digest,
-        "source_locator": manifestation.locator,
-        "source_role": manifestation.source_role,
-        "media_type": manifestation.media_type,
-        "pipeline_id": spec.pipeline_id,
-        "pipeline_version": spec.version,
-        "transcription_modality": spec.transcription_modality,
-        "producers": ["vision", "reading_order"],
-        "page_count": doc.page_count,
-        "assurance_summary": _assurance_summary(doc.root),
-        "composition_findings": list(doc.composition_findings)[:20],
-        "parsed_at": (parsed_at or datetime.now(tz=timezone.utc)).isoformat(),
-    }
-    return ParsedRecord(ir=irnode.to_jsonable_dict(), manifest=manifest, cache_hit=False)
 
 
 def _inject_image_locators(
@@ -542,35 +475,6 @@ class ParsedIrStore:
 
     def close(self) -> None:
         self._fa.close()
-
-
-def parse_and_cache(
-    manifestation: SourceManifestation,
-    store: ParsedIrStore,
-    *,
-    spec: Optional[PipelineSpec] = None,
-    force: bool = False,
-    max_pages: int = 5000,
-    parsed_at: Optional[datetime] = None,
-) -> ParsedRecord:
-    """Parse a PDF to LawVM IR, reusing the derived store when the key is present.
-
-    Key = ``(digest, spec.pipeline_id, spec.version)``. A cache HIT returns the
-    stored record (``cache_hit=True``); a MISS parses via the adjudicated route,
-    stores, and returns it. ``spec`` defaults to ``resolve_pipeline()`` (which
-    probes the LLM server once and RAISES if it is unreachable — pass a
-    pre-resolved spec for a bulk run).
-    """
-    if spec is None:
-        spec = resolve_pipeline()
-    locator = parsed_ir_locator(manifestation.artifact_digest, spec.pipeline_id, spec.version)
-    if not force:
-        cached = store.get(locator)
-        if cached is not None:
-            return ParsedRecord(ir=cached["ir"], manifest=cached["manifest"], cache_hit=True)
-    record = parse_pdf_to_ir(manifestation, spec, max_pages=max_pages, parsed_at=parsed_at)
-    store.put(locator, record)
-    return record
 
 
 def parse_struct_and_cache(

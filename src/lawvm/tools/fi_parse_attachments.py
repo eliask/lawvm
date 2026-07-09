@@ -20,9 +20,7 @@ from typing import Iterator, List, Optional, Tuple
 
 from lawvm.finland.source_document.parsed_store import (
     PARSED_STORE_DEFAULT,
-    STRUCT_BUILD_MODALITIES,
     ParsedIrStore,
-    parse_and_cache,
     parse_struct_and_cache,
     resolve_pipeline,
 )
@@ -102,10 +100,7 @@ def _parse_one(
     store = ParsedIrStore(store_path)
     try:
         m = load_manifestation_from_farchive(loc, farchive_path=finlex_path, source_role=role)
-        if modality in STRUCT_BUILD_MODALITIES:
-            record = parse_struct_and_cache(m, store, spec=spec, force=force)  # ty: ignore[invalid-argument-type]
-        else:
-            record = parse_and_cache(m, store, spec=spec, force=force)  # ty: ignore[invalid-argument-type]
+        record = parse_struct_and_cache(m, store, spec=spec, force=force)  # ty: ignore[invalid-argument-type]
     except Exception as exc:  # a bad attachment is a typed failure, not a crash
         return (loc, "failed", f"{type(exc).__name__}: {exc}")
     finally:
@@ -132,9 +127,9 @@ def parse_attachments_into_store(
 
     ``workers`` whole PDFs are kept in flight at once (bounded per-PDF concurrency
     saturating the single inference server); each PDF's pages stay
-    sequential-with-context inside ``parse_*_and_cache``. ``modality`` selects the
-    lane (``struct_span`` default → the v2 build-script; any ``struct_*`` or the
-    legacy flat ``full_transcription`` / ``span_copy`` / ``auto``).
+    sequential-with-context inside ``parse_struct_and_cache``. ``modality`` selects
+    the build-script leaf-content lane (``struct_span`` default; also
+    ``struct_full`` / ``struct_auto`` / ``struct_patch``).
     """
     spec = resolve_pipeline(transcription_modality=modality)  # raises if backend down
     if verbose:
