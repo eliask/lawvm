@@ -48,13 +48,23 @@ from lawvm.core.source_document.ir import (
 
 
 def reading_order_pages_from_pdf(pdf_bytes: bytes, *, max_pages: int = 500) -> List[str]:
-    """Per-page reading-order text (pypdfium2) — the independent cross-witness."""
+    """Per-page reading-order text (pypdfium2) — the independent cross-witness.
+
+    Discretionary/soft hyphens at line breaks (which pypdfium2 emits as U+FFFE /
+    U+00AD for this corpus) are joined to the canonical word, so the cross-witness
+    and any span-copied leaf text carry legal words, not typographic break points.
+    """
     import importlib
+
+    from lawvm.finland.source_document.page_elements import dehyphenate
 
     pdfium = importlib.import_module("pypdfium2")
     doc = pdfium.PdfDocument(pdf_bytes)
     try:
-        return [doc[i].get_textpage().get_text_range() for i in range(min(len(doc), max_pages))]
+        return [
+            dehyphenate(doc[i].get_textpage().get_text_range())
+            for i in range(min(len(doc), max_pages))
+        ]
     finally:
         doc.close()
 

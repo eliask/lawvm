@@ -156,6 +156,18 @@ def test_out_of_range_patch_is_a_finding_not_a_crash() -> None:
     assert r.roots[0].text == _LINES[1]  # untouched
 
 
+def test_dehyphenate_joins_discretionary_hyphens_not_real_ones() -> None:
+    from lawvm.finland.source_document.page_elements import dehyphenate
+
+    # pypdfium2 emits U+FFFE (and U+00AD) for a soft/discretionary hyphen; join it.
+    assert dehyphenate("kriisinrat￾kaisusta") == "kriisinratkaisusta"
+    assert dehyphenate("vä­hintään") == "vähintään"
+    # Across an actual line-wrap (hyphen then newline) → joined.
+    assert dehyphenate("jäsen￾\nvaltioiden") == "jäsenvaltioiden"
+    # A REAL hyphen (U+002D) is legal content — never touched.
+    assert dehyphenate("EU-jäsenvaltio") == "EU-jäsenvaltio"
+
+
 # --------------------------------------------------------------------------- #
 # Wire parse: inline (full) leaves + images (same grammar)                    #
 # --------------------------------------------------------------------------- #

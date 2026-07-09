@@ -90,6 +90,26 @@ def _PdfiumError() -> type[BaseException]:
         return _NeverRaised
 
 
+# Discretionary hyphenation points from PDF text extraction, in extraction order:
+# U+FFFE is pypdfium2's fallback glyph for this corpus's soft/discretionary hyphen
+# at a line break; U+00AD is the SOFT HYPHEN proper. Both are TYPOGRAPHY (an
+# invisible "the word may break here") with NO legal meaning — for the canonical
+# IR text we normalize to the joined word. We drop ``<hyphen>\n`` (a real line-wrap
+# break, joining across it) and a bare ``<hyphen>`` (extractor emitted it inline).
+_DISCRETIONARY_HYPHENS = ("￾", "­")
+
+
+def dehyphenate(text: str) -> str:
+    """Join words split by a discretionary/soft hyphen at a line break.
+
+    ``kriisinrat\\ufffekaisusta`` → ``kriisinratkaisusta``. A real hyphen
+    (U+002D) is left untouched — only the invisible discretionary points go.
+    """
+    for h in _DISCRETIONARY_HYPHENS:
+        text = text.replace(h + "\n", "").replace(h, "")
+    return text
+
+
 def _sha256(b: bytes) -> str:
     return hashlib.sha256(b).hexdigest()
 
@@ -163,7 +183,7 @@ class PageElementProducer:
         doc = pdfium.PdfDocument(pdf_bytes)
         try:
             page = doc[page_num - 1]
-            text = page.get_textpage().get_text_range()
+            text = dehyphenate(page.get_textpage().get_text_range())
             lines = tuple(ln.strip() for ln in text.splitlines() if ln.strip())
             images, notes = self._enumerate_images(page, page_num)
             return PageElements(page_num=page_num, lines=lines, images=images, notes=notes)
