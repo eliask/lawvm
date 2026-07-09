@@ -274,6 +274,9 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_scan_annotations.py",
         "test_fi_source_model.py",
         "test_fi_source_dump.py",
+        # D2+D3 e2e: native-PDF SourceDocumentIR ingest + determinism firewall
+        # (plan .claude/plans/calm-kindling-wand.md).
+        "test_fi_source_document_pdf.py",
         "test_fi_statute_name_aliases.py",
         "test_fi_statute_name_full_registry.py",
         "test_fi_statute_name_registry.py",
@@ -635,6 +638,19 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_typed_carrier_protocols.py",
         # D1 node-kind registry: governed IRNodeKind specs + validator.
         "test_core_node_kind_registry.py",
+        # D0 source-document ingestion carrier: SourceDocumentIR node + assurance
+        # ladder + anchors/extraction/coverage/residual taxonomy.
+        "test_source_document_carrier.py",
+        # D1 coverage metric + owned-content quality detectors.
+        "test_source_document_coverage.py",
+        # Producer-neutral adjudication layer: assurance_for + Adjudicator.
+        "test_source_document_adjudication.py",
+        # Workflow-LLM adjudicator: reconcile candidates → composed node + tier.
+        "test_source_document_llm_adjudicator.py",
+        # Draft-HE → ConditionalBranch ("if enacted, then …") extraction.
+        "test_fi_he_conditional_branch.py",
+        # Vision page producer: compact-line transcription → anchored candidates.
+        "test_fi_vision_producer.py",
         "test_fi_address_parse.py",
         "test_irnodekind_stringly_typed_gate.py",
         "test_fi_admissible_binding.py",
