@@ -281,6 +281,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # draft-HE CandidateOperation/ConditionalBranch projects into
         # core.ir.LegalOperation + branch_authority carriers, never replay-authorized.
         "test_fi_he_branch_lowering.py",
+        "test_fi_branch_conflicts.py",
         "test_fi_statute_name_aliases.py",
         "test_fi_statute_name_full_registry.py",
         "test_fi_statute_name_registry.py",
