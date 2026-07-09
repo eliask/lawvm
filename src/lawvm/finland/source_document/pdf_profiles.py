@@ -397,6 +397,8 @@ def source_document_to_ir_node(root: SourceDocumentNode) -> "IRNode":
     kind_map = {
         SourceDocumentNodeKind.WORK_ROOT: IRNodeKind.HCONTAINER,
         SourceDocumentNodeKind.BODY: IRNodeKind.HCONTAINER,
+        SourceDocumentNodeKind.SECTION: IRNodeKind.SECTION,
+        SourceDocumentNodeKind.SUBSECTION: IRNodeKind.SUBSECTION,
         SourceDocumentNodeKind.PARAGRAPH: IRNodeKind.P,
         SourceDocumentNodeKind.HEADING: IRNodeKind.HEADING,
         SourceDocumentNodeKind.TABLE: IRNodeKind.TABLE,
@@ -404,6 +406,9 @@ def source_document_to_ir_node(root: SourceDocumentNode) -> "IRNode":
         SourceDocumentNodeKind.TABLE_CELL: IRNodeKind.CELL,
         SourceDocumentNodeKind.FOOTNOTE: IRNodeKind.SCHEDULE_ENTRY,
         SourceDocumentNodeKind.ITEM: IRNodeKind.ITEM,
+        # No dedicated IMAGE IRNodeKind — a generic BLOCK carrying the image facts
+        # (image_digest / image_locator / bbox / dims / role) in attrs.
+        SourceDocumentNodeKind.IMAGE_REGION: IRNodeKind.BLOCK,
         SourceDocumentNodeKind.PROPOSAL_SECTION: IRNodeKind.HCONTAINER,
         SourceDocumentNodeKind.BILL_TEXT: IRNodeKind.HCONTAINER,
     }

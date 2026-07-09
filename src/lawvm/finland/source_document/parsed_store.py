@@ -47,12 +47,29 @@ if TYPE_CHECKING:
     from lawvm.core.source_document.adjudication import Adjudication
     from lawvm.core.source_document.anchors import SourceAnchor
     from lawvm.core.source_document.extraction import ExtractionAssertion
+    from lawvm.finland.source_document.page_elements import PageElementProducer
 
 PARSED_STORE_DEFAULT = "data/fi_parsed_ir.farchive"
 
 # The one route: unified, LLM-orchestrated adjudication (the only route for PDFs).
 ADJUDICATED_PIPELINE_ID = "adjudicated_vision"
 ADJUDICATED_COMPOSE_VERSION = "compose.v1"
+
+# Rasterization DPI for image-region crops with NO embedded XObject. Folded into
+# the pipeline version so a crop re-rendered at a new DPI is a NEW content-
+# addressed blob under a NEW path (coexists, exactly like an IR record). Kept in
+# sync with ``page_elements.RASTERIZE_DPI``.
+RASTERIZE_DPI = 200
+
+
+def parsed_image_locator(source_digest: str, pipeline_id: str, version: str, blob_name: str) -> str:
+    """Content-addressed image-blob key: same per-(source,pipeline,version) prefix as the IR.
+
+    ``blob_name`` is the zero-padded ``{N}``-indexed blob (e.g. ``0003.png``) so
+    an IR IMAGE node's ``I{N}`` reference maps 1:1 to its stored blob. The
+    ``<pipeline>@<version>`` prefix versions rasterized crops for free.
+    """
+    return f"parsed/{source_digest}/{pipeline_id}@{version}/{blob_name}"
 
 
 class ParseBackendUnavailable(RuntimeError):
@@ -88,6 +105,8 @@ class PipelineSpec:
     vision: object
     adjudicator: object
     transcription_modality: str = "auto"
+    # present only for struct_* lanes (a PageElementProducer); None for flat lanes.
+    page_element_producer: "Optional[PageElementProducer]" = None
 
 
 class _TolerantVision:
@@ -121,6 +140,30 @@ class _TolerantVision:
             )
         except VisionProducerTruncated:
             return ()
+
+    def propose_page_struct(
+        self, manifestation: SourceManifestation, page_num: int, page_elements: Any, *, leaf_mode: str = "span"
+    ) -> Any:
+        """Forward the v2 build-script call; a page too dense to build within the
+        token budget yields an EMPTY forest for that page (its tier degrades)
+        rather than aborting the whole document."""
+        from lawvm.finland.llm_backends.vision_producer import (
+            StructPageResult,
+            VisionProducerTruncated,
+        )
+        from lawvm.finland.source_document.struct_wire import StructBuildResult
+
+        try:
+            return self._inner.propose_page_struct(  # ty: ignore[unresolved-attribute]
+                manifestation, page_num, page_elements, leaf_mode=leaf_mode
+            )
+        except VisionProducerTruncated:
+            # The page's structure is lost (tier degrades), but its images come
+            # from the DETERMINISTIC page-element enumeration, not the model —
+            # preserve them so content-addressing survives a dense/truncated page.
+            return StructPageResult(
+                build=StructBuildResult(roots=()), raw_content="", images=page_elements.images
+            )
 
 
 class _TolerantAdjudicator:
@@ -172,10 +215,36 @@ class _TolerantAdjudicator:
 # pre-modality records (which were all full transcription) remain cache HITS for
 # that lane; span/auto records get a DISTINCT content-addressed key and COEXIST
 # with full-transcription records for the same source.
+#
+# Two families of lane coexist under distinct content-addressed tags:
+#   * LEGACY FLAT lanes (v1) — the original per-page flat-block reads. Their
+#     tags are UNCHANGED so their existing records stay byte-identical cache
+#     hits: ``full_transcription`` (untagged), ``span_copy``, ``auto``.
+#   * STRUCTURED BUILD-SCRIPT lanes (v2) — one SHARED build-script grammar
+#     (``struct_wire``); ``transcription_modality`` selects only how a TEXT LEAF
+#     is populated: ``struct_span`` uses ``L{N}`` reading-order refs (span-copied
+#     by code), ``struct_full`` uses inline ``T:`` model transcription, and
+#     ``struct_auto`` picks per page. Structure, tables, and images (``I{N}``,
+#     content-addressed) are identical across the three. The rasterization DPI is
+#     folded in so a crop re-rendered at a new DPI writes under a NEW path.
+_STRUCT_WIRE_TAG = f"+wire=structbuild.v1+rasterdpi={RASTERIZE_DPI}"
 _MODALITY_VERSION_TAG = {
     "full_transcription": "",
     "span_copy": "+modality=span",
     "auto": "+modality=auto",
+    "struct_span": _STRUCT_WIRE_TAG + "+leaf=span",
+    "struct_full": _STRUCT_WIRE_TAG + "+leaf=full",
+    "struct_auto": _STRUCT_WIRE_TAG + "+leaf=auto",
+}
+
+# The v2 build-script lanes (share one grammar; differ in leaf-content source).
+STRUCT_BUILD_MODALITIES = ("struct_span", "struct_full", "struct_auto")
+
+# Per-lane leaf-content source (what a TEXT LEAF's ``.text`` resolves from).
+STRUCT_LEAF_SOURCE = {
+    "struct_span": "span",
+    "struct_full": "inline",
+    "struct_auto": "auto",
 }
 
 
@@ -215,12 +284,18 @@ def resolve_pipeline(
         f"vision={vision._resolve_model()}+{adjudicator.adjudicator_id}"
         f"{modality_tag}+{ADJUDICATED_COMPOSE_VERSION}"
     )
+    page_producer: object = None
+    if transcription_modality in STRUCT_BUILD_MODALITIES:
+        from lawvm.finland.source_document.page_elements import PageElementProducer
+
+        page_producer = PageElementProducer(rasterize_dpi=RASTERIZE_DPI)
     return PipelineSpec(
         pipeline_id=ADJUDICATED_PIPELINE_ID,
         version=version,
         vision=_TolerantVision(vision),
         adjudicator=_TolerantAdjudicator(adjudicator),
         transcription_modality=transcription_modality,
+        page_element_producer=page_producer,
     )
 
 
@@ -277,6 +352,124 @@ def parse_pdf_to_ir(
     return ParsedRecord(ir=irnode.to_jsonable_dict(), manifest=manifest, cache_hit=False)
 
 
+def _inject_image_locators(
+    root: SourceDocumentNode, source_digest: str, pipeline_id: str, version: str
+) -> SourceDocumentNode:
+    """Re-emit the tree with each IMAGE node's ``image_locator`` attr set.
+
+    The blob shares the IR's per-record prefix and is keyed by the ``{N}`` element
+    id (``image_index``) as a zero-padded blob name, so the IR IMAGE node's
+    ``I{N}`` reference maps 1:1 to its stored blob (``parsed_image_locator``).
+    """
+    from lawvm.core.source_document.ir import SourceDocumentNodeKind
+    from lawvm.finland.source_document.page_elements import image_blob_name
+
+    def _walk(n: SourceDocumentNode) -> SourceDocumentNode:
+        attrs = dict(n.attrs)
+        if n.kind is SourceDocumentNodeKind.IMAGE_REGION and attrs.get("image_index"):
+            blob_name = image_blob_name(int(attrs["image_index"]), attrs.get("media_type", ""))
+            attrs["image_locator"] = parsed_image_locator(
+                source_digest, pipeline_id, version, blob_name
+            )
+        return SourceDocumentNode(
+            kind=n.kind,
+            assurance_tier=n.assurance_tier,
+            anchor=n.anchor,
+            label=n.label,
+            text=n.text,
+            children=tuple(_walk(c) for c in n.children),
+            attrs=attrs,
+        )
+
+    return _walk(root)
+
+
+def parse_struct_pdf_to_ir(
+    manifestation: SourceManifestation,
+    spec: PipelineSpec,
+    store: "ParsedIrStore",
+    *,
+    max_pages: int = 5000,
+    parsed_at: Optional[datetime] = None,
+) -> ParsedRecord:
+    """Parse a PDF through the v2 build-script lane → IR + provenance, storing image blobs.
+
+    Runs ``struct_document_ingest`` (one build-script grammar; leaf-content source
+    per ``spec.transcription_modality``), CONTENT-ADDRESSES every surfaced image
+    blob into the derived store under the IR's per-record prefix (keyed by ``{N}``
+    element id), stitches each IMAGE node's ``image_locator`` into the tree, and
+    lowers to canonical IR. The manifest records the image inventory + build
+    findings + 0x1F terminator-compliance stats.
+    """
+    from lawvm.finland.source_document.adjudicated_ingest import struct_document_ingest
+    from lawvm.finland.source_document.page_elements import image_blob_name
+    from lawvm.finland.source_document.pdf_profiles import source_document_to_ir_node
+
+    result = struct_document_ingest(
+        manifestation,
+        vision=spec.vision,
+        page_element_producer=spec.page_element_producer,
+        adjudicator=spec.adjudicator,  # ty: ignore[invalid-argument-type]
+        max_pages=max_pages,
+        transcription_modality=spec.transcription_modality,
+    )
+    # Content-address every image blob under the IR's per-record prefix.
+    image_manifest: list = []
+    for img in result.images:
+        e = img.element  # ty: ignore[unresolved-attribute]
+        blob_name = image_blob_name(e.index, e.media_type)
+        locator = parsed_image_locator(
+            manifestation.artifact_digest, spec.pipeline_id, spec.version, blob_name
+        )
+        store.put_image(
+            locator,
+            img.raw_bytes,  # ty: ignore[unresolved-attribute]
+            source_digest=manifestation.artifact_digest,
+            media_type=e.media_type,
+            bit_exact_source=img.bit_exact_source,  # ty: ignore[unresolved-attribute]
+        )
+        image_manifest.append(
+            {
+                "index": e.index,
+                "digest": e.digest,
+                "locator": locator,
+                "media_type": e.media_type,
+                "px_width": e.width,
+                "px_height": e.height,
+                "bbox": list(e.bbox),
+                "role": e.role,
+                "bit_exact_source": img.bit_exact_source,  # ty: ignore[unresolved-attribute]
+            }
+        )
+    stitched = _inject_image_locators(
+        result.document.root, manifestation.artifact_digest, spec.pipeline_id, spec.version
+    )
+    irnode = source_document_to_ir_node(stitched)
+    terminated, total = result.terminator_stats
+    manifest = {
+        "source_digest": manifestation.artifact_digest,
+        "source_locator": manifestation.locator,
+        "source_role": manifestation.source_role,
+        "media_type": manifestation.media_type,
+        "pipeline_id": spec.pipeline_id,
+        "pipeline_version": spec.version,
+        "transcription_modality": spec.transcription_modality,
+        "producers": ["vision_struct", "reading_order", "page_elements"],
+        "page_count": result.document.page_count,
+        "assurance_summary": _assurance_summary(stitched),
+        "composition_findings": list(result.document.composition_findings)[:20],
+        "struct_findings": list(result.struct_findings)[:40],
+        "image_manifest": image_manifest,
+        "terminator_compliance": {
+            "terminated": terminated,
+            "total": total,
+            "rate": (terminated / total) if total else None,
+        },
+        "parsed_at": (parsed_at or datetime.now(tz=timezone.utc)).isoformat(),
+    }
+    return ParsedRecord(ir=irnode.to_jsonable_dict(), manifest=manifest, cache_hit=False)
+
+
 class ParsedIrStore:
     """A farchive of derived LawVM IR, content-addressed by source × pipeline."""
 
@@ -312,6 +505,41 @@ class ParsedIrStore:
             },
         )
 
+    def put_image(
+        self,
+        locator: str,
+        data: bytes,
+        *,
+        source_digest: str,
+        media_type: str,
+        bit_exact_source: bool,
+    ) -> str:
+        """Store one content-addressed image blob under the IR's per-record prefix.
+
+        The blob shares the ``parsed/<source_digest>/<pipeline>@<version>/`` prefix
+        with the IR (see ``parsed_image_locator``) and is indexed by its
+        zero-padded ``{N}`` element id so an IMAGE node's ``I{N}`` ref maps 1:1.
+        ``bit_exact_source`` distinguishes an embedded XObject (True; losslessly
+        re-derivable) from a rasterized crop (False; digest depends on bbox+DPI).
+        """
+        return self._fa.store(
+            locator,
+            data,
+            storage_class="source_image",
+            metadata={
+                "source_digest": source_digest,
+                "media_type": media_type,
+                "bit_exact_source": "1" if bit_exact_source else "0",
+            },
+        )
+
+    def get_image(self, locator: str) -> Optional[bytes]:
+        """Read one stored image blob's raw bytes (``None`` if absent)."""
+        span = self._fa.resolve(locator)
+        if span is None:
+            return None
+        return self._fa.read(span.digest)
+
     def close(self) -> None:
         self._fa.close()
 
@@ -341,5 +569,42 @@ def parse_and_cache(
         if cached is not None:
             return ParsedRecord(ir=cached["ir"], manifest=cached["manifest"], cache_hit=True)
     record = parse_pdf_to_ir(manifestation, spec, max_pages=max_pages, parsed_at=parsed_at)
+    store.put(locator, record)
+    return record
+
+
+def parse_struct_and_cache(
+    manifestation: SourceManifestation,
+    store: ParsedIrStore,
+    *,
+    spec: Optional[PipelineSpec] = None,
+    transcription_modality: str = "struct_span",
+    force: bool = False,
+    max_pages: int = 5000,
+    parsed_at: Optional[datetime] = None,
+) -> ParsedRecord:
+    """v2 build-script parse to LawVM IR + image blobs, cached by the struct key.
+
+    Key = ``(digest, pipeline_id, struct-version)`` — DISTINCT from the flat-lane
+    keys, so the structured records COEXIST with v1 span / full / auto. A cache
+    HIT returns the stored record; a MISS runs ``parse_struct_pdf_to_ir`` (which
+    content-addresses the image blobs under the same per-record prefix). ``spec``
+    defaults to a struct pipeline resolved for ``transcription_modality``.
+    """
+    if spec is None:
+        spec = resolve_pipeline(transcription_modality=transcription_modality)
+    if spec.transcription_modality not in STRUCT_BUILD_MODALITIES:
+        raise ValueError(
+            f"parse_struct_and_cache requires a struct_* modality; got "
+            f"{spec.transcription_modality!r}"
+        )
+    locator = parsed_ir_locator(manifestation.artifact_digest, spec.pipeline_id, spec.version)
+    if not force:
+        cached = store.get(locator)
+        if cached is not None:
+            return ParsedRecord(ir=cached["ir"], manifest=cached["manifest"], cache_hit=True)
+    record = parse_struct_pdf_to_ir(
+        manifestation, spec, store, max_pages=max_pages, parsed_at=parsed_at
+    )
     store.put(locator, record)
     return record

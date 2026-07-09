@@ -286,6 +286,11 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_he_branch_cli.py",
         # Derived-IR store: content-addressed cache of LawVM IR parsed from PDFs.
         "test_fi_parsed_store.py",
+        # Bulk parse driver: bounded per-PDF concurrency + struct/flat lane routing.
+        "test_fi_parse_attachments_concurrency.py",
+        # v2 span-copy build-script wire: explicit structural build script
+        # (hierarchy, tables, content-addressed images, span vs inline leaves).
+        "test_fi_struct_build_wire.py",
         # Store-boundary guard rejecting HTTP-error bodies archived as PDF blobs
         # (finland/pdf_blob_guard.py) + the report-only junk-PDF farchive scan.
         "test_fi_pdf_blob_guard.py",
@@ -1348,6 +1353,7 @@ TOOL_SOURCE_SHARD_GROUPS: dict[tuple[str, ...], tuple[str, ...]] = {
         "src/lawvm/tools/export_fi_actors.py",
         "src/lawvm/tools/fi_he_branch.py",
         "src/lawvm/tools/fi_parse_attachments.py",
+        "src/lawvm/tools/fi_parse_compare.py",
         "src/lawvm/tools/export_fi_he_branch_ops.py",
         "src/lawvm/tools/export_fi_he_corpus.py",
         "src/lawvm/tools/export_fi_inline_citations.py",

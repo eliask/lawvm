@@ -2,13 +2,13 @@
   "_doc": "Monotone module-role baseline. The `dead` and `test_only_live` sets may only SHRINK: a module born dead must be wired or deleted, never added to the population. The `replay_exercised` map is a SNAPSHOT: a module flipping replay-exercised status (either direction) fails the ratchet until re-baselined. Regenerate with `uv run python scripts/inventory_module_roles.py --update-baseline` after legitimately retiring (deleting) a dead/test-only module, wiring it to a production consumer, or refreshing the replay-coverage snapshot (tests/data/replay_coverage_snapshot.json — see its provenance.refresh_command).",
   "counts": {
     "dead": 78,
-    "live": 1166,
+    "live": 1169,
     "test_only_live": 29
   },
   "replay_counts": {
     "exercised": 170,
-    "cold": 273,
-    "in_scope": 443
+    "cold": 275,
+    "in_scope": 445
   },
   "dead": [
     "lawvm.core.claim_assumption_binding",
@@ -322,8 +322,10 @@
     "lawvm.finland.source_document.he_draft",
     "lawvm.finland.source_document.lausuntopalvelu",
     "lawvm.finland.source_document.materialize",
+    "lawvm.finland.source_document.page_elements",
     "lawvm.finland.source_document.parsed_store",
     "lawvm.finland.source_document.pdf_profiles",
+    "lawvm.finland.source_document.struct_wire",
     "lawvm.finland.source_model",
     "lawvm.finland.source_pathology_proof_registry",
     "lawvm.finland.source_providers",
@@ -783,8 +785,10 @@
     "lawvm.finland.source_document.he_draft": false,
     "lawvm.finland.source_document.lausuntopalvelu": false,
     "lawvm.finland.source_document.materialize": false,
+    "lawvm.finland.source_document.page_elements": false,
     "lawvm.finland.source_document.parsed_store": false,
     "lawvm.finland.source_document.pdf_profiles": false,
+    "lawvm.finland.source_document.struct_wire": false,
     "lawvm.finland.source_model": false,
     "lawvm.finland.source_normalization_kinds": true,
     "lawvm.finland.source_normalize": true,

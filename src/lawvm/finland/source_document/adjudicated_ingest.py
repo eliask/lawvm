@@ -36,6 +36,7 @@ and tier assignment are pure and testable without a server.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import List, Optional, Protocol, Sequence, Tuple
 
 from lawvm.core.source_document.adjudication import Adjudicator
@@ -61,7 +62,24 @@ def reading_order_pages_from_pdf(pdf_bytes: bytes, *, max_pages: int = 500) -> L
         doc.close()
 
 
-TRANSCRIPTION_MODALITIES = ("full_transcription", "span_copy", "auto")
+TRANSCRIPTION_MODALITIES = (
+    # Legacy flat lanes (v1): per-page flat block reads.
+    "full_transcription",
+    "span_copy",
+    "auto",
+    # Structured build-script lanes (v2): one shared grammar; the suffix selects
+    # leaf-content source (span refs / inline transcription / per-leaf auto).
+    "struct_span",
+    "struct_full",
+    "struct_auto",
+)
+
+# v2 structured lanes → the leaf-content source passed to ``propose_page_struct``.
+_STRUCT_LEAF_MODE = {
+    "struct_span": "span",
+    "struct_full": "inline",
+    "struct_auto": "auto",
+}
 
 # ``auto`` lane decision: a page whose reading-order text has at least this many
 # non-whitespace chars is treated as text-native → span-copy; below it (scanned /
@@ -106,6 +124,58 @@ def _vision_blocks_to_nodes(
     return tuple(nodes)
 
 
+def _struct_node_to_source_node(
+    node: "object",  # StructBuildNode
+    tier: AssuranceTier,
+    region: SourceAnchor,
+    digest: str,
+    page_num: int,
+) -> SourceDocumentNode:
+    """Lower one v2 ``StructBuildNode`` subtree into a ``SourceDocumentNode``.
+
+    An IMAGE node's anchor is a page+bbox image anchor and its attrs carry the
+    content-addressed ``image_digest`` / ``media_type`` / intrinsic px dims /
+    ``role`` / ``bit_exact_source`` — the model NEVER re-encodes pixels. Text
+    leaves carry the code-resolved ``.text`` (span-copied or inline). The tree
+    STRUCTURE is a single model claim at ``tier`` (raised only where a
+    deterministic structure witness corroborates; not this pass).
+    """
+    from lawvm.core.source_document.anchors import BBox
+    from lawvm.core.source_document.ir import SourceDocumentNodeKind
+
+    attrs: dict[str, str] = {}
+    anchor = region
+    if node.kind is SourceDocumentNodeKind.IMAGE_REGION and node.image is not None:  # ty: ignore[unresolved-attribute]
+        img = node.image  # ty: ignore[unresolved-attribute]
+        x0, y0, x1, y1 = img.bbox
+        anchor = SourceAnchor(
+            artifact_digest=digest,
+            locator=f"page={page_num};bbox={x0},{y0},{x1},{y1}",
+            page_num=page_num,
+            bbox=BBox(x0=x0, y0=y0, x1=x1, y1=y1),
+        )
+        attrs = {
+            "image_digest": img.digest,
+            "image_index": str(img.index),
+            "media_type": img.media_type,
+            "px_width": str(img.width),
+            "px_height": str(img.height),
+            "role": img.role,
+        }
+    children = tuple(
+        _struct_node_to_source_node(c, tier, region, digest, page_num)
+        for c in node.children  # ty: ignore[unresolved-attribute]
+    )
+    return SourceDocumentNode(
+        kind=node.kind,  # ty: ignore[unresolved-attribute]
+        assurance_tier=tier,
+        anchor=anchor,
+        text=node.text,  # ty: ignore[unresolved-attribute]
+        children=children,
+        attrs=attrs,
+    )
+
+
 def _page_assurance(
     vision_text: str,
     reading_order_text: str,
@@ -146,6 +216,27 @@ class _VisionProducer(Protocol):
     def propose_page_spans(
         self, manifestation: SourceManifestation, page_num: int, reading_order_text: str
     ) -> Tuple[ExtractionAssertion, ...]: ...
+
+
+class _StructVisionProducer(Protocol):
+    """The extra surface a v2 build-script producer offers over ``_VisionProducer``."""
+
+    def propose_page_struct(
+        self,
+        manifestation: SourceManifestation,
+        page_num: int,
+        page_elements: "object",
+        *,
+        leaf_mode: str = "span",
+    ) -> "object": ...
+
+
+def _struct_text_of(node: "object") -> str:
+    """Concatenate a struct subtree's text (for the page-tier adjudication witness)."""
+    parts = [node.text] if node.text else []  # ty: ignore[unresolved-attribute]
+    for c in node.children:  # ty: ignore[unresolved-attribute]
+        parts.append(_struct_text_of(c))
+    return "\n".join(p for p in parts if p)
 
 
 def adjudicated_document_ingest(
@@ -209,3 +300,89 @@ def adjudicated_document_ingest(
 
     root_anchor = SourceAnchor(artifact_digest=manifestation.artifact_digest, locator="manifestation")
     return compose_pages(pages, root_anchor)
+
+
+@dataclass(frozen=True, slots=True)
+class StructIngestResult:
+    """A v2 build-script ingest: the composed document + collected image blobs.
+
+    ``document`` is the composed whole-document tree (same shape as the flat
+    lanes). ``images`` are every embedded/rasterized image element the pages
+    surfaced (deduped by digest) so the caller can content-address + store them.
+    ``struct_findings`` gathers the per-page build findings (dropped nodes,
+    re-parented orphans) and ``terminator_stats`` the 0x1F-compliance counts.
+    """
+
+    document: ComposedDocument
+    images: Tuple["object", ...]
+    struct_findings: Tuple[str, ...]
+    terminator_stats: Tuple[int, int]  # (terminated_command_lines, total_command_lines)
+
+
+def struct_document_ingest(
+    manifestation: SourceManifestation,
+    *,
+    vision: "object",
+    page_element_producer: "object",
+    adjudicator: Optional[Adjudicator] = None,
+    max_pages: int = 200,
+    transcription_modality: str = "struct_span",
+) -> "StructIngestResult":
+    """Ingest a PDF through the v2 build-script lane → composed doc + image blobs.
+
+    Each page's numbered reading-order lines + embedded image elements
+    (``page_element_producer``) go to the vision producer's ``propose_page_struct``
+    over ONE build-script grammar; ``transcription_modality`` selects only the
+    leaf-content source (``struct_span`` / ``struct_full`` / ``struct_auto``). The
+    per-page forests are composed across pages exactly like the flat lanes, and
+    the surfaced image blobs are returned for content-addressed storage.
+    """
+    if transcription_modality not in _STRUCT_LEAF_MODE:
+        raise ValueError(
+            f"struct_document_ingest requires a struct_* modality; got "
+            f"{transcription_modality!r} (one of {tuple(_STRUCT_LEAF_MODE)})"
+        )
+    leaf_mode = _STRUCT_LEAF_MODE[transcription_modality]
+    ro_pages = reading_order_pages_from_pdf(manifestation.source_bytes, max_pages=max_pages)
+    pages: List[Tuple[SourceDocumentNode, ...]] = []
+    images_by_digest: dict = {}
+    findings: List[str] = []
+    terminated = total = 0
+
+    for idx, ro_text in enumerate(ro_pages):
+        page_num = idx + 1
+        region = SourceAnchor(
+            artifact_digest=manifestation.artifact_digest,
+            locator=f"page={page_num}",
+            page_num=page_num,
+        )
+        page_elements = page_element_producer.page_elements(  # ty: ignore[unresolved-attribute]
+            manifestation.source_bytes, page_num
+        )
+        result = vision.propose_page_struct(  # ty: ignore[unresolved-attribute]
+            manifestation, page_num, page_elements, leaf_mode=leaf_mode
+        )
+        build = result.build
+        reconstructed = "\n".join(_struct_text_of(n) for n in build.roots)
+        tier = _page_assurance(reconstructed, ro_text, adjudicator, region)
+        nodes = tuple(
+            _struct_node_to_source_node(
+                n, tier, region, manifestation.artifact_digest, page_num
+            )
+            for n in build.roots
+        )
+        pages.append(nodes)
+        for img in result.images:
+            images_by_digest[img.element.digest] = img
+        findings.extend(f"page {page_num}: {f}" for f in build.findings)
+        terminated += build.terminated_command_lines
+        total += build.total_command_lines
+
+    root_anchor = SourceAnchor(artifact_digest=manifestation.artifact_digest, locator="manifestation")
+    document = compose_pages(pages, root_anchor)
+    return StructIngestResult(
+        document=document,
+        images=tuple(images_by_digest.values()),
+        struct_findings=tuple(findings),
+        terminator_stats=(terminated, total),
+    )

@@ -14,17 +14,26 @@ silently dropped attachment.
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from typing import Iterator, List, Tuple
+from typing import Iterator, List, Optional, Tuple
 
 from lawvm.finland.source_document.parsed_store import (
     PARSED_STORE_DEFAULT,
+    STRUCT_BUILD_MODALITIES,
     ParsedIrStore,
     parse_and_cache,
+    parse_struct_and_cache,
     resolve_pipeline,
 )
 
 _FINLEX_DEFAULT = "data/finlex.farchive"
+
+# Default bounded in-flight window: keep a short queue of whole-PDF requests
+# saturating the single inference server without overrunning it. Concurrency is
+# PER-PDF (each PDF's pages stay sequential-with-context inside parse_*_and_cache);
+# only distinct PDFs run in parallel.
+_DEFAULT_WORKERS = 6
 
 
 def _classify(locator: str) -> str:
@@ -67,6 +76,43 @@ class ParseAttachmentsReport:
     failures: Tuple[str, ...]
 
 
+def _parse_one(
+    loc: str,
+    role: str,
+    *,
+    finlex_path: str,
+    store_path: str,
+    spec: object,
+    force: bool,
+    modality: str,
+) -> Tuple[str, str, Optional[str]]:
+    """Parse ONE attachment → ``(locator, status, detail)``; never raises.
+
+    Opens its OWN derived-store connection in THIS worker thread. Farchive is
+    SQLite-backed with ``check_same_thread=True`` (documented not-thread-safe):
+    the intended concurrency model is one connection per thread over a WAL DB
+    (``busy_timeout`` serializes concurrent writers), NOT a shared connection. The
+    ``ParsedRecord`` returned by ``parse_*_and_cache`` is an in-memory value, so it
+    outlives the ``store.close()`` in the ``finally``. ``status`` is ``"hit"`` /
+    ``"parsed"`` / ``"failed"``; a bad attachment is a typed failure (AGENTS.md
+    §1.8), not a crash that would sink the pool.
+    """
+    from lawvm.finland.source_document.pdf_profiles import load_manifestation_from_farchive
+
+    store = ParsedIrStore(store_path)
+    try:
+        m = load_manifestation_from_farchive(loc, farchive_path=finlex_path, source_role=role)
+        if modality in STRUCT_BUILD_MODALITIES:
+            record = parse_struct_and_cache(m, store, spec=spec, force=force)  # ty: ignore[invalid-argument-type]
+        else:
+            record = parse_and_cache(m, store, spec=spec, force=force)  # ty: ignore[invalid-argument-type]
+    except Exception as exc:  # a bad attachment is a typed failure, not a crash
+        return (loc, "failed", f"{type(exc).__name__}: {exc}")
+    finally:
+        store.close()
+    return (loc, "hit" if record.cache_hit else "parsed", None)
+
+
 def parse_attachments_into_store(
     *,
     finlex_path: str = _FINLEX_DEFAULT,
@@ -75,45 +121,56 @@ def parse_attachments_into_store(
     limit: int | None = None,
     force: bool = False,
     verbose: bool = False,
+    modality: str = "struct_span",
+    workers: int = _DEFAULT_WORKERS,
 ) -> ParseAttachmentsReport:
     """Parse finlex PDF attachments into the derived-IR store (idempotent).
 
     Every PDF goes through the UNIFIED adjudicated route (vision + reading-order,
     LLM-orchestrated). The route is probed ONCE and reused across the whole run;
     it RAISES ``ParseBackendUnavailable`` up front if the LLM server is down.
-    """
-    from lawvm.finland.source_document.pdf_profiles import load_manifestation_from_farchive
 
-    spec = resolve_pipeline()  # raises ParseBackendUnavailable if the LLM server is down
+    ``workers`` whole PDFs are kept in flight at once (bounded per-PDF concurrency
+    saturating the single inference server); each PDF's pages stay
+    sequential-with-context inside ``parse_*_and_cache``. ``modality`` selects the
+    lane (``struct_span`` default → the v2 build-script; any ``struct_*`` or the
+    legacy flat ``full_transcription`` / ``span_copy`` / ``auto``).
+    """
+    spec = resolve_pipeline(transcription_modality=modality)  # raises if backend down
     if verbose:
-        print(f"  route: {spec.pipeline_id} ({spec.version})", flush=True)
-    store = ParsedIrStore(store_path)
+        print(f"  route: {spec.pipeline_id} ({spec.version}) | workers={workers}", flush=True)
+
+    items: List[Tuple[str, str]] = []
+    for i, (loc, role) in enumerate(iter_finlex_pdf_locators(finlex_path, kind=kind)):
+        if limit is not None and i >= limit:
+            break
+        items.append((loc, role))
+
     scanned = parsed = cache_hits = failed = 0
     failures: List[str] = []
-    try:
-        for i, (loc, role) in enumerate(iter_finlex_pdf_locators(finlex_path, kind=kind)):
-            if limit is not None and i >= limit:
-                break
+    with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+        futures = {
+            pool.submit(
+                _parse_one, loc, role,
+                finlex_path=finlex_path, store_path=store_path, spec=spec,
+                force=force, modality=modality,
+            ): loc
+            for loc, role in items
+        }
+        for fut in as_completed(futures):
+            _loc, status, detail = fut.result()
             scanned += 1
-            try:
-                m = load_manifestation_from_farchive(
-                    loc, farchive_path=finlex_path, source_role=role
-                )
-                record = parse_and_cache(m, store, spec=spec, force=force)
-            except Exception as exc:  # a bad attachment is a typed failure, not a crash
+            if status == "failed":
                 failed += 1
-                failures.append(f"{loc}: {type(exc).__name__}: {exc}")
+                failures.append(f"{_loc}: {detail}")
                 if verbose:
-                    print(f"  FAIL {loc}: {type(exc).__name__}", flush=True)
-                continue
-            if record.cache_hit:
+                    print(f"  FAIL {_loc}: {detail}", flush=True)
+            elif status == "hit":
                 cache_hits += 1
             else:
                 parsed += 1
             if verbose and scanned % 100 == 0:
-                print(f"  ...{scanned} scanned ({parsed} parsed, {cache_hits} cached, {failed} failed)", flush=True)
-    finally:
-        store.close()
+                print(f"  ...{scanned}/{len(items)} ({parsed} parsed, {cache_hits} cached, {failed} failed)", flush=True)
     return ParseAttachmentsReport(
         pipeline_id=spec.pipeline_id,
         scanned=scanned,
@@ -137,6 +194,8 @@ def main(args: argparse.Namespace) -> None:
             limit=args.limit,
             force=bool(args.force),
             verbose=bool(args.verbose),
+            modality=args.modality or "struct_span",
+            workers=args.workers if args.workers else _DEFAULT_WORKERS,
         )
     except ParseBackendUnavailable as exc:
         raise SystemExit(f"fi-parse-attachments: {exc}") from exc
