@@ -9623,11 +9623,11 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         dest="include_pdfs",
         action="store_true",
         help=(
-            "store main.pdf blobs in the farchive (default: false). LawVM does "
-            "not extract PDF text; structured XML + metadata is sufficient for "
-            "all current consumers. Default-off saves ~6-12 GB on the full FI "
-            "corpus. Pass this flag only if a downstream consumer needs PDF "
-            "content (and consider re-acquiring with --full to add them later)."
+            "store main.pdf blobs in the farchive (default: false). Needed by the "
+            "`fi-he-branch` source_document pipeline, which extracts the operative "
+            "lakiehdotus from the HE PDF (the XML has no draft-bill text). Default-off "
+            "saves ~6-12 GB on the full FI corpus; pass this to enable prospective "
+            "'if enacted' draft-HE analysis (re-acquire with --full to add PDFs later)."
         ),
     )
     acquire_he_p.add_argument(
@@ -9647,6 +9647,30 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         action="store_true",
         help="parse and classify without writing to farchive",
     )
+
+    # --- fi-he-branch ---
+    he_branch_p = sub.add_parser(
+        "fi-he-branch",
+        help="lower a farchive HE PDF to conditional 'if enacted' branches (+ materialize)",
+        description=(
+            "Run the producer-neutral source_document pipeline over a Finnish "
+            "government-proposal (HE) PDF stored in fi_government_proposal.farchive "
+            "(import first with `acquire-fi-proposals --include-pdfs`). Lowers the "
+            "operative lakiehdotus to non-authoritative ConditionalBranches; with "
+            "--materialize, compiles each targeted enacted statute (full replay) to "
+            "show the counterfactual 'if this HE passes' provision + diff. Read-only."
+        ),
+    )
+    he_branch_p.add_argument("year", type=int, help="HE year, e.g. 2006")
+    he_branch_p.add_argument("number", type=int, help="HE number within the year, e.g. 45")
+    he_branch_p.add_argument("--lang", default="fin", choices=["fin", "swe"], help="language variant (default: fin)")
+    he_branch_p.add_argument("--dest", default=None, metavar="PATH",
+                             help="farchive DB path (default: data/fi_government_proposal.farchive)")
+    he_branch_p.add_argument("--adjudicate", action="store_true",
+                             help="adjudicate operative producers via the local LLM (:8080) for a MULTI_WITNESS tier")
+    he_branch_p.add_argument("--materialize", action="store_true",
+                             help="compile each targeted enacted statute and show the conditional provision + diff")
+    he_branch_p.add_argument("--json", action="store_true", help="emit JSON instead of the text report")
 
     # --- structural-review ---
     sr_p = sub.add_parser(
@@ -14323,6 +14347,11 @@ def _main_impl() -> None:
         from lawvm.finland.he_acquisition import main as acquire_he_main
 
         acquire_he_main(args)
+
+    elif args.command == "fi-he-branch":
+        from lawvm.tools.fi_he_branch import main as fi_he_branch_main
+
+        fi_he_branch_main(args)
 
     elif args.command == "structural-review":
         from lawvm.tools.structural_review import (
