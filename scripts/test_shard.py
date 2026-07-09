@@ -286,6 +286,9 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_he_branch_cli.py",
         # Derived-IR store: content-addressed cache of LawVM IR parsed from PDFs.
         "test_fi_parsed_store.py",
+        # Store-boundary guard rejecting HTTP-error bodies archived as PDF blobs
+        # (finland/pdf_blob_guard.py) + the report-only junk-PDF farchive scan.
+        "test_fi_pdf_blob_guard.py",
         # Draft-HE corpus-sweep status vocabulary (scripts/he_corpus_sweep.py):
         # clean / partial / failed classification of the deterministic lowering.
         "test_he_corpus_sweep.py",

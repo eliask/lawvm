@@ -1034,6 +1034,34 @@ def cmd_body_pairing(args) -> None:
         print(f"  Total findings:  {total_findings}")
 
 
+def cmd_pdf_blob_scan(args) -> None:
+    """Report .pdf locators whose stored bytes are not real PDFs (report only).
+
+    Scans the Finlex farchive for ``.pdf`` locators whose blob lacks the ``%PDF``
+    magic — e.g. an HTTP-error body archived as if it were the artifact. NEVER
+    deletes: reports the junk so an operator can purge (``Farchive.purge``).
+    Exit code is 1 when junk is found (so CI/scripts can detect it), 0 clean.
+    """
+    from lawvm.corpus_store import open_corpus_archive
+    from lawvm.finland.pdf_blob_guard import (
+        format_junk_pdf_report,
+        scan_farchive_for_junk_pdf_blobs,
+    )
+
+    locator_glob = getattr(args, "locator_glob", None)
+    archive, path, rule = open_corpus_archive("finlex.farchive")
+    try:
+        findings = scan_farchive_for_junk_pdf_blobs(archive, locator_glob=locator_glob)
+    finally:
+        close = getattr(archive, "close", None)
+        if callable(close):
+            close()
+
+    print(f"scanned: {path} ({rule})", file=sys.stderr)
+    print(format_junk_pdf_report(findings))
+    sys.exit(1 if findings else 0)
+
+
 def main(args) -> None:
     audit_cmd = getattr(args, "audit_cmd", None)
 
@@ -1045,12 +1073,15 @@ def main(args) -> None:
         cmd_html(args)
     elif audit_cmd == "body-pairing":
         cmd_body_pairing(args)
+    elif audit_cmd == "pdf-blob-scan":
+        cmd_pdf_blob_scan(args)
     elif audit_cmd is None:
         print("Usage: lawvm audit <subcommand>", file=sys.stderr)
-        print("  formats      <SID>               cross-format comparison for one statute", file=sys.stderr)
-        print("  staleness    [--graph DIR]        corpus-wide staleness scan (ZIP-only)", file=sys.stderr)
-        print("  html         <SID>               fetch HTML and compare vs XML", file=sys.stderr)
-        print("  body-pairing <SID>               body-driven pairing anomaly audit", file=sys.stderr)
+        print("  formats       <SID>               cross-format comparison for one statute", file=sys.stderr)
+        print("  staleness     [--graph DIR]        corpus-wide staleness scan (ZIP-only)", file=sys.stderr)
+        print("  html          <SID>               fetch HTML and compare vs XML", file=sys.stderr)
+        print("  body-pairing  <SID>               body-driven pairing anomaly audit", file=sys.stderr)
+        print("  pdf-blob-scan [--glob PATTERN]     report junk .pdf blobs (report only)", file=sys.stderr)
         sys.exit(1)
     else:
         print(f"Unknown audit subcommand: {audit_cmd}", file=sys.stderr)

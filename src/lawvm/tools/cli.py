@@ -5145,6 +5145,24 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         help="skip statutes whose HTML contains merged/range presentation headings",
     )
 
+    audit_pdf_blob_scan_p = audit_sub.add_parser(
+        "pdf-blob-scan",
+        help="report .pdf locators whose stored bytes are not real PDFs (report only)",
+        description=(
+            "Scan the Finlex farchive for .pdf locators whose stored blob lacks "
+            "the %PDF magic bytes — e.g. an HTTP-error body (`HTTP 404 Not Found`) "
+            "archived as if it were the PDF. REPORT ONLY: never deletes. Deletion "
+            "via Farchive.purge is the operator's call after review."
+        ),
+    )
+    audit_pdf_blob_scan_p.add_argument(
+        "--glob",
+        dest="locator_glob",
+        metavar="PATTERN",
+        default=None,
+        help="optional farchive locator glob to restrict the scan",
+    )
+
     # --- bilingual ---
     bilingual_p = sub.add_parser(
         "bilingual",

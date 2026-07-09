@@ -55,6 +55,7 @@ from lxml import etree
 
 from lawvm.core.archive_safety import ArchiveMemberTooLarge, safe_zip_read
 from lawvm.core.xml_parse import parse_corpus_xml
+from lawvm.finland.pdf_blob_guard import classify_pdf_blob
 
 # ---------------------------------------------------------------------------
 # AKN / Finlex namespace constants
@@ -1028,6 +1029,39 @@ def _read_he_group(
                 continue
 
             storage_class = "pdf" if filename.endswith(".pdf") else "xml"
+
+            # Data-integrity guard: a PDF blob MUST begin with the %PDF magic.
+            # A fetch that archived an HTTP-error body (``HTTP 404 Not Found``)
+            # or an HTML error page as ``main.pdf`` would otherwise be stored as
+            # a real artifact and later crash pypdfium2. Conserve as a typed
+            # HEAcquisitionFailure (AGENTS.md §1.8) rather than archive the junk.
+            if storage_class == "pdf":
+                verdict = classify_pdf_blob(entry_data)
+                if not verdict.is_pdf:
+                    failures.append(
+                        HEAcquisitionFailure(
+                            rule_id="HE_ACQ.PDF_BLOB_NOT_PDF",
+                            phase="acquisition",
+                            family="source_pathology",
+                            he_year=year,
+                            he_number=number,
+                            lang=lang,
+                            zip_entry_name=entry_name,
+                            reason=(
+                                f"blob {filename} stored as PDF lacks the %PDF "
+                                f"magic ({verdict.reject_reason}); refusing to "
+                                "archive an HTTP-error/HTML body as a PDF"
+                            ),
+                            detail=(
+                                f"reject_reason={verdict.reject_reason}; "
+                                f"size={verdict.size}; "
+                                f"head_bytes={verdict.head_bytes!r}"
+                            ),
+                            strict_disposition="record",
+                        )
+                    )
+                    continue
+
             file_meta = dict(meta_dict)
             file_meta["entry_name"] = entry_name
             file_meta["filename"] = filename

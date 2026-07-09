@@ -2,13 +2,13 @@
   "_doc": "Monotone module-role baseline. The `dead` and `test_only_live` sets may only SHRINK: a module born dead must be wired or deleted, never added to the population. The `replay_exercised` map is a SNAPSHOT: a module flipping replay-exercised status (either direction) fails the ratchet until re-baselined. Regenerate with `uv run python scripts/inventory_module_roles.py --update-baseline` after legitimately retiring (deleting) a dead/test-only module, wiring it to a production consumer, or refreshing the replay-coverage snapshot (tests/data/replay_coverage_snapshot.json — see its provenance.refresh_command).",
   "counts": {
     "dead": 78,
-    "live": 1165,
+    "live": 1166,
     "test_only_live": 29
   },
   "replay_counts": {
     "exercised": 170,
-    "cold": 272,
-    "in_scope": 442
+    "cold": 273,
+    "in_scope": 443
   },
   "dead": [
     "lawvm.core.claim_assumption_binding",
@@ -241,6 +241,7 @@
     "lawvm.finland.parser_facade",
     "lawvm.finland.pathology_failed_op_projector",
     "lawvm.finland.payload_realization_audit",
+    "lawvm.finland.pdf_blob_guard",
     "lawvm.finland.pdf_layout",
     "lawvm.finland.pdf_spine_base",
     "lawvm.finland.pdf_text",
@@ -389,7 +390,7 @@
     "source_mtime": "2026-06-24T19:47:13",
     "corpus": "full farchive, 59,574 statutes (export-projections --corpus all enumeration)",
     "replay_mode": "official_consolidation",
-    "module_count": 275,
+    "module_count": 277,
     "refresh_command": "COVERAGE_PROCESS_START=.coveragerc coverage run --source=src/lawvm/finland -m lawvm.tools.cli replay-all --workers 8 && coverage combine && then reduce .coverage to {module: {stmts,exec,pct}} via coverage.CoverageData (see scripts/inventory_module_roles.py docstring) and overwrite this file preserving _doc/provenance, then run --update-baseline."
   },
   "replay_exercised": {
@@ -654,6 +655,7 @@
     "lawvm.finland.pathology_failed_op_projector": false,
     "lawvm.finland.payload_normalize": true,
     "lawvm.finland.payload_realization_audit": false,
+    "lawvm.finland.pdf_blob_guard": false,
     "lawvm.finland.pdf_layout": false,
     "lawvm.finland.pdf_spine_base": false,
     "lawvm.finland.pdf_text": false,

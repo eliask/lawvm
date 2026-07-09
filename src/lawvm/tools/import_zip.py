@@ -30,6 +30,7 @@ from lawvm.finland.consolidated_artifacts import (
     build_canonical_consolidated_locator,
     extract_consolidated_xml_identity,
 )
+from lawvm.finland.pdf_blob_guard import classify_pdf_blob
 
 _DEFAULT_FARCHIVE = "data/finlex.farchive"
 _DEFAULT_BATCH_SIZE = 2000
@@ -233,6 +234,36 @@ def _store_zip_entry(
         return
 
     seen_locators.setdefault(locator, zip_entry_name)
+
+    # Data-integrity guard: a blob stored as a PDF MUST begin with the %PDF
+    # magic bytes. An HTTP-error response body (``HTTP 404 Not Found``), an HTML
+    # error page, or empty bytes fetched from a ``.../main.pdf`` endpoint would
+    # otherwise be archived as if it were the artifact and later crash
+    # pypdfium2 with "Data format error". Never archive the junk; record a typed
+    # acquisition skip instead (AGENTS.md §1.8: no silent drop, no fabrication).
+    if storage_class == "pdf" or locator.endswith(".pdf"):
+        verdict = classify_pdf_blob(data)
+        if not verdict.is_pdf:
+            report.total_skipped += 1
+            _record_import_skip(
+                report,
+                rule_id="finlex_import_pdf_blob_not_pdf",
+                family="source_pathology",
+                reason=(
+                    "blob stored as PDF lacks the %PDF magic "
+                    f"({verdict.reject_reason}); refusing to archive an "
+                    "HTTP-error/HTML body as a PDF artifact"
+                ),
+                source_label=source_label,
+                zip_entry_name=zip_entry_name,
+                locator=locator,
+                detail={
+                    "reject_reason": verdict.reject_reason,
+                    "size": str(verdict.size),
+                    "head_bytes": repr(verdict.head_bytes),
+                },
+            )
+            return
 
     digest = hashlib.sha256(data).hexdigest()
     current = farchive.resolve(locator)

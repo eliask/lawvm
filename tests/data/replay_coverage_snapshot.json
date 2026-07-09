@@ -6,7 +6,7 @@
     "source_mtime": "2026-06-24T19:47:13",
     "corpus": "full farchive, 59,574 statutes (export-projections --corpus all enumeration)",
     "replay_mode": "official_consolidation",
-    "module_count": 275,
+    "module_count": 277,
     "refresh_command": "COVERAGE_PROCESS_START=.coveragerc coverage run --source=src/lawvm/finland -m lawvm.tools.cli replay-all --workers 8 && coverage combine && then reduce .coverage to {module: {stmts,exec,pct}} via coverage.CoverageData (see scripts/inventory_module_roles.py docstring) and overwrite this file preserving _doc/provenance, then run --update-baseline."
   },
   "coverage": {
@@ -774,6 +774,11 @@
       "stmts": 3362,
       "exec": 1406,
       "pct": 41.8
+    },
+    "lawvm.finland.pdf_blob_guard": {
+      "stmts": 68,
+      "exec": 0,
+      "pct": 0.0
     },
     "lawvm.finland.pool_mention_extractor": {
       "stmts": 180,
