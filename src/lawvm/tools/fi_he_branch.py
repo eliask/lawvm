@@ -190,17 +190,17 @@ def main(args: argparse.Namespace) -> None:
     """CLI handler for ``lawvm fi-he-branch``."""
     year = int(args.year)
     number = int(args.number)
-    lang = getattr(args, "lang", "fin") or "fin"
-    dest = getattr(args, "dest", None) or _DEFAULT_FARCHIVE
+    lang = args.lang or "fin"
+    dest = args.dest or _DEFAULT_FARCHIVE
     result = run_he_branch(
         year,
         number,
         lang=lang,
         farchive_path=dest,
-        adjudicate=bool(getattr(args, "adjudicate", False)),
-        materialize=bool(getattr(args, "materialize", False)),
+        adjudicate=bool(args.adjudicate),
+        materialize=bool(args.materialize),
     )
-    if getattr(args, "json", False):
+    if args.json:
         pkg = result.package
         payload = {
             "proposal_id": result.proposal_id,

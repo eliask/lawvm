@@ -9672,6 +9672,30 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
                              help="compile each targeted enacted statute and show the conditional provision + diff")
     he_branch_p.add_argument("--json", action="store_true", help="emit JSON instead of the text report")
 
+    # --- fi-parse-attachments ---
+    parse_att_p = sub.add_parser(
+        "fi-parse-attachments",
+        help="parse finlex statute PDF attachments (corrigenda/media) to LawVM IR in a derived store",
+        description=(
+            "Iterate the immutable finlex.farchive PDF attachment locators, parse "
+            "each to canonical LawVM IRNode (deterministic native-PDF pipeline), and "
+            "persist the derived IR — content-addressed by source digest × pipeline "
+            "version, with evidence tiers — in the SEPARATE fi_parsed_ir.farchive "
+            "derived store. Source stays immutable; parse products live elsewhere. "
+            "Idempotent (cache hit on re-run); a bad attachment is a typed failure."
+        ),
+    )
+    parse_att_p.add_argument("--finlex", default=None, metavar="PATH",
+                             help="source farchive (default: data/finlex.farchive)")
+    parse_att_p.add_argument("--store", default=None, metavar="PATH",
+                             help="derived-IR farchive (default: data/fi_parsed_ir.farchive)")
+    parse_att_p.add_argument("--kind", default="all", choices=["all", "corrigenda", "media"],
+                             help="which attachments to parse (default: all)")
+    parse_att_p.add_argument("--limit", type=int, default=None, metavar="N",
+                             help="debug: parse only the first N attachments")
+    parse_att_p.add_argument("--force", action="store_true", help="re-parse and overwrite cached IR")
+    parse_att_p.add_argument("--verbose", "-v", action="store_true", help="print per-batch progress")
+
     # --- structural-review ---
     sr_p = sub.add_parser(
         "structural-review",
@@ -14352,6 +14376,11 @@ def _main_impl() -> None:
         from lawvm.tools.fi_he_branch import main as fi_he_branch_main
 
         fi_he_branch_main(args)
+
+    elif args.command == "fi-parse-attachments":
+        from lawvm.tools.fi_parse_attachments import main as fi_parse_attachments_main
+
+        fi_parse_attachments_main(args)
 
     elif args.command == "structural-review":
         from lawvm.tools.structural_review import (

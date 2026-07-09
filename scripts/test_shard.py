@@ -284,6 +284,8 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_branch_conflicts.py",
         # `lawvm fi-he-branch`: farchive HE PDF → conditional branches (+ materialize).
         "test_fi_he_branch_cli.py",
+        # Derived-IR store: content-addressed cache of LawVM IR parsed from PDFs.
+        "test_fi_parsed_store.py",
         # Draft-HE corpus-sweep status vocabulary (scripts/he_corpus_sweep.py):
         # clean / partial / failed classification of the deterministic lowering.
         "test_he_corpus_sweep.py",
@@ -1339,6 +1341,7 @@ TOOL_SOURCE_SHARD_GROUPS: dict[tuple[str, ...], tuple[str, ...]] = {
         "src/lawvm/tools/corpus_io.py",
         "src/lawvm/tools/export_fi_actors.py",
         "src/lawvm/tools/fi_he_branch.py",
+        "src/lawvm/tools/fi_parse_attachments.py",
         "src/lawvm/tools/export_fi_he_branch_ops.py",
         "src/lawvm/tools/export_fi_he_corpus.py",
         "src/lawvm/tools/export_fi_inline_citations.py",
