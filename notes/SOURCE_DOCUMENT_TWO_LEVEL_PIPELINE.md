@@ -296,3 +296,215 @@ Also frozen in Track A: additive core enum values `SourceDocumentNodeKind.MATH_R
 Every track: `isolation: worktree` (MANDATORY — two in-checkout agent mishaps this
 session came from omitting it), pinned base commit, no push, cherry-pick + central
 baseline regen.
+
+
+## 7. Milestone 3 — the stigmergic (blackboard) composer
+
+M1 (§2) is one adjudication pass over fixed 2-page seam windows + `verify_ledger`
+gate + deterministic fallback. It cannot see structure spanning 3+ pages, cannot
+confirm "repeated header = furniture vs. legitimately-reprinted table header"
+without watching the recurrence establish itself, and cannot look closer at a
+garbled region. M3 replaces the fixed window with a **blackboard**: a shared,
+persisted, provenance-carrying workspace that subagents (knowledge sources) read
+and post marks to until the composition reaches a fixpoint. This is NOT a chat
+agent harness — it is a classic blackboard: bounded-context, single-purpose prompts
+coordinating *only* through the workspace, never through conversation.
+
+Governing constraints (from `mekanismirealismi/LLM_USAGE_GUIDE.md`, treated as law
+here): **NEVER JSON** — all model I/O is line-based index/span codes, single-letter
+internal, expanded to descriptive labels at the serialization boundary; **omit
+lines with no finding**, `NONE` for an empty reply; **input-heavy / output-sparse
+(>10:1)** — the facsimile wire is near-free input, output tokens are ~40× dearer;
+**raise on truncation** (`finish_reason=length` → `LLMContextExhausted`, never a
+silent `""`), then scope-reduce; **no GBNF** (generate freely, parse leniently);
+**every output verifiable by reference** (a claim/mark cites the SpanRef it acts on).
+
+### 7.1 The blackboard
+
+A per-document workspace keyed by `SpanRef` region, persisted as a content-addressed
+journal (sibling of the ledger blob; same determinism-firewall discipline — same
+simulacra ⇒ same journal ⇒ cache-HIT byte-identical). Each entry is a typed **mark**
+carrying `{region, mark_kind, producer_id, round, evidence_refs, rationale}`.
+
+- **Pre-seeded deterministically** from §3 metadata so no subagent starts blank:
+  `rec.band_count ≥ θ` → `FURNITURE?` candidate; `freeform.reason ∈ {math,image_baked,
+  garbled_source}` → `GARBLE?` (a VIEW candidate); an open continuation cue-chain
+  crossing a page edge → `OPEN` (a REJOIN candidate).
+- **Mark kinds** (line-based codes internal):
+  - *candidates* — `DROP? DEDUP? REJOIN? KEEP? REORDER?` (proposals, not yet claims)
+  - *decisions* — promote a candidate to a `DeFacsimileClaim` (the only marks that,
+    once `verify_ledger`-gated, mutate the output tree)
+  - *epistemic* — `OPEN` (chain awaiting its continuation), `GARBLE` (needs a visual
+    look), `CONTESTED` (two producers disagree), `DEFER` (revisit after more context)
+- Marks are append-mostly and reversible (AGENTS §1.8); a decision supersedes its
+  candidate but the candidate + its evidence stay in the journal for audit.
+
+### 7.2 Affordances (a typed, extensible dispatch table — control lines the harness acts on)
+
+The affordance set is deliberately **open** (you cannot enumerate every needed
+affordance a priori). Each is a control line the deterministic harness dispatches;
+adding one is adding a dispatch entry, not reshaping the protocol. Read affordances
+acquire context (input side, ~free); write affordances post to the blackboard/ledger
+(output side, kept sparse).
+
+**Read (context acquisition):**
+- `PAGE <n>` — the token-efficient struct wire of page *n* (the default unit).
+- `EXPAND <lo> <hi>` — widen the window by adjacent pages. **Bounded**
+  (`max_context_pages ≈ 6`, `max_expansions ≈ 3`). Demand-driven, OR forced
+  deterministically when an `OPEN` REJOIN chain crosses the window edge.
+- `VIEW <n>` / `VIEW <n> <bbox>` — the **visual** rendering of a page or subregion
+  (multimodal). The wire is default; the image is the single most expensive input, so
+  it is gated behind an explicit request or a deterministic trigger (a freeform
+  `math`/`verbatim` region, or a `verify_ledger`-flagged garble) — never sent by
+  default. Bounded (`max_views`). The crop is content-addressed and locatable
+  (`<digest>.pdf/NNNN.img`), reusing the inline-image scheme.
+- `NOTES <region>` — read the blackboard marks for a region + its neighbours (the
+  stigmergy read side; compact, so a subagent sees prior conclusions without re-reading
+  raw neighbouring pages).
+- `PREFIX` — the settled de-facsimiled document-so-far (tail *K* nodes / a compact
+  deterministic summary) as running context.
+
+**Write (post to workspace / ledger):**
+- `NOTE <region> <mark> [evidence…]` — leave a typed mark (the stigmergy write).
+- `DROP|DEDUP|REJOIN|KEEP|REORDER <ids…>` — promote a candidate to a claim (existing
+  Track C grammar; `verify_ledger` is the hard gate before any reaches the output).
+- `DEFER <region> <reason>` — mark undecided, revisit after more context accrues.
+
+### 7.3 Knowledge-source subagents (heavy, but instrumental)
+
+Each is a fresh bounded-context prompt with **exactly** the context the task needs
+(logical-dependency completeness), `temperature=0`, `enable_thinking=false`,
+line-based output, omit-on-nothing, raise-on-truncation. They never talk to each
+other — they read/post marks. A deterministic **controller** (the harness) schedules
+the next subagent on the highest-value `UNDECIDED`/`OPEN`/`CONTESTED` region.
+
+| subagent | scope | model tier |
+|---|---|---|
+| seam adjudicator | DROP/DEDUP/REJOIN over the current window (blackboard-aware) | vision 35B |
+| furniture classifier | a recurring band: furniture vs. legit repeat (binary, yes/no per band) | 9B-class |
+| visual transcriber | a `VIEW`'d garble/formula region → faithful text | vision, narrow |
+| chain closer | does page *n+k* continue this `OPEN` REJOIN chain? | targeted |
+| contest resolver | two disagreeing marks → decide, citing evidence | vision 35B |
+
+### 7.4 Convergence (stigmergic fixpoint)
+
+Loop: controller picks the next undecided region → dispatches the right subagent with
+its bounded context → the subagent reads marks, optionally requests `VIEW`/`EXPAND`,
+posts marks/claims → repeat. **Terminate** when a full sweep adds no new marks and
+leaves no `UNDECIDED`/`OPEN`/`CONTESTED` region (fixpoint), OR the budget
+(`max_rounds` / `max_views` / token budget) is exhausted → decide the residue with
+what is visible, typed `context_exhausted` (falling back to the deterministic
+`compose_pages` claim for that region, never a silent drop). `verify_ledger` gates the
+emitted ledger exactly as in M1 — a failed model ledger never reaches the output.
+
+### 7.5 Token economy & determinism firewall
+
+- Wire is input-heavy/near-free; images gated (§7.2); the blackboard IS the
+  shared-context compression — subagents read compact marks, not raw neighbours,
+  unless they `EXPAND`. Recurrence map + prefix summary are computed once
+  (deterministic Phase 1) and fed compactly, not re-derived per call.
+- Truncation → `LLMContextExhausted` → scope-reduction hierarchy (window → single
+  seam → single node), aligning the existing `AdjudicationTruncated` fallback to the
+  guide's Class-2 discipline.
+- Firewall preserved: reads / notes / views / expands are **epistemic** — they change
+  only what the model sees or leave advisory marks. The *only* thing that mutates the
+  output document is a claim that passes `verify_ledger`. The journal is
+  content-addressed → reproducible, cache-HIT byte-identical.
+
+### 7.6 Sequencing & open decisions
+
+- **Builds on #237** (de-facsimile conservatism tuning): a conservative adjudicator
+  that can *ask for more* (VIEW/EXPAND) before committing strictly dominates one that
+  is conservative because it is half-blind. M3 lands **after** #237 merges — it edits
+  `defacsimile.py` + `defacsimile_adjudicator.py` (both #237-owned) plus new
+  `ingest/blackboard.py` (journal + mark codec + controller), `parsed_store` (journal
+  persistence), and `metadata.py` (VIEW crop locators). Modality tag gains
+  `+compose=blackboard.v1+maxviews=<k>+maxctx=<p>`.
+- **Open — settle before impl:** (1) blackboard journal schema (line-based mark wire
+  vs. a frozen `WorkspaceMark` codec — likely both, wire for the model, codec for
+  persistence); (2) controller scheduling policy (priority over region kinds:
+  `CONTESTED` > `OPEN` > `GARBLE` > candidate?); (3) `θ` recurrence pre-seed threshold
+  and `max_views`/`max_ctx` budgets (tune on the HE corpus A/B); (4) whether the
+  contest-resolver is a distinct tier or MULTI_WITNESS by construction (two producers
+  already disagreed → resolution is adjudication, not a fresh witness).
+
+
+## 8. Milestone (bilateral) — Level-1 agentic re-read & the shared visual affordance
+
+**Observed defect (real, HE 2015/1 p4n11):** the Level-1 vision model can emit
+*confidently garbled* OCR (`sopimusekertaluont-eestisaat…`) as ordinary text — it is
+NOT flagged `freeform.garbled_source`, so it looks clean. Level-2 then faithfully
+carries the garbage through. **Level-2 conservatism structurally cannot fix a Level-1
+read defect** (#237 correctly ruled it out of scope). The fix must happen where the
+mis-read is produced. This makes the "re-view a page / bbox, zoom, re-read carefully"
+affordance **bilateral** — needed at Level 1 (repair the read) as well as Level 2 (VIEW
+during composition, §7.2).
+
+- **Shared visual primitive** — new `ingest/visual.py`: `render_region_crop(manifestation,
+  page_num, bbox, dpi) -> bytes` (content-addressed, locator `<digest>.pdf/NNNN.img`).
+  ONE implementation consumed by BOTH the Level-1 re-read below and the Level-2 `VIEW`
+  affordance. Build it standalone.
+- **Suspect-region surfacing (deterministic — surfaces candidates, model decides):**
+  primary signal = **cross-reader disagreement** — an independent reader (pdfium text
+  layer, docling, or nemotron) over the same bbox disagrees with the vision read;
+  secondary = cheap lexical implausibility (OOV/char-n-gram score, long space-less alpha
+  runs, degenerate vowel ratio). Regional divergence of the reading-order witness (a
+  *localized* `_page_assurance`) also triggers. None of these EDIT anything — they only
+  mark a region for the model to re-read.
+- **Re-read action (agentic):** in/after the converge loop, `render_region_crop` the
+  suspect bbox at higher DPI and re-read **just that region** (`vision_producer.reread_region`),
+  replacing the suspect leaf via the EXISTING patch mechanism iff the re-read is more
+  plausible / agrees with a cross-reader. Rides the existing convergence fixpoint +
+  assurance gates — firewall preserved: a re-read mutates the simulacrum only through a
+  normal, already-gated patch; it is never authority.
+- **Multi-reader cross-witness → regional tier:** where an independent reader
+  *corroborates* the re-read, that region earns genuine multi-witness assurance (not just
+  the page-level default) — the reading-order witness becomes regional, not whole-page.
+- **Docling / alternate read backends** already exist under `ingest/llm_backends/`
+  (`docling_producer`, `nemotron_client`) — this milestone wires them in as the
+  independent-reader lane rather than a mere fallback.
+- **Determinism / output-sparsity:** clean pages surface zero suspects → zero re-reads
+  (input-heavy/output-sparse holds); the re-read is content-addressed → reproducible,
+  cache-HIT byte-identical. Recorded in `ConvergenceInfo` (additive: reread count +
+  a `suspect_region` gate reason).
+
+
+## 9. Level-1 region-decomposition reading (proactive bbox tiling + overlap-stitch)
+
+A whole-page vision read is simply the **coarsest tiling** — and the lossiest. On dense,
+multi-column, or table-heavy pages a single read is overly difficult and drops/merges
+content (garbles, lost cells, merged columns). When the deterministic layout already
+resolves the page into coherent regions (columns, blocks, paragraphs, table cells,
+figures — all available from `page_elements` geometry + the §3 metadata `geom.col` /
+`geom.band` / block structure), reading each region on its **own crop** is more faithful
+and lets the model concentrate. §8 (reactive re-read of a suspect region) and §9
+(proactive up-front subdivision) are therefore ONE mechanism at different granularities;
+the whole-page read is the 1-region degenerate case.
+
+- **Deterministic region proposal (surfaces candidates; the model reads):** from the
+  `page_elements` geometry, propose read regions at SEMANTICALLY-COHERENT boundaries
+  (block / column / cell / figure) — never arbitrary pixel tiles. Regions MAY deliberately
+  **overlap** at boundaries so no content is cut at a seam.
+- **Per-region read:** each region → `render_region_crop` (the §8 primitive) → a bounded
+  region read. Regions are far more self-contained than a page, so intra-page region reads
+  can **parallelize** (bounded, GPU-saturating). This lifts the original "per-page, not
+  per-region" concurrency bar (§ pipeline concurrency): the cross-region structure now
+  comes from the deterministic layout + the stitch, NOT the model's running context — so
+  the reason per-page parallelism was withheld no longer applies at region granularity.
+- **Overlap-stitch via span-copy:** overlapping region reads are stitched into the page
+  tree by deduplicating the overlap with the SAME near-duplicate / span-copy machinery as
+  Level-2 `DEDUP_SEAM`/`REJOIN`, but INTRA-page; continuation cues
+  (`cue.ends_terminal`/`starts_lower`/`hyphen_tail`) drive the join. The overlap is
+  redundancy → a cross-read **witness**: agreement in the overlap corroborates (regional
+  multi-witness tier), disagreement localizes a suspect region (→ the §8 re-read).
+- **Adaptive default (output-sparse, cost-proportional):** clean single-column pages stay
+  whole-page (one region); a page subdivides only when a deterministic complexity signal
+  fires — multi-column, table density, region-count over threshold, oversized page. Most
+  pages pay nothing.
+- **Firewall preserved:** region reads assemble the simulacrum only through the normal
+  gated tree build; the overlap-stitch is deterministic; nothing bypasses the convergence
+  fixpoint / `_page_assurance`. Content-addressed crops → reproducible, cache-HIT
+  byte-identical.
+- **Sequencing:** track **P6**, stacks on P5 (reuses `ingest/visual.py` + the region-read
+  + the intra-page span-copy stitch) and shares `page_level.py`/`vision_producer.py` with
+  P5 — so it is Wave 3 (after P5 merges), not parallel to it.
