@@ -277,6 +277,10 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # D2+D3 e2e: native-PDF SourceDocumentIR ingest + determinism firewall
         # (plan .claude/plans/calm-kindling-wand.md).
         "test_fi_source_document_pdf.py",
+        # Proposal-carrier → enacted-infra lowering (branch_lowering.py): a
+        # draft-HE CandidateOperation/ConditionalBranch projects into
+        # core.ir.LegalOperation + branch_authority carriers, never replay-authorized.
+        "test_fi_he_branch_lowering.py",
         "test_fi_statute_name_aliases.py",
         "test_fi_statute_name_full_registry.py",
         "test_fi_statute_name_registry.py",
