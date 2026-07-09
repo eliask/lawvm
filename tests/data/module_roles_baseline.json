@@ -2,7 +2,7 @@
   "_doc": "Monotone module-role baseline. The `dead` and `test_only_live` sets may only SHRINK: a module born dead must be wired or deleted, never added to the population. The `replay_exercised` map is a SNAPSHOT: a module flipping replay-exercised status (either direction) fails the ratchet until re-baselined. Regenerate with `uv run python scripts/inventory_module_roles.py --update-baseline` after legitimately retiring (deleting) a dead/test-only module, wiring it to a production consumer, or refreshing the replay-coverage snapshot (tests/data/replay_coverage_snapshot.json — see its provenance.refresh_command).",
   "counts": {
     "dead": 86,
-    "live": 1176,
+    "live": 1177,
     "test_only_live": 29
   },
   "replay_counts": {
@@ -67,7 +67,7 @@
     "lawvm.finland.source_document.parsed_store",
     "lawvm.finland.source_document.struct_wire",
     "lawvm.finland.timeline_export_plan",
-    "lawvm.ingest.defacsimile",
+    "lawvm.ingest.llm_backends.defacsimile_adjudicator",
     "lawvm.new_zealand.commencement",
     "lawvm.substrate.eu_ingest",
     "lawvm.substrate.locus_links",
