@@ -682,6 +682,15 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # unwitnessed_content tripwire, furniture-kept-as-hint, and the
         # PageSimulacrum store round-trip.
         "test_ingest_page_level.py",
+        # Track-C Level-2 de-facsimile: the PURE fold + idempotence, verify_ledger
+        # (phantom-drop / invented-REJOIN-text / multiset / claim-disjointness /
+        # NUMERIC-change gates), the windowed adjudicator (line-reply parse,
+        # repetition-loop withhold, truncation → per-window deterministic
+        # fallback), and the HE-2015/1 defect fixtures.
+        "test_ingest_defacsimile.py",
+        # Track-C de-facsimile ledger persistence (Decision 5): put_ledger /
+        # get_ledger sibling-blob round-trip + manifest op/tier histograms.
+        "test_ingest_defacsimile_ledger_store.py",
         # D1 coverage metric + owned-content quality detectors.
         "test_source_document_coverage.py",
         # Producer-neutral adjudication layer: assurance_for + Adjudicator.
@@ -1149,6 +1158,10 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_tier_2_storage.py",
         "test_worker_pool.py",
         "test_fi_parse_compare.py",
+        # Track-C spec-§2 A/B: intelligent XML-vs-PDF adjudication over a
+        # de-facsimiled reconstruction; acceptance = EXTRA+STRUCTURE down,
+        # MISSING not up, NUMERIC unchanged (mocked adjudicator, hermetic).
+        "test_fi_parse_compare_defacsimile_ab.py",
     ),
     "tools_audit_restructure": (
         "test_fi_restructure_plan.py",

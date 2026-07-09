@@ -457,6 +457,78 @@ class XmlPdfDiffAdjudicator:
 
 
 # --------------------------------------------------------------------------- #
+# Level-2 de-facsimile A/B (spec §2 validation)                                #
+# --------------------------------------------------------------------------- #
+
+
+@dataclass(frozen=True, slots=True)
+class DeFacsimileABReport:
+    """A/B acceptance of a de-facsimiled reconstruction vs the mechanical stitch.
+
+    The intelligent XML-vs-PDF adjudicator is run on BOTH the baseline (the
+    mechanical ``compose_pages`` stitch) and the de-facsimiled reconstruction;
+    acceptance (spec §2) is: EXTRA + STRUCTURE strictly DOWN, MISSING not up,
+    NUMERIC unchanged. ``accepted`` is that predicate over the two categorized
+    diffs.
+    """
+
+    baseline: AdjudicatedDiff
+    defacsimiled: AdjudicatedDiff
+    extra_delta: int
+    structure_delta: int
+    missing_delta: int
+    numeric_delta: int
+    accepted: bool
+
+
+def _cat_count(diff: AdjudicatedDiff, category: str) -> int:
+    return len(diff.categorized.get(category, ()))
+
+
+def evaluate_defacsimile_ab(
+    xml_text: str,
+    baseline_pdf_text: str,
+    defacsimiled_text: str,
+    *,
+    adjudicator: Optional[XmlPdfDiffAdjudicator] = None,
+) -> DeFacsimileABReport:
+    """Adjudicate baseline vs de-facsimiled reconstruction against the XML gold.
+
+    Both PDF sides are de-hyphenated identically before the model sees them (as the
+    single-side path does). Acceptance is the spec-§2 predicate: EXTRA + STRUCTURE
+    strictly down, MISSING not up, NUMERIC unchanged. The de-facsimile REMOVES
+    furniture/duplicates (→ fewer EXTRA) and rejoins split content (→ fewer
+    STRUCTURE) WITHOUT dropping body content (→ MISSING not up) or corrupting a
+    §/euro (→ NUMERIC unchanged).
+    """
+    adj = adjudicator or XmlPdfDiffAdjudicator()
+    xml = dehyphenate(xml_text)
+    baseline = adj.adjudicate(xml, dehyphenate(baseline_pdf_text))
+    defac = adj.adjudicate(xml, dehyphenate(defacsimiled_text))
+
+    extra_delta = _cat_count(defac, "EXTRA") - _cat_count(baseline, "EXTRA")
+    structure_delta = _cat_count(defac, "STRUCTURE") - _cat_count(baseline, "STRUCTURE")
+    missing_delta = _cat_count(defac, "MISSING") - _cat_count(baseline, "MISSING")
+    numeric_delta = _cat_count(defac, "NUMERIC") - _cat_count(baseline, "NUMERIC")
+
+    accepted = (
+        (extra_delta + structure_delta) < 0  # EXTRA+STRUCTURE strictly DOWN
+        and missing_delta <= 0               # MISSING not up
+        and numeric_delta == 0               # NUMERIC unchanged
+        and not defac.pathological_repetition
+    )
+    return DeFacsimileABReport(
+        baseline=baseline,
+        defacsimiled=defac,
+        extra_delta=extra_delta,
+        structure_delta=structure_delta,
+        missing_delta=missing_delta,
+        numeric_delta=numeric_delta,
+        accepted=accepted,
+    )
+
+
+# --------------------------------------------------------------------------- #
 # Orchestration                                                                #
 # --------------------------------------------------------------------------- #
 

@@ -47,8 +47,9 @@ if TYPE_CHECKING:
     from lawvm.core.source_document.adjudication import Adjudication
     from lawvm.core.source_document.anchors import SourceAnchor
     from lawvm.core.source_document.extraction import ExtractionAssertion
+    from lawvm.ingest.defacsimile import DeFacsimileLedger
     from lawvm.ingest.page_elements import PageElementProducer
-    from lawvm.ingest.simulacrum import PageSimulacrum
+    from lawvm.ingest.simulacrum import PageSimulacrum, SpanRef
 
 # Neutral default derived-IR store path. Jurisdiction callers pass their own
 # path (FI uses ``lawvm.finland.source_document.FI_PARSED_STORE`` =
@@ -98,10 +99,102 @@ def page_simulacrum_locator(
     return f"parsed/{source_digest}/{pipeline_id}@{version}/page/{page_num:04d}"
 
 
+def defacsimile_ledger_locator(source_digest: str, pipeline_id: str, version: str) -> str:
+    """Sibling blob key for the Level-2 de-facsimile ledger (Decision 5).
+
+    Shares the IR's per-record ``parsed/<digest>/<pipeline>@<version>/`` prefix so
+    the full ledger JSON coexists with the IR under one content-addressed record
+    (the manifest carries only histograms + this locator/digest, not the claims).
+    """
+    return f"parsed/{source_digest}/{pipeline_id}@{version}/defacsimile_ledger.json"
+
+
 def _serialize_parsed_record(ir_dict: Dict[str, Any], manifest: Dict[str, Any]) -> bytes:
     """Serialize {ir, manifest} to deterministic JSON bytes (sorted keys)."""
     payload = {"ir": ir_dict, "manifest": manifest}
     return json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+
+
+def _spanref_to_jsonable(ref: "SpanRef") -> Dict[str, Any]:
+    return {"page_num": ref.page_num, "node_path": list(ref.node_path)}
+
+
+def serialize_defacsimile_ledger(ledger: "DeFacsimileLedger") -> bytes:
+    """Full ledger → deterministic sorted-keys JSON bytes (Decision 5).
+
+    Every claim's op / targets / tier / corroborating producers / absorbed /
+    method / rationale is preserved verbatim so the ledger is reversible against
+    the immutable simulacra — the sibling blob IS the audit record.
+    """
+    claims = [
+        {
+            "op": claim.op.value,
+            "targets": [_spanref_to_jsonable(t) for t in claim.targets],
+            "tier": claim.tier.value,
+            "corroborating_producers": list(claim.corroborating_producers),
+            "absorbed": [_spanref_to_jsonable(a) for a in claim.absorbed],
+            "method": claim.method,
+            "rationale": claim.rationale,
+        }
+        for claim in ledger.claims
+    ]
+    return json.dumps({"claims": claims}, ensure_ascii=False, sort_keys=True).encode("utf-8")
+
+
+def deserialize_defacsimile_ledger(data: bytes) -> "DeFacsimileLedger":
+    """Round-trip a serialized ledger blob back to a ``DeFacsimileLedger``."""
+    from lawvm.core.source_document.ir import AssuranceTier
+    from lawvm.ingest.defacsimile import (
+        DeFacsimileClaim,
+        DeFacsimileLedger,
+        DeFacsimileOp,
+    )
+    from lawvm.ingest.simulacrum import SpanRef
+
+    payload = json.loads(data.decode("utf-8"))
+
+    def _ref(d: Dict[str, Any]) -> SpanRef:
+        return SpanRef(page_num=int(d["page_num"]), node_path=tuple(d["node_path"]))
+
+    claims = tuple(
+        DeFacsimileClaim(
+            op=DeFacsimileOp(c["op"]),
+            targets=tuple(_ref(t) for t in c["targets"]),
+            tier=AssuranceTier(c["tier"]),
+            corroborating_producers=tuple(c["corroborating_producers"]),
+            absorbed=tuple(_ref(a) for a in c.get("absorbed", ())),
+            method=c.get("method", "model_adjudicated"),
+            rationale=c.get("rationale", ""),
+        )
+        for c in payload.get("claims", ())
+    )
+    return DeFacsimileLedger(claims=claims)
+
+
+def defacsimile_manifest_summary(ledger: "DeFacsimileLedger") -> Dict[str, Any]:
+    """Manifest fields for a ledger (Decision 5): op/tier histograms + SW-drop count.
+
+    The manifest carries ONLY the histograms + the SINGLE_WITNESS-drop count (and,
+    stitched by ``put_ledger``, the blob locator + digest) — never the claims
+    themselves (those live in the sibling blob).
+    """
+    op_hist: Dict[str, int] = {}
+    tier_hist: Dict[str, int] = {}
+    single_witness_drops = 0
+    for claim in ledger.claims:
+        op_hist[claim.op.value] = op_hist.get(claim.op.value, 0) + 1
+        tier_hist[claim.tier.name] = tier_hist.get(claim.tier.name, 0) + 1
+        if (
+            claim.op.value in ("drop_furniture", "dedup_seam")
+            and claim.tier.name == "SINGLE_WITNESS"
+        ):
+            single_witness_drops += 1
+    return {
+        "op_histogram": op_hist,
+        "tier_histogram": tier_hist,
+        "single_witness_drop_count": single_witness_drops,
+        "claim_count": len(ledger.claims),
+    }
 
 
 @dataclass(frozen=True, slots=True)
@@ -543,6 +636,44 @@ class ParsedIrStore:
         from lawvm.ingest.page_level import page_simulacrum_from_json
 
         return page_simulacrum_from_json(json.loads(data.decode("utf-8")))
+
+    def put_ledger(
+        self,
+        locator: str,
+        ledger: "DeFacsimileLedger",
+        *,
+        source_digest: str,
+    ) -> str:
+        """Store the full de-facsimile ledger as a sibling blob (Decision 5).
+
+        Mirrors ``put_image``: the sorted-keys JSON ledger lands under the IR's
+        per-record ``parsed/<digest>/<pipeline>@<version>/`` prefix as a
+        ``defacsimile_ledger`` storage class. Returns the blob digest so the
+        manifest can carry the blob locator + digest (the manifest itself keeps
+        only histograms — ``defacsimile_manifest_summary``). ``verify_ledger`` gates
+        the WRITE at the call site (a record is never emitted with an unverified
+        ledger).
+        """
+        data = serialize_defacsimile_ledger(ledger)
+        return self._fa.store(
+            locator,
+            data,
+            storage_class="defacsimile_ledger",
+            metadata={
+                "source_digest": source_digest,
+                "claim_count": str(len(ledger.claims)),
+            },
+        )
+
+    def get_ledger(self, locator: str) -> "Optional[DeFacsimileLedger]":
+        """Read a stored de-facsimile ledger blob (``None`` if absent)."""
+        span = self._fa.resolve(locator)
+        if span is None:
+            return None
+        data = self._fa.read(span.digest)
+        if data is None:
+            return None
+        return deserialize_defacsimile_ledger(data)
 
     def close(self) -> None:
         self._fa.close()
