@@ -34,6 +34,7 @@ from lawvm.ingest.defacsimile import (
 )
 from lawvm.ingest.llm_backends.defacsimile_adjudicator import (
     DeFacsimileAdjudicator,
+    document_recurrence,
     parse_window_reply,
 )
 from lawvm.ingest.metadata import NodeMetadata, encode_metadata
@@ -530,6 +531,160 @@ def test_he_defect_seam_header_dedup_and_furniture_drop_and_rejoin() -> None:
     assert [c.text for c in reduced.children] == [
         "Section 3 provides for the transfer of competence to the new authority."
     ]
+
+
+# --------------------------------------------------------------------------- #
+# CONSERVATISM: the model over-calls DROP/DEDUP/REJOIN; the deterministic gates #
+# bias hard toward KEEP so real content (a heading, a body line, an ambiguous   #
+# node) is never silently lost. A false DROP (MISSING) >> a missed furniture    #
+# line (EXTRA).                                                                  #
+# --------------------------------------------------------------------------- #
+
+
+def _mixed_window() -> list[PageSimulacrum]:
+    """A window with a furniture line + a legit repeat + real headings + a body
+    line the model might mis-label furniture. No band/recurrence metadata — the
+    conservatism must work from text/kind + the cross-page recurrence witness."""
+    p1 = _page(
+        1,
+        (
+            _node(SourceDocumentNodeKind.HEADING, "HE 1/2015 vp", 1, meta=NodeMetadata(y_order=0)),   # running header (recurs)
+            _node(SourceDocumentNodeKind.HEADING, "2 Ehdotetut muutokset", 1, meta=NodeMetadata(y_order=1)),  # REAL heading
+            _node(SourceDocumentNodeKind.PARAGRAPH, "Tämä on oikeaa tekstiä joka jatkuu", 1, meta=NodeMetadata(y_order=2)),  # real body (unterminated)
+        ),
+    )
+    p2 = _page(
+        2,
+        (
+            _node(SourceDocumentNodeKind.HEADING, "HE 1/2015 vp", 2, meta=NodeMetadata(y_order=0)),   # running header (recurs)
+            _node(SourceDocumentNodeKind.PARAGRAPH, "seuraavalle sivulle asti.", 2, meta=NodeMetadata(y_order=1)),  # continuation
+            _node(SourceDocumentNodeKind.PARAGRAPH, "3", 2, meta=NodeMetadata(y_order=9)),  # bare page number
+        ),
+    )
+    return [p1, p2]
+
+
+def test_conservatism_uncorroborated_drop_downgraded_to_keep() -> None:
+    # The model DROPs a real heading ("2 Ehdotetut muutokset") as "furniture". It
+    # neither recurs nor is a page number → NOT chrome → DOWNGRADED to KEEP.
+    pages = _mixed_window()
+    rec = document_recurrence(pages)
+    claims, _ = parse_window_reply("DROP p1n1\n", pages, rec)
+    assert len(claims) == 1
+    assert claims[0].op is DeFacsimileOp.KEEP
+    assert claims[0].targets == (SpanRef(1, (1,)),)
+    assert "downgraded to KEEP" in claims[0].rationale
+
+
+def test_conservatism_recurring_running_header_drop_honored() -> None:
+    # "HE 1/2015 vp" recurs across p1 and p2 → deterministic chrome → DROP honored.
+    pages = _mixed_window()
+    rec = document_recurrence(pages)
+    claims, _ = parse_window_reply("DROP p1n0\n", pages, rec)
+    assert claims[0].op is DeFacsimileOp.DROP_FURNITURE
+    assert claims[0].targets == (SpanRef(1, (0,)),)
+
+
+def test_conservatism_bare_page_number_drop_honored() -> None:
+    # A lone "3" is a bare page number → chrome → DROP honored.
+    pages = _mixed_window()
+    rec = document_recurrence(pages)
+    claims, _ = parse_window_reply("DROP p2n2\n", pages, rec)
+    assert claims[0].op is DeFacsimileOp.DROP_FURNITURE
+
+
+def test_conservatism_body_line_mislabeled_furniture_kept() -> None:
+    # The model mis-calls a real body line "furniture"; it is not chrome → KEEP.
+    pages = _mixed_window()
+    rec = document_recurrence(pages)
+    claims, _ = parse_window_reply("DROP p1n2\n", pages, rec)
+    assert claims[0].op is DeFacsimileOp.KEEP  # real body content survives
+
+
+def test_conservatism_spurious_dedup_of_distinct_content_downgraded() -> None:
+    # DEDUP of two DISTINCT lines is not a near-duplicate → KEEP the second, never
+    # delete distinct content.
+    pages = _mixed_window()
+    rec = document_recurrence(pages)
+    claims, _ = parse_window_reply("DEDUP p1n1 p1n2\n", pages, rec)
+    assert claims[0].op is DeFacsimileOp.KEEP
+    assert claims[0].targets == (SpanRef(1, (2,)),)
+
+
+def test_conservatism_genuine_dedup_of_near_duplicate_honored() -> None:
+    # The two "HE 1/2015 vp" running headers ARE near-duplicates → DEDUP honored.
+    pages = _mixed_window()
+    rec = document_recurrence(pages)
+    claims, _ = parse_window_reply("DEDUP p1n0 p2n0\n", pages, rec)
+    assert claims[0].op is DeFacsimileOp.DEDUP_SEAM
+    assert claims[0].targets == (SpanRef(2, (0,)),)
+
+
+def test_conservatism_rejoin_refused_when_folding_a_heading() -> None:
+    # The model REJOINs a HEADING into the following paragraph — refused (would
+    # destroy the section boundary); both parts KEPT as separate nodes.
+    pages = _mixed_window()
+    rec = document_recurrence(pages)
+    claims, _ = parse_window_reply("REJOIN p1n1 p1n2\n", pages, rec)
+    assert all(c.op is DeFacsimileOp.KEEP for c in claims)
+    assert {c.targets[0] for c in claims} == {SpanRef(1, (1,)), SpanRef(1, (2,))}
+
+
+def test_conservatism_rejoin_refused_when_both_paragraphs_complete() -> None:
+    # Two ALREADY-COMPLETE paragraphs (first ends terminal) are not a seam-split;
+    # REJOIN refused (would flatten structure into a continuous block).
+    p1 = _page(1, (_node(SourceDocumentNodeKind.PARAGRAPH, "Ensimmäinen kappale päättyy.", 1, meta=NodeMetadata(y_order=0)),))
+    p2 = _page(2, (_node(SourceDocumentNodeKind.PARAGRAPH, "Toinen kappale alkaa.", 2, meta=NodeMetadata(y_order=0)),))
+    pages = [p1, p2]
+    rec = document_recurrence(pages)
+    claims, _ = parse_window_reply("REJOIN p1n0 p2n0\n", pages, rec)
+    assert all(c.op is DeFacsimileOp.KEEP for c in claims)
+
+
+def test_conservatism_rejoin_genuine_midsentence_split_honored() -> None:
+    # A genuine split (first ends WITHOUT terminal punctuation, second starts
+    # lower-case) → REJOIN honored.
+    pages = _mixed_window()
+    rec = document_recurrence(pages)
+    claims, _ = parse_window_reply("REJOIN p1n2 p2n1\n", pages, rec)
+    assert claims[0].op is DeFacsimileOp.REJOIN
+    assert claims[0].targets == (SpanRef(1, (2,)), SpanRef(2, (1,)))
+
+
+def test_conservatism_confirmed_chrome_drop_propagates_to_all_recurrences() -> None:
+    # The model DROPs "HE 1/2015 vp" on one page only; the deterministic propagation
+    # extends the drop to EVERY recurrence (the identical running header) — closing
+    # the residual EXTRA the model's uneven per-page coverage leaves. Never touches
+    # content (only the model-confirmed, recurring header line).
+    pages = _mixed_window()
+    adj = _MockAdjudicator({"1+2": "DROP p2n0\n"})  # model drops the p2 header only
+    ledger = adj.adjudicate_document(pages)
+    dropped = {
+        (r.page_num, r.node_path)
+        for c in ledger.claims
+        if c.op is DeFacsimileOp.DROP_FURNITURE
+        for r in c.targets
+    }
+    # BOTH header occurrences dropped (p1n0 propagated from the model's p2n0 DROP).
+    assert (1, (0,)) in dropped and (2, (0,)) in dropped
+    # The real heading + body are NEVER dropped.
+    reduced = apply_ledger(pages, ledger, _ROOT_ANCHOR)
+    assert verify_ledger(pages, ledger, reduced) == []
+    txt = _reduced_text(reduced)
+    assert "2 Ehdotetut muutokset" in txt
+    assert "HE 1/2015 vp" not in txt
+
+
+def test_conservatism_pageno_glued_running_header_is_chrome() -> None:
+    # "4HE 1/2015 vp" — a page number glued to the recurring running header — is
+    # chrome once the leading page-number is stripped and the residual recurs.
+    p1 = _page(1, (_node(SourceDocumentNodeKind.HEADING, "HE 1/2015 vp", 1, meta=NodeMetadata(y_order=0)),))
+    p2 = _page(2, (_node(SourceDocumentNodeKind.HEADING, "HE 1/2015 vp", 2, meta=NodeMetadata(y_order=0)),))
+    p3 = _page(3, (_node(SourceDocumentNodeKind.HEADING, "4HE 1/2015 vp", 3, meta=NodeMetadata(y_order=0)),))
+    pages = [p1, p2, p3]
+    rec = document_recurrence(pages)
+    claims, _ = parse_window_reply("DROP p3n0\n", [p2, p3], rec)
+    assert claims[0].op is DeFacsimileOp.DROP_FURNITURE
 
 
 def test_verify_error_raised_only_via_orchestrator_guard() -> None:

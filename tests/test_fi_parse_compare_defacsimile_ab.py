@@ -91,6 +91,34 @@ def test_defacsimile_ab_rejects_when_numeric_changes() -> None:
     assert not report.accepted
 
 
+def test_defacsimile_ab_accepts_when_numeric_decreases() -> None:
+    # A numeric DECREASE is an improvement, never a corruption: the de-facsimiled
+    # text carries FEWER §/euro discrepancies vs the gold than the baseline. The
+    # spec intent is "never CORRUPT a §/euro" (numeric not UP) — a decrease with
+    # EXTRA/STRUCTURE down must be ACCEPTED, not rejected by an over-strict ``==``.
+    baseline_with_extra_numeric = (
+        "EXTRA: running header 'HE 1/2015 vp' repeated\n"
+        "EXTRA: page number '1'\n"
+        "STRUCTURE: paragraph split across page break\n"
+        "NUMERIC: reference '82/891/ETY' (present on both, bogus finding)\n"
+        "VERDICT: minor-issues\n"
+    )
+    adj = _ScriptedAdjudicator(
+        {"BASELINE_MARK": baseline_with_extra_numeric, "DEFAC_MARK": _DEFAC_REPLY}
+    )
+    report = evaluate_defacsimile_ab(
+        xml_text="Authoritative body.",
+        baseline_pdf_text="BASELINE_MARK body with furniture",
+        defacsimiled_text="DEFAC_MARK clean body",
+        adjudicator=adj,
+    )
+    assert report.extra_delta == -2
+    assert report.structure_delta == -1
+    assert report.missing_delta == 0
+    assert report.numeric_delta == -1   # de-facsimile has fewer numeric findings
+    assert report.accepted              # a numeric IMPROVEMENT is not a rejection
+
+
 def test_defacsimile_ab_rejects_when_no_improvement() -> None:
     # Same diffs on both sides → EXTRA+STRUCTURE not strictly down → not accepted.
     adj = _ScriptedAdjudicator(

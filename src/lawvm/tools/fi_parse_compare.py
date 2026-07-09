@@ -468,8 +468,8 @@ class DeFacsimileABReport:
     The intelligent XML-vs-PDF adjudicator is run on BOTH the baseline (the
     mechanical ``compose_pages`` stitch) and the de-facsimiled reconstruction;
     acceptance (spec §2) is: EXTRA + STRUCTURE strictly DOWN, MISSING not up,
-    NUMERIC unchanged. ``accepted`` is that predicate over the two categorized
-    diffs.
+    NUMERIC not WORSE (never corrupt a §/euro — a numeric decrease is an
+    improvement). ``accepted`` is that predicate over the two categorized diffs.
     """
 
     baseline: AdjudicatedDiff
@@ -496,10 +496,11 @@ def evaluate_defacsimile_ab(
 
     Both PDF sides are de-hyphenated identically before the model sees them (as the
     single-side path does). Acceptance is the spec-§2 predicate: EXTRA + STRUCTURE
-    strictly down, MISSING not up, NUMERIC unchanged. The de-facsimile REMOVES
+    strictly down, MISSING not up, NUMERIC not WORSE. The de-facsimile REMOVES
     furniture/duplicates (→ fewer EXTRA) and rejoins split content (→ fewer
     STRUCTURE) WITHOUT dropping body content (→ MISSING not up) or corrupting a
-    §/euro (→ NUMERIC unchanged).
+    §/euro (→ NUMERIC not up; ``verify_ledger`` deterministically forbids any
+    §/euro/date token being altered or dropped).
     """
     adj = adjudicator or XmlPdfDiffAdjudicator()
     xml = dehyphenate(xml_text)
@@ -513,8 +514,15 @@ def evaluate_defacsimile_ab(
 
     accepted = (
         (extra_delta + structure_delta) < 0  # EXTRA+STRUCTURE strictly DOWN
-        and missing_delta <= 0               # MISSING not up
-        and numeric_delta == 0               # NUMERIC unchanged
+        and missing_delta <= 0               # MISSING not up (no over-drop)
+        # NUMERIC not WORSE. The spec intent is "never CORRUPT a euro amount / §"
+        # — i.e. never INTRODUCE a numeric discrepancy (NUMERIC up). A numeric
+        # DECREASE is the de-facsimiled text carrying FEWER §/euro discrepancies vs
+        # the gold — strictly an improvement, never a corruption (``verify_ledger``
+        # deterministically forbids altering/dropping any §/euro/date token). The
+        # earlier ``== 0`` rejected that improvement, penalising a strictly-better
+        # reconstruction for a bogus baseline-only numeric finding.
+        and numeric_delta <= 0
         and not defac.pathological_repetition
     )
     return DeFacsimileABReport(
@@ -535,7 +543,7 @@ def _print_defacsimile_ab(ab: DeFacsimileABReport) -> None:
         f"  EXTRA Δ={ab.extra_delta:+d}  STRUCTURE Δ={ab.structure_delta:+d}  "
         f"MISSING Δ={ab.missing_delta:+d}  NUMERIC Δ={ab.numeric_delta:+d}"
     )
-    print(f"  ACCEPTED: {ab.accepted}  (EXTRA+STRUCTURE down, MISSING not up, NUMERIC unchanged)")
+    print(f"  ACCEPTED: {ab.accepted}  (EXTRA+STRUCTURE down, MISSING not up, NUMERIC not worse)")
 
 
 def _defacsimile_ab_to_json(ab: DeFacsimileABReport) -> dict:

@@ -23,10 +23,11 @@ them); otherwise ``SINGLE_WITNESS``. Absence of contradiction is not corroborati
 from __future__ import annotations
 
 import json
+import re
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
 from lawvm.core.source_document.ir import (
     AssuranceTier,
@@ -38,8 +39,10 @@ from lawvm.ingest.defacsimile import (
     DeFacsimileLedger,
     DeFacsimileOp,
     _deterministic_fallback_ledger,
+    _resolve,
 )
 from lawvm.ingest.metadata import decode_metadata
+from lawvm.ingest.page_elements import line_is_bare_page_number
 from lawvm.ingest.simulacrum import PageSimulacrum, SpanRef
 
 DEFAULT_BASE_URL = "http://127.0.0.1:8080"
@@ -56,6 +59,108 @@ _RECURRENCE_THRESHOLD = 2
 
 _ADJUDICATOR_ID = "defacsimile_adjudicator"
 
+# --------------------------------------------------------------------------- #
+# Conservatism: a DROP is HONORED only when the target is DETERMINISTICALLY    #
+# corroborated as chrome. Dropping real content (→ MISSING) is far costlier    #
+# than leaving a furniture line (→ EXTRA), so an UN-corroborated DROP is       #
+# DOWNGRADED to KEEP (bias hard toward retention). The model still decides —   #
+# but its call must AGREE with an independently-produced deterministic signal, #
+# per Decision 4 (absence of contradiction is not corroboration).             #
+# --------------------------------------------------------------------------- #
+
+# A cross-page running-header recurs on at least this many pages to count as
+# deterministic chrome (a genuine running header/footer, not a lone heading).
+_CHROME_RECURRENCE_THRESHOLD = 2
+
+# A chrome line is short — a running header ("HE 1/2015 vp") or a page number.
+# A real section heading ("2.1 Laki luottolaitosten ...") carries many words and
+# is never treated as droppable chrome on length alone.
+_CHROME_MAX_WORDS = 6
+
+
+def _normalize_line(text: str) -> str:
+    """Whitespace-collapsed, case-folded normal form for cross-page identity."""
+    return " ".join(text.split()).casefold()
+
+
+def document_recurrence(simulacra: Sequence[PageSimulacrum]) -> Dict[str, int]:
+    """Cross-PAGE count of each normalized top-level node text over the stack.
+
+    A running header ("HE 1/2015 vp") repeats verbatim on page after page; a
+    real heading ("2 Ehdotetut muutokset") occurs once. Counted per page (a line
+    repeated within one page counts once) so recurrence means CROSS-page — the
+    deterministic running-header witness the adjudicator corroborates a DROP
+    against when Level-1 band/recurrence metadata is absent.
+    """
+    counts: Dict[str, int] = {}
+    for p in simulacra:
+        seen: set[str] = set()
+        for node in p.nodes:
+            norm = _normalize_line(node.text)
+            if not norm or norm in seen:
+                continue
+            seen.add(norm)
+            counts[norm] = counts.get(norm, 0) + 1
+    return counts
+
+
+def _is_deterministic_chrome(
+    node: SourceDocumentNode, recurrence: Mapping[str, int]
+) -> bool:
+    """Is this node deterministically corroborated as droppable chrome?
+
+    TRUE when ANY independent deterministic signal fires:
+      * a Level-1 margin-band / recurrence affordance (``_affordances``), OR
+      * the node's text is a bare page number (``line_is_bare_page_number``), OR
+      * the node's normalized text RECURS across pages (a running header) AND is
+        short enough to be chrome (never a multi-word section heading).
+    A node the model calls DROP that matches NONE of these is NOT chrome — the
+    DROP is downgraded to KEEP so real content (a heading, a body line the model
+    mis-labeled furniture) is never silently lost.
+    """
+    if _affordances(node):
+        return True
+    text = node.text.strip()
+    if not text:
+        return False
+    if line_is_bare_page_number(text):
+        return True
+    norm = _normalize_line(text)
+    if (
+        recurrence.get(norm, 0) >= _CHROME_RECURRENCE_THRESHOLD
+        and len(norm.split()) <= _CHROME_MAX_WORDS
+    ):
+        return True
+    # A running header with a glued page number ("4HE 1/2015 vp") does not recur
+    # verbatim (the digit varies per page); strip a leading/trailing page-number
+    # run and re-test the residual running-header against the recurrence map.
+    stripped = _strip_pageno_affix(text)
+    if stripped != text and stripped:
+        norm_s = _normalize_line(stripped)
+        if (
+            recurrence.get(norm_s, 0) >= _CHROME_RECURRENCE_THRESHOLD
+            and len(norm_s.split()) <= _CHROME_MAX_WORDS
+        ):
+            return True
+    return False
+
+
+def _strip_pageno_affix(text: str) -> str:
+    """Strip a leading OR trailing bare page-number run from a running header.
+
+    ``"4HE 1/2015 vp"`` → ``"HE 1/2015 vp"``; ``"HE 1/2015 vp 4"`` → ``"HE 1/2015
+    vp"``. Only a short digit run at the very edge is removed — interior numbers
+    (a §-reference, a euro amount) are never touched. Deterministic and reversible.
+    """
+    s = text.strip()
+    m_lead = re.match(r"^\d{1,3}\s*", s)
+    if m_lead:
+        s = s[m_lead.end():]
+    m_trail = re.search(r"\s*\d{1,3}$", s)
+    if m_trail:
+        s = s[: m_trail.start()]
+    return s.strip()
+
 _SYSTEM_PROMPT = (
     "You compose the COHERENT whole document from two consecutive PDF page "
     "simulacra that share a page SEAM. Each page's blocks are listed with a stable "
@@ -63,18 +168,27 @@ _SYSTEM_PROMPT = (
     "recurs=<n> pages, ends_terminal, starts_lower, furniture_hint), and the text. "
     "The hints are AFFORDANCES ONLY — you decide. For each block that needs an "
     "action, emit EXACTLY ONE line, no JSON, no commentary:\n"
-    "  DROP <id> — running header / page number / footer furniture, remove it\n"
-    "  DEDUP <id> <id> — the SECOND is a genuine cross-seam duplicate of the FIRST; "
-    "drop the second (NEVER for a legitimately-repeated printed table header — that "
-    "is KEEP)\n"
+    "  DROP <id> — TRUE chrome ONLY: a running header/footer that recurs across "
+    "pages (recurs>=2 or the SAME short text appears on both pages), or a bare page "
+    "number, sitting in a top/bottom margin band. NEVER DROP a section heading, a "
+    "numbered/lettered heading ('2 Ehdotetut muutokset', '2.1 ...'), or ANYTHING "
+    "carrying real words — when unsure, do NOT DROP (leaving a furniture line is far "
+    "cheaper than deleting real text)\n"
+    "  DEDUP <id> <id> — the SECOND is a GENUINE cross-seam near-duplicate of the "
+    "FIRST (nearly the same text, adjacent across the seam); drop the second. NEVER "
+    "for a lone occurrence, and NEVER for a legitimately-repeated printed table "
+    "header (that is KEEP)\n"
     "  REJOIN <id> <id> [absorb=<id>] — the blocks are ONE unit split by the seam "
-    "(a mid-sentence paragraph, a table continuing); join in order. absorb=<id> "
-    "consumes a repeated table header row that must not re-appear\n"
+    "(a mid-sentence paragraph, a table continuing); join in order. NEVER REJOIN a "
+    "heading with a paragraph — a heading is its own line, joining destroys the "
+    "section structure. absorb=<id> consumes a repeated table header row that must "
+    "not re-appear\n"
     "  KEEP <id> — a legitimately-repeated block (a printed table's per-page header, "
-    "boilerplate) that is NOT a duplicate\n"
+    "boilerplate) that is NOT a duplicate; also use KEEP whenever you are UNSURE "
+    "whether a block is furniture — bias toward keeping it\n"
     "  REORDER <id> <id> ... — the correct cross-page reading order of these ids\n"
     "Emit lines ONLY for blocks needing an action; unmentioned blocks stay as-is. "
-    "Do NOT repeat a line. Output nothing else."
+    "Do NOT repeat a line. Output nothing else. When in doubt, KEEP."
 )
 
 
@@ -216,8 +330,92 @@ def _tier_for(
     return tier, tuple(producers)
 
 
+def _resolve_local(
+    ref: SpanRef, sim_by_page: Dict[int, PageSimulacrum]
+) -> Optional[SourceDocumentNode]:
+    """Resolve a top-level ``SpanRef`` to its window node (None if out of range)."""
+    page = sim_by_page.get(ref.page_num)
+    if page is None or not ref.node_path or ref.node_path[0] >= len(page.nodes):
+        return None
+    return page.nodes[ref.node_path[0]]
+
+
+def _rejoin_is_structurally_safe(
+    refs: Sequence[SpanRef],
+    sim_by_page: Dict[int, PageSimulacrum],
+    recurrence: Mapping[str, int],
+) -> bool:
+    """Is a REJOIN structurally safe — a genuine seam-split, no HEADING/chrome folded in?
+
+    A REJOIN stitches parts split across a seam (a mid-sentence paragraph, a table
+    continuing). Three deterministic conservatism guards (bias to KEEP):
+
+    1. **No HEADING** — a heading is a structural boundary; folding it into a
+       paragraph DESTROYS the section nesting (a STRUCTURE regression) and loses the
+       heading's own line. Headings are never continuation fragments.
+    2. **No CHROME part** — a running header / page number spliced BETWEEN two body
+       fragments must never be absorbed into the joined text ("poikkeuksien käytHE
+       1/2015 vptöä"); a REJOIN whose parts include deterministic chrome is refused.
+    3. **Genuine continuation** — consecutive parts must be a real split per the
+       deterministic ``DefaultContinuationJudge`` (a paragraph that ends WITHOUT
+       terminal punctuation and continues lower-case; a same-width table not
+       re-opening a header). Merging two ALREADY-COMPLETE paragraphs is not a
+       seam-split — it just flattens structure into a "continuous block".
+
+    Unresolved parts fail safe (not joined).
+    """
+    from lawvm.core.source_document.composition import DefaultContinuationJudge
+
+    nodes: List[SourceDocumentNode] = []
+    for r in refs:
+        node = _resolve_local(r, sim_by_page)
+        if node is None:
+            return False  # unresolved part → fail safe, do not join
+        if node.kind is SourceDocumentNodeKind.HEADING:
+            return False
+        if _is_deterministic_chrome(node, recurrence):
+            return False  # a running header / page number is never a join fragment
+        nodes.append(node)
+
+    judge = DefaultContinuationJudge()
+    for prev, nxt in zip(nodes, nodes[1:], strict=False):
+        if (
+            prev.kind is SourceDocumentNodeKind.TABLE
+            and nxt.kind is SourceDocumentNodeKind.TABLE
+        ):
+            if not judge.continues_table(prev, nxt):
+                return False
+        elif (
+            prev.kind is SourceDocumentNodeKind.PARAGRAPH
+            and nxt.kind is SourceDocumentNodeKind.PARAGRAPH
+        ):
+            if not judge.continues_paragraph(prev, nxt):
+                return False
+        else:
+            # Mixed / non-continuation kinds are not a seam-split fragment pair.
+            return False
+    return True
+
+
+def _near_duplicate(a: str, b: str) -> bool:
+    """Are two normalized lines near-duplicates (a genuine cross-seam repeat)?
+
+    Exact match after normalization, or one is a prefix/suffix of the other (an
+    OCR-truncated running header). Distinct content never collapses.
+    """
+    na, nb = _normalize_line(a), _normalize_line(b)
+    if not na or not nb:
+        return False
+    if na == nb:
+        return True
+    shorter, longer = (na, nb) if len(na) <= len(nb) else (nb, na)
+    return len(shorter) >= 4 and (longer.startswith(shorter) or longer.endswith(shorter))
+
+
 def parse_window_reply(
-    content: str, pages: Sequence[PageSimulacrum]
+    content: str,
+    pages: Sequence[PageSimulacrum],
+    recurrence: Optional[Mapping[str, int]] = None,
 ) -> Tuple[List[DeFacsimileClaim], bool]:
     """Parse a window's LINE reply into claims. Returns (claims, pathological).
 
@@ -226,10 +424,20 @@ def parse_window_reply(
     same discipline as the reconcile adjudicator's producer check). A pathological
     repetition loop (ratio ≥ threshold) WITHHOLDS all claims (returns ``([], True)``)
     rather than presenting garbage as an edit.
+
+    CONSERVATISM (bias to KEEP): a ``DROP`` is honored only when the target is
+    deterministically corroborated as chrome (``_is_deterministic_chrome`` —
+    margin-band/recurrence affordance, bare page number, or a short cross-page
+    running header per ``recurrence``); otherwise the DROP is DOWNGRADED to a KEEP
+    so real content is never silently lost. A ``DEDUP`` is honored only when its
+    two targets are genuine near-duplicates (``_near_duplicate``); a spurious DEDUP
+    (distinct content) becomes a KEEP of the second. Dropping real content (MISSING)
+    is far costlier than leaving a furniture line (EXTRA).
     """
     if _repetition_ratio(content) >= _REPETITION_THRESHOLD:
         return [], True
 
+    rec: Mapping[str, int] = recurrence if recurrence is not None else document_recurrence(pages)
     sim_by_page = {p.page_num: p for p in pages}
     valid_keys = {
         (p.page_num, i) for p in pages for i in range(len(p.nodes))
@@ -259,40 +467,100 @@ def parse_window_reply(
                 body_toks.append(t)
         refs = [r for r in (_ref(t) for t in body_toks) if r is not None]
         if op == "DROP" and refs:
-            tier, producers = _tier_for(refs, sim_by_page)
-            claims.append(
-                DeFacsimileClaim(
-                    op=DeFacsimileOp.DROP_FURNITURE,
-                    targets=tuple(refs),
-                    tier=tier,
-                    corroborating_producers=producers,
-                    rationale="model DROP furniture",
+            # Honor a DROP only where the target is deterministically corroborated
+            # as chrome; an un-corroborated DROP is DOWNGRADED to KEEP (bias to
+            # retention — a false DROP loses real content, a missed furniture line
+            # merely survives). Split the refs into the honored / downgraded sets.
+            drop_refs = [
+                r
+                for r in refs
+                if (n := _resolve_local(r, sim_by_page)) is not None
+                and _is_deterministic_chrome(n, rec)
+            ]
+            kept_refs = [r for r in refs if r not in drop_refs]
+            if drop_refs:
+                tier, producers = _tier_for(drop_refs, sim_by_page)
+                claims.append(
+                    DeFacsimileClaim(
+                        op=DeFacsimileOp.DROP_FURNITURE,
+                        targets=tuple(drop_refs),
+                        tier=tier,
+                        corroborating_producers=producers,
+                        rationale="model DROP furniture (corroborated chrome)",
+                    )
                 )
-            )
+            for r in kept_refs:
+                tier, producers = _tier_for([r], sim_by_page)
+                claims.append(
+                    DeFacsimileClaim(
+                        op=DeFacsimileOp.KEEP,
+                        targets=(r,),
+                        tier=tier,
+                        corroborating_producers=producers,
+                        rationale="model DROP downgraded to KEEP (uncorroborated furniture)",
+                    )
+                )
         elif op == "DEDUP" and len(refs) >= 2:
-            # Keep the FIRST, drop the SECOND (the cross-seam duplicate).
-            tier, producers = _tier_for(refs[1:], sim_by_page)
-            claims.append(
-                DeFacsimileClaim(
-                    op=DeFacsimileOp.DEDUP_SEAM,
-                    targets=tuple(refs[1:]),
-                    tier=tier,
-                    corroborating_producers=producers,
-                    rationale=f"model DEDUP {body_toks[0]} kept",
-                )
+            # Keep the FIRST, drop the SECOND (the cross-seam duplicate) ONLY when
+            # the two are genuine near-duplicates; otherwise KEEP the second (a
+            # spurious DEDUP must never delete distinct content).
+            first = _resolve_local(refs[0], sim_by_page)
+            second = _resolve_local(refs[1], sim_by_page)
+            genuine = (
+                first is not None
+                and second is not None
+                and _near_duplicate(first.text, second.text)
             )
+            if genuine:
+                tier, producers = _tier_for(refs[1:], sim_by_page)
+                claims.append(
+                    DeFacsimileClaim(
+                        op=DeFacsimileOp.DEDUP_SEAM,
+                        targets=tuple(refs[1:]),
+                        tier=tier,
+                        corroborating_producers=producers,
+                        rationale=f"model DEDUP {body_toks[0]} kept (near-duplicate)",
+                    )
+                )
+            else:
+                tier, producers = _tier_for(refs[1:2], sim_by_page)
+                claims.append(
+                    DeFacsimileClaim(
+                        op=DeFacsimileOp.KEEP,
+                        targets=(refs[1],),
+                        tier=tier,
+                        corroborating_producers=producers,
+                        rationale="model DEDUP downgraded to KEEP (not a near-duplicate)",
+                    )
+                )
         elif op == "REJOIN" and len(refs) >= 2:
-            tier, producers = _tier_for(refs, sim_by_page)
-            claims.append(
-                DeFacsimileClaim(
-                    op=DeFacsimileOp.REJOIN,
-                    targets=tuple(refs),
-                    tier=tier,
-                    corroborating_producers=producers,
-                    absorbed=tuple(absorb),
-                    rationale="model REJOIN across seam",
+            if _rejoin_is_structurally_safe(refs, sim_by_page, rec):
+                tier, producers = _tier_for(refs, sim_by_page)
+                claims.append(
+                    DeFacsimileClaim(
+                        op=DeFacsimileOp.REJOIN,
+                        targets=tuple(refs),
+                        tier=tier,
+                        corroborating_producers=producers,
+                        absorbed=tuple(absorb),
+                        rationale="model REJOIN across seam",
+                    )
                 )
-            )
+            else:
+                # A REJOIN that would fold a HEADING into other content is refused;
+                # keep the parts as separate nodes (bias to retention — the section
+                # boundary and the heading's own line survive).
+                for r in refs:
+                    tier, producers = _tier_for([r], sim_by_page)
+                    claims.append(
+                        DeFacsimileClaim(
+                            op=DeFacsimileOp.KEEP,
+                            targets=(r,),
+                            tier=tier,
+                            corroborating_producers=producers,
+                            rationale="model REJOIN refused (would fold a heading); kept",
+                        )
+                    )
         elif op == "KEEP" and refs:
             tier, producers = _tier_for(refs, sim_by_page)
             claims.append(
@@ -434,8 +702,17 @@ class DeFacsimileAdjudicator:
 
     # -- per-window adjudication --------------------------------------------
 
-    def adjudicate_window(self, pages: Sequence[PageSimulacrum]) -> WindowResult:
-        """Adjudicate ONE seam window → claims (fallback on truncation / loop)."""
+    def adjudicate_window(
+        self,
+        pages: Sequence[PageSimulacrum],
+        recurrence: Optional[Mapping[str, int]] = None,
+    ) -> WindowResult:
+        """Adjudicate ONE seam window → claims (fallback on truncation / loop).
+
+        ``recurrence`` is the DOCUMENT-wide cross-page text-recurrence map (the
+        running-header witness); when ``None`` it is computed from the window's own
+        pages (a conservative under-estimate — a full document supplies it).
+        """
         window = "+".join(str(p.page_num) for p in pages)
         user = (
             "Compose these consecutive pages, resolving the seam between them:\n\n"
@@ -448,7 +725,7 @@ class DeFacsimileAdjudicator:
             # route switch. compose_pages runs UNCHANGED over this window's pages.
             fallback = _deterministic_fallback_ledger(pages)
             return WindowResult(claims=fallback.claims, pathological=False, truncated=True)
-        claims, pathological = parse_window_reply(content, pages)
+        claims, pathological = parse_window_reply(content, pages, recurrence)
         if pathological:
             # The loop garbage is withheld; no edits from this window (the pure fold
             # keeps the pages as-is). Recorded so the caller can report it.
@@ -466,6 +743,11 @@ class DeFacsimileAdjudicator:
         ``verify_ledger`` enforces this downstream, and the merge keeps it disjoint).
         """
         pages = list(simulacra)
+        # The document-wide running-header witness: a line recurring across pages
+        # is chrome; a heading occurring once is content. Computed ONCE over the
+        # whole stack so a DROP in any window is corroborated against the full
+        # document, not just its 2-page window.
+        recurrence = document_recurrence(pages)
         windows: List[List[PageSimulacrum]]
         if len(pages) <= 1:
             windows = [pages] if pages else []
@@ -475,7 +757,7 @@ class DeFacsimileAdjudicator:
         merged: List[DeFacsimileClaim] = []
         owned: set[Tuple[int, Tuple[int, ...]]] = set()
         for win in windows:
-            result = self.adjudicate_window(win)
+            result = self.adjudicate_window(win, recurrence)
             for claim in result.claims:
                 keys = [(r.page_num, r.node_path) for r in (*claim.targets, *claim.absorbed)]
                 if any(k in owned for k in keys):
@@ -483,4 +765,93 @@ class DeFacsimileAdjudicator:
                 merged.append(claim)
                 for k in keys:
                     owned.add(k)
+        merged = self._propagate_confirmed_chrome_drops(pages, merged, recurrence)
         return DeFacsimileLedger(claims=tuple(merged))
+
+    def _propagate_confirmed_chrome_drops(
+        self,
+        pages: Sequence[PageSimulacrum],
+        claims: List[DeFacsimileClaim],
+        recurrence: Mapping[str, int],
+    ) -> List[DeFacsimileClaim]:
+        """Extend the model's OWN chrome drops to every recurrence of that line.
+
+        A running header the model DROPs on some page (e.g. "HE 1/2015 vp" on p2/p3)
+        recurs verbatim across the document. Its OTHER occurrences — whether the
+        model left them KEPT or simply UN-mentioned — are the IDENTICAL furniture;
+        dropping them is corroborated by BOTH the model (its own DROP on a sibling
+        page) and the recurrence witness, so it can never lose real content. This
+        drops every remaining occurrence of a model-confirmed recurring header,
+        closing the residual EXTRA the model's uneven per-page coverage leaves.
+        Bare page numbers are NEVER cross-propagated ("2" and "3" are distinct
+        lines) — only a recurring multi-token running header.
+        """
+        dropped_norms: set[str] = set()
+        for c in claims:
+            if c.op is not DeFacsimileOp.DROP_FURNITURE:
+                continue
+            node = _resolve(pages, c.targets[0]) if c.targets else None
+            if node is None:
+                continue
+            norm = _normalize_line(node.text)
+            if (
+                norm
+                and len(norm.split()) >= 2
+                and recurrence.get(norm, 0) >= _CHROME_RECURRENCE_THRESHOLD
+            ):
+                dropped_norms.add(norm)
+        if not dropped_norms:
+            return claims
+
+        def _matches_confirmed_header(node: SourceDocumentNode) -> bool:
+            text = node.text.strip()
+            if not text:
+                return False
+            if _normalize_line(text) in dropped_norms:
+                return True
+            stripped = _strip_pageno_affix(text)
+            return bool(stripped) and _normalize_line(stripped) in dropped_norms
+
+        # Every node already owned by a claim (its (page, path) key).
+        owned: set[Tuple[int, Tuple[int, ...]]] = set()
+        for c in claims:
+            for r in (*c.targets, *c.absorbed):
+                owned.add((r.page_num, r.node_path))
+
+        out: List[DeFacsimileClaim] = []
+        for c in claims:
+            # Upgrade a KEEP of a confirmed recurring header to a DROP.
+            if (
+                c.op is DeFacsimileOp.KEEP
+                and len(c.targets) == 1
+                and (node := _resolve(pages, c.targets[0])) is not None
+                and _matches_confirmed_header(node)
+            ):
+                out.append(
+                    DeFacsimileClaim(
+                        op=DeFacsimileOp.DROP_FURNITURE,
+                        targets=c.targets,
+                        tier=c.tier,
+                        corroborating_producers=c.corroborating_producers,
+                        rationale="chrome DROP propagated from model DROP of same recurring line",
+                    )
+                )
+                continue
+            out.append(c)
+
+        # Drop UN-mentioned occurrences (no claim owns them) of the confirmed header.
+        for p in pages:
+            for top_idx, node in enumerate(p.nodes):
+                key = (p.page_num, (top_idx,))
+                if key in owned or not _matches_confirmed_header(node):
+                    continue
+                out.append(
+                    DeFacsimileClaim(
+                        op=DeFacsimileOp.DROP_FURNITURE,
+                        targets=(SpanRef(p.page_num, (top_idx,)),),
+                        tier=AssuranceTier.MULTI_WITNESS_ADJUDICATED,
+                        corroborating_producers=(_ADJUDICATOR_ID, "affordance:recurrence"),
+                        rationale="chrome DROP propagated to un-mentioned recurring header",
+                    )
+                )
+        return out
