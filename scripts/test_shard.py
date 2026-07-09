@@ -1136,6 +1136,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_projection_rederivation_audit.py",
         "test_tier_2_storage.py",
         "test_worker_pool.py",
+        "test_fi_parse_compare.py",
     ),
     "tools_audit_restructure": (
         "test_fi_restructure_plan.py",

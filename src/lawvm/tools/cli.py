@@ -9726,27 +9726,33 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
     # --- fi-parse-compare ---
     parse_cmp_p = sub.add_parser(
         "fi-parse-compare",
-        help="compare the v2 span-copy build-script lane vs full transcription vs XML gold",
+        help="full-doc PDF->IR reconstruction vs authoritative XML (structural + intelligent diff)",
         description=(
-            "Run BOTH the v2 structured build-script lanes (struct_span, struct_full) "
-            "and the legacy flat full-transcription lane over the SAME PDF, and report "
-            "per-modality output-char count (span << full), reconstructed-text word "
-            "overlap/recall, structural fidelity (nodes/depth/tables/headings/images), "
-            "assurance-tier histograms, and 0x1F terminator-compliance. Where the HE "
-            "has a sibling main.xml gold, also report word-recall vs the XML. The "
-            "vision backend (localhost:8080) is assumed present — fail loud if not."
+            "Parse the WHOLE PDF through the v2 build-script lanes (struct_span, "
+            "struct_full[, struct_patch]) into LawVM IR and compare it, WHOLE-DOCUMENT "
+            "vs WHOLE-DOCUMENT (same document both sides), against the authoritative "
+            "main.xml body. Reports a cheap deterministic structural summary "
+            "(nodes/depth/tables/headings/images, assurance tiers, 0x1F terminator "
+            "compliance, span/full output-char economics, and full-doc-vs-full-doc word "
+            "coverage de-hyphenated on BOTH sides). With --adjudicate, additionally has "
+            "the local model find and CATEGORISE the genuine differences "
+            "(MISSING/EXTRA/OCR/NUMERIC/STRUCTURE) with a verdict, emphasising "
+            "legally-significant numeric/citation/section discrepancies. The vision "
+            "backend (localhost:8080) is assumed present — fail loud if not."
         ),
     )
     parse_cmp_p.add_argument("locator", help="PDF locator in the farchive (e.g. akn/fi/doc/government-proposal/2019/60/fin@/main.pdf)")
     parse_cmp_p.add_argument("--farchive", default=None, metavar="PATH",
                              help="source farchive (default: data/fi_government_proposal.farchive)")
     parse_cmp_p.add_argument("--he", default=None, metavar="YEAR/NUM",
-                             help="HE id (e.g. 2019/60) to pull the sibling main.xml gold for recall")
+                             help="HE id (e.g. 2019/60) to pull the sibling main.xml gold (required for --adjudicate)")
     parse_cmp_p.add_argument("--lang", default="fin", help="HE language for the XML gold (default: fin)")
-    parse_cmp_p.add_argument("--max-pages", type=int, default=6, dest="max_pages",
-                             help="pages to compare (default: 6; the vision lane is ~15s/page)")
+    parse_cmp_p.add_argument("--max-pages", type=int, default=5000, dest="max_pages",
+                             help="pages to parse (default: 5000 = whole doc; the vision lane is ~15s/page)")
     parse_cmp_p.add_argument("--no-patch", action="store_true",
                              help="skip the struct_patch reference lane")
+    parse_cmp_p.add_argument("--adjudicate", "--intelligent", action="store_true", dest="adjudicate",
+                             help="also run the intelligent LLM XML-vs-PDF categorized diff (needs --he)")
     parse_cmp_p.add_argument("--json", action="store_true", help="emit JSON instead of the text report")
 
     # --- structural-review ---
