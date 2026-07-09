@@ -20,7 +20,7 @@ from lawvm.finland.llm_backends.vision_producer import (
 
 # Draft-HE PDF for the live render+read test — via env, never a committed abs
 # path or vendored blob. Set LAWVM_HE_SAMPLE_PDF to a local draft to run it.
-_HE_PDF = Path(os.environ["LAWVM_HE_SAMPLE_PDF"]) if os.environ.get("LAWVM_HE_SAMPLE_PDF") else None
+_HE_PDF = Path(os.environ.get("LAWVM_HE_SAMPLE_PDF") or "/nonexistent/no-he-sample.pdf")
 
 
 def _manifestation(bytes_: bytes = b"%PDF-1.4") -> SourceManifestation:
@@ -91,7 +91,7 @@ def test_propose_page_emits_anchored_assertions() -> None:
 
 
 @pytest.mark.network
-@pytest.mark.skipif(not (_HE_PDF is not None and _HE_PDF.exists()), reason="set LAWVM_HE_SAMPLE_PDF to a draft-HE PDF")
+@pytest.mark.skipif(not _HE_PDF.exists(), reason="set LAWVM_HE_SAMPLE_PDF to a draft-HE PDF")
 def test_live_vision_reads_the_bill_page() -> None:
     import hashlib
 

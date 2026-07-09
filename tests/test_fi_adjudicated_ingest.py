@@ -34,7 +34,7 @@ from lawvm.finland.source_document.adjudicated_ingest import (
 )
 
 _DIGEST = "a" * 64
-_HE_PDF = Path(os.environ["LAWVM_HE_SAMPLE_PDF"]) if os.environ.get("LAWVM_HE_SAMPLE_PDF") else None
+_HE_PDF = Path(os.environ.get("LAWVM_HE_SAMPLE_PDF") or "/nonexistent/no-he-sample.pdf")
 
 
 def _manifestation() -> SourceManifestation:
@@ -178,7 +178,7 @@ def test_no_vision_fallback_is_reading_order_single_witness(monkeypatch) -> None
 
 
 @pytest.mark.network
-@pytest.mark.skipif(not (_HE_PDF is not None and _HE_PDF.exists()), reason="set LAWVM_HE_SAMPLE_PDF")
+@pytest.mark.skipif(not _HE_PDF.exists(), reason="set LAWVM_HE_SAMPLE_PDF")
 def test_live_adjudicated_ingest_of_a_real_pdf() -> None:
     import hashlib
 

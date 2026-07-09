@@ -32,7 +32,7 @@ from lawvm.finland.source_document.he_draft import _operative_from_text
 # A draft-HE PDF for the live e2e — supplied via env (never a committed abs path
 # or a vendored blob). The real reproducible source is the lausuntopalvelu
 # acquisition lane; set LAWVM_HE_SAMPLE_PDF to a local draft to run these.
-_HE_PDF = Path(os.environ["LAWVM_HE_SAMPLE_PDF"]) if os.environ.get("LAWVM_HE_SAMPLE_PDF") else None
+_HE_PDF = Path(os.environ.get("LAWVM_HE_SAMPLE_PDF") or "/nonexistent/no-he-sample.pdf")
 
 _DIGEST = "a" * 64
 
@@ -213,7 +213,7 @@ def test_non_he_document_yields_no_ops_but_a_finding() -> None:
 
 
 
-@pytest.mark.skipif(not (_HE_PDF is not None and _HE_PDF.exists()), reason="set LAWVM_HE_SAMPLE_PDF to a draft-HE PDF")
+@pytest.mark.skipif(not _HE_PDF.exists(), reason="set LAWVM_HE_SAMPLE_PDF to a draft-HE PDF")
 def test_live_vm045_pdf_to_conditional_branch() -> None:
     import hashlib
     from datetime import datetime
@@ -252,7 +252,7 @@ def test_live_vm045_pdf_to_conditional_branch() -> None:
 
 
 @pytest.mark.network
-@pytest.mark.skipif(not (_HE_PDF is not None and _HE_PDF.exists()), reason="set LAWVM_HE_SAMPLE_PDF to a draft-HE PDF")
+@pytest.mark.skipif(not _HE_PDF.exists(), reason="set LAWVM_HE_SAMPLE_PDF to a draft-HE PDF")
 def test_live_vm045_adjudicated_op_reaches_multi_witness() -> None:
     """pdfplumber (scrambled) + reading-order, adjudicated live → clean assurance.
 
