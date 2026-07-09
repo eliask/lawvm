@@ -703,6 +703,14 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # repetition-loop withhold, truncation → per-window deterministic
         # fallback), and the HE-2015/1 defect fixtures.
         "test_ingest_defacsimile.py",
+        # M3 stigmergic (blackboard) de-facsimile composer (§7): metadata
+        # mark pre-seeding (FURNITURE?/GARBLE/OPEN), the typed+extensible
+        # affordance dispatch table (VIEW/EXPAND/PAGE/NOTES/NOTE/PREFIX/DEFER,
+        # crop injected/faked), controller scheduling to a stigmergic fixpoint,
+        # budget-exhaustion → context_exhausted fallback, the content-addressed
+        # workspace journal round-trip + determinism, verify_ledger still gating,
+        # the M1 single-pass path unchanged, and put_workspace/get_workspace.
+        "test_ingest_blackboard.py",
         # Track-C de-facsimile ledger persistence (Decision 5): put_ledger /
         # get_ledger sibling-blob round-trip + manifest op/tier histograms.
         "test_ingest_defacsimile_ledger_store.py",

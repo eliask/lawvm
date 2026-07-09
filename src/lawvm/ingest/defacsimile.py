@@ -542,6 +542,7 @@ def defacsimile(
     root_anchor: SourceAnchor,
     *,
     adjudicator: object = None,
+    mode: str = "single_pass",
 ) -> DeFacsimiledDocument:
     """Level 2: compose the page simulacra into a coherent document + its ledger.
 
@@ -551,11 +552,31 @@ def defacsimile(
     subsystem degrades per-window to ``compose_pages`` — emitting typed
     ``method="deterministic_fallback"`` claims (Decision 8), NOT a route switch.
 
+    ``mode`` selects the composer (ADDITIVE — M1 is the default, unchanged):
+      * ``"single_pass"`` (M1) — the fixed 2-page-window one-shot fold below.
+      * ``"blackboard"`` (M3) — the stigmergic blackboard composer
+        (``blackboard.defacsimile_blackboard``): a shared journal of typed marks
+        that knowledge sources iterate to a fixpoint. Same ``verify_ledger`` gate,
+        same frozen carriers. The workspace journal is discarded here (use
+        ``blackboard.defacsimile_blackboard`` directly to persist it).
+
     The produced ledger is ALWAYS gated by ``verify_ledger`` before the document is
     returned — a record is never emitted with an unverified ledger. If the
     adjudicated ledger fails the gate, the subsystem falls back deterministically
     (a failed model ledger never reaches the output).
     """
+    if mode == "blackboard":
+        from lawvm.ingest.blackboard import defacsimile_blackboard
+
+        doc, _workspace = defacsimile_blackboard(
+            simulacra, root_anchor, adjudicator=adjudicator
+        )
+        return doc
+    if mode != "single_pass":
+        raise ValueError(
+            f"defacsimile mode must be 'single_pass' or 'blackboard'; got {mode!r}"
+        )
+
     ledger: Optional[DeFacsimileLedger] = None
     if adjudicator is not None and getattr(adjudicator, "is_available", lambda: True)():
         adjudicated = adjudicator.adjudicate_document(simulacra)  # ty: ignore[unresolved-attribute]

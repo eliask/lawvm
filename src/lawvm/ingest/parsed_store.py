@@ -47,6 +47,7 @@ if TYPE_CHECKING:
     from lawvm.core.source_document.adjudication import Adjudication
     from lawvm.core.source_document.anchors import SourceAnchor
     from lawvm.core.source_document.extraction import ExtractionAssertion
+    from lawvm.ingest.blackboard import Workspace
     from lawvm.ingest.defacsimile import DeFacsimileLedger
     from lawvm.ingest.page_elements import PageElementProducer
     from lawvm.ingest.simulacrum import PageSimulacrum, SpanRef
@@ -107,6 +108,18 @@ def defacsimile_ledger_locator(source_digest: str, pipeline_id: str, version: st
     (the manifest carries only histograms + this locator/digest, not the claims).
     """
     return f"parsed/{source_digest}/{pipeline_id}@{version}/defacsimile_ledger.json"
+
+
+def defacsimile_workspace_locator(source_digest: str, pipeline_id: str, version: str) -> str:
+    """Sibling blob key for the Level-2 blackboard workspace journal (§7 / M3).
+
+    Mirrors ``defacsimile_ledger_locator``: shares the IR's per-record
+    ``parsed/<digest>/<pipeline>@<version>/`` prefix so the content-addressed
+    workspace journal coexists with the ledger + IR under one record. Persisting it
+    makes a blackboard run reproducible + auditable (the same simulacra ⇒ a
+    byte-identical journal).
+    """
+    return f"parsed/{source_digest}/{pipeline_id}@{version}/defacsimile_workspace.json"
 
 
 def _serialize_parsed_record(ir_dict: Dict[str, Any], manifest: Dict[str, Any]) -> bytes:
@@ -853,6 +866,47 @@ class ParsedIrStore:
         if data is None:
             return None
         return deserialize_defacsimile_ledger(data)
+
+    def put_workspace(
+        self,
+        locator: str,
+        workspace: "Workspace",
+        *,
+        source_digest: str,
+    ) -> str:
+        """Store the blackboard workspace journal as a sibling blob (§7 / M3).
+
+        Mirrors ``put_ledger``: the sorted-keys JSON journal
+        (``serialize_workspace``) lands under the IR's per-record
+        ``parsed/<digest>/<pipeline>@<version>/`` prefix as a
+        ``defacsimile_workspace`` storage class. Returns the blob digest so the
+        manifest can carry the locator + digest; the journal is content-addressed
+        so a re-run over the same simulacra is a byte-identical HIT.
+        """
+        from lawvm.ingest.blackboard import serialize_workspace
+
+        data = serialize_workspace(workspace)
+        return self._fa.store(
+            locator,
+            data,
+            storage_class="defacsimile_workspace",
+            metadata={
+                "source_digest": source_digest,
+                "mark_count": str(len(workspace.marks)),
+            },
+        )
+
+    def get_workspace(self, locator: str) -> "Optional[Workspace]":
+        """Read + reconstruct a stored blackboard workspace journal (``None`` if absent)."""
+        span = self._fa.resolve(locator)
+        if span is None:
+            return None
+        data = self._fa.read(span.digest)
+        if data is None:
+            return None
+        from lawvm.ingest.blackboard import deserialize_workspace
+
+        return deserialize_workspace(data)
 
     def close(self) -> None:
         self._fa.close()

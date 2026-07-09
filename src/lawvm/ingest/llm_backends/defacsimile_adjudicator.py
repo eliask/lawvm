@@ -595,6 +595,20 @@ class WindowResult:
     truncated: bool
 
 
+@dataclass(frozen=True, slots=True)
+class RegionResult:
+    """One blackboard region's adjudication: claims + affordance control lines (M3).
+
+    ``affordances`` are the parsed ``blackboard.AffordanceRequest`` control lines
+    the model emitted (VIEW / EXPAND / NOTE / …) — typed ``object`` here to avoid a
+    circular import with ``blackboard`` (which imports this module's adjudicator).
+    """
+
+    claims: Tuple[DeFacsimileClaim, ...]
+    affordances: Tuple[object, ...]
+    truncated: bool
+
+
 class DeFacsimileAdjudicator:
     """The de-facsimile adjudicator over 2-page seam windows (1-page overlap).
 
@@ -731,6 +745,79 @@ class DeFacsimileAdjudicator:
             # keeps the pages as-is). Recorded so the caller can report it.
             return WindowResult(claims=(), pathological=True, truncated=False)
         return WindowResult(claims=tuple(claims), pathological=False, truncated=False)
+
+    # -- blackboard-aware region adjudication (M3) --------------------------
+
+    def adjudicate_region(
+        self,
+        window: Sequence[PageSimulacrum],
+        region: Sequence[SpanRef],
+        region_marks: Sequence[object],
+        region_notes: Sequence[str],
+    ) -> "RegionResult":
+        """Adjudicate ONE blackboard region → claims + affordance control lines.
+
+        The blackboard entry point: it READS the marks + notes the workspace holds
+        for this region (surfaced into the prompt as shared context), adjudicates
+        the 2-page window that contains the region, and returns claims PLUS the
+        affordance CONTROL LINES the model emitted (VIEW / EXPAND / NOTE / …) — all
+        line-based, never JSON. It keeps the SAME conservative discipline as
+        ``adjudicate_window`` (``parse_window_reply``: a DROP honored only against a
+        deterministic chrome witness, a REJOIN only when structurally safe) — the
+        blackboard adds context, it does NOT relax the honor-with-evidence gate.
+
+        A truncated / pathological window degrades to the deterministic
+        ``compose_pages`` claims for the window (typed, no silent drop).
+        """
+        from lawvm.ingest.blackboard import parse_affordance_line
+
+        recurrence = document_recurrence(window)
+        win_id = "+".join(str(p.page_num) for p in window)
+        context_lines: List[str] = []
+        if region_notes:
+            context_lines.append("PRIOR NOTES on this region:")
+            context_lines.extend(f"  {n}" for n in region_notes)
+        if region_marks:
+            context_lines.append("PRIOR MARKS on this region (affordances only):")
+            for m in region_marks:
+                kind = getattr(m, "kind", None)
+                rationale = getattr(m, "rationale", "")
+                if kind is not None:
+                    context_lines.append(f"  {kind}: {rationale}")
+        region_ids = " ".join(
+            _node_id(r.page_num, r.node_path[0]) for r in region if r.node_path
+        )
+        user = (
+            "Compose these consecutive pages, resolving the seam. FOCUS on the "
+            f"region: {region_ids}.\n"
+            + ("\n".join(context_lines) + "\n\n" if context_lines else "\n")
+            + _render_window(window)
+        )
+        try:
+            content = self._chat(_SYSTEM_PROMPT, user, window=win_id)
+        except AdjudicationTruncated:
+            fallback = _deterministic_fallback_ledger(window)
+            return RegionResult(claims=fallback.claims, affordances=(), truncated=True)
+
+        # Split the reply: affordance CONTROL lines (VIEW/EXPAND/NOTE/…) are lifted
+        # out; the residual op lines go to the conservative claim parser. A line is
+        # a control line iff its verb is a known affordance verb.
+        control: List[object] = []
+        op_lines: List[str] = []
+        for raw in content.splitlines():
+            req = parse_affordance_line(raw)
+            if req is not None:
+                control.append(req)
+            else:
+                op_lines.append(raw)
+        claims, pathological = parse_window_reply(
+            "\n".join(op_lines), window, recurrence
+        )
+        if pathological:
+            return RegionResult(claims=(), affordances=tuple(control), truncated=False)
+        return RegionResult(
+            claims=tuple(claims), affordances=tuple(control), truncated=False
+        )
 
     def adjudicate_document(
         self, simulacra: Sequence[PageSimulacrum]
