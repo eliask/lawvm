@@ -144,6 +144,10 @@ class _Operative:
     target_statute_id: str
     payload_text: str
     commencement: str
+    is_new_act: bool = False
+    """A wholly new act (``Eduskunnan päätöksen mukaisesti säädetään:`` with no
+    ``seuraavasti:`` amendment clause) — it amends NO existing statute, so a
+    ``(NNNN/YYYY)`` in its body is a cross-reference, never an amended target."""
 
 
 def _johtolause_starts(low: str) -> List[int]:
@@ -189,6 +193,12 @@ def _operative_from_region(region_text: str) -> _Operative:
     seg = region_text
     seg_low = seg.lower()
     cut = seg_low.find(_SEURAAVASTI_MARK)
+    # An amending lakiehdotus names its target law in the preamble that ENDS at
+    # ``seuraavasti:``. With no such clause the region is a new-act enactment
+    # (``säädetään:``): it amends no statute, so a ``(NNNN/YYYY)`` deeper in the
+    # body is a cross-reference — grabbing it as the "amended target" is a silent
+    # misattribution. Only scan the amendment preamble; a new act carries no target.
+    is_new_act = cut == -1
     clause = seg[: cut + len(_SEURAAVASTI_MARK)].strip() if cut != -1 else seg.strip()
 
     # payload = text after the johtolause clause, up to the voimaantulo line.
@@ -205,9 +215,10 @@ def _operative_from_region(region_text: str) -> _Operative:
         commencement = ""
     return _Operative(
         clause=clause,
-        target_statute_id=_target_statute_id(clause),
+        target_statute_id="" if is_new_act else _target_statute_id(clause),
         payload_text=payload,
         commencement=commencement,
+        is_new_act=is_new_act,
     )
 
 
@@ -277,14 +288,23 @@ def extract_conditional_branch(
     """
     findings: List[str] = []
     operatives = _operatives_from_text(reading_order_text) if reading_order_text else []
-    if not operatives and reading_order_text:
-        findings.append("reading_order_text carried no johtolause")
 
     if not operatives:
         kind = classify_he_document(root)
         if kind is not HeDocKind.HE_BILL:
             findings.append(
                 f"document classified {kind} — reasoning-only, no candidate operations"
+            )
+        elif reading_order_text:
+            # pdfplumber's ingest classified HE_BILL (it saw the johtolause) but
+            # the reading-order producer's text did NOT carry it — the two
+            # producers cover different page spans. Almost always a truncated
+            # reading-order page cap on a long HE, not an absent operative. A
+            # DISTINCT finding so truncation never masquerades as "unavailable".
+            findings.append(
+                "producer page-coverage split: pdfplumber classified HE_BILL but the "
+                "reading-order text carries no johtolause — likely a truncated page "
+                "span; raise max_pages for the reading-order producer"
             )
         else:
             findings.append(
@@ -304,13 +324,23 @@ def extract_conditional_branch(
     branches: List[ConditionalBranch] = []
     for i, operative in enumerate(operatives):
         law_tag = f" (law {i + 1})" if multi else ""
-        if not operative.target_statute_id:
+        if operative.is_new_act:
+            # A wholly new act enacts fresh law rather than amending an existing
+            # statute — no amend ops, no amended target. Emit an honest finding
+            # instead of misattributing a body cross-reference as the target.
             findings.append(
-                f"target statute id not resolved from johtolause preamble{law_tag}"
+                f"new-act enactment (no seuraavasti amendment clause){law_tag} — "
+                "enacts a new statute, not modelled as amendment ops"
             )
-        ops = extract_legal_ops(operative.clause)
-        if not ops:
-            findings.append(f"johtolause parsed to zero operations{law_tag}")
+            ops = []
+        else:
+            if not operative.target_statute_id:
+                findings.append(
+                    f"target statute id not resolved from johtolause preamble{law_tag}"
+                )
+            ops = extract_legal_ops(operative.clause)
+            if not ops:
+                findings.append(f"johtolause parsed to zero operations{law_tag}")
 
         candidate_ops = tuple(
             CandidateOperation(
@@ -360,7 +390,7 @@ def he_pdf_to_proposal(
     *,
     adjudicator: Optional[Adjudicator] = None,
     condition: str = "",
-    max_pages: int = 200,
+    max_pages: int = 5000,
 ) -> ProposalPackage:
     """Full draft-HE PDF → ``ProposalPackage`` (ingest + reading-order + adjudicate).
 
@@ -419,12 +449,18 @@ def he_pdf_to_proposal(
     )
 
 
-def reading_order_text_from_pdf(pdf_bytes: bytes, *, max_pages: int = 200) -> str:
+def reading_order_text_from_pdf(pdf_bytes: bytes, *, max_pages: int = 5000) -> str:
     """Page-ordered text extraction (pypdfium2) — a reliable reading-order producer.
 
     pdfplumber's block segmentation scrambles reading order on dense bill pages;
     this preserves it. Optional dependency; raises if pypdfium2 is absent so the
     caller can fall back rather than silently mis-order.
+
+    The default cap matches ``ingest_pdf_manifestation`` — a long HE (400+ pp)
+    carries its ``Lakiehdotukset`` section past page 200, and a lower cap here
+    than the pdfplumber ingest produced a silent producer page-coverage split
+    (pdfplumber classified HE_BILL, the truncated reading-order text saw no
+    johtolause). Callers wanting speed pass a small ``max_pages`` explicitly.
     """
     import importlib
 

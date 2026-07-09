@@ -174,6 +174,51 @@ def test_extract_conditional_branch_multi_law_two_branches() -> None:
     assert pkg.reasoning_root.attrs.get("role") == "esityot_reasoning"
 
 
+# A wholly new act: ``Eduskunnan päätöksen mukaisesti säädetään:`` (no
+# ``seuraavasti:`` amendment clause). The ``(1535/1992)`` in the body is a
+# cross-reference — NOT an amended target. (Corpus sweep CAT-3, vm082.)
+_HE_NEW_ACT_READING_ORDER = (
+    "Lakiehdotus\nLaki\nvetymarkkinoista\n\n"
+    "Eduskunnan päätöksen mukaisesti säädetään:\n\n"
+    "1 §\nSoveltamisala\n"
+    "Tätä lakia sovelletaan tuloverolaissa (1535/1992) tarkoitettuun toimintaan.\n\n"
+    "Tämä laki tulee voimaan 1 päivänä tammikuuta 2027.\n"
+)
+
+
+def test_new_act_enactment_does_not_misattribute_a_body_cross_reference() -> None:
+    op = _operative_from_text(_HE_NEW_ACT_READING_ORDER)
+    assert op is not None
+    assert op.is_new_act is True
+    # The (1535/1992) in the body is a cross-reference, never the amended target.
+    assert op.target_statute_id == ""
+
+
+def test_new_act_yields_finding_not_misattributed_ops() -> None:
+    pkg = extract_conditional_branch(
+        _root(("some ingested block",)),
+        "fi:he:VM082:00/2026",
+        reading_order_text=_HE_NEW_ACT_READING_ORDER,
+    )
+    assert any("new-act" in f.lower() for f in pkg.findings)
+    # A new act is not modelled as amendment ops — no misattributed target op.
+    assert all(len(b.candidate_ops) == 0 for b in pkg.branches)
+
+
+def test_producer_page_coverage_split_is_a_distinct_finding() -> None:
+    # pdfplumber ingest (root) classified HE_BILL (it saw the johtolause) but the
+    # reading-order text is truncated and carries none → a page-coverage split,
+    # NOT "operative text unavailable". (Corpus sweep CAT-1, stm107 / tem038.)
+    root = _root(("Eduskunnan päätöksen mukaisesti lisätään uusi 5 momentti ...",))
+    pkg = extract_conditional_branch(
+        root,
+        "fi:he:STM107:00/2026",
+        reading_order_text="Sisällys\nJohdanto, johtolause on vasta sivulla 301.\n",
+    )
+    assert pkg.branches == ()
+    assert any("page-coverage split" in f for f in pkg.findings)
+
+
 def test_a_draft_branch_can_never_be_replay_authorized() -> None:
     with pytest.raises(ValueError):
         ConditionalBranch(
