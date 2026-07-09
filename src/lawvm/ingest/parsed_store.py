@@ -217,6 +217,11 @@ class PipelineSpec:
     transcription_modality: str = "auto"
     # present only for struct_* lanes (a PageElementProducer); None for flat lanes.
     page_element_producer: "Optional[PageElementProducer]" = None
+    # present only for the converged de-facsimile lane (the Level-2
+    # ``DeFacsimileAdjudicator``); None everywhere else. When None on the
+    # defacsimile lane, Level 2 degrades to the deterministic ``compose_pages``
+    # fallback (Decision 8) — a typed method, not a route switch.
+    defacsimile_adjudicator: object = None
 
 
 class _TolerantVision:
@@ -320,31 +325,48 @@ _STRUCT_CONVERGE_TAG = (
     "+leaf=patch+converge.v1+gate=hard.v1+iters=4+structpatch=text.v1"
     f"+rasterdpi={RASTERIZE_DPI}"
 )
+# The converged two-level lane (Track B+C integration): Level-1 patch-to-convergence
+# simulacra (``_STRUCT_CONVERGE_TAG``) FOLLOWED by the Level-2 holistic de-facsimile
+# composer (Decision 11 version shape). The ``+defacsimile.v1+<adjudicator-id or
+# "fallback">`` suffix is composed at ``resolve_pipeline`` time (the adjudicator model
+# id is a runtime probe; when the L2 backend is down the lane degrades to the
+# deterministic ``compose_pages`` fallback → the ``fallback`` id, Decision 8). This
+# base tag omits the composer suffix; ``resolve_pipeline`` appends it.
+_DEFACSIMILE_BASE_TAG = _STRUCT_CONVERGE_TAG
 _MODALITY_VERSION_TAG = {
     "struct_span": _STRUCT_WIRE_TAG + "+leaf=span",
     "struct_full": _STRUCT_WIRE_TAG + "+leaf=full",
     "struct_auto": _STRUCT_WIRE_TAG + "+leaf=auto",
     "struct_patch": _STRUCT_WIRE_TAG + "+leaf=patch",
     "struct_converge": _STRUCT_CONVERGE_TAG,
+    "defacsimile": _DEFACSIMILE_BASE_TAG,
 }
 
-# The build-script lanes (share one grammar; differ in leaf-content source).
+# The build-script lanes (share one grammar; differ in leaf-content source). The
+# converged ``defacsimile`` lane reuses the L1 patch simulacra then runs Level 2.
 STRUCT_BUILD_MODALITIES = (
     "struct_span",
     "struct_full",
     "struct_auto",
     "struct_patch",
     "struct_converge",
+    "defacsimile",
 )
 
+# The converged two-level lane whose parse path is Level-1 simulacra → Level-2
+# de-facsimile (distinct from the single-level composed struct_* lanes).
+DEFACSIMILE_MODALITY = "defacsimile"
+
 # Per-lane leaf-content source (what a TEXT LEAF's ``.text`` resolves from).
-# ``struct_converge`` reuses the patch leaf source and adds the refine loop.
+# ``struct_converge`` / ``defacsimile`` reuse the patch leaf source (the L1 refine
+# loop patches span-copied leaves against the page image).
 STRUCT_LEAF_SOURCE = {
     "struct_span": "span",
     "struct_full": "inline",
     "struct_auto": "auto",
     "struct_patch": "patch",
     "struct_converge": "patch",
+    "defacsimile": "patch",
 }
 
 
@@ -384,6 +406,24 @@ def resolve_pipeline(
         f"vision={vision._resolve_model()}+{adjudicator.adjudicator_id}"
         f"{modality_tag}+{ADJUDICATED_COMPOSE_VERSION}"
     )
+    # The converged de-facsimile lane resolves a Level-2 ``DeFacsimileAdjudicator``
+    # and composes the version tag with its model id (Decision 10). UNLIKE the L1
+    # vision backend, the L2 adjudicator does NOT fail-loud when unreachable: Level 2
+    # degrades gracefully to the deterministic ``compose_pages`` fallback (Decision
+    # 8), so an absent L2 backend simply pins the ``fallback`` id into the version.
+    defacsimile_adjudicator: object = None
+    if transcription_modality == DEFACSIMILE_MODALITY:
+        from lawvm.ingest.llm_backends.defacsimile_adjudicator import (
+            DeFacsimileAdjudicator,
+        )
+
+        probe = DeFacsimileAdjudicator()
+        if probe.is_available():
+            defacsimile_adjudicator = probe
+            l2_id = probe.adjudicator_id
+        else:
+            l2_id = "fallback"
+        version = f"{version}+defacsimile.v1+{l2_id}"
     page_producer: object = None
     if transcription_modality in STRUCT_BUILD_MODALITIES:
         from lawvm.ingest.page_elements import PageElementProducer
@@ -396,6 +436,7 @@ def resolve_pipeline(
         adjudicator=_TolerantAdjudicator(adjudicator),
         transcription_modality=transcription_modality,
         page_element_producer=page_producer,
+        defacsimile_adjudicator=defacsimile_adjudicator,
     )
 
 
@@ -526,6 +567,133 @@ def parse_struct_pdf_to_ir(
             "total": total,
             "rate": (terminated / total) if total else None,
         },
+        "parsed_at": (parsed_at or datetime.now(tz=timezone.utc)).isoformat(),
+    }
+    return ParsedRecord(ir=irnode.to_jsonable_dict(), manifest=manifest, cache_hit=False)
+
+
+def parse_defacsimile_pdf_to_ir(
+    manifestation: SourceManifestation,
+    spec: PipelineSpec,
+    store: "ParsedIrStore",
+    *,
+    max_pages: int = 5000,
+    parsed_at: Optional[datetime] = None,
+) -> ParsedRecord:
+    """Parse a PDF through the CONVERGED two-level lane → IR + provenance (Track B+C).
+
+    The end-to-end de-facsimile parse path (mirrors ``parse_struct_pdf_to_ir``):
+
+    1. **Level 1** — ``reading_order_pages_from_pdf`` (the independent cross-witness)
+       then ``build_page_simulacra`` (per-page gate + patch-to-convergence simulacra
+       with metadata + the ``unwitnessed_content`` tripwire). Each immutable
+       ``PageSimulacrum`` is persisted at ``page_simulacrum_locator`` so a Level-2
+       re-run reuses the cached evidence and NEVER re-runs the vision model.
+    2. **Level 2** — ``defacsimile`` folds the simulacra + the adjudicator's (or the
+       deterministic ``compose_pages`` fallback's) verified ledger into one coherent
+       whole-document tree. The ledger is persisted verbatim as a sibling blob at
+       ``defacsimile_ledger_locator`` (Decision 5); the manifest carries only the
+       op/tier histograms.
+    3. Image blobs are content-addressed from the DETERMINISTIC page-element
+       substrate (re-enumerated, no model) exactly like ``parse_struct_pdf_to_ir``,
+       and each IMAGE node's ``image_locator`` is stitched into the composed tree.
+    """
+    from lawvm.core.source_document.anchors import SourceAnchor
+    from lawvm.ingest.adjudicated_ingest import reading_order_pages_from_pdf
+    from lawvm.ingest.defacsimile import defacsimile
+    from lawvm.ingest.lowering import source_document_to_ir_node
+    from lawvm.ingest.page_elements import image_blob_name
+    from lawvm.ingest.page_level import build_page_simulacra
+
+    digest = manifestation.artifact_digest
+    ro_pages = reading_order_pages_from_pdf(manifestation.source_bytes, max_pages=max_pages)
+
+    # -- Level 1: faithful per-page simulacra (persisted immutable evidence). --
+    simulacra = build_page_simulacra(
+        spec.vision,
+        manifestation,
+        spec.page_element_producer,
+        ro_pages,
+        adjudicator=spec.adjudicator,  # ty: ignore[invalid-argument-type]
+        leaf_mode=STRUCT_LEAF_SOURCE[spec.transcription_modality],
+        max_pages=max_pages,
+    )
+    for sim in simulacra:
+        store.put_page_simulacrum(
+            page_simulacrum_locator(digest, spec.pipeline_id, spec.version, sim.page_num),
+            sim,
+            source_digest=digest,
+        )
+
+    # -- Level 2: holistic de-facsimile → coherent tree + verified ledger. -----
+    root_anchor = SourceAnchor(artifact_digest=digest, locator="manifestation")
+    doc = defacsimile(simulacra, root_anchor, adjudicator=spec.defacsimile_adjudicator)
+
+    # -- Image blobs: content-address the DETERMINISTIC page-element substrate. -
+    # ``build_page_simulacra`` consumes the page elements internally and does not
+    # surface their raw image bytes through the simulacra path (the simulacra nodes
+    # carry only the image DIGEST/INDEX/media-type metadata, not bytes). Re-enumerate
+    # the elements deterministically (pdfplumber, no model) to recover the bytes and
+    # content-address them under the IR's per-record prefix — the same discipline
+    # (and keyed by the same ``{N}`` element id) as ``parse_struct_pdf_to_ir``.
+    image_manifest: list = []
+    page_count = min(len(ro_pages), max_pages)
+    producer = spec.page_element_producer
+    seen_index: set = set()
+    if producer is not None:
+        for idx in range(page_count):
+            page_num = idx + 1
+            pe = producer.page_elements(manifestation.source_bytes, page_num)
+            for img in pe.images:
+                e = img.element
+                if e.index in seen_index:
+                    continue
+                seen_index.add(e.index)
+                blob_name = image_blob_name(e.index, e.media_type)
+                locator = parsed_image_locator(digest, spec.pipeline_id, spec.version, blob_name)
+                store.put_image(
+                    locator,
+                    img.raw_bytes,
+                    source_digest=digest,
+                    media_type=e.media_type,
+                    bit_exact_source=img.bit_exact_source,
+                )
+                image_manifest.append(
+                    {
+                        "index": e.index,
+                        "digest": e.digest,
+                        "locator": locator,
+                        "media_type": e.media_type,
+                        "px_width": e.width,
+                        "px_height": e.height,
+                        "bbox": list(e.bbox),
+                        "role": e.role,
+                        "bit_exact_source": img.bit_exact_source,
+                    }
+                )
+    stitched = _inject_image_locators(doc.root, digest, spec.pipeline_id, spec.version)
+
+    # -- Ledger: persist the full audit blob (verify_ledger already gated it). --
+    ledger_locator = defacsimile_ledger_locator(digest, spec.pipeline_id, spec.version)
+    ledger_digest = store.put_ledger(ledger_locator, doc.ledger, source_digest=digest)
+
+    irnode = source_document_to_ir_node(stitched)
+    ledger_summary = defacsimile_manifest_summary(doc.ledger)
+    ledger_summary["ledger_locator"] = ledger_locator
+    ledger_summary["ledger_digest"] = ledger_digest
+    manifest = {
+        "source_digest": digest,
+        "source_locator": manifestation.locator,
+        "source_role": manifestation.source_role,
+        "media_type": manifestation.media_type,
+        "pipeline_id": spec.pipeline_id,
+        "pipeline_version": spec.version,
+        "transcription_modality": spec.transcription_modality,
+        "producers": ["vision_struct", "reading_order", "page_elements", "defacsimile"],
+        "page_count": doc.page_count,
+        "assurance_summary": _assurance_summary(stitched),
+        "defacsimile_summary": ledger_summary,
+        "image_manifest": image_manifest,
         "parsed_at": (parsed_at or datetime.now(tz=timezone.utc)).isoformat(),
     }
     return ParsedRecord(ir=irnode.to_jsonable_dict(), manifest=manifest, cache_hit=False)
@@ -704,12 +872,58 @@ def parse_struct_and_cache(
             f"parse_struct_and_cache requires a struct_* modality; got "
             f"{spec.transcription_modality!r}"
         )
+    # The converged two-level lane routes to the de-facsimile parse path (Level-1
+    # simulacra → Level-2 composer) — the single-level struct_* lanes stay here.
+    if spec.transcription_modality == DEFACSIMILE_MODALITY:
+        return parse_defacsimile_and_cache(
+            manifestation, store, spec=spec, force=force, max_pages=max_pages,
+            parsed_at=parsed_at,
+        )
     locator = parsed_ir_locator(manifestation.artifact_digest, spec.pipeline_id, spec.version)
     if not force:
         cached = store.get(locator)
         if cached is not None:
             return ParsedRecord(ir=cached["ir"], manifest=cached["manifest"], cache_hit=True)
     record = parse_struct_pdf_to_ir(
+        manifestation, spec, store, max_pages=max_pages, parsed_at=parsed_at
+    )
+    store.put(locator, record)
+    return record
+
+
+def parse_defacsimile_and_cache(
+    manifestation: SourceManifestation,
+    store: ParsedIrStore,
+    *,
+    spec: Optional[PipelineSpec] = None,
+    force: bool = False,
+    max_pages: int = 5000,
+    parsed_at: Optional[datetime] = None,
+) -> ParsedRecord:
+    """Converged two-level parse to LawVM IR, cached by the de-facsimile key.
+
+    Key = ``(digest, pipeline_id, defacsimile-version)`` where the version embeds
+    the L1 ``struct_converge`` tag PLUS ``+defacsimile.v1+<adjudicator-id or
+    "fallback">`` (Decision 10) — DISTINCT from every struct_* lane key, so the
+    de-facsimile records COEXIST with the single-level records. A cache HIT returns
+    the stored record byte-for-byte; a MISS runs ``parse_defacsimile_pdf_to_ir``
+    (which persists the per-page simulacra + the verified ledger + the image blobs
+    under the same per-record prefix). ``spec`` defaults to a pipeline resolved for
+    the ``defacsimile`` modality (which probes the Level-2 adjudicator once).
+    """
+    if spec is None:
+        spec = resolve_pipeline(transcription_modality=DEFACSIMILE_MODALITY)
+    if spec.transcription_modality != DEFACSIMILE_MODALITY:
+        raise ValueError(
+            f"parse_defacsimile_and_cache requires the {DEFACSIMILE_MODALITY!r} "
+            f"modality; got {spec.transcription_modality!r}"
+        )
+    locator = parsed_ir_locator(manifestation.artifact_digest, spec.pipeline_id, spec.version)
+    if not force:
+        cached = store.get(locator)
+        if cached is not None:
+            return ParsedRecord(ir=cached["ir"], manifest=cached["manifest"], cache_hit=True)
+    record = parse_defacsimile_pdf_to_ir(
         manifestation, spec, store, max_pages=max_pages, parsed_at=parsed_at
     )
     store.put(locator, record)

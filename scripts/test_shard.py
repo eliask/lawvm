@@ -691,6 +691,10 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # Track-C de-facsimile ledger persistence (Decision 5): put_ledger /
         # get_ledger sibling-blob round-trip + manifest op/tier histograms.
         "test_ingest_defacsimile_ledger_store.py",
+        # Integration: the converged two-level de-facsimile parse lane end-to-end
+        # (parse_defacsimile_and_cache) — Level-1 simulacra persisted, Level-2
+        # verified ledger persisted, canonical IR produced, idempotent cache hit.
+        "test_ingest_defacsimile_parse_lane.py",
         # D1 coverage metric + owned-content quality detectors.
         "test_source_document_coverage.py",
         # Producer-neutral adjudication layer: assurance_for + Adjudicator.

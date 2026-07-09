@@ -528,6 +528,28 @@ def evaluate_defacsimile_ab(
     )
 
 
+def _print_defacsimile_ab(ab: DeFacsimileABReport) -> None:
+    print("-" * 78)
+    print("LEVEL-2 DE-FACSIMILE A/B (baseline struct_span stitch vs de-facsimile)")
+    print(
+        f"  EXTRA Δ={ab.extra_delta:+d}  STRUCTURE Δ={ab.structure_delta:+d}  "
+        f"MISSING Δ={ab.missing_delta:+d}  NUMERIC Δ={ab.numeric_delta:+d}"
+    )
+    print(f"  ACCEPTED: {ab.accepted}  (EXTRA+STRUCTURE down, MISSING not up, NUMERIC unchanged)")
+
+
+def _defacsimile_ab_to_json(ab: DeFacsimileABReport) -> dict:
+    return {
+        "defacsimile_ab": {
+            "extra_delta": ab.extra_delta,
+            "structure_delta": ab.structure_delta,
+            "missing_delta": ab.missing_delta,
+            "numeric_delta": ab.numeric_delta,
+            "accepted": ab.accepted,
+        }
+    }
+
+
 # --------------------------------------------------------------------------- #
 # Orchestration                                                                #
 # --------------------------------------------------------------------------- #
@@ -621,6 +643,34 @@ def _lane_reconstructed_text(manifestation: SourceManifestation, max_pages: int)
     store = ParsedIrStore(FI_PARSED_STORE)
     try:
         rec = parse_struct_and_cache(
+            manifestation, store, spec=spec, max_pages=max_pages
+        )
+    finally:
+        store.close()
+    return _ir_dict_text(rec.ir)
+
+
+def _defacsimile_reconstructed_text(manifestation: SourceManifestation, max_pages: int) -> str:
+    """Full-doc de-facsimile (converged two-level) reconstruction text — TEXT B.
+
+    Runs the ``defacsimile`` lane end-to-end through the cached ``ParsedIrStore``
+    (Level-1 simulacra → Level-2 holistic composer, gated by ``verify_ledger``) and
+    recovers the reading text of the resulting IR. This is the reconstruction the
+    A/B (``evaluate_defacsimile_ab``) scores against the mechanical struct_span
+    stitch: furniture dropped, split content rejoined, without losing body content
+    or corrupting a §/euro.
+    """
+    from lawvm.finland.source_document import FI_PARSED_STORE
+    from lawvm.ingest.parsed_store import (
+        ParsedIrStore,
+        parse_defacsimile_and_cache,
+        resolve_pipeline,
+    )
+
+    spec = resolve_pipeline(transcription_modality="defacsimile", vision_max_tokens=3000)
+    store = ParsedIrStore(FI_PARSED_STORE)
+    try:
+        rec = parse_defacsimile_and_cache(
             manifestation, store, spec=spec, max_pages=max_pages
         )
     finally:
@@ -774,6 +824,12 @@ def main(args: argparse.Namespace) -> None:
         raise SystemExit(
             "fi-parse-compare: --adjudicate needs the XML gold; pass --he YEAR/NUM"
         )
+    run_defacsimile = bool(getattr(args, "defacsimile", False))
+    if run_defacsimile and not adjudicate:
+        raise SystemExit(
+            "fi-parse-compare: --defacsimile is an A/B over the intelligent diff; "
+            "pass --adjudicate (and --he YEAR/NUM) too"
+        )
     report = run_compare(
         manifestation,
         max_pages=args.max_pages,
@@ -785,3 +841,17 @@ def main(args: argparse.Namespace) -> None:
         print(json.dumps(_report_to_json(report), ensure_ascii=False, indent=2))
     else:
         _print_report(report)
+
+    if run_defacsimile and xml_gold_text is not None:
+        # TEXT B = the de-facsimile (converged two-level) reconstruction; the
+        # baseline is the mechanical struct_span stitch. Acceptance is the spec-§2
+        # predicate (EXTRA+STRUCTURE down, MISSING not up, NUMERIC unchanged).
+        ab = evaluate_defacsimile_ab(
+            xml_gold_text,
+            _lane_reconstructed_text(manifestation, args.max_pages),
+            _defacsimile_reconstructed_text(manifestation, args.max_pages),
+        )
+        if args.json:
+            print(json.dumps(_defacsimile_ab_to_json(ab), ensure_ascii=False, indent=2))
+        else:
+            _print_defacsimile_ab(ab)

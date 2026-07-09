@@ -9753,6 +9753,10 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
                              help="skip the struct_patch reference lane")
     parse_cmp_p.add_argument("--adjudicate", "--intelligent", action="store_true", dest="adjudicate",
                              help="also run the intelligent LLM XML-vs-PDF categorized diff (needs --he)")
+    parse_cmp_p.add_argument("--defacsimile", action="store_true", dest="defacsimile",
+                             help=("with --adjudicate: run the Level-2 de-facsimile lane end-to-end as "
+                                   "TEXT B and A/B it against the mechanical struct_span stitch "
+                                   "(EXTRA+STRUCTURE down, MISSING not up, NUMERIC unchanged)"))
     parse_cmp_p.add_argument("--json", action="store_true", help="emit JSON instead of the text report")
 
     # --- structural-review ---
