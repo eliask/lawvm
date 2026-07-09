@@ -1198,6 +1198,12 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # aggregate, and byte-identical determinism (scripted stub processor,
         # hermetic — the live corpus sweep is operator-invoked, not CI).
         "test_fi_parse_corpus.py",
+        # Reliability calibration U-curve harness (fi-calibration): region
+        # subdivision, per-config end-to-end post-stitch scoring, ceiling
+        # detection + 0.7x operating-point derating, adaptive-policy version-tag
+        # fold, and proxy validation (fake reader, hermetic — the live GPU sweep
+        # is operator-invoked, not CI).
+        "test_fi_calibration.py",
     ),
     "tools_audit_restructure": (
         "test_fi_restructure_plan.py",
@@ -1418,6 +1424,7 @@ TOOL_SOURCE_SHARD_GROUPS: dict[tuple[str, ...], tuple[str, ...]] = {
         "src/lawvm/tools/fi_parse_attachments.py",
         "src/lawvm/tools/fi_parse_compare.py",
         "src/lawvm/tools/fi_parse_corpus.py",
+        "src/lawvm/tools/fi_calibration.py",
         "src/lawvm/tools/export_fi_he_branch_ops.py",
         "src/lawvm/tools/export_fi_he_corpus.py",
         "src/lawvm/tools/export_fi_inline_citations.py",

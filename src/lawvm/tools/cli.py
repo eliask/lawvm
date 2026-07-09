@@ -9839,6 +9839,41 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
                                 help="also write the JSON payload to this path")
     parse_corpus_p.add_argument("--verbose", "-v", action="store_true", help="print progress")
 
+    # --- fi-calibration ---
+    calib_p = sub.add_parser(
+        "fi-calibration",
+        help="reliability calibration U-curve sweep: find the adaptive tiling operating point",
+        description=(
+            "Reliability CALIBRATION harness (spec §10 dec. 4). Accuracy-vs-granularity "
+            "is a U-curve (coarse -> garble/truncation; fine -> lost context); the "
+            "control variables are pixels-per-glyph and output-tokens-per-call cliffs, "
+            "NOT region count. Sweeps the deterministic layout hierarchy "
+            "(whole-page/column/block/k-line bands) x DPI {144,200,300} x overlap "
+            "{0,1,2}, scores end-to-end POST-STITCH against the tight per-region pdfium "
+            "text-layer gold (NUMERIC-exact primary, then WER/CER/boundary-F1/seam), "
+            "detects the per-stratum ceiling, sets the operating point at 0.7x cliff "
+            "load, emits a deterministic adaptive subdivide() policy, and VALIDATES the "
+            "oracle-free proxies (overlap/cross-reader/lexical) against true error. The "
+            "full corpus sweep needs the GPU and is OPERATOR-invoked via --live; CI "
+            "exercises the harness hermetically with a fake reader (see the test)."
+        ),
+    )
+    calib_p.add_argument("--finlex", default=None, metavar="PATH",
+                         help="source farchive (default: data/finlex.farchive)")
+    calib_p.add_argument("--live", default=None, metavar="LOCATOR",
+                         help="operator GPU sweep: a finlex media PDF locator to calibrate over")
+    calib_p.add_argument("--base-url", default="http://127.0.0.1:8080", dest="base_url",
+                         help="vision backend base URL (default: http://127.0.0.1:8080)")
+    calib_p.add_argument("--sample", type=int, default=6, metavar="N",
+                         help="stratified page sample size for the live sweep (default: 6)")
+    calib_p.add_argument("--max-pages", type=int, default=200, dest="max_pages",
+                         help="pages to load from the PDF before stratified sampling (default: 200)")
+    calib_p.add_argument("--variance-repeats", type=int, default=2, dest="variance_repeats",
+                         help="re-run a couple configs N times to bound llama.cpp run-to-run variance (default: 2)")
+    calib_p.add_argument("--json", action="store_true", help="emit JSON instead of the CSV report")
+    calib_p.add_argument("--json-out", default=None, metavar="PATH", dest="json_out",
+                         help="also write the JSON payload to this path")
+
     # --- structural-review ---
     sr_p = sub.add_parser(
         "structural-review",
@@ -14539,6 +14574,11 @@ def _main_impl() -> None:
         from lawvm.tools.fi_parse_corpus import main as fi_parse_corpus_main
 
         fi_parse_corpus_main(args)
+
+    elif args.command == "fi-calibration":
+        from lawvm.tools.fi_calibration import main as fi_calibration_main
+
+        fi_calibration_main(args)
 
     elif args.command == "structural-review":
         from lawvm.tools.structural_review import (
