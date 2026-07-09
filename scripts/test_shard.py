@@ -682,6 +682,13 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # unwitnessed_content tripwire, furniture-kept-as-hint, and the
         # PageSimulacrum store round-trip.
         "test_ingest_page_level.py",
+        # meta.v2 typography lane: pdfplumber char-span → pypdfium2 PageLine
+        # geometry alignment (fake spans), font-name → family/bold/italic parse,
+        # document-adaptive size_class (relative to page median), char-grouping
+        # collapse, the typo.* keys' encode/decode round-trip + node lowering,
+        # graceful absence when unalignable / pdfplumber-absent, and a live
+        # 1-page real-PDF extraction (skips when the pdf extra is absent).
+        "test_ingest_typography.py",
         # Track-C Level-2 de-facsimile: the PURE fold + idempotence, verify_ledger
         # (phantom-drop / invented-REJOIN-text / multiset / claim-disjointness /
         # NUMERIC-change gates), the windowed adjudicator (line-reply parse,

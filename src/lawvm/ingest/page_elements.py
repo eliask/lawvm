@@ -31,7 +31,7 @@ from __future__ import annotations
 import hashlib
 import io
 from dataclasses import dataclass, field
-from typing import List, Optional, Sequence, Tuple
+from typing import Dict, List, Mapping, Optional, Sequence, Tuple, cast
 
 from lawvm.core.source_document.anchors import BBox
 from lawvm.ingest.struct_wire import ImageElement
@@ -55,6 +55,26 @@ _BOTTOM_BAND_FRACTION = 0.10  # y-centre below 10% of page height → bottom ban
 # continuation reasoning. A pure affordance, never authority.
 _INDENT_QUANTUM_PT = 18.0
 
+# Typography size-class thresholds, RELATIVE to the page's median (body) font size
+# — document-adaptive, not absolute points (Decision 7 / §3). A span whose size is
+# >= HEADING_RATIO of the median is a ``heading`` candidate; <= CAPTION_RATIO a
+# ``caption``; otherwise ``body``. Ratios keep small text-layer jitter in ``body``.
+_HEADING_SIZE_RATIO = 1.15
+_CAPTION_SIZE_RATIO = 0.85
+
+# Minimum vertical + horizontal overlap fraction for a pdfplumber span to be
+# considered the SAME visual line as a pypdfium2 ``PageLine`` (alignment gate). A
+# span that overlaps no line's y-band, or straddles ambiguously, is left off (the
+# line's typo.* stay absent — never guessed).
+_ALIGN_Y_OVERLAP_MIN = 0.30
+_ALIGN_X_OVERLAP_MIN = 0.30
+
+# Font-name substrings that mark a bold / italic face (PDF fontnames commonly
+# carry the weight/style in the BaseFont literal, often after a ``+`` subset tag
+# and a ``-`` / ``,`` style delimiter, e.g. ``ABCDEF+TimesNewRoman-BoldItalic``).
+_BOLD_MARKERS = ("bold", "black", "heavy", "semibold", "demibold")
+_ITALIC_MARKERS = ("italic", "oblique")
+
 
 @dataclass(frozen=True, slots=True)
 class PageLine:
@@ -70,6 +90,13 @@ class PageLine:
     ``text`` is the model-facing line (rendered as ``[N] text``); the geometry is
     attached to NODES only. A line with no readable geometry carries ``bbox=None``
     and a ``band`` of ``None`` (the extractor degraded, typed, never guessed).
+
+    The typography fields (``font`` / ``size_class`` / ``bold`` / ``italic``) come
+    from a SEPARATE pdfplumber char-level lane aligned to this pypdfium2 line by
+    geometry (``meta.v2``). They are OPTIONAL: ``None`` / ``False`` when the char
+    lane is unavailable or this line could not be aligned to any span (never
+    guessed). ``size_class`` is document-adaptive (``heading`` / ``body`` /
+    ``caption`` relative to the page's median body font size).
     """
 
     text: str
@@ -78,6 +105,31 @@ class PageLine:
     band: Optional[str] = None  # top | body | bottom
     indent: Optional[int] = None
     col: Optional[int] = None
+    # typography v2 (pdfplumber char lane, aligned by geometry; all OPTIONAL)
+    font: Optional[str] = None
+    size_class: Optional[str] = None  # heading | body | caption
+    bold: bool = False
+    italic: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class TypographySpan:
+    """One pdfplumber-derived per-line typography span (``meta.v2`` char lane).
+
+    A visual line's dominant font/size/style, collapsed from its constituent
+    chars, in the SAME PDF-point coordinate frame as ``PageLine.bbox`` (origin
+    bottom-left, ``y0`` near the page bottom). ``size`` is the raw point size (the
+    document-relative ``size_class`` is computed later against the page median);
+    ``bold`` / ``italic`` are parsed from the font name. A pure carrier — the
+    producer aligns these to ``PageLine``s by geometry.
+    """
+
+    text: str
+    bbox: BBox
+    font: str
+    size: float
+    bold: bool
+    italic: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -305,6 +357,252 @@ def line_is_bare_page_number(text: str) -> bool:
     return all(t.lower() in ("sivu", "s", "page", "p", "-", "/") for t in non_digit)
 
 
+# --------------------------------------------------------------------------- #
+# Typography char lane (meta.v2) — pdfplumber spans aligned to pypdfium2 lines. #
+# Pure geometry/string helpers below; the pdfplumber read + alignment live on   #
+# PageElementProducer so a build lacking the extra degrades to typo.* absent.    #
+# --------------------------------------------------------------------------- #
+
+
+def _font_family(fontname: str) -> str:
+    """Human font-family literal from a PDF BaseFont name (drop subset tag + style).
+
+    PDF fontnames often carry a 6-char subset prefix (``ABCDEF+``) and a trailing
+    style (``-BoldItalic`` / ``,Italic``). We strip the subset tag and the style
+    suffix so the family groups across weights (``Times New Roman``), but NEVER
+    invent — an unrecognized shape is returned as-is (minus the subset tag).
+    """
+    name = fontname.strip()
+    if len(name) >= 7 and name[6] == "+" and name[:6].isalpha():
+        name = name[7:]
+    # Split off a trailing style token after the last '-' or ',' when it is a pure
+    # style word (keeps hyphenated real families like 'Helvetica-Neue' intact only
+    # when the tail is NOT a known style — else drop it).
+    for delim in ("-", ","):
+        head, sep, tail = name.rpartition(delim)
+        if sep and _is_style_token(tail):
+            name = head
+    return name.strip() or fontname.strip()
+
+
+def _is_style_token(token: str) -> bool:
+    low = token.lower()
+    return any(m in low for m in _BOLD_MARKERS) or any(m in low for m in _ITALIC_MARKERS) or (
+        low in ("regular", "roman", "medium", "light", "book")
+    )
+
+
+def _font_is_bold(fontname: str) -> bool:
+    """Does the font name mark a bold face (``Bold`` / ``Black`` / ``Heavy`` ...)?"""
+    low = fontname.lower()
+    return any(m in low for m in _BOLD_MARKERS)
+
+
+def _font_is_italic(fontname: str) -> bool:
+    """Does the font name mark an italic / oblique face?"""
+    low = fontname.lower()
+    return any(m in low for m in _ITALIC_MARKERS)
+
+
+def _page_median_size(spans: Sequence[TypographySpan]) -> Optional[float]:
+    """Median span size — the document-adaptive BODY reference for ``size_class``.
+
+    Returns ``None`` when there are no spans (no reference → no size_class). Uses
+    the plain median of per-line sizes (each visual line counts once), which is
+    robust to a handful of large headings dragging a mean.
+    """
+    sizes = sorted(s.size for s in spans if s.size > 0)
+    if not sizes:
+        return None
+    n = len(sizes)
+    mid = n // 2
+    if n % 2 == 1:
+        return sizes[mid]
+    return (sizes[mid - 1] + sizes[mid]) / 2.0
+
+
+def size_class_for(size: float, median: Optional[float]) -> Optional[str]:
+    """Classify a span size RELATIVE to the page median → heading|body|caption.
+
+    Document-adaptive (Decision 7): ``>=`` 1.15× median is a ``heading``, ``<=``
+    0.85× a ``caption``, else ``body``. Returns ``None`` when the median is
+    unknown / non-positive or the size is non-positive (no honest classification).
+    """
+    if median is None or median <= 0 or size <= 0:
+        return None
+    ratio = size / median
+    if ratio >= _HEADING_SIZE_RATIO:
+        return "heading"
+    if ratio <= _CAPTION_SIZE_RATIO:
+        return "caption"
+    return "body"
+
+
+def _overlap_fraction(a0: float, a1: float, b0: float, b1: float) -> float:
+    """Overlap length of ``[a0,a1]`` and ``[b0,b1]`` over the SMALLER interval.
+
+    Fraction of the narrower interval that the two share — a symmetric-ish gate
+    that fires when the span sits inside the line's band (or vice versa). Zero when
+    either interval is degenerate or they are disjoint.
+    """
+    lo, hi = max(a0, b0), min(a1, b1)
+    inter = hi - lo
+    if inter <= 0:
+        return 0.0
+    smaller = min(a1 - a0, b1 - b0)
+    return inter / smaller if smaller > 0 else 0.0
+
+
+def align_typography_to_lines(
+    page_lines: Sequence["PageLine"],
+    spans: Sequence[TypographySpan],
+    *,
+    median: Optional[float] = None,
+) -> Tuple["PageLine", ...]:
+    """Attach font/size_class/bold/italic to each ``PageLine`` by GEOMETRY overlap.
+
+    pdfplumber chars/words do NOT map 1:1 to pypdfium2 lines, so we align by
+    bbox overlap: for each ``PageLine`` with a bbox, pick the span with the
+    greatest COMBINED (y-band × x-range) overlap, provided both exceed their
+    minima. A line with no bbox, or no span clearing the overlap gates, keeps its
+    typo.* ABSENT (never guessed). ``size_class`` is computed against ``median``
+    (the page's median span size) if given, else the median OF ``spans``.
+    """
+    med = median if median is not None else _page_median_size(spans)
+    out: List[PageLine] = []
+    for pl in page_lines:
+        if pl.bbox is None or not spans:
+            out.append(pl)
+            continue
+        best: Optional[TypographySpan] = None
+        best_score = 0.0
+        for sp in spans:
+            y_ov = _overlap_fraction(pl.bbox.y0, pl.bbox.y1, sp.bbox.y0, sp.bbox.y1)
+            x_ov = _overlap_fraction(pl.bbox.x0, pl.bbox.x1, sp.bbox.x0, sp.bbox.x1)
+            if y_ov < _ALIGN_Y_OVERLAP_MIN or x_ov < _ALIGN_X_OVERLAP_MIN:
+                continue
+            score = y_ov + x_ov
+            if score > best_score:
+                best, best_score = sp, score
+        if best is None:
+            out.append(pl)
+            continue
+        out.append(
+            PageLine(
+                text=pl.text,
+                y_order=pl.y_order,
+                bbox=pl.bbox,
+                band=pl.band,
+                indent=pl.indent,
+                col=pl.col,
+                font=best.font,
+                size_class=size_class_for(best.size, med),
+                bold=best.bold,
+                italic=best.italic,
+            )
+        )
+    return tuple(out)
+
+
+def _char_get(ch: object, key: str) -> object:
+    """Read a pdfplumber char field, tolerating both a dict and an attr carrier."""
+    if isinstance(ch, Mapping):
+        return cast("Mapping[str, object]", ch).get(key)
+    return getattr(ch, key, None)
+
+
+def _char_field(ch: object, key: str, default: float = 0.0) -> float:
+    """Read a numeric pdfplumber char field (dict or attr access), else ``default``."""
+    val = _char_get(ch, key)
+    if val is None:
+        return default
+    try:
+        return float(val)  # ty: ignore[invalid-argument-type]
+    except (TypeError, ValueError):
+        return default
+
+
+def _char_str(ch: object, key: str) -> str:
+    val = _char_get(ch, key)
+    return str(val) if val is not None else ""
+
+
+def _spans_from_chars(chars: Sequence[object], page_h: float) -> Tuple[TypographySpan, ...]:
+    """Group pdfplumber chars into per-visual-line ``TypographySpan``s.
+
+    Chars carry ``x0/x1`` and ``y0/y1`` (PDF points, bottom-left origin — the same
+    frame as ``PageLine.bbox``). We bucket chars into lines by their vertical
+    centre (a char joins a line whose running y-centre is within half the char
+    height), then collapse each line to its DOMINANT (most-frequent) font+size and
+    the majority bold/italic — a robust single span per visual line. Lines are
+    returned top-to-bottom (descending y) to mirror reading order.
+    """
+    rows: List[List[object]] = []
+    row_centres: List[float] = []
+    for ch in chars:
+        if not _char_str(ch, "text").strip():
+            continue
+        y0 = _char_field(ch, "y0")
+        y1 = _char_field(ch, "y1")
+        centre = (y0 + y1) / 2.0
+        height = max(y1 - y0, 1.0)
+        placed = False
+        for i, rc in enumerate(row_centres):
+            if abs(rc - centre) <= height / 2.0:
+                rows[i].append(ch)
+                # running mean centre keeps the bucket stable across the line
+                row_centres[i] = (rc * (len(rows[i]) - 1) + centre) / len(rows[i])
+                placed = True
+                break
+        if not placed:
+            rows.append([ch])
+            row_centres.append(centre)
+    spans: List[Tuple[float, TypographySpan]] = []
+    for row in rows:
+        span = _collapse_row(row)
+        if span is not None:
+            spans.append(((span.bbox.y0 + span.bbox.y1) / 2.0, span))
+    spans.sort(key=lambda t: t[0], reverse=True)  # top of page first
+    return tuple(s for _c, s in spans)
+
+
+def _collapse_row(row: Sequence[object]) -> Optional[TypographySpan]:
+    """Collapse one line's chars to a single dominant-font/size ``TypographySpan``."""
+    if not row:
+        return None
+    x0 = min(_char_field(ch, "x0") for ch in row)
+    x1 = max(_char_field(ch, "x1") for ch in row)
+    y0 = min(_char_field(ch, "y0") for ch in row)
+    y1 = max(_char_field(ch, "y1") for ch in row)
+    if x1 < x0 or y1 < y0:
+        return None
+    # Dominant fontname by char count (ties broken by first-seen order).
+    font_counts: Dict[str, int] = {}
+    order: List[str] = []
+    for ch in row:
+        fn = _char_str(ch, "fontname")
+        if fn not in font_counts:
+            order.append(fn)
+        font_counts[fn] = font_counts.get(fn, 0) + 1
+    dominant = max(order, key=lambda f: font_counts[f]) if order else ""
+    # Median size across the row (robust to a stray large/small glyph).
+    sizes = sorted(_char_field(ch, "size") for ch in row if _char_field(ch, "size") > 0)
+    if sizes:
+        mid = len(sizes) // 2
+        size = sizes[mid] if len(sizes) % 2 == 1 else (sizes[mid - 1] + sizes[mid]) / 2.0
+    else:
+        size = 0.0
+    text = "".join(_char_str(ch, "text") for ch in row).strip()
+    return TypographySpan(
+        text=text,
+        bbox=BBox(x0=x0, y0=y0, x1=x1, y1=y1),
+        font=_font_family(dominant),
+        size=size,
+        bold=_font_is_bold(dominant),
+        italic=_font_is_italic(dominant),
+    )
+
+
 def _sha256(b: bytes) -> str:
     return hashlib.sha256(b).hexdigest()
 
@@ -375,10 +673,13 @@ class PageElementProducer:
 
         The model-facing ``lines`` stay geometry-free ``[N] text`` strings;
         ``page_lines`` carries the DETERMINISTIC per-line geometry (bbox, margin
-        band, quantized indent, y-order) in the SAME order/count (Decision 7). The
-        geometry lane degrades gracefully: if the textpage rect API is
-        unavailable, ``page_lines`` is empty and only ``lines`` is produced (a
-        typed note, never a crash).
+        band, quantized indent, y-order) in the SAME order/count (Decision 7) plus
+        the ``meta.v2`` typography (font / size_class / bold / italic) from a
+        SEPARATE pdfplumber char pass aligned to those lines by geometry. Both
+        lanes degrade gracefully: if the pypdfium2 rect API is unavailable,
+        ``page_lines`` is empty; if pdfplumber is absent or a page can't be
+        char-extracted, the typo.* fields are simply absent (a typed note, never a
+        crash, never a guess).
         """
         import importlib
 
@@ -392,17 +693,67 @@ class PageElementProducer:
                 textpage, page_h
             )
             images, img_notes = self._enumerate_images(page, page_num)
+            page_lines, typo_notes = self._attach_typography(pdf_bytes, page_num, page_lines)
             return PageElements(
                 page_num=page_num,
                 lines=lines,
                 images=images,
-                notes=geom_notes + img_notes,
+                notes=geom_notes + img_notes + typo_notes,
                 page_lines=page_lines,
                 page_width=page_w,
                 page_height=page_h,
             )
         finally:
             doc.close()
+
+    def _attach_typography(
+        self, pdf_bytes: bytes, page_num: int, page_lines: Tuple["PageLine", ...]
+    ) -> Tuple[Tuple["PageLine", ...], Tuple[str, ...]]:
+        """Overlay pdfplumber typography spans onto the pypdfium2 lines (meta.v2).
+
+        A separate pdfplumber char pass yields per-line ``TypographySpan``s; they
+        are aligned to the existing ``page_lines`` by bbox overlap. If pdfplumber
+        is unavailable, no spans could be read, or geometry is absent, the lines
+        pass through UNCHANGED (typo.* absent) with a typed note — never a crash.
+        """
+        if not page_lines:
+            return page_lines, ()
+        spans, note = self._typography_spans(pdf_bytes, page_num)
+        if not spans:
+            return page_lines, (note,) if note else ()
+        return align_typography_to_lines(page_lines, spans), ()
+
+    def _typography_spans(
+        self, pdf_bytes: bytes, page_num: int
+    ) -> Tuple[Tuple[TypographySpan, ...], Optional[str]]:
+        """Per-visual-line typography spans from a pdfplumber char pass, or ().
+
+        pdfplumber (the ``pdf`` extra) groups chars into lines; we collapse each
+        line's chars into one dominant-font/size ``TypographySpan`` in PDF points
+        (origin bottom-left, matching ``PageLine.bbox``). A missing extra, an
+        unreadable page, or a char-less page each degrade to ``()`` + a typed note.
+        """
+        try:
+            import importlib
+
+            pdfplumber = importlib.import_module("pdfplumber")
+        except ImportError:
+            return (), f"page {page_num}: typography unavailable (pdfplumber absent)"
+        import io as _io
+
+        try:
+            with pdfplumber.open(_io.BytesIO(pdf_bytes)) as doc:
+                page = doc.pages[page_num - 1]
+                page_h = float(page.height)
+                chars = list(page.chars)
+        # pdfplumber / pdfminer can raise a broad range on a malformed page; a
+        # typography read is best-effort → degrade to no spans + a typed note.
+        except Exception as exc:  # noqa: BLE001 (best-effort optional lane)
+            return (), f"page {page_num}: typography read failed ({type(exc).__name__})"
+        spans = _spans_from_chars(chars, page_h)
+        if not spans:
+            return (), f"page {page_num}: no typography chars extracted"
+        return spans, None
 
     def _page_dims(self, page: object) -> Tuple[float, float]:
         try:

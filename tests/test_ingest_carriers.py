@@ -187,11 +187,26 @@ def test_metadata_furniture_hint_key() -> None:
     assert decode_metadata(attrs).furniture is True
 
 
-def test_metadata_reserved_v2_keys_tolerated() -> None:
-    # v2 typography keys are reserved now — recognized (not rejected), carried opaque.
-    attrs = {"meta.v": "1", "typo.font": "Times", "typo.size_class": "median"}
-    meta = decode_metadata(attrs)  # must not raise
-    assert meta.band is None
+def test_metadata_v2_typography_keys_populate_and_round_trip() -> None:
+    # meta.v2: the four typo.* keys are now POPULATED (font / size_class / bold /
+    # italic), recognized by the closed vocab, and round-trip through the codec.
+    meta = NodeMetadata(font="Times New Roman", size_class="heading", bold=True, italic=True)
+    attrs = encode_metadata(meta)
+    assert attrs["typo.font"] == "Times New Roman"
+    assert attrs["typo.size_class"] == "heading"
+    assert attrs["typo.bold"] == "1" and attrs["typo.italic"] == "1"
+    assert decode_metadata(attrs) == meta
+    # A body line with no typography stays sparse (typo.* absent, never guessed).
+    assert "typo.font" not in encode_metadata(NodeMetadata(band="body"))
+
+
+def test_metadata_v2_size_class_vocab_is_closed() -> None:
+    # size_class is document-adaptive but drawn from a closed set (heading|body|
+    # caption); an out-of-vocab value is fail-loud, like band / freeform.reason.
+    with pytest.raises(MetadataVocabError):
+        NodeMetadata(size_class="median")
+    with pytest.raises(MetadataVocabError):
+        decode_metadata({"meta.v": "1", "typo.size_class": "median"})
 
 
 def test_metadata_rejects_unknown_namespaced_key() -> None:

@@ -15,9 +15,13 @@ round-trip it through ``attrs``. An affordance, never authority: a furniture
 confirmed by the model across pages, not obeyed.
 
 Pass-1 (Decision 7): geometry + continuation cues + recurrence + content hints +
-provenance + text-derivable caps. DEFERRED to ``meta.v2`` (keys RESERVED now so
-Level 2 treats them optional): ``typo.font`` / ``typo.size_class`` / ``typo.bold``
-/ ``typo.italic``.
+provenance + text-derivable caps. The ``meta.v2`` typography lane (``typo.font`` /
+``typo.size_class`` / ``typo.bold`` / ``typo.italic``) is now POPULATED from a
+pdfplumber char-level pass aligned to the pypdfium2 reading-order lines
+(``page_elements``): the four keys are OPTIONAL (absent when the char lane is
+unavailable or a line cannot be aligned — never guessed) so Level 2 continues to
+treat them optional. The ``meta.v=1`` version stamp and every other key are
+UNCHANGED — this only fills the reserved slots.
 """
 from __future__ import annotations
 
@@ -51,6 +55,12 @@ _KNOWN_META_KEYS = frozenset(
         "geom.y_order",  # y-order within page
         # typography (text-derivable in v1)
         "typo.caps",  # 1
+        # typography v2 — pdfplumber char lane aligned to the pypdfium2 line
+        # (Decision 7 deferred lane). All OPTIONAL: absent when unalignable.
+        "typo.font",  # <font family literal>
+        "typo.size_class",  # heading|body|caption (relative to page median)
+        "typo.bold",  # 1
+        "typo.italic",  # 1
         # continuation cues
         "cue.ends_terminal",  # 1
         "cue.starts_lower",  # 1
@@ -71,18 +81,16 @@ _KNOWN_META_KEYS = frozenset(
     }
 )
 
-# RESERVED for meta.v2 — recognized (never rejected) but carried opaquely; Level 2
-# treats them optional. Not emitted by the v1 encoder.
-_RESERVED_V2_KEYS = frozenset(
-    {
-        "typo.font",
-        "typo.size_class",
-        "typo.bold",
-        "typo.italic",
-    }
-)
+# No keys remain reserved-but-unpopulated: the four ``typo.*`` v2 keys are now
+# members of ``_KNOWN_META_KEYS`` (populated from the pdfplumber char lane). The
+# set is kept (empty) so the closed-vocab decode guard's forward-compat branch is
+# explicit — a future reserved key lands here without a decode-rejection edit.
+_RESERVED_V2_KEYS: frozenset[str] = frozenset()
 
 _GEOM_BANDS = frozenset({"top", "body", "bottom"})
+# size_class is document-adaptive (relative to the page's median body size), so
+# the vocab is a small closed set — NOT an absolute point size.
+_SIZE_CLASSES = frozenset({"heading", "body", "caption"})
 _FREEFORM_REASONS = frozenset(
     {
         "marginalia",
@@ -116,6 +124,11 @@ class NodeMetadata:
     y_order: Optional[int] = None
     # typography (v1: text-derivable caps only)
     caps: bool = False
+    # typography v2 (pdfplumber char lane; all OPTIONAL — absent when unalignable)
+    font: Optional[str] = None  # font family literal (e.g. "Times New Roman")
+    size_class: Optional[str] = None  # heading|body|caption (relative to median)
+    bold: bool = False
+    italic: bool = False
     # continuation cues
     ends_terminal: bool = False
     starts_lower: bool = False
@@ -144,6 +157,11 @@ class NodeMetadata:
                 f"freeform.reason must be one of {sorted(_FREEFORM_REASONS)}; "
                 f"got {self.freeform_reason!r}"
             )
+        if self.size_class is not None and self.size_class not in _SIZE_CLASSES:
+            raise MetadataVocabError(
+                f"typo.size_class must be one of {sorted(_SIZE_CLASSES)}; "
+                f"got {self.size_class!r}"
+            )
 
 
 def encode_metadata(meta: NodeMetadata) -> dict[str, str]:
@@ -163,6 +181,14 @@ def encode_metadata(meta: NodeMetadata) -> dict[str, str]:
         out["geom.y_order"] = str(meta.y_order)
     if meta.caps:
         out["typo.caps"] = "1"
+    if meta.font is not None:
+        out["typo.font"] = meta.font
+    if meta.size_class is not None:
+        out["typo.size_class"] = meta.size_class
+    if meta.bold:
+        out["typo.bold"] = "1"
+    if meta.italic:
+        out["typo.italic"] = "1"
     if meta.ends_terminal:
         out["cue.ends_terminal"] = "1"
     if meta.starts_lower:
@@ -194,9 +220,10 @@ def decode_metadata(attrs: Mapping[str, str]) -> NodeMetadata:
     """Decode the closed-vocabulary metadata keys from ``attrs``.
 
     Non-metadata keys (outside the owned namespaces) are IGNORED. A key that IS in
-    an owned namespace but is neither a known v1 key nor a reserved v2 key is a
-    fail-loud ``MetadataVocabError`` (the vocabulary is closed). Reserved v2 keys
-    are tolerated (forward-compatible) but do not populate a v1 field.
+    an owned namespace but is neither a known key nor a (currently empty) reserved
+    key is a fail-loud ``MetadataVocabError`` (the vocabulary is closed). The four
+    ``typo.*`` v2 keys are now known + populated (font / size_class / bold /
+    italic); ``typo.size_class`` is validated against the closed size-class vocab.
     """
     for key in attrs:
         if not key.startswith(_OWNED_NAMESPACES):
@@ -218,6 +245,10 @@ def decode_metadata(attrs: Mapping[str, str]) -> NodeMetadata:
         indent=_int("geom.indent"),
         y_order=_int("geom.y_order"),
         caps=attrs.get("typo.caps") == "1",
+        font=attrs.get("typo.font"),
+        size_class=attrs.get("typo.size_class"),
+        bold=attrs.get("typo.bold") == "1",
+        italic=attrs.get("typo.italic") == "1",
         ends_terminal=attrs.get("cue.ends_terminal") == "1",
         starts_lower=attrs.get("cue.starts_lower") == "1",
         hyphen_tail=attrs.get("cue.hyphen_tail") == "1",

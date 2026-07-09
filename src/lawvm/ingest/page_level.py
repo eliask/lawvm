@@ -96,12 +96,18 @@ def _metadata_for_text(
     """Deterministic ``NodeMetadata`` for one node — geometry + string cues + hints.
 
     Geometry (band/indent/col/y-order) comes from the matched ``PageLine``; the
-    continuation cues + content hints are PURE string functions of ``text``. All
-    affordances, never authority.
+    continuation cues + content hints are PURE string functions of ``text``; the
+    ``meta.v2`` typography (font / size_class / bold / italic) rides on the matched
+    ``PageLine`` (the pdfplumber char lane aligned to it), OPTIONAL — absent when
+    unaligned. All affordances, never authority.
     """
     band = line.band if line is not None else None
     indent = line.indent if line is not None else None
     col = line.col if line is not None else None
+    font = line.font if line is not None else None
+    size_class = line.size_class if line is not None else None
+    bold = line.bold if line is not None else False
+    italic = line.italic if line is not None else False
     stripped = text.strip()
     return NodeMetadata(
         band=band,
@@ -109,6 +115,10 @@ def _metadata_for_text(
         indent=indent,
         y_order=y_order,
         caps=line_is_caps(stripped),
+        font=font,
+        size_class=size_class,
+        bold=bold,
+        italic=italic,
         ends_terminal=line_ends_terminal(stripped),
         starts_lower=line_starts_lower(stripped),
         hyphen_tail=line_has_hyphen_tail(stripped),
