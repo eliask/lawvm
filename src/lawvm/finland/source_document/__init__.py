@@ -12,6 +12,12 @@ from lawvm.finland.source_document.adjudicated_ingest import (
     adjudicated_document_ingest,
     reading_order_pages_from_pdf,
 )
+from lawvm.finland.source_document.materialize import (
+    MaterializedProvision,
+    apply_candidate_op,
+    load_enacted_provision,
+    materialize_conditional_provision,
+)
 from lawvm.finland.source_document.he_draft import (
     HeDocKind,
     classify_he_document,
@@ -30,6 +36,10 @@ from lawvm.finland.source_document.pdf_profiles import (
 
 __all__ = [
     "HeDocKind",
+    "MaterializedProvision",
+    "apply_candidate_op",
+    "load_enacted_provision",
+    "materialize_conditional_provision",
     "adjudicated_document_ingest",
     "reading_order_pages_from_pdf",
     "HeDraftProposal",

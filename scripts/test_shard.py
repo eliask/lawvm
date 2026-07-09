@@ -661,6 +661,8 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_source_document_composition.py",
         # Per-page adjudicated ingest → composed whole-document IR.
         "test_fi_adjudicated_ingest.py",
+        # Materialize a conditional branch against enacted law (if-enacted diff).
+        "test_fi_materialize.py",
         "test_fi_address_parse.py",
         "test_irnodekind_stringly_typed_gate.py",
         "test_fi_admissible_binding.py",

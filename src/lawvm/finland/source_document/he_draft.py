@@ -160,6 +160,25 @@ def _johtolause_starts(low: str) -> List[int]:
     return out
 
 
+def _clean_payload(raw: str) -> str:
+    """Drop the ``§ N / heading / — — —`` elision preamble → just the new unit text.
+
+    In an amending lakiehdotus the provision body reprints the target ``§`` head +
+    heading, then an em-dash rule (``— — —``) standing for the UNCHANGED existing
+    content, then the NEW unit. Materialization needs only the new unit, so return
+    the text after the LAST all-em-dash line (if any); otherwise the text as-is (a
+    full-section replacement carries no elision rule).
+    """
+    lines = raw.replace("\r\n", "\n").split("\n")
+    last_rule = -1
+    for i, ln in enumerate(lines):
+        stripped = ln.strip()
+        if stripped and all(ch in "—–- " for ch in stripped) and "—" in stripped:
+            last_rule = i
+    kept = lines[last_rule + 1:] if last_rule != -1 else lines
+    return "\n".join(kept).strip()
+
+
 def _operative_from_region(region_text: str) -> _Operative:
     """Recover johtolause clause + target statute + payload + voimaantulo.
 
@@ -177,12 +196,12 @@ def _operative_from_region(region_text: str) -> _Operative:
     after_low = after.lower()
     vi = after_low.find(_VOIMAANTULO_MARK)
     if vi != -1:
-        payload = after[:vi].strip()
+        payload = _clean_payload(after[:vi])
         # commencement = just the voimaantulo line (the "—" rule / signatures follow).
         tail = after[vi:].replace("\r\n", "\n")
         commencement = tail.split("\n", 1)[0].strip()
     else:
-        payload = after.strip()
+        payload = _clean_payload(after)
         commencement = ""
     return _Operative(
         clause=clause,
