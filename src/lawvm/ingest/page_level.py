@@ -152,7 +152,9 @@ def _line_index_by_text(page_lines: Sequence[PageLine]) -> Dict[str, PageLine]:
 
     Node text is span-copied from the reading-order lines, so a node's leading
     physical line matches a ``PageLine`` by text — the deterministic bridge from
-    the geometry-free node text to its per-line geometry.
+    the geometry-free node text to its per-line geometry. Kept as the SECONDARY
+    (fallback) bridge only; the PRIMARY bridge is the source-line index (reading
+    order rank) via ``_resolve_page_line`` — see Decision 8.
     """
     out: Dict[str, PageLine] = {}
     for pl in page_lines:
@@ -160,6 +162,39 @@ def _line_index_by_text(page_lines: Sequence[PageLine]) -> Dict[str, PageLine]:
         if key and key not in out:
             out[key] = pl
     return out
+
+
+def _resolve_page_line(
+    text: str,
+    rank: int,
+    page_lines: Sequence[PageLine],
+    line_index: Mapping[str, PageLine],
+) -> Optional[PageLine]:
+    """Bridge a text leaf to its ``PageLine`` by SOURCE-LINE INDEX first (Decision 8).
+
+    The cold read enumerates the page's reading-order lines; the Nth text-bearing
+    leaf corresponds to the Nth reading-order ``PageLine`` (``page_lines`` is in that
+    same order). Binding by that RANK is robust where binding by exact text is NOT:
+
+      * a leaf the converge loop or a §8 re-read CORRECTED no longer matches any
+        line by string, yet its rank still locates its geometry (so it stays
+        re-readable and keeps its bbox exactly where the page is hardest); and
+      * recurring identical lines each bind to their OWN occurrence instead of all
+        collapsing onto the first (the exact-text-first-wins bug).
+
+    Text match is retained as a CORROBORATION / fallback: when the rank line's text
+    still equals the leaf's leading line we take it (identical result, extra
+    confidence); when the rank is out of range (a leaf with no source line — an
+    inline/re-transcribed leaf that outran the cold lines) we fall back to the
+    text index so such a leaf still binds if its text happens to match a line.
+    """
+    if 0 <= rank < len(page_lines):
+        return page_lines[rank]
+    # No source line at this rank (more text leaves than cold lines) → best-effort
+    # text bridge, else no geometry (typed absence, never a guessed bbox).
+    first_line = text.split("\n", 1)[0].strip() if text else ""
+    key = " ".join(first_line.split())
+    return line_index.get(key)
 
 
 # --------------------------------------------------------------------------- #
@@ -554,13 +589,14 @@ def _detect_suspects(
         text = n.text or ""
         if not text.strip() or is_special:
             continue
-        # Bridge to a PageLine: exact text first, else reading-order rank (a
-        # garbled leaf's text matches no line, but its RANK still locates it).
-        first_line = text.split("\n", 1)[0].strip()
-        key = " ".join(first_line.split())
-        page_line = line_index.get(key)
-        if page_line is None and rank < len(page_lines):
-            page_line = page_lines[rank]
+        # Bridge to a PageLine by SOURCE-LINE INDEX (Decision 8): the Nth text leaf
+        # (pre-order, ``_text_leaves_in_order``) ↔ the Nth reading-order line. This is
+        # exactly what a garbled leaf needs — its text matches no line by string, but
+        # its RANK still locates both its bbox (for the crop) and the independent
+        # pdfium read of that region (for cross-reader disagreement). The SAME rank
+        # definition binds geometry in ``_lower_with_metadata`` (``leaf_counter``), so
+        # detection and lowering agree on which line a leaf owns.
+        page_line = _resolve_page_line(text, rank, page_lines, line_index)
         bbox = page_line.bbox if page_line is not None else None
         # Independent read of the region: the pdfium line at this rank/region.
         independent = page_line.text if page_line is not None else ""
@@ -814,11 +850,13 @@ def _lower_with_metadata(
     page_num: int,
     tier: AssuranceTier,
     line_index: Mapping[str, PageLine],
+    page_lines: Sequence[PageLine],
     recurrence: Mapping[str, int],
     page_count: int,
     witness_words: set,
     converged: bool,
     y_counter: List[int],
+    leaf_counter: List[int],
 ) -> SourceDocumentNode:
     """Lower one ``StructBuildNode`` subtree → a metadata-annotated ``SourceDocumentNode``.
 
@@ -837,10 +875,20 @@ def _lower_with_metadata(
     y_order = y_counter[0]
     y_counter[0] += 1
 
-    # Match the node's leading physical line to a PageLine for geometry.
-    first_line = node.text.split("\n", 1)[0].strip() if node.text else ""
-    key = " ".join(first_line.split())
-    page_line = line_index.get(key)
+    # Bind the node's geometry to its ``PageLine`` by SOURCE-LINE INDEX (Decision 8):
+    # the Nth text-bearing leaf (pre-order) ↔ the Nth reading-order ``page_line``.
+    # Rank-primary binding survives a converge/re-read text correction (the leaf no
+    # longer matches any line by string but its rank still locates its bbox) and
+    # gives recurring identical lines their OWN geometry instead of all collapsing
+    # onto the first occurrence. Only text-bearing leaves consume a rank (matching
+    # ``page_lines`` reading order); pure containers / images do not.
+    has_text = bool(node.text and node.text.strip())
+    if has_text:
+        rank = leaf_counter[0]
+        leaf_counter[0] += 1
+        page_line = _resolve_page_line(node.text, rank, page_lines, line_index)
+    else:
+        page_line = None
     band_count = None
     if page_line is not None:
         rk = _recurrence_key(node.text, page_line)
@@ -923,11 +971,13 @@ def _lower_with_metadata(
             page_num=page_num,
             tier=tier,
             line_index=line_index,
+            page_lines=page_lines,
             recurrence=recurrence,
             page_count=page_count,
             witness_words=witness_words,
             converged=converged,
             y_counter=y_counter,
+            leaf_counter=leaf_counter,
         )
         for c in node.children
     )
@@ -963,11 +1013,16 @@ def build_page_simulacrum(
         artifact_digest=digest, locator=f"page={page_num}", page_num=page_num
     )
     line_index = _line_index_by_text(page_elements.page_lines)
+    page_lines = page_elements.page_lines
     rec = recurrence if recurrence is not None else {}
     witness_words = _witness_words(reading_order_text)
     converged_flag = converged.convergence.termination in ("empty_patch", "fixpoint")
 
     y_counter = [0]
+    # Reading-order rank of the next text-bearing leaf — the source-line index the
+    # geometry bridge binds by (Decision 8). Threaded (not per-node) so the pre-order
+    # leaf sequence stays 1:1 with ``page_lines`` across the whole forest.
+    leaf_counter = [0]
     nodes = tuple(
         _lower_with_metadata(
             n,
@@ -976,11 +1031,13 @@ def build_page_simulacrum(
             page_num=page_num,
             tier=converged.assurance,
             line_index=line_index,
+            page_lines=page_lines,
             recurrence=rec,
             page_count=page_count,
             witness_words=witness_words,
             converged=converged_flag,
             y_counter=y_counter,
+            leaf_counter=leaf_counter,
         )
         for n in converged.nodes
     )

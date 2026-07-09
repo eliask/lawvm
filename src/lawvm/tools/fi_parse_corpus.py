@@ -81,6 +81,7 @@ class CorpusMember:
 
 def _xml_sibling(pdf_locator: str, present: frozenset) -> Optional[str]:
     """Sibling ``main.xml`` locator for a media PDF, iff it exists in the archive."""
+    # lawvm-regex: diagnostic — farchive LOCATOR path transform (.../media/X.pdf → sibling .../main.xml) for corpus A/B gold pairing; a source-plane path derivation, never post-parse legal semantics.
     m = _MEDIA_PDF_RE.match(pdf_locator)
     if m is None:
         return None

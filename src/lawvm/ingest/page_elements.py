@@ -35,6 +35,7 @@ from typing import Dict, List, Mapping, Optional, Sequence, Tuple, cast
 
 from lawvm.core.source_document.anchors import BBox
 from lawvm.ingest.struct_wire import ImageElement
+from lawvm.ingest.visual import PDFIUM_LOCK
 
 # Fixed rasterization DPI for region crops WITHOUT an embedded XObject. It is
 # part of the pipeline version (see ``parsed_store.RASTERIZE_DPI_TAG``): a crop
@@ -656,6 +657,79 @@ def _fmt_bbox(bbox: Tuple[float, float, float, float]) -> str:
     return ",".join(f"{v:.1f}" for v in bbox)
 
 
+def _norm_line_text(text: str) -> str:
+    """Whitespace-normalized lower-case form for order-preserving line alignment."""
+    return " ".join(text.split()).lower()
+
+
+def _align_lines_to_geom(
+    lines: Sequence[str],
+    geom: Sequence[Tuple[str, Optional[BBox]]],
+) -> List[Tuple[str, Optional[BBox]]]:
+    """Bind model-facing ``lines`` to geometry rows by ORDER-PRESERVING text overlap.
+
+    The pypdfium2 text-range splitter and the rect API enumerate the SAME visual
+    lines in the SAME reading order, but their counts can differ by a few (a rect
+    the splitter merged into one line or split into two, a blank rect the splitter
+    dropped). This is an off-by-N misalignment — NOT a reason to discard the whole
+    page's geometry. We walk both sequences forward, matching each ``line`` to the
+    NEXT geometry row whose normalized text equals (or contains / is contained by)
+    the line's, tolerating a bounded look-ahead of unmatched rows on either side.
+
+    Returns one ``(line_text, bbox)`` per input line, in line order: the aligned
+    row's bbox when a match is found, else ``bbox=None`` (typed, never a WRONG
+    bbox). When the counts are equal AND every position matches by text, this is
+    exactly the old positional zip; the alignment only diverges to REPAIR a
+    mismatch, so a faithful page is unchanged.
+    """
+    g_norm = [_norm_line_text(t) for t, _ in geom]
+    out: List[Tuple[str, Optional[BBox]]] = []
+    gi = 0
+    n_geom = len(geom)
+    # Bounded look-ahead: how far past the current cursor we scan for a text match
+    # before giving up on this line (keeps the alignment O(n) and order-preserving,
+    # never rebinding to a far-away identical line elsewhere on the page).
+    _WINDOW = 3
+    for line in lines:
+        ln = _norm_line_text(line)
+        best_j: Optional[int] = None
+        # Prefer an exact normalized-text hit within the forward window; fall back
+        # to a containment hit (a merged/split rect) at the same cursor.
+        for j in range(gi, min(gi + _WINDOW + 1, n_geom)):
+            gt = g_norm[j]
+            if not gt:
+                continue
+            if gt == ln:
+                best_j = j
+                break
+            if best_j is None and (ln in gt or gt in ln):
+                best_j = j
+        if best_j is not None:
+            out.append((line, geom[best_j][1]))
+            gi = best_j + 1  # advance past the consumed row (order-preserving)
+        else:
+            # No row aligned within the window → keep the line, drop its geometry
+            # (bbox=None). Do NOT advance the geom cursor: the current row may still
+            # match a LATER line (the splitter dropped/merged THIS line, not that row).
+            out.append((line, None))
+    # Positional-fallback safety net: if text alignment bound (almost) nothing yet
+    # the rect API DID yield rows (e.g. the rect text systematically diverges from
+    # the splitter text, or a whole page of recurring lines confounded the window),
+    # every line would be left un-croppable — the exact regression this fix exists to
+    # prevent. Fall back to a straight positional bind (line i ↔ row i) for the
+    # overlapping prefix so the page still yields usable per-line geometry. Only
+    # engaged when text alignment essentially failed (bound < 25% of the shorter
+    # length) so a genuinely good alignment is never overwritten by cruder position.
+    bound = sum(1 for _t, b in out if b is not None)
+    overlap = min(len(lines), n_geom)
+    if overlap and bound < max(1, overlap // 4):
+        out = [
+            (line, geom[i][1] if i < n_geom else None)
+            for i, line in enumerate(lines)
+        ]
+    return out
+
+
 class PageElementProducer:
     """Enumerate a PDF page's numbered text lines + embedded/rasterized images.
 
@@ -684,27 +758,36 @@ class PageElementProducer:
         import importlib
 
         pdfium = importlib.import_module("pypdfium2")
-        doc = pdfium.PdfDocument(pdf_bytes)
-        try:
-            page = doc[page_num - 1]
-            textpage = page.get_textpage()
-            page_w, page_h = self._page_dims(page)
-            lines, page_lines, geom_notes = self._extract_lines_with_geometry(
-                textpage, page_h
-            )
-            images, img_notes = self._enumerate_images(page, page_num)
-            page_lines, typo_notes = self._attach_typography(pdf_bytes, page_num, page_lines)
-            return PageElements(
-                page_num=page_num,
-                lines=lines,
-                images=images,
-                notes=geom_notes + img_notes + typo_notes,
-                page_lines=page_lines,
-                page_width=page_w,
-                page_height=page_h,
-            )
-        finally:
-            doc.close()
+        # Hold the systemic pdfium lock across the ENTIRE document lifecycle: the
+        # render / textpage / rect / object-parse calls below all touch pdfium's
+        # process-global, thread-unsafe C state (#250). A per-PDF-concurrent
+        # consumer (calibration / scan sweeps) must never interleave with this
+        # parse. The lock is an ``RLock`` so a caller already holding it (e.g. a
+        # loop that also single-flights its page-count probe) does not deadlock.
+        with PDFIUM_LOCK:
+            doc = pdfium.PdfDocument(pdf_bytes)
+            try:
+                page = doc[page_num - 1]
+                textpage = page.get_textpage()
+                page_w, page_h = self._page_dims(page)
+                lines, page_lines, geom_notes = self._extract_lines_with_geometry(
+                    textpage, page_h
+                )
+                images, img_notes = self._enumerate_images(page, page_num)
+                page_lines, typo_notes = self._attach_typography(
+                    pdf_bytes, page_num, page_lines
+                )
+                return PageElements(
+                    page_num=page_num,
+                    lines=lines,
+                    images=images,
+                    notes=geom_notes + img_notes + typo_notes,
+                    page_lines=page_lines,
+                    page_width=page_w,
+                    page_height=page_h,
+                )
+            finally:
+                doc.close()
 
     def _attach_typography(
         self, pdf_bytes: bytes, page_num: int, page_lines: Tuple["PageLine", ...]
@@ -781,20 +864,28 @@ class PageElementProducer:
         if geom is None:
             note = ("page geometry unavailable (textpage rect API absent) — lines only",)
             return lines, (), note
-        # Align geometry rows to the model-facing lines by text match when the
-        # counts agree; otherwise fall back to lines-only (never a wrong bbox).
+        # Bind each model-facing line to a geometry row by ORDER-PRESERVING TEXT
+        # alignment. The rect API and the text-range splitter enumerate the SAME
+        # visual lines in the SAME reading order, but their counts can differ by a
+        # few (a rect the splitter merged/split, a blank rect) — an off-by-N that
+        # must NOT discard the whole page's geometry (#250: a born-digital page left
+        # with ``abs_bbox=None`` is un-croppable, so calibration reads nothing).
+        # Align by best geometric text overlap instead; a line that finds no row
+        # keeps ``bbox=None`` (typed, never a WRONG bbox) but the page still yields
+        # usable per-line geometry for every line that DOES align.
+        aligned = _align_lines_to_geom(lines, geom)
+        page_lines: List["PageLine"] = [
+            self._page_line(line_text, y_order, bbox, page_h)
+            for y_order, (line_text, bbox) in enumerate(aligned)
+        ]
+        note = ()
         if len(geom) != len(lines):
+            bound = sum(1 for pl in page_lines if pl.bbox is not None)
             note = (
                 f"page geometry line-count mismatch (rects={len(geom)} lines={len(lines)}) "
-                "— lines only",
+                f"— aligned by text overlap ({bound}/{len(lines)} lines bound)",
             )
-            return lines, (), note
-        page_lines: List["PageLine"] = []
-        for y_order, (line_text, (_cell_text, bbox)) in enumerate(
-            zip(lines, geom, strict=False)
-        ):
-            page_lines.append(self._page_line(line_text, y_order, bbox, page_h))
-        return lines, tuple(page_lines), ()
+        return lines, tuple(page_lines), note
 
     def _line_rects(
         self, textpage: object, page_h: float

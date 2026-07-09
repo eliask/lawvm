@@ -694,6 +694,15 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # existing patch mechanism, zero-re-reads on a clean page, and determinism
         # (byte-identical simulacrum + JSON round-trip carrying the new rereads field).
         "test_ingest_reread.py",
+        # Cold multi-line region reader + systemic pdfium lock (#250): the
+        # calibration/§9 cold-read adapter (``read_region_cold``) returns a WHOLE
+        # region's multi-line transcription while the §8 ``reread_region`` correction
+        # path stays one-line; the calibration ``live_region_reader`` hook binds the
+        # cold reader (real multi-line over a fake vision, honest empty on an
+        # un-croppable region); and the ONE shared ``ingest.visual.PDFIUM_LOCK`` is
+        # genuinely held around every pdfium call (a concurrent thread cannot acquire
+        # it mid-render) and is the SAME object across page_elements / calibration.
+        "test_ingest_cold_region_reader.py",
         # meta.v2 typography lane: pdfplumber char-span → pypdfium2 PageLine
         # geometry alignment (fake spans), font-name → family/bold/italic parse,
         # document-adaptive size_class (relative to page median), char-grouping

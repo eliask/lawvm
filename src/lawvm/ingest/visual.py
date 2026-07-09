@@ -25,6 +25,7 @@ from __future__ import annotations
 import hashlib
 import importlib
 import io
+import threading
 
 from lawvm.core.source_document.anchors import BBox
 from lawvm.core.source_document.extraction import SourceManifestation
@@ -33,6 +34,23 @@ from lawvm.core.source_document.extraction import SourceManifestation
 # DPI); the re-read zooms in, so the crop is rendered materially higher (a garble
 # is often a resolution artifact — more pixels on the same region resolves it).
 DEFAULT_REREAD_DPI = 300
+
+# --------------------------------------------------------------------------- #
+# Systemic pdfium lock (#250) — the ONE canonical guard for pypdfium2's C state. #
+# --------------------------------------------------------------------------- #
+#
+# pypdfium2 wraps a single PROCESS-GLOBAL C library (pdfium) whose state is NOT
+# thread-safe: two threads issuing concurrent pdfium calls (render / text-extract
+# / object-parse / document-open) race in the C layer and SEGFAULT the whole
+# process (exit 139). Any consumer that fans PDFs out across threads (the
+# per-PDF-concurrent calibration / scan sweeps, a future region-read pool) must
+# serialize every pdfium touch through ONE lock. This is that lock — defined in
+# the lowest-level shared primitive so ``page_elements``, ``vision_producer`` and
+# every tool import the SAME object instead of each reinventing a private one
+# (which does not actually serialize across modules). Hold it around the ENTIRE
+# pdfium interaction (open → use → close), not just a single call, because the
+# ``PdfDocument`` handle and its pages/textpages share the same C state.
+PDFIUM_LOCK = threading.RLock()
 
 
 class RegionRenderFailure(Exception):
@@ -94,39 +112,43 @@ def render_region_crop(
             detail=f"pillow not importable: {exc}",
         ) from exc
 
-    doc = pdfium.PdfDocument(manifestation.source_bytes)
-    try:
-        if page_num < 1 or page_num > len(doc):
-            raise RegionRenderFailure(
-                page_num=page_num,
-                reason_code="region_page_out_of_range",
-                detail=f"page {page_num} out of range (1..{len(doc)})",
-            )
-        page = doc[page_num - 1]
-        scale = dpi / 72.0
-        pil = page.render(scale=scale).to_pil()
-        page_h = float(page.get_height())
-        page_w = float(page.get_width())
-        if page_w <= 0 or page_h <= 0:
-            raise RegionRenderFailure(
-                page_num=page_num,
-                reason_code="region_page_dims_unavailable",
-                detail="page width/height unreadable",
-            )
-        px0 = max(0, int(bbox.x0 * scale))
-        px1 = min(pil.width, int(bbox.x1 * scale))
-        # Flip y: PDF origin bottom-left, raster origin top-left.
-        py0 = max(0, int((page_h - bbox.y1) * scale))
-        py1 = min(pil.height, int((page_h - bbox.y0) * scale))
-        if px1 <= px0 or py1 <= py0:
-            raise RegionRenderFailure(
-                page_num=page_num,
-                reason_code="region_crop_empty",
-                detail=f"bbox {bbox} maps to an empty pixel region at dpi {dpi}",
-            )
-        crop = pil.crop((px0, py0, px1, py1))
-        buf = io.BytesIO()
-        crop.save(buf, format="PNG")
-        return buf.getvalue()
-    finally:
-        doc.close()
+    # Hold the systemic pdfium lock around the ENTIRE document lifecycle (open →
+    # render/measure → close): pdfium's C state is process-global + thread-unsafe,
+    # so a concurrent consumer must never interleave with this render (#250).
+    with PDFIUM_LOCK:
+        doc = pdfium.PdfDocument(manifestation.source_bytes)
+        try:
+            if page_num < 1 or page_num > len(doc):
+                raise RegionRenderFailure(
+                    page_num=page_num,
+                    reason_code="region_page_out_of_range",
+                    detail=f"page {page_num} out of range (1..{len(doc)})",
+                )
+            page = doc[page_num - 1]
+            scale = dpi / 72.0
+            pil = page.render(scale=scale).to_pil()
+            page_h = float(page.get_height())
+            page_w = float(page.get_width())
+            if page_w <= 0 or page_h <= 0:
+                raise RegionRenderFailure(
+                    page_num=page_num,
+                    reason_code="region_page_dims_unavailable",
+                    detail="page width/height unreadable",
+                )
+            px0 = max(0, int(bbox.x0 * scale))
+            px1 = min(pil.width, int(bbox.x1 * scale))
+            # Flip y: PDF origin bottom-left, raster origin top-left.
+            py0 = max(0, int((page_h - bbox.y1) * scale))
+            py1 = min(pil.height, int((page_h - bbox.y0) * scale))
+            if px1 <= px0 or py1 <= py0:
+                raise RegionRenderFailure(
+                    page_num=page_num,
+                    reason_code="region_crop_empty",
+                    detail=f"bbox {bbox} maps to an empty pixel region at dpi {dpi}",
+                )
+            crop = pil.crop((px0, py0, px1, py1))
+            buf = io.BytesIO()
+            crop.save(buf, format="PNG")
+            return buf.getvalue()
+        finally:
+            doc.close()

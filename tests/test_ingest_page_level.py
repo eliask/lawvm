@@ -603,3 +603,136 @@ def test_numbered_page_text_still_geometry_free_for_the_model() -> None:
     rendered = numbered_page_text(pe.lines, pe.images, page_num=1)
     assert rendered.splitlines()[0] == "[1] 4 §"
     assert "bbox" not in rendered  # no geometry leaks to the model
+
+
+# --------------------------------------------------------------------------- #
+# Geometry bridge (Decision 8): bind by SOURCE-LINE INDEX, not exact text.      #
+# --------------------------------------------------------------------------- #
+
+
+def _multi_line_page(texts, boxes) -> PageElements:
+    """A born-digital page: model-facing lines + rank-aligned per-line geometry."""
+    page_lines = tuple(
+        PageLine(text=t, y_order=i, bbox=b, band="body", indent=int(b.x0 // 18))
+        for i, (t, b) in enumerate(zip(texts, boxes, strict=True))
+    )
+    return PageElements(
+        page_num=1,
+        lines=tuple(texts),
+        page_lines=page_lines,
+        page_width=595.0,
+        page_height=842.0,
+    )
+
+
+def test_corrected_leaf_keeps_its_bbox_via_source_line_index() -> None:
+    # A leaf whose text the converge loop CORRECTED (so it no longer matches ANY
+    # page line by string) must still keep its geometry — bound by rank, not text.
+    texts = ["Alpha line one", "Beta line two", "Gamma line three"]
+    boxes = [BBox(72, 800, 500, 812), BBox(72, 780, 500, 792), BBox(72, 760, 500, 772)]
+    pe = _multi_line_page(texts, boxes)
+    ro = "\n".join(texts)
+    # Round-1 span-copies all three; the refine round PATCHes line 2's text to a
+    # CORRECTED string present on NO page line (models a garble→clean re-read).
+    round1 = f"1 PARA 0 L1{US}2 PARA 0 L2{US}3 PARA 0 L3{US}"
+    deltas = [f"1 PATCH 0 L2: Beta CORRECTED two{US}"]
+    vision = _FakeConvergeVision(round1, deltas=deltas)
+    cp = converge_page(vision, _manifestation(), 1, pe, reading_order_text=ro)
+    sim = build_page_simulacrum(cp, _manifestation(), 1, pe, reading_order_text=ro)
+    corrected = next(n for n in sim.nodes if n.text == "Beta CORRECTED two")
+    # Exact-text-first-wins would have LOST this bbox (no line reads that text);
+    # rank binding keeps line-2's geometry attached to the corrected leaf.
+    assert corrected.anchor.bbox == BBox(72, 780, 500, 792)
+    assert decode_metadata(corrected.attrs).band == "body"
+
+
+def test_recurring_identical_lines_each_bind_their_own_geometry() -> None:
+    # Three identical lines at DIFFERENT y positions: exact-text-first-wins collapsed
+    # all three onto the first occurrence's bbox; rank binding gives each its own.
+    texts = ["Sama rivi", "Sama rivi", "Sama rivi"]
+    boxes = [BBox(72, 800, 300, 812), BBox(72, 780, 300, 792), BBox(72, 760, 300, 772)]
+    pe = _multi_line_page(texts, boxes)
+    ro = "\n".join(texts)
+    round1 = f"1 PARA 0 L1{US}2 PARA 0 L2{US}3 PARA 0 L3{US}"
+    vision = _FakeConvergeVision(round1, deltas=[""])
+    cp = converge_page(vision, _manifestation(), 1, pe, reading_order_text=ro)
+    sim = build_page_simulacrum(cp, _manifestation(), 1, pe, reading_order_text=ro)
+    bboxes = [n.anchor.bbox for n in sim.nodes]
+    assert bboxes == boxes  # each occurrence keeps ITS OWN y, not the first's
+
+
+# --------------------------------------------------------------------------- #
+# rect ↔ line alignment (Task 1): a count mismatch must NOT discard geometry.   #
+# --------------------------------------------------------------------------- #
+
+
+class _FakeTextpage:
+    """Minimal pypdfium2 textpage: a text-range splitter + a rect API.
+
+    ``lines`` are the model-facing text lines (from ``get_text_range``); ``rects``
+    are ``(text, (left, bottom, right, top))`` rows from the rect API (possibly a
+    DIFFERENT count than ``lines`` — the born-digital off-by-N this fix tolerates)."""
+
+    def __init__(self, lines, rects):
+        self._text = "\n".join(lines)
+        self._rects = list(rects)
+
+    def get_text_range(self):
+        return self._text
+
+    def count_rects(self):
+        return len(self._rects)
+
+    def get_rect(self, i):
+        return self._rects[i][1]
+
+    def get_text_bounded(self, *, left, bottom, right, top):
+        for text, (l, b, r, t) in self._rects:
+            if (l, b, r, t) == (left, bottom, right, top):
+                return text
+        return ""
+
+
+def test_rect_line_count_mismatch_preserves_per_line_geometry() -> None:
+    # 3 rects vs 2 lines (a stray rect the splitter merged/dropped): the OLD code
+    # discarded ALL geometry → un-croppable page. The fix aligns by text overlap so
+    # every line that DOES appear in the rects keeps its bbox.
+    from lawvm.ingest.page_elements import PageElementProducer
+
+    lines = ["First body line", "Second body line"]
+    rects = [
+        ("First body line", (72.0, 780.0, 500.0, 792.0)),
+        ("stray artifact rect", (0.0, 400.0, 10.0, 405.0)),
+        ("Second body line", (72.0, 760.0, 500.0, 772.0)),
+    ]
+    tp = _FakeTextpage(lines, rects)
+    prod = PageElementProducer()
+    out_lines, page_lines, notes = prod._extract_lines_with_geometry(tp, page_h=842.0)
+    assert out_lines == tuple(lines)
+    # Every born-digital line yields usable per-line geometry (not None).
+    assert len(page_lines) == 2
+    assert all(pl.bbox is not None for pl in page_lines)
+    assert page_lines[0].bbox == BBox(72.0, 780.0, 500.0, 792.0)
+    assert page_lines[1].bbox == BBox(72.0, 760.0, 500.0, 772.0)
+    # A typed note records the mismatch + how many lines bound (never silent).
+    assert notes and "mismatch" in notes[0] and "2/2 lines bound" in notes[0]
+
+
+def test_align_lines_to_geom_positional_identity_when_counts_and_text_match() -> None:
+    # Exact count + exact text → identical to the old positional zip (no regression).
+    from lawvm.ingest.page_elements import _align_lines_to_geom
+
+    b = [BBox(0, 100, 50, 110), BBox(0, 90, 50, 100), BBox(0, 80, 50, 90)]
+    geom = [("A", b[0]), ("B", b[1]), ("C", b[2])]
+    out = _align_lines_to_geom(["A", "B", "C"], geom)
+    assert [t for t, _ in out] == ["A", "B", "C"]
+    assert [bb for _, bb in out] == b
+
+
+def test_align_lines_to_geom_recurring_lines_each_get_own_row() -> None:
+    from lawvm.ingest.page_elements import _align_lines_to_geom
+
+    b = [BBox(0, 100, 50, 110), BBox(0, 90, 50, 100), BBox(0, 80, 50, 90)]
+    geom = [("X", b[0]), ("X", b[1]), ("X", b[2])]
+    out = _align_lines_to_geom(["X", "X", "X"], geom)
+    assert [bb for _, bb in out] == b  # each occurrence → its own row, in order

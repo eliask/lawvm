@@ -49,7 +49,6 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import threading
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Sequence, Tuple
 
@@ -60,6 +59,7 @@ from lawvm.ingest.suspect_region import (
     cross_reader_disagrees,
     lexical_implausibility,
 )
+from lawvm.ingest.visual import PDFIUM_LOCK as _PDFIUM_LOCK
 
 if TYPE_CHECKING:
     from lawvm.core.source_document.extraction import SourceManifestation
@@ -67,10 +67,12 @@ if TYPE_CHECKING:
 # pypdfium2's C state is PROCESS-GLOBAL and NOT thread-safe: concurrent
 # render / text-extract across docs SEGFAULTS (exit 139) non-deterministically. The
 # calibration read/score path is already sequential within a thread, but an operator
-# may wrap ``live_region_reader`` in a pool; every pdfium touch in THIS module is
-# single-flighted through this lock so the sweep can never segfault mid-run. Real
-# pdfium parallelism (if ever needed) is a ProcessPoolExecutor, not more threads.
-_PDFIUM_LOCK = threading.Lock()
+# may wrap ``live_region_reader`` in a pool. This module single-flights every pdfium
+# touch through the SYSTEMIC ``ingest.visual.PDFIUM_LOCK`` (not a private lock) — so
+# the guard the calibration hook holds here is the SAME object the underlying
+# primitives (``page_elements`` / ``vision_producer``) hold, giving true
+# cross-module serialization (a per-module lock does not). Real pdfium parallelism
+# (if ever needed) is a ProcessPoolExecutor, not more threads.
 
 # --------------------------------------------------------------------------- #
 # Sweep axes — the DETERMINISTIC layout hierarchy, never pixel tiles (§10 d.6). #
@@ -1129,11 +1131,15 @@ def live_region_reader(
 
     Renders each region's SELF-CARRIED absolute bbox (``region.abs_bbox``, the union
     of its overlap-inclusive line bboxes) at the config DPI and asks the vision model
-    to read it (line-based, output-sparse, raises on truncation per the LLM guide).
-    Used only by the operator's GPU sweep — CI injects a fake reader instead. A
-    region with no geometry (``abs_bbox is None``, a degraded geometry lane) is
-    un-croppable → an empty read (the metric then counts it as MISSING, an honest
-    signal that this page needs the whole-page fallback, not a crash).
+    for a COLD MULTI-LINE transcription of the whole crop (``read_region_cold``) —
+    NOT the §8 single-line ``reread_region`` CORRECTION path, whose one-line budget
+    returns ~nothing over a multi-line region/page crop (that path stays a correction
+    path, unchanged). The cold read has no prior text to anchor on, so the sweep
+    measures the model's RAW regional accuracy. Used only by the operator's GPU
+    sweep — CI injects a fake reader instead. A region with no geometry
+    (``abs_bbox is None``, a degraded geometry lane) is un-croppable → an empty read
+    (the metric counts it MISSING, an honest "needs the whole-page fallback" signal,
+    not a crash).
     """
     from lawvm.ingest.llm_backends.vision_producer import (
         VisionPageProducer,
@@ -1148,13 +1154,17 @@ def live_region_reader(
         if region.abs_bbox is None:
             return ""
         try:
-            # An UNCONDITIONED read: empty current_text so the model isn't biased by
-            # a prior transcription (calibration measures the raw regional read).
-            # ``reread_region`` renders the crop via pdfium → single-flight the whole
-            # call under the process-global pdfium lock (thread-unsafe C state).
+            # A COLD multi-line region read (no prior text → unbiased raw accuracy).
+            # ``read_region_cold`` renders the crop via pdfium → single-flight the
+            # whole call under the SYSTEMIC pdfium lock (thread-unsafe C state). The
+            # geometry line count sizes the output budget so the whole region fits.
             with _PDFIUM_LOCK:
-                return producer.reread_region(
-                    manifestation, page_num, region.abs_bbox, "", dpi=dpi
+                return producer.read_region_cold(
+                    manifestation,
+                    page_num,
+                    region.abs_bbox,
+                    dpi=dpi,
+                    expected_lines=len(region.line_indexes),
                 )
         except (VisionProducerTruncated, VisionProducerFailure, RegionRenderFailure):
             # A truncated / failed region read is an empty region (the metric then
@@ -1251,6 +1261,7 @@ def main(args: argparse.Namespace) -> None:
 
 def _doc_gold_for(pdf_locator: str, finlex_path: str) -> Optional[str]:
     """Sibling ``main.xml`` body text (document-level cross-check), or None."""
+    # lawvm-regex: diagnostic — farchive LOCATOR path transform (.../media/X.pdf → sibling .../main.xml) for the optional calibration gold cross-check; a source-plane path derivation, never post-parse legal semantics.
     m = re.match(r"^(?P<prefix>.+)/media/[^/]+\.pdf$", pdf_locator)
     if m is None:
         return None
