@@ -98,7 +98,8 @@ def test_extract_conditional_branch_insert_op() -> None:
     assert pkg.findings == ()
     assert pkg.authority_status is ProposalAuthorityStatus.CONSULTATION_DRAFT
     assert pkg.replay_authorized is False
-    branch = pkg.branch
+    assert len(pkg.branches) == 1  # a single-law bill is a 1-tuple
+    branch = pkg.branches[0]
     assert branch.replay_authorized is False
     assert "VM045:00/2026 enacted" in branch.condition
     assert branch.commencement.startswith("Tämä laki tulee voimaan")
@@ -109,6 +110,67 @@ def test_extract_conditional_branch_insert_op() -> None:
     assert "4" in op.target_provision_ref and "5" in op.target_provision_ref  # §4, momentti 5
     assert op.assurance_tier is AssuranceTier.SINGLE_WITNESS  # lone deterministic parse
     # The reasoning attachment is a bound, non-operative esityöt subtree.
+    assert pkg.reasoning_root.attrs.get("role") == "esityot_reasoning"
+
+
+# A synthetic reading-order text of a MULTI-law HE: a LAKIEHDOTUKSET section
+# with TWO "Laki … muuttamisesta / Eduskunnan päätöksen mukaisesti …" blocks,
+# each with its own target statute id and voimaantulo.
+_HE_TWO_LAWS_READING_ORDER = (
+    "Hallituksen esitys eduskunnalle laeiksi kahden lain muuttamisesta\n\n"
+    "ESITYKSEN PÄÄASIALLINEN SISÄLTÖ\n"
+    "Esityksessä ehdotetaan muutettavaksi kahta lakia.\n\n"
+    "PERUSTELUT\n1 Asian tausta ja valmistelu\n... reasoning shared by both laws ...\n\n"
+    "LAKIEHDOTUKSET\n\n"
+    "1.\nLaki\nensimmäisen lain muuttamisesta\n\n"
+    "Eduskunnan päätöksen mukaisesti\n"
+    "lisätään ensimmäisestä laista (603/2006) annetun lain 4 §:ään uusi 5 momentti "
+    "seuraavasti:\n\n"
+    "4 §\nEnsimmäinen pykälä\n"
+    "Ensimmäisen lain uusi momentti.\n\n"
+    "Tämä laki tulee voimaan päivänä kuuta 20 .\n\n"
+    "2.\nLaki\ntoisen lain muuttamisesta\n\n"
+    "Eduskunnan päätöksen mukaisesti\n"
+    "muutetaan toisesta laista (999/2015) annetun lain 7 § seuraavasti:\n\n"
+    "7 §\nToinen pykälä\n"
+    "Toisen lain uusi sanamuoto.\n\n"
+    "Tämä laki tulee voimaan 1 päivänä tammikuuta 2027.\n"
+    "—————\nHelsingissä x.x.20xx\nPääministeri Petteri Orpo\n"
+)
+
+
+def test_operatives_from_text_splits_two_laws() -> None:
+    from lawvm.finland.source_document.he_draft import _operatives_from_text
+
+    ops = _operatives_from_text(_HE_TWO_LAWS_READING_ORDER)
+    assert len(ops) == 2
+    assert ops[0].target_statute_id == "603/2006"
+    assert ops[1].target_statute_id == "999/2015"
+    # Each law's region carries ITS OWN johtolause clause and voimaantulo.
+    assert "603/2006" in ops[0].clause and "999/2015" not in ops[0].clause
+    assert "999/2015" in ops[1].clause and "603/2006" not in ops[1].clause
+    assert ops[0].commencement.startswith("Tämä laki tulee voimaan päivänä kuuta")
+    assert ops[1].commencement == "Tämä laki tulee voimaan 1 päivänä tammikuuta 2027."
+
+
+def test_extract_conditional_branch_multi_law_two_branches() -> None:
+    pkg = extract_conditional_branch(
+        _root(("some ingested block",)),
+        "fi:he:VM099:00/2026",
+        reading_order_text=_HE_TWO_LAWS_READING_ORDER,
+    )
+    assert pkg.replay_authorized is False
+    assert len(pkg.branches) == 2  # one ConditionalBranch per lakiehdotus law
+    b0, b1 = pkg.branches
+    assert b0.replay_authorized is False and b1.replay_authorized is False
+    # Distinct per-law branch ids and distinct per-law targets.
+    assert b0.branch_id != b1.branch_id
+    assert {op.target_statute_id for op in b0.candidate_ops} == {"603/2006"}
+    assert {op.target_statute_id for op in b1.candidate_ops} == {"999/2015"}
+    assert b0.candidate_ops and b1.candidate_ops
+    # Per-law commencement travels with its branch.
+    assert b1.commencement == "Tämä laki tulee voimaan 1 päivänä tammikuuta 2027."
+    # One shared esityöt reasoning attachment for the whole proposal.
     assert pkg.reasoning_root.attrs.get("role") == "esityot_reasoning"
 
 
@@ -140,7 +202,7 @@ def test_non_he_document_yields_no_ops_but_a_finding() -> None:
         "fi:muistio:STM045:00/2026",
         reading_order_text="Esittelymuistio\nTaustaa ja nykytila, ei johtolausetta.\n",
     )
-    assert pkg.branch.candidate_ops == ()
+    assert pkg.branches == ()  # a non-HE document is the empty branch tuple
     assert any("muistio" in f.lower() or "no johtolause" in f.lower() for f in pkg.findings)
     assert pkg.replay_authorized is False
 
@@ -180,11 +242,12 @@ def test_live_vm045_pdf_to_conditional_branch() -> None:
         source_manifestation_digests=(m.artifact_digest,),
     )
     assert pkg.findings == ()
-    assert len(pkg.branch.candidate_ops) == 1
-    op = pkg.branch.candidate_ops[0]
+    assert len(pkg.branches) == 1
+    assert len(pkg.branches[0].candidate_ops) == 1
+    op = pkg.branches[0].candidate_ops[0]
     assert op.action == "insert"
     assert op.target_statute_id == "603/2006"
-    assert pkg.branch.replay_authorized is False
+    assert pkg.branches[0].replay_authorized is False
     assert pkg.reasoning_root.attrs.get("role") == "esityot_reasoning"
 
 
@@ -217,8 +280,9 @@ def test_live_vm045_adjudicated_op_reaches_multi_witness() -> None:
         media_type="application/pdf",
     )
     pkg = he_pdf_to_proposal(m, "fi:he:VM045:00/2026", adjudicator=adjudicator, max_pages=12)
-    assert len(pkg.branch.candidate_ops) == 1
-    op = pkg.branch.candidate_ops[0]
+    assert len(pkg.branches) == 1
+    assert len(pkg.branches[0].candidate_ops) == 1
+    op = pkg.branches[0].candidate_ops[0]
     assert op.action == "insert" and op.target_statute_id == "603/2006"
     # Two independent producers corroborated → clean, multi-witness assurance.
     assert op.assurance_tier is AssuranceTier.MULTI_WITNESS_ADJUDICATED

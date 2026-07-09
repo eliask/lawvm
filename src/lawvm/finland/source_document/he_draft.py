@@ -146,19 +146,28 @@ class _Operative:
     commencement: str
 
 
-def _operative_from_text(reading_order_text: str) -> Optional[_Operative]:
+def _johtolause_starts(low: str) -> List[int]:
+    """Every offset where the enacting formula begins, in reading order.
+
+    A multi-law HE carries ONE ``Eduskunnan päätöksen mukaisesti`` per
+    lakiehdotus law; each starts a fresh operative region.
+    """
+    out: List[int] = []
+    i = low.find(_JOHTOLAUSE_MARK)
+    while i != -1:
+        out.append(i)
+        i = low.find(_JOHTOLAUSE_MARK, i + len(_JOHTOLAUSE_MARK))
+    return out
+
+
+def _operative_from_region(region_text: str) -> _Operative:
     """Recover johtolause clause + target statute + payload + voimaantulo.
 
-    Works on a CONTINUOUS reading-order text (e.g. a page-ordered extraction),
-    NOT on pdfplumber's per-block output — that scrambles reading order on the
-    bill page (the reading-order residual the adjudication layer exists to
-    resolve). Returns ``None`` when no johtolause is present.
+    ``region_text`` is ONE law's operative region — it begins at the
+    ``Eduskunnan päätöksen mukaisesti`` marker and runs to the next law's marker
+    (or to end of text). The caller has already sliced the region.
     """
-    low = reading_order_text.lower()
-    js = low.find(_JOHTOLAUSE_MARK)
-    if js == -1:
-        return None
-    seg = reading_order_text[js:]
+    seg = region_text
     seg_low = seg.lower()
     cut = seg_low.find(_SEURAAVASTI_MARK)
     clause = seg[: cut + len(_SEURAAVASTI_MARK)].strip() if cut != -1 else seg.strip()
@@ -181,6 +190,38 @@ def _operative_from_text(reading_order_text: str) -> Optional[_Operative]:
         payload_text=payload,
         commencement=commencement,
     )
+
+
+def _operatives_from_text(reading_order_text: str) -> List[_Operative]:
+    """One ``_Operative`` per lakiehdotus law, in reading order.
+
+    Splits the continuous reading-order text at each ``Eduskunnan päätöksen
+    mukaisesti`` marker: each law's operative region runs from its marker to the
+    next law's marker (or to end). A single-law bill yields a 1-element list; a
+    text with no johtolause yields the empty list.
+
+    Works on a CONTINUOUS reading-order text (e.g. a page-ordered extraction),
+    NOT on pdfplumber's per-block output — that scrambles reading order on the
+    bill page (the reading-order residual the adjudication layer exists to
+    resolve).
+    """
+    low = reading_order_text.lower()
+    starts = _johtolause_starts(low)
+    bounds = starts + [len(reading_order_text)]
+    return [
+        _operative_from_region(reading_order_text[bounds[i]:bounds[i + 1]])
+        for i in range(len(starts))
+    ]
+
+
+def _operative_from_text(reading_order_text: str) -> Optional[_Operative]:
+    """The FIRST law's operative pieces — ``None`` when no johtolause is present.
+
+    Retained for single-law callers and the ``_operative_from_text`` unit test;
+    ``_operatives_from_text`` is the multi-law entry point.
+    """
+    ops = _operatives_from_text(reading_order_text)
+    return ops[0] if ops else None
 
 
 def extract_conditional_branch(
@@ -208,13 +249,19 @@ def extract_conditional_branch(
     ``op_assurance`` is the tier granted to a candidate op: a lone deterministic
     parse is ``SINGLE_WITNESS``; a caller that adjudicates the operative text
     across independent producers passes ``MULTI_WITNESS_ADJUDICATED``.
+
+    A real HE proposes one or more laws (a ``LAKIEHDOTUKSET`` section lists 1–44):
+    each ``Laki X:n muuttamisesta`` block carries its OWN johtolause, target
+    statute and voimaantulo, and lowers to its OWN ``ConditionalBranch`` in
+    ``ProposalPackage.branches``. A non-HE document yields the empty branch tuple
+    plus a finding — never a hallucinated op.
     """
     findings: List[str] = []
-    operative = _operative_from_text(reading_order_text) if reading_order_text else None
-    if operative is None and reading_order_text:
+    operatives = _operatives_from_text(reading_order_text) if reading_order_text else []
+    if not operatives and reading_order_text:
         findings.append("reading_order_text carried no johtolause")
 
-    if operative is None:
+    if not operatives:
         kind = classify_he_document(root)
         if kind is not HeDocKind.HE_BILL:
             findings.append(
@@ -225,52 +272,57 @@ def extract_conditional_branch(
                 "HE_BILL detected but operative text unavailable (no reading_order_text); "
                 "pass a reading-order producer to extract candidate ops"
             )
-        branch = ConditionalBranch(
-            branch_id=f"{proposal_id}:draft",
-            condition=condition or f"{proposal_id} enacted",
-            candidate_ops=(),
-            authority_status=ProposalAuthorityStatus.CONSULTATION_DRAFT,
-        )
         return ProposalPackage(
             proposal_id=proposal_id,
             source_manifestation_digests=source_manifestation_digests,
-            branch=branch,
+            branches=(),
             reasoning_root=root,
             authority_status=ProposalAuthorityStatus.CONSULTATION_DRAFT,
             findings=tuple(findings),
         )
 
-    if not operative.target_statute_id:
-        findings.append("target statute id not resolved from johtolause preamble")
-    ops = extract_legal_ops(operative.clause)
-    if not ops:
-        findings.append("johtolause parsed to zero operations")
+    multi = len(operatives) > 1
+    branches: List[ConditionalBranch] = []
+    for i, operative in enumerate(operatives):
+        law_tag = f" (law {i + 1})" if multi else ""
+        if not operative.target_statute_id:
+            findings.append(
+                f"target statute id not resolved from johtolause preamble{law_tag}"
+            )
+        ops = extract_legal_ops(operative.clause)
+        if not ops:
+            findings.append(f"johtolause parsed to zero operations{law_tag}")
 
-    candidate_ops = tuple(
-        CandidateOperation(
-            action=str(op.action),
-            target_statute_id=operative.target_statute_id,
-            target_provision_ref=str(op.target),
-            payload_text=operative.payload_text,
-            source_anchor=root.anchor,
-            assurance_tier=op_assurance,
-            raw_johtolause=operative.clause,
+        candidate_ops = tuple(
+            CandidateOperation(
+                action=str(op.action),
+                target_statute_id=operative.target_statute_id,
+                target_provision_ref=str(op.target),
+                payload_text=operative.payload_text,
+                source_anchor=root.anchor,
+                assurance_tier=op_assurance,
+                raw_johtolause=operative.clause,
+            )
+            for op in ops
         )
-        for op in ops
-    )
+        # One branch id per law; single-law keeps the historical ``:draft`` suffix.
+        branch_id = f"{proposal_id}:draft" if not multi else f"{proposal_id}:draft:law{i + 1}"
+        branches.append(
+            ConditionalBranch(
+                branch_id=branch_id,
+                condition=condition or f"{proposal_id} enacted as introduced",
+                candidate_ops=candidate_ops,
+                authority_status=ProposalAuthorityStatus.CONSULTATION_DRAFT,
+                commencement=operative.commencement,
+            )
+        )
 
+    # Reasoning = everything before the FIRST johtolause (esityöt attachment).
     reasoning_root = _reasoning_root(root, root.children)
-    branch = ConditionalBranch(
-        branch_id=f"{proposal_id}:draft",
-        condition=condition or f"{proposal_id} enacted as introduced",
-        candidate_ops=candidate_ops,
-        authority_status=ProposalAuthorityStatus.CONSULTATION_DRAFT,
-        commencement=operative.commencement,
-    )
     return ProposalPackage(
         proposal_id=proposal_id,
         source_manifestation_digests=source_manifestation_digests,
-        branch=branch,
+        branches=tuple(branches),
         reasoning_root=reasoning_root,
         authority_status=ProposalAuthorityStatus.CONSULTATION_DRAFT,
         findings=tuple(findings),

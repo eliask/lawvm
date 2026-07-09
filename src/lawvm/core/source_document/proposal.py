@@ -121,18 +121,22 @@ class ConditionalBranch:
 
 @dataclass(frozen=True, slots=True)
 class ProposalPackage:
-    """A draft's operative branch + its bound interpretive-reasoning attachment.
+    """A draft's operative branches + its bound interpretive-reasoning attachment.
 
-    ``branch`` is the operative "if enacted" overlay (the lakiehdotus). ``reasoning_root``
-    is the perustelut subtree — a non-operative, source-anchored interpretive
-    attachment (esityöt), bound to the branch but never lowered to an op. Together
-    they answer "what would change, and why / with what expected effects".
+    ``branches`` is the tuple of operative "if enacted" overlays — ONE per
+    lakiehdotus law (a real HE proposes 1–44 laws, each with its own johtolause,
+    target statute and voimaantulo). A single-law bill is a 1-tuple; a non-HE
+    document is the empty tuple. ``reasoning_root`` is the perustelut subtree — a
+    non-operative, source-anchored interpretive attachment (esityöt), bound to the
+    branches but never lowered to an op. Together they answer "what would change,
+    and why / with what expected effects".
     """
 
     proposal_id: str
     """Stable id, e.g. ``"fi:he:VM045:00/2026"``."""
     source_manifestation_digests: Tuple[str, ...]
-    branch: ConditionalBranch
+    branches: Tuple[ConditionalBranch, ...]
+    """One operative overlay per lakiehdotus law (empty for a non-HE document)."""
     reasoning_root: SourceDocumentNode
     """The perustelut (esityöt) subtree — interpretive attachment, non-operative."""
     authority_status: ProposalAuthorityStatus
@@ -147,7 +151,11 @@ class ProposalPackage:
                 "ProposalPackage.replay_authorized must be False until the proposal "
                 "is enacted (via the enactment lane, not this carrier)."
             )
-        if not isinstance(self.branch, ConditionalBranch):
-            raise TypeError("ProposalPackage.branch must be a ConditionalBranch")
+        if not isinstance(self.branches, tuple):
+            raise TypeError("ProposalPackage.branches must be a tuple")
+        if not all(isinstance(b, ConditionalBranch) for b in self.branches):
+            raise TypeError(
+                "ProposalPackage.branches must be a tuple of ConditionalBranch"
+            )
         if not isinstance(self.reasoning_root, SourceDocumentNode):
             raise TypeError("ProposalPackage.reasoning_root must be a SourceDocumentNode")
