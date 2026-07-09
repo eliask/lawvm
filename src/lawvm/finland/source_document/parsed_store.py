@@ -87,6 +87,7 @@ class PipelineSpec:
     version: str
     vision: object
     adjudicator: object
+    transcription_modality: str = "auto"
 
 
 class _TolerantVision:
@@ -106,6 +107,18 @@ class _TolerantVision:
 
         try:
             return self._inner.propose_page(manifestation, page_num)  # ty: ignore[unresolved-attribute]
+        except VisionProducerTruncated:
+            return ()
+
+    def propose_page_spans(
+        self, manifestation: SourceManifestation, page_num: int, reading_order_text: str
+    ) -> Tuple[Any, ...]:
+        from lawvm.finland.llm_backends.vision_producer import VisionProducerTruncated
+
+        try:
+            return self._inner.propose_page_spans(  # ty: ignore[unresolved-attribute]
+                manifestation, page_num, reading_order_text
+            )
         except VisionProducerTruncated:
             return ()
 
@@ -155,16 +168,40 @@ class _TolerantAdjudicator:
             )
 
 
+# Modality → version-string tag. ``full_transcription`` stays UNTAGGED so the
+# pre-modality records (which were all full transcription) remain cache HITS for
+# that lane; span/auto records get a DISTINCT content-addressed key and COEXIST
+# with full-transcription records for the same source.
+_MODALITY_VERSION_TAG = {
+    "full_transcription": "",
+    "span_copy": "+modality=span",
+    "auto": "+modality=auto",
+}
+
+
 def resolve_pipeline(
-    *, vision_max_tokens: int = 3000, adjudicator_max_tokens: int = 2000
+    *,
+    vision_max_tokens: int = 3000,
+    adjudicator_max_tokens: int = 2000,
+    transcription_modality: str = "auto",
 ) -> PipelineSpec:
     """Resolve the adjudicated parse route. RAISES ``ParseBackendUnavailable`` if
     the LLM server is unreachable — parsing requires it, there is no fallback.
     Probes the server ONCE; reuse the returned spec across a bulk run.
+
+    ``transcription_modality`` (``auto`` | ``span_copy`` | ``full_transcription``)
+    picks the per-page vision output lane (see ``adjudicated_ingest``) and is
+    folded into the pipeline VERSION so each modality's records are separately
+    content-addressed.
     """
     from lawvm.finland.llm_backends.llm_adjudicator import LlmWorkflowAdjudicator
     from lawvm.finland.llm_backends.vision_producer import VisionPageProducer
 
+    if transcription_modality not in _MODALITY_VERSION_TAG:
+        raise ValueError(
+            f"unknown transcription_modality {transcription_modality!r}; "
+            f"expected one of {tuple(_MODALITY_VERSION_TAG)}"
+        )
     vision = VisionPageProducer(max_tokens=vision_max_tokens)
     adjudicator = LlmWorkflowAdjudicator(verify_pass=False, max_tokens=adjudicator_max_tokens)
     if not (vision.is_available() and adjudicator.is_available()):
@@ -173,12 +210,17 @@ def resolve_pipeline(
             "a vision+adjudication server (default localhost:8080). No deterministic "
             "fallback: bring the backend up and retry."
         )
-    version = f"vision={vision._resolve_model()}+{adjudicator.adjudicator_id}+{ADJUDICATED_COMPOSE_VERSION}"
+    modality_tag = _MODALITY_VERSION_TAG[transcription_modality]
+    version = (
+        f"vision={vision._resolve_model()}+{adjudicator.adjudicator_id}"
+        f"{modality_tag}+{ADJUDICATED_COMPOSE_VERSION}"
+    )
     return PipelineSpec(
         pipeline_id=ADJUDICATED_PIPELINE_ID,
         version=version,
         vision=_TolerantVision(vision),
         adjudicator=_TolerantAdjudicator(adjudicator),
+        transcription_modality=transcription_modality,
     )
 
 
@@ -211,7 +253,11 @@ def parse_pdf_to_ir(
     from lawvm.finland.source_document.pdf_profiles import source_document_to_ir_node
 
     doc = adjudicated_document_ingest(
-        manifestation, vision=spec.vision, adjudicator=spec.adjudicator, max_pages=max_pages  # ty: ignore[invalid-argument-type]
+        manifestation,
+        vision=spec.vision,  # ty: ignore[invalid-argument-type]
+        adjudicator=spec.adjudicator,  # ty: ignore[invalid-argument-type]
+        max_pages=max_pages,
+        transcription_modality=spec.transcription_modality,
     )
     irnode = source_document_to_ir_node(doc.root)
     manifest = {
@@ -221,6 +267,7 @@ def parse_pdf_to_ir(
         "media_type": manifestation.media_type,
         "pipeline_id": spec.pipeline_id,
         "pipeline_version": spec.version,
+        "transcription_modality": spec.transcription_modality,
         "producers": ["vision", "reading_order"],
         "page_count": doc.page_count,
         "assurance_summary": _assurance_summary(doc.root),

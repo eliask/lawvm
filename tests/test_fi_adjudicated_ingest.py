@@ -69,6 +69,11 @@ class _FakeVision:
     def propose_page(self, manifestation, page_num) -> Tuple[ExtractionAssertion, ...]:
         return self._per_page.get(page_num, ())
 
+    def propose_page_spans(
+        self, manifestation, page_num, reading_order_text
+    ) -> Tuple[ExtractionAssertion, ...]:
+        return self._per_page.get(page_num, ())
+
 
 class _AgreeAdjudicator:
     adjudicator_id = "fake-agree"

@@ -677,6 +677,9 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_lausuntopalvelu.py",
         # Vision page producer: compact-line transcription → anchored candidates.
         "test_fi_vision_producer.py",
+        # Span-copy modality: model emits structure + line spans; the text is
+        # span-copied from the reading-order lines by code (output-sparse).
+        "test_fi_vision_span_copy.py",
         # Nemotron-Parse thin client: process-isolated vision producer
         # (subprojects/nemotron_parse) — wire contract + isolation ratchet.
         "test_fi_nemotron_client.py",

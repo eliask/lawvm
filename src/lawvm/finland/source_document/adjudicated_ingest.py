@@ -13,6 +13,20 @@ The full structure pipeline, wiring the pieces together:
    unified set, page-split paragraphs stitched — into one whole-document
    ``SourceDocumentIR``.
 
+TRANSCRIPTION MODALITY (per page, three lanes — economics per the
+mekanismirealismi LLM guide: local output tokens ~40× input, design
+input-heavy/output-sparse):
+  * ``full_transcription`` — the vision read re-emits the page text literally
+    (works for anything, incl. scanned/image-only pages).
+  * ``span_copy`` — the vision read gets the page's reading-order text as
+    numbered lines and answers with STRUCTURE + LINE SPANS; the block text is
+    span-copied from the reading-order lines by code. Near-zero output tokens
+    on a text-native page.
+  * ``auto`` (default) — per page: span-copy when the page has a non-trivial
+    text layer, full transcription when it does not (scanned page).
+Whatever the lane, the vision read stays a WITNESS adjudicated against the
+reading-order text — the composed IR and assurance tiers have the same shape.
+
 Vision + adjudicator are optional: with neither, the page falls back to its
 reading-order text as a single SINGLE_WITNESS paragraph (honest, lower-recall).
 The determinism firewall holds — the pipeline runs with every model backend off.
@@ -45,6 +59,35 @@ def reading_order_pages_from_pdf(pdf_bytes: bytes, *, max_pages: int = 500) -> L
         return [doc[i].get_textpage().get_text_range() for i in range(min(len(doc), max_pages))]
     finally:
         doc.close()
+
+
+TRANSCRIPTION_MODALITIES = ("full_transcription", "span_copy", "auto")
+
+# ``auto`` lane decision: a page whose reading-order text has at least this many
+# non-whitespace chars is treated as text-native → span-copy; below it (scanned /
+# image-only page, or a bare page-number text layer) → full transcription.
+SPAN_COPY_MIN_CHARS = 200
+
+
+def resolve_page_modality(transcription_modality: str, reading_order_text: str) -> str:
+    """Resolve the configured modality to THIS page's lane (typed, fail-loud).
+
+    ``full_transcription`` is always itself. ``span_copy`` degrades to full
+    transcription only when the page has NO text layer at all (nothing to
+    number). ``auto`` picks span-copy iff the text layer is non-trivial
+    (>= ``SPAN_COPY_MIN_CHARS`` non-whitespace chars).
+    """
+    if transcription_modality not in TRANSCRIPTION_MODALITIES:
+        raise ValueError(
+            f"unknown transcription_modality {transcription_modality!r}; "
+            f"expected one of {TRANSCRIPTION_MODALITIES}"
+        )
+    if transcription_modality == "full_transcription":
+        return "full_transcription"
+    stripped = "".join(reading_order_text.split())
+    if transcription_modality == "span_copy":
+        return "span_copy" if stripped else "full_transcription"
+    return "span_copy" if len(stripped) >= SPAN_COPY_MIN_CHARS else "full_transcription"
 
 
 def _vision_blocks_to_nodes(
@@ -100,6 +143,10 @@ class _VisionProducer(Protocol):
         self, manifestation: SourceManifestation, page_num: int
     ) -> Tuple[ExtractionAssertion, ...]: ...
 
+    def propose_page_spans(
+        self, manifestation: SourceManifestation, page_num: int, reading_order_text: str
+    ) -> Tuple[ExtractionAssertion, ...]: ...
+
 
 def adjudicated_document_ingest(
     manifestation: SourceManifestation,
@@ -107,15 +154,24 @@ def adjudicated_document_ingest(
     vision: Optional[_VisionProducer] = None,
     adjudicator: Optional[Adjudicator] = None,
     max_pages: int = 200,
+    transcription_modality: str = "auto",
 ) -> ComposedDocument:
     """Ingest a PDF page-by-page (adjudicated) and compose one whole-document tree.
 
-    For each page: the vision transcription is the structural backbone; it is
-    adjudicated against the page's reading-order text to set the page tier; the
-    per-page nodes are then composed across pages into one ``SourceDocumentIR``.
-    With no vision producer, each page becomes its reading-order text as one
-    single-witness paragraph (the determinism-firewall fallback).
+    For each page: the vision read is the structural backbone; it is adjudicated
+    against the page's reading-order text to set the page tier; the per-page
+    nodes are then composed across pages into one ``SourceDocumentIR``. The
+    per-page vision read is either a full transcription or a span-copy
+    (structure + line spans over the reading-order text) per
+    ``resolve_page_modality`` — same output shape either way. With no vision
+    producer, each page becomes its reading-order text as one single-witness
+    paragraph (the determinism-firewall fallback).
     """
+    if transcription_modality not in TRANSCRIPTION_MODALITIES:
+        raise ValueError(
+            f"unknown transcription_modality {transcription_modality!r}; "
+            f"expected one of {TRANSCRIPTION_MODALITIES}"
+        )
     ro_pages = reading_order_pages_from_pdf(manifestation.source_bytes, max_pages=max_pages)
     pages: List[Tuple[SourceDocumentNode, ...]] = []
 
@@ -129,7 +185,11 @@ def adjudicated_document_ingest(
         )
         if use_vision:
             assert vision is not None
-            assertions = vision.propose_page(manifestation, page_num)
+            lane = resolve_page_modality(transcription_modality, ro_text)
+            if lane == "span_copy":
+                assertions = vision.propose_page_spans(manifestation, page_num, ro_text)
+            else:
+                assertions = vision.propose_page(manifestation, page_num)
             vision_text = "\n".join(a.text for a in assertions)
             tier = _page_assurance(vision_text, ro_text, adjudicator, region)
             pages.append(_vision_blocks_to_nodes(assertions, tier))
