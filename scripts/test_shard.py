@@ -1173,6 +1173,11 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # de-facsimiled reconstruction; acceptance = EXTRA+STRUCTURE down,
         # MISSING not up, NUMERIC unchanged (mocked adjudicator, hermetic).
         "test_fi_parse_compare_defacsimile_ab.py",
+        # Corpus-scale end-to-end A/B harness (fi-parse-corpus): enumeration +
+        # PDF/XML sibling pairing, worst-first ranking, success-criterion
+        # aggregate, and byte-identical determinism (scripted stub processor,
+        # hermetic — the live corpus sweep is operator-invoked, not CI).
+        "test_fi_parse_corpus.py",
     ),
     "tools_audit_restructure": (
         "test_fi_restructure_plan.py",
@@ -1391,6 +1396,7 @@ TOOL_SOURCE_SHARD_GROUPS: dict[tuple[str, ...], tuple[str, ...]] = {
         "src/lawvm/tools/fi_he_branch.py",
         "src/lawvm/tools/fi_parse_attachments.py",
         "src/lawvm/tools/fi_parse_compare.py",
+        "src/lawvm/tools/fi_parse_corpus.py",
         "src/lawvm/tools/export_fi_he_branch_ops.py",
         "src/lawvm/tools/export_fi_he_corpus.py",
         "src/lawvm/tools/export_fi_inline_citations.py",

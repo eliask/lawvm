@@ -9759,6 +9759,49 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
                                    "(EXTRA+STRUCTURE down, MISSING not up, NUMERIC unchanged)"))
     parse_cmp_p.add_argument("--json", action="store_true", help="emit JSON instead of the text report")
 
+    # --- fi-parse-corpus ---
+    parse_corpus_p = sub.add_parser(
+        "fi-parse-corpus",
+        help="corpus-scale end-to-end A/B: de-facsimile vs struct_span stitch over finlex PDFs, ranked",
+        description=(
+            "Enumerate the real PDFs in the immutable finlex.farchive (skipping "
+            "https:// external members and, by default, media/corrigenda repeats), "
+            "pair each with its sibling authoritative main.xml, run the FULL Level-2 "
+            "de-facsimile parse lane per PDF with bounded whole-PDF concurrency "
+            "(saturating the single localhost:8080 inference server; pages stay "
+            "sequential per PDF), and emit a ranked, diffable A/B table of per-PDF "
+            "EXTRA/STRUCTURE/MISSING/NUMERIC deltas (de-facsimile vs the mechanical "
+            "struct_span stitch, both adjudicated against the XML gold), worst-first, "
+            "plus a corpus aggregate. Success = EXTRA+STRUCTURE strictly down, MISSING "
+            "not up, NUMERIC unchanged. Deterministic CSV ordering (two runs diff empty)."
+        ),
+    )
+    parse_corpus_p.add_argument("--finlex", default=None, metavar="PATH",
+                                help="source farchive (default: data/finlex.farchive)")
+    parse_corpus_p.add_argument("--store", default=None, metavar="PATH",
+                                help="derived-IR farchive (default: data/fi_parsed_ir.farchive)")
+    parse_corpus_p.add_argument("--limit", type=int, default=None, metavar="N",
+                                help="A/B only the first N members (deterministic prefix; small CI sample)")
+    parse_corpus_p.add_argument(
+        "--workers", type=int, default=None, metavar="N",
+        help="whole-PDF concurrency saturating the inference server (default: 6; pages stay sequential per PDF)",
+    )
+    parse_corpus_p.add_argument(
+        "--modality", default="struct_span",
+        choices=["struct_span", "struct_full", "struct_auto", "struct_patch"],
+        help="baseline build-script leaf-content lane (default: struct_span)",
+    )
+    parse_corpus_p.add_argument("--max-pages", type=int, default=5000, dest="max_pages",
+                                help="pages to parse per PDF (default: 5000 = whole doc)")
+    parse_corpus_p.add_argument("--only-with-xml", action="store_true", dest="only_with_xml",
+                                help="restrict to PDFs that have a sibling main.xml gold (full A/B only)")
+    parse_corpus_p.add_argument("--corrigenda", action="store_true",
+                                help="also include media/corrigenda/ repeats (excluded by default)")
+    parse_corpus_p.add_argument("--json", action="store_true", help="emit JSON instead of the ranked CSV table")
+    parse_corpus_p.add_argument("--json-out", default=None, metavar="PATH", dest="json_out",
+                                help="also write the JSON payload to this path")
+    parse_corpus_p.add_argument("--verbose", "-v", action="store_true", help="print progress")
+
     # --- structural-review ---
     sr_p = sub.add_parser(
         "structural-review",
@@ -14449,6 +14492,11 @@ def _main_impl() -> None:
         from lawvm.tools.fi_parse_compare import main as fi_parse_compare_main
 
         fi_parse_compare_main(args)
+
+    elif args.command == "fi-parse-corpus":
+        from lawvm.tools.fi_parse_corpus import main as fi_parse_corpus_main
+
+        fi_parse_corpus_main(args)
 
     elif args.command == "structural-review":
         from lawvm.tools.structural_review import (
