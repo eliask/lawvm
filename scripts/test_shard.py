@@ -653,6 +653,8 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_source_document_llm_adjudicator.py",
         # Draft-HE → ConditionalBranch ("if enacted, then …") extraction.
         "test_fi_he_conditional_branch.py",
+        # Reproducible draft-HE acquisition (lausuntopalvelu / hankeikkuna URL).
+        "test_fi_lausuntopalvelu.py",
         # Vision page producer: compact-line transcription → anchored candidates.
         "test_fi_vision_producer.py",
         # Cross-page composition: per-page trees → one whole-document IR.
