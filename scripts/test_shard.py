@@ -288,6 +288,10 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_parsed_store.py",
         # Bulk parse driver: bounded per-PDF concurrency + struct/flat lane routing.
         "test_fi_parse_attachments_concurrency.py",
+        # Scanned / text-poor corpus census (fi_scan_stratum): pdfium text-layer
+        # coverage → born_digital / mixed / scanned strata; hermetic thresholds +
+        # deterministic content-key CSV ordering (the vision-fidelity hard-case set).
+        "test_fi_scan_stratum.py",
         # v2 span-copy build-script wire: explicit structural build script
         # (hierarchy, tables, content-addressed images, span vs inline leaves).
         "test_fi_struct_build_wire.py",
@@ -1393,6 +1397,7 @@ TOOL_SOURCE_SHARD_GROUPS: dict[tuple[str, ...], tuple[str, ...]] = {
         "src/lawvm/tools/fi_parse_view.py",
         "src/lawvm/tools/fi_periodic_table.py",
         "src/lawvm/tools/fi_proposal_bundle.py",
+        "src/lawvm/tools/fi_scan_stratum.py",
         "src/lawvm/tools/fi_proposal_history.py",
         "src/lawvm/tools/fi_proposal_show.py",
         "src/lawvm/tools/fi_proposals_competing.py",

@@ -9723,6 +9723,43 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         help="whole-PDF concurrency saturating the inference server (default: 6; pages stay sequential per PDF)",
     )
 
+    # --- fi-scan-stratum ---
+    scan_stratum_p = sub.add_parser(
+        "fi-scan-stratum",
+        help="census the SCANNED / text-poor stratum of the finlex PDF corpus (vision hard-case set)",
+        description=(
+            "Enumerate the finlex:// PDFs in finlex.farchive (skipping https:// "
+            "externals and media/corrigenda/) and measure each PDF's pdfium "
+            "text-layer coverage per page. Classify into a stratum: born_digital "
+            "(dense text layer — span-copy owns the page, vision barely fires), "
+            "mixed (partial text layer), or scanned (near-zero text layer / "
+            "image-baked — every page needs a vision/OCR producer). The scanned + "
+            "text-poor subset IS the §8/§9 vision-fidelity hard-case test set "
+            "(--stratum scanned emits just it). READ-ONLY, additive to the ingest "
+            "pipeline; deterministic content-key-sorted CSV (or --json). Per-PDF "
+            "ThreadPool concurrency (each worker its own Farchive connection); a "
+            "bad PDF is a typed 'unreadable' record, never a crash."
+        ),
+    )
+    scan_stratum_p.add_argument("--finlex", default=None, metavar="PATH",
+                                help="source farchive (default: data/finlex.farchive)")
+    scan_stratum_p.add_argument("--limit", type=int, default=None, metavar="N",
+                                help="debug: measure only the first N (sorted) PDFs")
+    scan_stratum_p.add_argument(
+        "--workers", type=int, default=None, metavar="N",
+        help="whole-PDF concurrency (default: 6; pages stay serial per PDF)",
+    )
+    scan_stratum_p.add_argument(
+        "--stratum", default=None,
+        choices=["born_digital", "mixed", "scanned", "unreadable"],
+        help="emit only this stratum (e.g. scanned = the vision hard-case set); "
+             "the aggregate line always reflects the full census",
+    )
+    scan_stratum_p.add_argument("--json", action="store_true",
+                                help="emit JSON instead of CSV")
+    scan_stratum_p.add_argument("--out", default=None, metavar="PATH",
+                                help="write to PATH instead of stdout")
+
     # --- fi-parse-compare ---
     parse_cmp_p = sub.add_parser(
         "fi-parse-compare",
@@ -14487,6 +14524,11 @@ def _main_impl() -> None:
         from lawvm.tools.fi_parse_attachments import main as fi_parse_attachments_main
 
         fi_parse_attachments_main(args)
+
+    elif args.command == "fi-scan-stratum":
+        from lawvm.tools.fi_scan_stratum import main as fi_scan_stratum_main
+
+        fi_scan_stratum_main(args)
 
     elif args.command == "fi-parse-compare":
         from lawvm.tools.fi_parse_compare import main as fi_parse_compare_main
