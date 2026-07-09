@@ -7,6 +7,7 @@
     "src/lawvm/tools/eu_anchor_manifest.py": 1,
     "src/lawvm/tools/fi_anchor_manifest.py": 2,
     "src/lawvm/tools/fi_aux_pit_probe.py": 1,
+    "src/lawvm/tools/fi_parse_corpus.py": 2,
     "src/lawvm/tools/no_anchor_manifest.py": 2,
     "src/lawvm/tools/nz_anchor_manifest.py": 1,
     "src/lawvm/tools/se_anchor_manifest.py": 2,
@@ -264,5 +265,5 @@
     "lawvm.work.v1",
     "lawvm.work_inventory_row.v0"
   ],
-  "total_bare_status": 21
+  "total_bare_status": 23
 }
