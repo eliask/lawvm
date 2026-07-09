@@ -126,9 +126,12 @@ def test_safe_tar_read_raises_before_materialising_oversized_member(
     assert diag.cap_bytes == cap
 
 
-def test_archive_max_member_bytes_defaults_to_100mb(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_archive_max_member_bytes_defaults_to_1gb(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("LAWVM_MAX_ARCHIVE_MEMBER_BYTES", raising=False)
-    assert archive_max_member_bytes() == 100 * 1024 * 1024
+    # 1 GB: raised from 100 MB because full-size statute/HE PDFs (scanned
+    # attachments, image-heavy annexes) legitimately exceed 100 MB uncompressed
+    # and must survive the archive-safety cap to reach the vision parse route.
+    assert archive_max_member_bytes() == 1024 * 1024 * 1024
 
 
 def test_archive_max_member_bytes_respects_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -247,7 +250,7 @@ def test_eu_grafter_parse_fmx4_admits_small_zip_member(
     statute whose title matches the source XML — proving the Wave 3 cap
     is not over-rejecting legitimate input.
     """
-    # Default 100MB cap from archive_max_member_bytes() applies.
+    # Default 1GB cap from archive_max_member_bytes() applies.
     monkeypatch.delenv("LAWVM_MAX_ARCHIVE_MEMBER_BYTES", raising=False)
 
     member_name = "01000101.xml"

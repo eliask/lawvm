@@ -22,11 +22,10 @@ name, a member whose name disagrees with an explicit title, and a byte-identical
 re-import are all recorded in ``UscReleaseImportReport.skipped_entries`` rather
 than disappearing silently.
 
-NOTE on member-size cap: the largest title (Title 42, ~113 MB uncompressed) and
-some others exceed the default 100 MB ``LAWVM_MAX_ARCHIVE_MEMBER_BYTES`` cap; the
-operator raises that env (e.g. ``export LAWVM_MAX_ARCHIVE_MEMBER_BYTES=$((192*1024*1024))``)
-before ingest. The importer surfaces an oversize file as a typed skip, never a
-silent truncation.
+NOTE on member-size cap: the largest title (Title 42, ~113 MB uncompressed) sits
+within the default 1 GB ``LAWVM_MAX_ARCHIVE_MEMBER_BYTES`` cap; only an unusually
+large release needs that env raised before ingest. The importer surfaces an
+oversize file as a typed skip, never a silent truncation.
 
 Runnable without the global CLI::
 

@@ -21,9 +21,9 @@ This module also exposes a streaming Table III parser
 time. The full deterministic wiring into ``nonpositive.py`` is stage 2 (this
 parser is intentionally minimal — scout + validation only).
 
-NOTE on member-size cap: ``table3_xml_bulk.xml`` is ~125 MB uncompressed, above
-the default 100 MB ``LAWVM_MAX_ARCHIVE_MEMBER_BYTES`` cap; raise that env before
-ingest (e.g. ``export LAWVM_MAX_ARCHIVE_MEMBER_BYTES=$((192*1024*1024))``).
+NOTE on member-size cap: ``table3_xml_bulk.xml`` is ~125 MB uncompressed, within
+the default 1 GB ``LAWVM_MAX_ARCHIVE_MEMBER_BYTES`` cap; only an unusually large
+release needs that env raised before ingest.
 
 Runnable without the global CLI::
 

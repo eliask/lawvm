@@ -9,7 +9,7 @@ applies the same defence and emits the same receipt shape on overflow
 concrete fix, and the rejected member is rejectable in strict mode).
 
 The cap is read once per call from ``$LAWVM_MAX_ARCHIVE_MEMBER_BYTES`` (default
-100 MB) so operators can raise it without code changes; a member declaring
+1 GB) so operators can raise it without code changes; a member declaring
 zero bytes is allowed through unchanged (handled by callers' existing
 empty-member filters).
 
@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from typing import IO
 
 
-_DEFAULT_MAX_ARCHIVE_MEMBER_BYTES = 100 * 1024 * 1024  # 100 MB uncompressed
+_DEFAULT_MAX_ARCHIVE_MEMBER_BYTES = 1024 * 1024 * 1024  # 1 GB uncompressed
 
 
 def archive_max_member_bytes() -> int:
