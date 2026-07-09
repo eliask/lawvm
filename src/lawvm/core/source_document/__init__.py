@@ -46,6 +46,12 @@ from lawvm.core.source_document.extraction import (
     SourceExtractionBackend,
     SourceManifestation,
 )
+from lawvm.core.source_document.composition import (
+    ComposedDocument,
+    ContinuationJudge,
+    DefaultContinuationJudge,
+    compose_pages,
+)
 from lawvm.core.source_document.ir import (
     AssuranceTier,
     SourceDocumentNode,
@@ -71,8 +77,11 @@ __all__ = [
     "AssuranceTier",
     "BBox",
     "CandidateOperation",
+    "ComposedDocument",
     "ConditionalBranch",
+    "ContinuationJudge",
     "CoverageReport",
+    "DefaultContinuationJudge",
     "ProposalAuthorityStatus",
     "ProposalPackage",
     "ExtractionAffordances",
@@ -90,6 +99,7 @@ __all__ = [
     "SourceManifestation",
     "ValidationResult",
     "assurance_for",
+    "compose_pages",
     "coverage_report",
     "detect_quality_issues",
     "is_structurally_valid",

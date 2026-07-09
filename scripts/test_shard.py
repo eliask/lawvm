@@ -651,6 +651,8 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_he_conditional_branch.py",
         # Vision page producer: compact-line transcription → anchored candidates.
         "test_fi_vision_producer.py",
+        # Cross-page composition: per-page trees → one whole-document IR.
+        "test_source_document_composition.py",
         "test_fi_address_parse.py",
         "test_irnodekind_stringly_typed_gate.py",
         "test_fi_admissible_binding.py",
