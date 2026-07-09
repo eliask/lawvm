@@ -193,4 +193,17 @@ _UK_RULE_SPECS_SUPPLEMENT: Dict[str, str] = {
     # -- Effect-feed acquisition diagnostic --------------------------------------
     "uk_effect_feed_empty_recorded":
         "A UK effects-feed page that contained no Atom entries is recorded as a non-blocking acquisition observation.",
+
+    # -- Residual corpus-bench gap (ids observed firing uncataloged in the
+    # -- 40-statute -j uk --corpus-bench ledger run) ------------------------------
+    "uk_effect_crossheading_insert_rejected":
+        "A UK effect inserting a cross-heading facet whose source carries no standalone cross-heading payload (a Pblock with a Title) is refused, since coercing the heading instruction into a body provision insert would corrupt structure.",
+    "uk_effect_broad_container_repeal_table_feed_descendant_repeal":
+        "When a UK repeal-table source names a whole-container repeal and the feed row explicitly targets a descendant inside that container, lowering emits a source-backed structural repeal of the feed target without requiring a unique exact row match.",
+    "uk_effect_source_payload_instruction_context_augmented":
+        "A UK extracted source that is a bare payload fragment with no amendment verb is parsed after prepending its parent amendment-container instruction, so the fragment lowers to a typed text patch; recorded as a non-blocking observation.",
+    "uk_effect_body_section_replace_schedule_unmatched_rejected":
+        "A structural replace targeting a body section whose extracted Schedule payload contains no section-like unit (Section/P1/Article/Rule) with a matching label is refused, since the effect is not a genuine section replacement and applying it would destroy the target carrier.",
+    "uk_effect_incorporation_of_enactments_source_rejected":
+        "A UK effect with no explicit text/tree action whose source is an Order's 'the following provisions ... shall be incorporated in this Order' enactments-uptake article is refused, since the Order incorporates the host provisions into its own scheme rather than amending them.",
 }

@@ -1,8 +1,10 @@
 """Coverage guard for the UK effect-diagnostic / lowering catalog supplement.
 
 Asserts that ``_UK_RULE_SPECS_SUPPLEMENT`` carries a non-empty, prose
-``believed_spec`` for each of the 68 ``uk_effect_*`` / ``uk_affecting_act_*``
-rule_ids that were the catalog gap, and (best-effort) that each keyed id still
+``believed_spec`` for each of the 73 ``uk_effect_*`` / ``uk_affecting_act_*``
+rule_ids that were the catalog gap (68 original + 5 observed firing
+uncataloged in the 40-statute corpus-bench ledger run), and (best-effort)
+that each keyed id still
 appears in the UK lowering / tools source — flagging any that do not as
 possibly-renamed.
 """
@@ -84,6 +86,13 @@ _GAP_RULE_IDS = (
     "uk_effect_after_quoted_anchor_all_occurrences_insert_text_patch",
     "uk_effect_crossheading_replace_rejected",
     "uk_effect_external_act_target_rejected",
+    # Residual gap observed firing uncataloged in the 40-statute -j uk
+    # --corpus-bench ledger run (2026-07-09):
+    "uk_effect_crossheading_insert_rejected",
+    "uk_effect_broad_container_repeal_table_feed_descendant_repeal",
+    "uk_effect_source_payload_instruction_context_augmented",
+    "uk_effect_body_section_replace_schedule_unmatched_rejected",
+    "uk_effect_incorporation_of_enactments_source_rejected",
 )
 
 # Dynamically-suffixed ids that are minted as f"{base}_unresolved" at emission
@@ -101,9 +110,9 @@ _SEARCH_ROOTS = (
 )
 
 
-def test_gap_list_has_exactly_68_ids() -> None:
-    assert len(_GAP_RULE_IDS) == 68
-    assert len(set(_GAP_RULE_IDS)) == 68, "duplicate id in the gap list"
+def test_gap_list_has_exactly_73_ids() -> None:
+    assert len(_GAP_RULE_IDS) == 73
+    assert len(set(_GAP_RULE_IDS)) == 73, "duplicate id in the gap list"
 
 
 def test_every_gap_id_has_nonempty_prose_spec() -> None:
