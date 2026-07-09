@@ -673,6 +673,8 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # Nemotron-Parse thin client: process-isolated vision producer
         # (subprojects/nemotron_parse) — wire contract + isolation ratchet.
         "test_fi_nemotron_client.py",
+        # Docling structural producer: learned-layout + TableFormer cell grids.
+        "test_fi_docling_producer.py",
         # Cross-page composition: per-page trees → one whole-document IR.
         "test_source_document_composition.py",
         # Per-page adjudicated ingest → composed whole-document IR.

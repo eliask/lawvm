@@ -143,6 +143,11 @@ OPTIONAL_BACKEND_MODULES: frozenset[str] = frozenset(
         # the process-isolated subprojects/nemotron_parse service; 0% coverage
         # EXPECTED offline — optional, never dead (like vision_producer).
         "lawvm.finland.llm_backends.nemotron_client",
+        # Docling learned-layout + TableFormer structural producer: gated on an
+        # ambient ``docling`` install via runtime import (no main-package dep;
+        # heavy tree kept out of the lock), 0% coverage EXPECTED when absent —
+        # optional, never dead (like vision_producer).
+        "lawvm.finland.source_document.docling_producer",
     }
 )
 

@@ -330,6 +330,7 @@
     "lawvm.finland.rulebook.temporal_rules",
     "lawvm.finland.section_resolver",
     "lawvm.finland.section_text_extractor",
+    "lawvm.finland.source_document.docling_producer",
     "lawvm.finland.source_model",
     "lawvm.finland.source_pathology_proof_registry",
     "lawvm.finland.source_providers",
@@ -366,7 +367,8 @@
     "lawvm.finland.llm_backends.llm_adjudicator",
     "lawvm.finland.llm_backends.nemotron_client",
     "lawvm.finland.llm_backends.qwen_local",
-    "lawvm.finland.llm_backends.vision_producer"
+    "lawvm.finland.llm_backends.vision_producer",
+    "lawvm.finland.source_document.docling_producer"
   ],
   "unresolved_owner_residual": [
     "audit",
@@ -783,6 +785,7 @@
     "lawvm.finland.source_document.adjudicated_ingest": false,
     "lawvm.finland.source_document.branch_conflicts": false,
     "lawvm.finland.source_document.branch_lowering": false,
+    "lawvm.finland.source_document.docling_producer": false,
     "lawvm.finland.source_document.he_draft": false,
     "lawvm.finland.source_document.lausuntopalvelu": false,
     "lawvm.finland.source_document.materialize": false,
