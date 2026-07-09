@@ -1,8 +1,8 @@
 """Reproducible draft-HE acquisition from the Finnish consultation portal.
 
 Draft government proposals (HE luonnos) currently enter the source-document
-plane via LOCAL PDF paths — which are NOT reproducible (a certificate that says
-"/home/x/he.pdf" is meaningless to a checker). The reproducible witness for a
+plane via LOCAL PDF paths — which are NOT reproducible (a certificate that cites
+a machine-local file path is meaningless to a checker). The reproducible witness for a
 draft HE is the public consultation portal **lausuntopalvelu.fi** (and, for the
 underlying dossier, the government project window **hankeikkuna** /
 valtioneuvosto.fi/hankkeet).
