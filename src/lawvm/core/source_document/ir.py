@@ -87,6 +87,12 @@ class SourceDocumentNodeKind(Enum):
     HEADING = "heading"
     FOOTNOTE = "footnote"
     IMAGE_REGION = "image_region"
+    MATH_REGION = "math_region"
+    """Level-1 freeform escape hatch: a math formula the governed grammar can't
+    hold faithfully — bbox-anchored + inline literal + a closed ``freeform.reason``."""
+    VERBATIM_REGION = "verbatim_region"
+    """Level-1 freeform escape hatch: image-baked / garbled / irregular-layout text
+    kept verbatim — bbox-anchored + inline literal + a closed ``freeform.reason``."""
     RESIDUAL_REGION = "residual_region"
     PROPOSAL_SECTION = "proposal_section"
     BILL_TEXT = "bill_text"

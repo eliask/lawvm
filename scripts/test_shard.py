@@ -670,6 +670,11 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # D0 source-document ingestion carrier: SourceDocumentIR node + assurance
         # ladder + anchors/extraction/coverage/residual taxonomy.
         "test_source_document_carrier.py",
+        # Track-A FROZEN two-level-pipeline ingest carriers (§5.5): SpanRef /
+        # FreeformRegion / ConvergenceInfo / PageSimulacrum / DeFacsimileClaim +
+        # the NodeMetadata ↔ attrs closed-vocab codec, and the new additive
+        # MATH_REGION / VERBATIM_REGION freeform node kinds.
+        "test_ingest_carriers.py",
         # D1 coverage metric + owned-content quality detectors.
         "test_source_document_coverage.py",
         # Producer-neutral adjudication layer: assurance_for + Adjudicator.
@@ -1264,6 +1269,13 @@ SOURCE_SHARD_PREFIXES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("src/lawvm/eu/", ("eu",)),
     ("tests/eu/fixtures/", ("eu",)),
     ("src/lawvm/finland/", ("finland",)),
+    # Neutral two-level PDF→IR ingest machinery (Track A move). Its tests did NOT
+    # move (the finland compat shim keeps their imports working), so a change to
+    # ingest source must trigger those tests — which live in BOTH the finland
+    # shard-group (``finland_sources``: struct-build/parsed-store) and the core
+    # shard-group (``core_ir_contracts``: llm-adjudicator/nemotron/docling +
+    # ``core_discipline_gates``: determinism-firewall).
+    ("src/lawvm/ingest/", ("finland", "core")),
     ("src/lawvm/new_zealand/", ("new_zealand",)),
     ("src/lawvm/norway/", ("norway",)),
     ("src/lawvm/open_law/", ("starter",)),

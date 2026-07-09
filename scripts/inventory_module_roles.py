@@ -133,21 +133,23 @@ _REPLAY_EXEC_FLOOR = 0
 # ---------------------------------------------------------------------------
 OPTIONAL_BACKEND_MODULES: frozenset[str] = frozenset(
     {
+        # FI manual-CLAIMS proposal backend — STAYS in finland.llm_backends.
         "lawvm.finland.llm_backends.qwen_local",
         # Draft-HE adjudication + vision transcription backends: env-gated on a
         # local llama.cpp/OpenAI server (:8080), lazy-imported, 0% coverage
-        # EXPECTED offline — optional, never dead (like qwen_local).
-        "lawvm.finland.llm_backends.llm_adjudicator",
-        "lawvm.finland.llm_backends.vision_producer",
+        # EXPECTED offline — optional, never dead (like qwen_local). Moved to the
+        # neutral ``lawvm.ingest.llm_backends`` in Track A.
+        "lawvm.ingest.llm_backends.llm_adjudicator",
+        "lawvm.ingest.llm_backends.vision_producer",
         # Nemotron-Parse thin client: env-gated (LAWVM_NEMOTRON_PARSE_CMD) on
         # the process-isolated subprojects/nemotron_parse service; 0% coverage
         # EXPECTED offline — optional, never dead (like vision_producer).
-        "lawvm.finland.llm_backends.nemotron_client",
+        "lawvm.ingest.llm_backends.nemotron_client",
         # Docling learned-layout + TableFormer structural producer: gated on an
         # ambient ``docling`` install via runtime import (no main-package dep;
         # heavy tree kept out of the lock), 0% coverage EXPECTED when absent —
         # optional, never dead (like vision_producer).
-        "lawvm.finland.source_document.docling_producer",
+        "lawvm.ingest.llm_backends.docling_producer",
     }
 )
 
@@ -455,13 +457,19 @@ def _bfs(roots: set[str], edges: dict[str, set[str]]) -> set[str]:
 # The LLM-consuming client modules to fence.  These are the modules that speak to
 # a live model (llama.cpp/OpenAI-compat servers): the claim-proposal backend, the
 # draft-HE adjudicator, and the vision transcriber.  A future nemotron/docling
-# client lands here too.  Kept as an explicit prefix+exact set so a newly-added
-# sibling under ``finland.llm_backends`` is fenced by default (prefix match).
-LLM_CLIENT_PREFIX = "lawvm.finland.llm_backends."
+# client lands here too.  Kept as explicit prefixes + an exact set so a newly-added
+# sibling under EITHER ``llm_backends`` package is fenced by default (prefix match).
+# Two prefixes after the Track-A move: the neutral vision/adjudicator/nemotron
+# backends live under ``lawvm.ingest.llm_backends.``; the FI manual-CLAIMS
+# ``qwen_local`` STAYS under ``lawvm.finland.llm_backends.``.
+LLM_CLIENT_PREFIXES: tuple[str, ...] = (
+    "lawvm.ingest.llm_backends.",
+    "lawvm.finland.llm_backends.",
+)
 LLM_CLIENT_MODULES: frozenset[str] = frozenset(
     {
-        "lawvm.finland.llm_backends.llm_adjudicator",
-        "lawvm.finland.llm_backends.vision_producer",
+        "lawvm.ingest.llm_backends.llm_adjudicator",
+        "lawvm.ingest.llm_backends.vision_producer",
         "lawvm.finland.llm_backends.qwen_local",
     }
 )
@@ -497,17 +505,21 @@ REPLAY_PROJECTION_CONE_ROOTS: tuple[str, ...] = (
 
 
 def _is_llm_client(mod: str) -> bool:
-    """True iff ``mod`` is an LLM-consuming client (exact set or the fenced prefix).
+    """True iff ``mod`` is an LLM-consuming client (exact set or a fenced prefix).
 
-    The prefix arm fences a newly-added ``finland.llm_backends`` sibling by
-    default so a future nemotron/docling client cannot silently leak into the
-    replay cone before anyone updates the exact set.  The package ``__init__``
-    itself (``lawvm.finland.llm_backends`` with no trailing name) is NOT a client
-    — it carries no live-model code — so the prefix requires a trailing segment.
+    The prefix arm fences a newly-added ``llm_backends`` sibling (under either the
+    neutral ``lawvm.ingest.llm_backends.`` or the FI ``lawvm.finland.llm_backends.``
+    package) by default so a future nemotron/docling client cannot silently leak
+    into the replay cone before anyone updates the exact set.  A package
+    ``__init__`` itself (a prefix with no trailing name) is NOT a client — it
+    carries no live-model code — so the prefix requires a trailing segment.
     """
     if mod in LLM_CLIENT_MODULES:
         return True
-    return mod.startswith(LLM_CLIENT_PREFIX) and mod != LLM_CLIENT_PREFIX.rstrip(".")
+    return any(
+        mod.startswith(prefix) and mod != prefix.rstrip(".")
+        for prefix in LLM_CLIENT_PREFIXES
+    )
 
 
 def compute_firewall_edges(

@@ -6,7 +6,7 @@ canonical LawVM ``IRNode`` via the deterministic native-PDF pipeline, and persis
 the derived IR (content-addressed by source digest × pipeline version) in the
 SEPARATE ``fi_parsed_ir.farchive`` derived store. Source stays immutable; the
 mutable parse products live elsewhere, with their evidence tiers preserved
-(see ``lawvm.finland.source_document.parsed_store``).
+(see ``lawvm.ingest.parsed_store``).
 
 A PDF that fails to parse is a TYPED failure record, never a crash and never a
 silently dropped attachment.
@@ -18,12 +18,16 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Iterator, List, Optional, Tuple
 
-from lawvm.finland.source_document.parsed_store import (
-    PARSED_STORE_DEFAULT,
+from lawvm.finland.source_document import FI_PARSED_STORE
+from lawvm.ingest.parsed_store import (
     ParsedIrStore,
     parse_struct_and_cache,
     resolve_pipeline,
 )
+
+# FI derived-IR store path (the SEPARATE ``fi_parsed_ir.farchive``). The neutral
+# ``ParsedIrStore`` default is jurisdiction-agnostic; FI callers anchor to this.
+PARSED_STORE_DEFAULT = FI_PARSED_STORE
 
 _FINLEX_DEFAULT = "data/finlex.farchive"
 
@@ -178,7 +182,7 @@ def parse_attachments_into_store(
 
 def main(args: argparse.Namespace) -> None:
     """CLI handler for ``lawvm fi-parse-attachments``."""
-    from lawvm.finland.source_document.parsed_store import ParseBackendUnavailable
+    from lawvm.ingest.parsed_store import ParseBackendUnavailable
 
     store_path = args.store or PARSED_STORE_DEFAULT
     try:

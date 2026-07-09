@@ -45,7 +45,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from lawvm.core.source_document.extraction import SourceManifestation
 from lawvm.core.source_document.ir import SourceDocumentNode, SourceDocumentNodeKind
-from lawvm.finland.source_document.page_elements import dehyphenate
+from lawvm.ingest.page_elements import dehyphenate
 
 _GOV_FARCHIVE = "data/fi_government_proposal.farchive"
 
@@ -185,10 +185,10 @@ def _struct_lane_report(
     manifestation: SourceManifestation, modality: str, max_pages: int, output_chars: List[int]
 ) -> LaneReport:
     """Run a v2 struct lane over the whole PDF and summarize (fresh, no cache)."""
-    from lawvm.finland.llm_backends.llm_adjudicator import LlmWorkflowAdjudicator
-    from lawvm.finland.source_document.adjudicated_ingest import struct_document_ingest
-    from lawvm.finland.source_document.page_elements import PageElementProducer
-    from lawvm.finland.source_document.parsed_store import RASTERIZE_DPI
+    from lawvm.ingest.adjudicated_ingest import struct_document_ingest
+    from lawvm.ingest.llm_backends.llm_adjudicator import LlmWorkflowAdjudicator
+    from lawvm.ingest.page_elements import PageElementProducer
+    from lawvm.ingest.parsed_store import RASTERIZE_DPI
 
     vision = _CharCountingVision(output_chars, max_tokens=3000)
     adjudicator = LlmWorkflowAdjudicator(verify_pass=False, max_tokens=2000)
@@ -222,7 +222,7 @@ class _CharCountingVision:
     """VisionPageProducer wrapper that tallies the model's raw output chars per call."""
 
     def __init__(self, sink: List[int], **kw: Any) -> None:
-        from lawvm.finland.llm_backends.vision_producer import VisionPageProducer
+        from lawvm.ingest.llm_backends.vision_producer import VisionPageProducer
 
         self._inner = VisionPageProducer(**kw)
         self._sink = sink
@@ -231,15 +231,15 @@ class _CharCountingVision:
         return self._inner.is_available()
 
     def propose_page_struct(self, manifestation, page_num, page_elements, *, leaf_mode="span"):
-        from lawvm.finland.llm_backends.vision_producer import VisionProducerTruncated
+        from lawvm.ingest.llm_backends.vision_producer import VisionProducerTruncated
 
         try:
             res = self._inner.propose_page_struct(
                 manifestation, page_num, page_elements, leaf_mode=leaf_mode
             )
         except VisionProducerTruncated:
-            from lawvm.finland.llm_backends.vision_producer import StructPageResult
-            from lawvm.finland.source_document.struct_wire import StructBuildResult
+            from lawvm.ingest.llm_backends.vision_producer import StructPageResult
+            from lawvm.ingest.struct_wire import StructBuildResult
 
             return StructPageResult(build=StructBuildResult(roots=()), raw_content="")
         self._sink.append(len(res.raw_content))
@@ -361,7 +361,7 @@ class XmlPdfDiffAdjudicator:
         max_tokens: int = _DIFF_MAX_TOKENS,
         timeout: float = 300.0,
     ) -> None:
-        from lawvm.finland.llm_backends.llm_adjudicator import DEFAULT_BASE_URL
+        from lawvm.ingest.llm_backends.llm_adjudicator import DEFAULT_BASE_URL
 
         self._base_url = (base_url or DEFAULT_BASE_URL).rstrip("/")
         self._model = model
@@ -538,14 +538,15 @@ def _lane_reconstructed_text(manifestation: SourceManifestation, max_pages: int)
     the span lane and recover it from the IR tree — the same path the intel-diff
     prototype uses.
     """
-    from lawvm.finland.source_document.parsed_store import (
+    from lawvm.finland.source_document import FI_PARSED_STORE
+    from lawvm.ingest.parsed_store import (
         ParsedIrStore,
         parse_struct_and_cache,
         resolve_pipeline,
     )
 
     spec = resolve_pipeline(transcription_modality="struct_span", vision_max_tokens=3000)
-    store = ParsedIrStore()
+    store = ParsedIrStore(FI_PARSED_STORE)
     try:
         rec = parse_struct_and_cache(
             manifestation, store, spec=spec, max_pages=max_pages

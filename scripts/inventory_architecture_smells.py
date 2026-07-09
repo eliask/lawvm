@@ -857,6 +857,13 @@ def witness_liveness_baseline_snapshot(repo_root: Path | None = None) -> dict[st
 #
 # A function/method that is itself the DEFINITION of a core mutator (i.e. it lives
 # under ``src/lawvm/core``) is never scanned — only the frontend roots are.
+#
+# DELIBERATELY EXCLUDED (shared / non-frontend infra, like ``src/lawvm/core``,
+# ``semantic``, ``substrate``): ``src/lawvm/ingest`` — the neutral two-level
+# PDF→IR machinery (Track A). It produces the core's neutral evidence contracts
+# and carries NO replay kernel (verified: it constructs SourceDocumentIR /
+# PageSimulacrum evidence, never legal-state IRNode PIT/timeline material). It
+# must NOT be policed as a frontend — do not add it to this root set.
 _HIDDEN_KERNEL_FRONTEND_ROOTS: tuple[str, ...] = (
     "src/lawvm/finland",
     "src/lawvm/uk_legislation",

@@ -1,9 +1,9 @@
 {
   "_doc": "Monotone module-role baseline. The `dead` and `test_only_live` sets may only SHRINK: a module born dead must be wired or deleted, never added to the population. The `replay_exercised` map is a SNAPSHOT: a module flipping replay-exercised status (either direction) fails the ratchet until re-baselined. Regenerate with `uv run python scripts/inventory_module_roles.py --update-baseline` after legitimately retiring (deleting) a dead/test-only module, wiring it to a production consumer, or refreshing the replay-coverage snapshot (tests/data/replay_coverage_snapshot.json — see its provenance.refresh_command).",
   "counts": {
-    "dead": 78,
-    "live": 1169,
-    "test_only_live": 29
+    "dead": 87,
+    "live": 1173,
+    "test_only_live": 30
   },
   "replay_counts": {
     "exercised": 170,
@@ -52,6 +52,8 @@
     "lawvm.finland.legal_surface.sentence_census",
     "lawvm.finland.legal_surface.surface_token_totality",
     "lawvm.finland.legal_surface.temporal_census",
+    "lawvm.finland.llm_backends.nemotron_client",
+    "lawvm.finland.llm_backends.vision_producer",
     "lawvm.finland.materialization_totality",
     "lawvm.finland.normalize_fallback_heuristic_census",
     "lawvm.finland.recovery_rule_registry",
@@ -59,7 +61,14 @@
     "lawvm.finland.references.derivation_edges",
     "lawvm.finland.references.eu_transposition_edges",
     "lawvm.finland.references.surface_totality",
+    "lawvm.finland.source_document.adjudicated_ingest",
+    "lawvm.finland.source_document.docling_producer",
+    "lawvm.finland.source_document.page_elements",
+    "lawvm.finland.source_document.parsed_store",
+    "lawvm.finland.source_document.struct_wire",
     "lawvm.finland.timeline_export_plan",
+    "lawvm.ingest.defacsimile",
+    "lawvm.ingest.metadata",
     "lawvm.new_zealand.commencement",
     "lawvm.substrate.eu_ingest",
     "lawvm.substrate.locus_links",
@@ -115,6 +124,7 @@
     "lawvm.finland.legal_surface.family_census",
     "lawvm.finland.references.annotation_independence_census",
     "lawvm.finland.references.annotation_witness_census",
+    "lawvm.ingest.simulacrum",
     "lawvm.tools.corpus_io",
     "lawvm.tools.corpus_sweep",
     "lawvm.tools.fi_adjudication_audit",
@@ -228,9 +238,7 @@
     "lawvm.finland.legal_surface.union_ownership_census",
     "lawvm.finland.llm_backends",
     "lawvm.finland.llm_backends.llm_adjudicator",
-    "lawvm.finland.llm_backends.nemotron_client",
     "lawvm.finland.llm_backends.qwen_local",
-    "lawvm.finland.llm_backends.vision_producer",
     "lawvm.finland.morphology",
     "lawvm.finland.morphology.analyze",
     "lawvm.finland.morphology.lemma_index",
@@ -315,17 +323,12 @@
     "lawvm.finland.section_resolver",
     "lawvm.finland.section_text_extractor",
     "lawvm.finland.source_document",
-    "lawvm.finland.source_document.adjudicated_ingest",
     "lawvm.finland.source_document.branch_conflicts",
     "lawvm.finland.source_document.branch_lowering",
-    "lawvm.finland.source_document.docling_producer",
     "lawvm.finland.source_document.he_draft",
     "lawvm.finland.source_document.lausuntopalvelu",
     "lawvm.finland.source_document.materialize",
-    "lawvm.finland.source_document.page_elements",
-    "lawvm.finland.source_document.parsed_store",
     "lawvm.finland.source_document.pdf_profiles",
-    "lawvm.finland.source_document.struct_wire",
     "lawvm.finland.source_model",
     "lawvm.finland.source_pathology_proof_registry",
     "lawvm.finland.source_providers",
@@ -359,11 +362,11 @@
     "lawvm.us_federal.bootstrap"
   ],
   "optional_backend_modules": [
-    "lawvm.finland.llm_backends.llm_adjudicator",
-    "lawvm.finland.llm_backends.nemotron_client",
     "lawvm.finland.llm_backends.qwen_local",
-    "lawvm.finland.llm_backends.vision_producer",
-    "lawvm.finland.source_document.docling_producer"
+    "lawvm.ingest.llm_backends.docling_producer",
+    "lawvm.ingest.llm_backends.llm_adjudicator",
+    "lawvm.ingest.llm_backends.nemotron_client",
+    "lawvm.ingest.llm_backends.vision_producer"
   ],
   "unresolved_owner_residual": [
     "audit",

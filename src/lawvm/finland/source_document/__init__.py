@@ -8,7 +8,17 @@ for structured output (attachments, PDF-only bodies, draft HE bill text).
 
 See the approved plan at ``.claude/plans/calm-kindling-wand.md``.
 """
-from lawvm.finland.source_document.adjudicated_ingest import (
+# ---------------------------------------------------------------------------
+# COMPAT SHIM (Track A move): the neutral vision/ingest machinery moved to
+# ``lawvm.ingest`` (+ ``lawvm.ingest.llm_backends``). These modules are
+# RE-EXPORTED here so existing ``from lawvm.finland.source_document import X``
+# callers keep working. The shim is a later-step removal (out of Track A scope).
+# ``FI_PARSED_STORE`` is the FI-specific derived-store path the neutral
+# ``ParsedIrStore`` (default now ``data/parsed_ir.farchive``) is FI-anchored to.
+# ---------------------------------------------------------------------------
+FI_PARSED_STORE = "data/fi_parsed_ir.farchive"
+
+from lawvm.ingest.adjudicated_ingest import (  # noqa: E402
     reading_order_pages_from_pdf,
     struct_document_ingest,
 )
