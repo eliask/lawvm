@@ -18,9 +18,9 @@ Public surface (D0): ``SourceManifestation`` input; ``SourceAnchor``;
 Protocol; ``SourceDocumentNode`` carrier + governed kinds + producer-neutral
 ``AssuranceTier``; structural pre-adjudication gates (``validate_anchored`` …);
 the ``Adjudicator`` protocol + ``Adjudication`` carrier + ``assurance_for``
-policy; coverage partition + residual taxonomy. Finland document families +
-lowerers land in ``lawvm.finland.source_document`` (D2+); product lowerers
-(InitialStateEvent / ProposalPackage) land in D6/D7.
+policy; coverage partition + residual taxonomy. Per-frontend document families +
+lowerers land in each frontend's ``source_document`` package (D2+); product
+lowerers (InitialStateEvent / ProposalPackage) land in D6/D7.
 """
 from lawvm.core.source_document.anchors import BBox, SourceAnchor
 from lawvm.core.source_document.coverage import (
