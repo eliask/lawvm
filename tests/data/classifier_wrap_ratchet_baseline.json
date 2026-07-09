@@ -68,6 +68,8 @@
     "src/lawvm/finland/references/reference_sets.py": 2,
     "src/lawvm/finland/references/term_use.py": 1,
     "src/lawvm/finland/replay_products.py": 3,
+    "src/lawvm/finland/source_document/he_draft.py": 1,
+    "src/lawvm/finland/source_document/lausuntopalvelu.py": 1,
     "src/lawvm/finland/temporal_lowering.py": 1,
     "src/lawvm/finland/timeline_version_dedupe.py": 1,
     "src/lawvm/finland/transition_graph_profile.py": 1,
@@ -197,5 +199,5 @@
     "src/lawvm/us_federal/table3.py": 4,
     "src/lawvm/us_federal/usc_witness.py": 4
   },
-  "total_raw_re_compile": 1270
+  "total_raw_re_compile": 1272
 }

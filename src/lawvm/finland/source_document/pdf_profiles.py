@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 # for HE related). This is the "means to find them" for the three targets.
 try:
     import farchive as _farchive_mod
-except Exception:
+except Exception:  # lawvm-failloud: optional farchive backend absent → None sentinel, ingest degrades gracefully
     _farchive_mod = None  # type: ignore
 
 from lawvm.core.provenance_graph import Producer

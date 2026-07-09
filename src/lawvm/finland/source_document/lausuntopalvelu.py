@@ -242,7 +242,8 @@ def resolve_dossier(dossier_id: str) -> tuple[str, ...]:
     parser = _AttachmentLinkParser()
     try:
         parser.feed(body.decode("utf-8", errors="replace"))
-    except Exception:  # noqa: BLE001 — a malformed page is a best-effort miss, not a crash
+    # lawvm-failloud: a malformed HTML page is a best-effort miss, returns () not a crash
+    except Exception:  # noqa: BLE001
         return ()
 
     seen: set[str] = set()
