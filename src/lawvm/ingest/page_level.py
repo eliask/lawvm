@@ -58,6 +58,12 @@ from lawvm.ingest.simulacrum import (
     FreeformRegion,
     PageSimulacrum,
 )
+from lawvm.ingest.suspect_region import (
+    SuspectRegion,
+    cross_reader_disagrees,
+    lexical_implausibility,
+    more_plausible,
+)
 from lawvm.ingest.struct_wire import (
     NodePatch,
     StructBuildNode,
@@ -76,6 +82,13 @@ MAX_CONVERGE_ITERS = 4
 
 # Terminator-compliance floor below which the gate fires (Decision 2).
 _TERMINATOR_COMPLIANCE_FLOOR = 0.98
+
+# §8 agentic re-read: the DPI a suspect region is re-rendered + re-read at (the
+# cold read is ≈144 DPI; a garble is often a resolution artifact, so we zoom in).
+_REREAD_DPI = 300
+# Cap the re-reads per page — output-sparsity guard (a page with a dozen garbles
+# is a page-level failure, not a re-read case; the residue stays typed-suspect).
+_MAX_REREADS_PER_PAGE = 8
 
 
 # --------------------------------------------------------------------------- #
@@ -455,13 +468,17 @@ def _gate_reasons(
     assurance: AssuranceTier,
     freeform: Sequence[FreeformRegion],
     reading_order_text: str,
+    suspects: Sequence[SuspectRegion] = (),
 ) -> Tuple[str, ...]:
     """The Decision-2 closed trigger set fired on the cold round-1 artifacts.
 
     Clean pages fire NOTHING → single-pass. Any of: >=1 freeform region; any
     build findings; patches_applied>0 (text OR structural node PATCH); terminator
     compliance <0.98; SINGLE_WITNESS DESPITE a non-empty reading-order witness;
-    (truncation is handled by the caller, which passes a ``truncated`` reason)."""
+    >=1 deterministic suspect region (§8 — a confidently-garbled read that looks
+    clean, so NONE of the other signals fire; this admits the page to the re-read
+    pass); (truncation is handled by the caller, which passes a ``truncated``
+    reason)."""
     reasons: List[str] = []
     if freeform:
         reasons.append("freeform_region")
@@ -474,7 +491,150 @@ def _gate_reasons(
         reasons.append("terminator_below_floor")
     if assurance is AssuranceTier.SINGLE_WITNESS and reading_order_text.strip():
         reasons.append("single_witness_with_witness")
+    if suspects:
+        reasons.append("suspect_region")
     return tuple(reasons)
+
+
+# --------------------------------------------------------------------------- #
+# §8 Level-1 agentic re-read — deterministic suspect surfacing + gated re-read. #
+# --------------------------------------------------------------------------- #
+
+
+def _text_leaves_in_order(
+    nodes: Sequence[StructBuildNode],
+) -> List[Tuple[Tuple[int, ...], StructBuildNode]]:
+    """Pre-order (path, node) of every text-bearing leaf — the reading-order rank.
+
+    Same order + count as ``render_simulacrum_as_numbered_lines`` / the page's
+    reading-order ``page_lines`` when the read is faithful, so the Nth text leaf
+    aligns to the Nth page line positionally (the bridge that survives a GARBLED
+    leaf whose text no longer matches any page line by string)."""
+    out: List[Tuple[Tuple[int, ...], StructBuildNode]] = []
+
+    def _walk(n: StructBuildNode, path: Tuple[int, ...]) -> None:
+        if (n.text or "").strip():
+            out.append((path, n))
+        for i, c in enumerate(n.children):
+            _walk(c, path + (i,))
+
+    for i, n in enumerate(nodes):
+        _walk(n, (i,))
+    return out
+
+
+def _detect_suspects(
+    nodes: Sequence[StructBuildNode], page_elements: PageElements
+) -> Tuple[SuspectRegion, ...]:
+    """Surface deterministic re-read candidates over the resolved text leaves (§8).
+
+    For each text-bearing leaf (skipping freeform / image regions — those already
+    have a faithful home): fire the PRIMARY cross-reader-disagreement signal (the
+    pdfium text layer over the leaf's region is an INDEPENDENT read) and the
+    SECONDARY lexical-implausibility signals. A leaf with NO fired signal is not a
+    suspect (clean pages → zero suspects → zero re-reads). SURFACES only — never
+    edits.
+
+    The leaf is aligned to its ``PageLine`` FIRST by text (the span-copy bridge),
+    and — crucially for a GARBLED leaf whose text no longer matches any line — by
+    reading-order RANK as a fallback (the Nth text leaf ↔ the Nth reading-order
+    line). The matched line yields both the leaf's bbox (for the crop) and the
+    independent pdfium read of the region (for cross-reader disagreement)."""
+    line_index = _line_index_by_text(page_elements.page_lines)
+    page_lines = page_elements.page_lines
+    leaves = _text_leaves_in_order(nodes)
+    out: List[SuspectRegion] = []
+
+    for rank, (path, n) in enumerate(leaves):
+        is_special = n.kind in (
+            SourceDocumentNodeKind.MATH_REGION,
+            SourceDocumentNodeKind.VERBATIM_REGION,
+            SourceDocumentNodeKind.IMAGE_REGION,
+        )
+        text = n.text or ""
+        if not text.strip() or is_special:
+            continue
+        # Bridge to a PageLine: exact text first, else reading-order rank (a
+        # garbled leaf's text matches no line, but its RANK still locates it).
+        first_line = text.split("\n", 1)[0].strip()
+        key = " ".join(first_line.split())
+        page_line = line_index.get(key)
+        if page_line is None and rank < len(page_lines):
+            page_line = page_lines[rank]
+        bbox = page_line.bbox if page_line is not None else None
+        # Independent read of the region: the pdfium line at this rank/region.
+        independent = page_line.text if page_line is not None else ""
+        signals: List[str] = []
+        cross: Optional[str] = None
+        if cross_reader_disagrees(text, independent):
+            signals.append("cross_reader_disagreement")
+            cross = independent
+        signals.extend(lexical_implausibility(text))
+        if signals:
+            out.append(
+                SuspectRegion(
+                    node_path=path,
+                    bbox=bbox,
+                    vision_text=text,
+                    signals=tuple(signals),
+                    cross_reader=cross,
+                )
+            )
+    return tuple(out)
+
+
+def _apply_rereads(
+    vision,
+    manifestation,
+    page_num: int,
+    nodes: Tuple[StructBuildNode, ...],
+    suspects: Sequence[SuspectRegion],
+) -> Tuple[Tuple[StructBuildNode, ...], int]:
+    """Re-read each suspect region and replace its leaf iff the re-read is better.
+
+    For each suspect with a renderable bbox: render a high-DPI crop + re-read JUST
+    that region (``vision.reread_region``). Apply the re-read through the EXISTING
+    text-leaf substitution (``_rewrite_text_at``) — the same mechanism a text
+    PATCH rides — ONLY when the re-read is more plausible than the incumbent OR
+    agrees with the disagreeing cross-reader (firewall: the re-read is never
+    authority, only a gated candidate). Truncation / render failure on one region
+    is skipped (typed-suspect residue), never sinks the page. Returns
+    ``(new_nodes, applied_count)``."""
+    from lawvm.ingest.llm_backends.vision_producer import (
+        VisionProducerFailure,
+        VisionProducerTruncated,
+    )
+    from lawvm.ingest.suspect_region import _token_agreement
+
+    replacements: Dict[Tuple[int, ...], str] = {}
+    applied = 0
+    for suspect in suspects[:_MAX_REREADS_PER_PAGE]:
+        if suspect.bbox is None:
+            continue  # un-renderable region — recorded suspect, no crop possible
+        try:
+            reread = vision.reread_region(
+                manifestation,
+                page_num,
+                suspect.bbox,
+                suspect.vision_text,
+                dpi=_REREAD_DPI,
+            )
+        except (VisionProducerTruncated, VisionProducerFailure):
+            continue  # this region stays a typed suspect; the rest proceed
+        if not reread or reread == suspect.vision_text:
+            continue  # model kept the incumbent (empty) or produced no change
+        # Gate: accept the re-read iff it is more plausible OR it agrees with the
+        # independent cross-reader that flagged the disagreement.
+        agrees_reader = (
+            suspect.cross_reader is not None
+            and _token_agreement(reread, suspect.cross_reader) >= 0.6
+        )
+        if more_plausible(reread, suspect.vision_text) or agrees_reader:
+            replacements[suspect.node_path] = reread
+            applied += 1
+    if not replacements:
+        return nodes, 0
+    return _rewrite_text_at(nodes, replacements), applied
 
 
 def converge_page(
@@ -523,9 +683,14 @@ def converge_page(
     reconstructed = "\n".join(_struct_text_of(n) for n in nodes)
     assurance = _page_assurance(reconstructed, reading_order_text, adjudicator, region)
 
-    gate_reasons = _gate_reasons(build, assurance, freeform, reading_order_text)
+    # §8: surface deterministic re-read candidates on the cold read. A confidently
+    # garbled leaf fires NONE of the other gate signals (looks clean), so a suspect
+    # is its OWN gate trigger — the page enters the refine + re-read pass.
+    suspects = _detect_suspects(nodes, page_elements)
+    gate_reasons = _gate_reasons(build, assurance, freeform, reading_order_text, suspects)
     round_hashes: List[str] = [_resolved_tree_hash(nodes)]
     patches_total = build.patches_applied
+    rereads = 0
 
     if not gate_reasons:
         return ConvergedPage(
@@ -536,6 +701,7 @@ def converge_page(
                 termination="gated_single_pass",
                 gate_reasons=(),
                 patches_total=patches_total,
+                rereads=0,
             ),
             freeform=freeform,
             assurance=assurance,
@@ -579,6 +745,23 @@ def converge_page(
     else:
         termination = "max_iters"
 
+    # §8 agentic re-read pass: re-detect suspects on the CONVERGED tree (the refine
+    # rounds may have already fixed some) and re-read each renderable garble at high
+    # DPI, replacing its leaf through the SAME gated text-substitution the refine
+    # loop uses (firewall: never authority). A re-read that lands mutates the
+    # resolved tree, so its hash is appended (the fixpoint key stays honest).
+    if hasattr(vision, "reread_region"):
+        final_suspects = _detect_suspects(nodes, page_elements)
+        if final_suspects:
+            reread_nodes, applied = _apply_rereads(
+                vision, manifestation, page_num, nodes, final_suspects
+            )
+            if applied:
+                nodes = reread_nodes
+                patches_total += applied
+                rereads += applied
+                round_hashes.append(_resolved_tree_hash(nodes))
+
     freeform = _freeform_index(nodes)
     return ConvergedPage(
         nodes=nodes,
@@ -588,6 +771,7 @@ def converge_page(
             termination=termination,
             gate_reasons=gate_reasons,
             patches_total=patches_total,
+            rereads=rereads,
         ),
         freeform=freeform,
         assurance=assurance,
@@ -891,6 +1075,7 @@ def page_simulacrum_to_json(sim: PageSimulacrum) -> dict:
             "termination": sim.convergence.termination,
             "gate_reasons": list(sim.convergence.gate_reasons),
             "patches_total": sim.convergence.patches_total,
+            "rereads": sim.convergence.rereads,
         },
         "assurance": sim.assurance.value,
         "raw_wire_digests": list(sim.raw_wire_digests),
@@ -918,6 +1103,7 @@ def page_simulacrum_from_json(raw: dict) -> PageSimulacrum:
             termination=conv["termination"],
             gate_reasons=tuple(conv["gate_reasons"]),
             patches_total=conv["patches_total"],
+            rereads=conv.get("rereads", 0),
         ),
         assurance=AssuranceTier(raw["assurance"]),
         raw_wire_digests=tuple(raw.get("raw_wire_digests", ())),

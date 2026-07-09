@@ -682,6 +682,14 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # unwitnessed_content tripwire, furniture-kept-as-hint, and the
         # PageSimulacrum store round-trip.
         "test_ingest_page_level.py",
+        # §8 Level-1 agentic re-read (garble recovery): the shared visual primitive
+        # (render_region_crop content-addressed locator + typed raise), deterministic
+        # suspect surfacing (cross-reader disagreement PRIMARY + lexical
+        # implausibility SECONDARY, never on length alone), the gated re-read
+        # (more-plausible / cross-reader-agreement) replacing the leaf via the
+        # existing patch mechanism, zero-re-reads on a clean page, and determinism
+        # (byte-identical simulacrum + JSON round-trip carrying the new rereads field).
+        "test_ingest_reread.py",
         # meta.v2 typography lane: pdfplumber char-span → pypdfium2 PageLine
         # geometry alignment (fake spans), font-name → family/bold/italic parse,
         # document-adaptive size_class (relative to page median), char-grouping

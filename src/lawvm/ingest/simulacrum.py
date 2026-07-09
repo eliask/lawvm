@@ -54,13 +54,20 @@ class ConvergenceInfo:
     ``round_hashes`` is the canonical resolved-tree SHA per round (post-PATCH,
     post-span-copy); ``termination`` and ``gate_reasons`` draw from closed
     vocabularies so the convergence outcome is auditable, not free text.
+
+    ``rereads`` (§8, additive) counts the Level-1 agentic re-reads APPLIED — a
+    suspect (garbled) region re-read at higher DPI whose result replaced the leaf
+    through the normal gated PATCH. Zero for a clean page (no suspects → no
+    re-reads, output-sparse); a page with a garble also carries the
+    ``suspect_region`` gate reason.
     """
 
     rounds: int
     round_hashes: Tuple[str, ...]
     termination: str  # empty_patch|fixpoint|oscillation|max_iters|gated_single_pass|truncated
-    gate_reasons: Tuple[str, ...]  # Decision 2 closed trigger set
+    gate_reasons: Tuple[str, ...]  # Decision 2 closed trigger set (+ suspect_region, §8)
     patches_total: int
+    rereads: int = 0
 
 
 @dataclass(frozen=True, slots=True)
