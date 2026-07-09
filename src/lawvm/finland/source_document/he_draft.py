@@ -68,8 +68,10 @@ _AMEND_VERBS = ("muutetaan", "lisätään", "kumotaan", "korvataan")
 # alternation of anchored tokens), not a prose classifier — kept as a
 # module-level pattern string consumed via ``re.search`` (no raw ``re.compile``
 # in this semantic-plane module; FW-07). Applied to an already lower-cased slice,
-# so no IGNORECASE flag is needed.
-_PREAMBLE_END_PATTERN = r"seuraavasti:|(?:\d+\s*[a-zä]?\s*§)|(?:\d+\s*luku)"
+# so no IGNORECASE flag is needed. Section/chapter heads use bounded char-class
+# runs (``[\sa-zä]{0,3}`` / ``\s{0,3}``) rather than adjacent ``\s*X?\s*``
+# quantifiers, so the AST regex-perf gate sees no backtracking risk.
+_PREAMBLE_END_PATTERN = r"seuraavasti:|\d+[\sa-zä]{0,3}§|\d+\s{0,3}luku"
 
 # The single classifier regex: an inline Finnish statute id ``(NNNN/YYYY)``.
 # lawvm-regex: owning_parser extracts the amended-statute id from the johtolause
