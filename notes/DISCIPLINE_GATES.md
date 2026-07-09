@@ -172,6 +172,37 @@ The two previously *unguarded* dual registrations now have completeness gates:
   expected jurisdiction set and stay in lockstep (a jurisdiction cannot register
   one and silently omit the other).
 
+### F. Determinism firewall — no LLM client in the replay cone — `tests/test_determinism_firewall.py`
+
+- Class: a live, non-deterministic LLM call leaking into the byte-deterministic
+  replay/projection path — the silent-default that would dissolve replay
+  determinism, ratchet baselines, and byte-identical self-consistency.
+- Tier: 3 (whole-graph static gate).
+- Primitive: `scripts/inventory_module_roles.py:firewall_report` reuses the
+  module-role import-graph builder, BFS-closes the replay/projection cone
+  (`REPLAY_PROJECTION_CONE_ROOTS` — the per-jurisdiction replay engines + neutral
+  projection/gate cores, NOT the monolithic `lawvm` CLI), and returns any
+  offending edge where a cone module imports an LLM client
+  (`lawvm.finland.llm_backends.*`, prefix-fenced against future siblings).
+- Rule: LLM output may only create typed candidate proposals below an assurance
+  ceiling; adjudication results enter replay ONLY as content-addressed, versioned
+  records carrying the model id in provenance — never via a live call from a
+  replay-cone module. Full contract: `notes/DETERMINISM_FIREWALL.md`.
+- State: HOLDS today. The only `src/` LLM-client importer
+  (`tools.cmd_propose_claims`, lazy `qwen_local`) is the manual-claims proposal
+  tool, outside the replay cone. `FIREWALL_ALLOWLIST` is empty; any entry is
+  tracked debt (route through a record), never a silent pass.
+- Validated: guard-liveness synthetics drive `_is_llm_client` /
+  `compute_firewall_edges` into their firing state (synthetic cone module
+  importing a synthetic client surfaces as an offending edge) and assert an
+  out-of-cone importer is NOT a breach; scan-integrity asserts the cone reaches
+  the spine (>100 modules) so it cannot pass vacuously.
+- **`--affected` blind spot:** this is a WHOLE-GRAPH ratchet. Like the
+  classifier-wrap / regex / module-role / naming-hygiene ratchets, `ci.sh
+  --affected` selects shards by touched path and MISSES a breach introduced
+  outside the firewall's own files. Run it explicitly after any merge that
+  adds/moves a module in the replay cone or under `finland.llm_backends`.
+
 ## How to add a new gate
 
 1. Identify the silent-default. Name the quantity that would vanish untyped.

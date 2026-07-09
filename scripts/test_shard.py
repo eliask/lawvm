@@ -587,6 +587,11 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # Audit-invariant registry program (lanes L2a/L2b/L3/L5): control-flow,
         # determinism-spine, typed-carrier, identity-leak, and replay-determinism gates.
         "test_fail_loud_ratchet.py",
+        # Determinism firewall (Fable 5 #5): whole-graph ratchet — no
+        # replay/projection-cone module may import an LLM client
+        # (finland.llm_backends.*). Sits with the determinism/fail-loud gates.
+        # See notes/DETERMINISM_FIREWALL.md.
+        "test_determinism_firewall.py",
         "test_confidence_control_ratchet.py",
         "test_determinism_spine_ratchet.py",
         "test_typed_carrier_boundary_ratchet.py",

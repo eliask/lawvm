@@ -433,6 +433,136 @@ def _bfs(roots: set[str], edges: dict[str, set[str]]) -> set[str]:
     return seen
 
 
+# ---------------------------------------------------------------------------
+# DETERMINISM FIREWALL (Fable 5 #5): the replay/projection import cone must not
+# import any LLM-consuming client module.  LLM output (adjudication, vision
+# transcription) may only ever create typed candidate proposals BELOW an
+# assurance ceiling; the replay/projection path itself stays byte-deterministic
+# and must NEVER reach a live LLM client.  Adjudication results enter replay only
+# as content-addressed, versioned records carrying the model id in provenance.
+# See notes/DETERMINISM_FIREWALL.md.
+# ---------------------------------------------------------------------------
+
+# The LLM-consuming client modules to fence.  These are the modules that speak to
+# a live model (llama.cpp/OpenAI-compat servers): the claim-proposal backend, the
+# draft-HE adjudicator, and the vision transcriber.  A future nemotron/docling
+# client lands here too.  Kept as an explicit prefix+exact set so a newly-added
+# sibling under ``finland.llm_backends`` is fenced by default (prefix match).
+LLM_CLIENT_PREFIX = "lawvm.finland.llm_backends."
+LLM_CLIENT_MODULES: frozenset[str] = frozenset(
+    {
+        "lawvm.finland.llm_backends.llm_adjudicator",
+        "lawvm.finland.llm_backends.vision_producer",
+        "lawvm.finland.llm_backends.qwen_local",
+    }
+)
+
+# The replay/projection import-cone roots.  DELIBERATELY NOT the [project.scripts]
+# entrypoints: the monolithic ``lawvm`` CLI dispatcher reaches EVERYTHING
+# (including the ``propose-claims`` tool that legitimately calls an LLM), so its
+# whole cone is not "the replay/projection path".  Instead we root the cone at the
+# per-jurisdiction replay engines + the neutral projection/graph-build/gate cores.
+# The firewall protects THIS cone: the deterministic replay + projection spine.
+#
+# Kept as an explicit, reviewed list (never hardcoded silently) — a missing root
+# is a guard-liveness risk, so ``firewall_report`` asserts every root resolves to
+# a real module and fails loud otherwise.
+REPLAY_PROJECTION_CONE_ROOTS: tuple[str, ...] = (
+    # Finland replay engine + statute-graph build + apply pipeline.
+    "lawvm.finland.replay_entrypoint",
+    "lawvm.finland.replay_pipeline",
+    "lawvm.finland.graph",
+    # Neutral projection + certified-transition gate cores.
+    "lawvm.core.branch_projection",
+    "lawvm.core.ctsf_gate",
+    "lawvm.core.replay_conservation",
+    "lawvm.semantic.projection",
+    # Per-jurisdiction replay engines.
+    "lawvm.uk_legislation.uk_amendment_replay",
+    "lawvm.eu.pipeline",
+    "lawvm.new_zealand.actual_replay",
+    "lawvm.norway.replay",
+    "lawvm.us_federal.bench",
+    "lawvm.replay_adjudication",
+)
+
+
+def _is_llm_client(mod: str) -> bool:
+    """True iff ``mod`` is an LLM-consuming client (exact set or the fenced prefix).
+
+    The prefix arm fences a newly-added ``finland.llm_backends`` sibling by
+    default so a future nemotron/docling client cannot silently leak into the
+    replay cone before anyone updates the exact set.  The package ``__init__``
+    itself (``lawvm.finland.llm_backends`` with no trailing name) is NOT a client
+    — it carries no live-model code — so the prefix requires a trailing segment.
+    """
+    if mod in LLM_CLIENT_MODULES:
+        return True
+    return mod.startswith(LLM_CLIENT_PREFIX) and mod != LLM_CLIENT_PREFIX.rstrip(".")
+
+
+def compute_firewall_edges(
+    edges: dict[str, set[str]], cone: set[str]
+) -> list[tuple[str, str]]:
+    """Return the offending edges (importer -> llm_client) INSIDE the cone.
+
+    An offending edge is any import edge whose SOURCE is a replay/projection-cone
+    module and whose TARGET is an LLM-client module.  Lazy function-body imports
+    and ``importlib.import_module`` string targets are already folded into
+    ``edges`` by ``build_import_graph``, so a lazily-imported client still counts
+    (a deterministic cone must not reach a live LLM at all, eager OR lazy).
+    """
+    offending: list[tuple[str, str]] = []
+    for src_mod in sorted(cone):
+        for target in sorted(edges.get(src_mod, ())):
+            if _is_llm_client(target):
+                offending.append((src_mod, target))
+    return offending
+
+
+def firewall_report(
+    repo_root: Path | None = None,
+) -> dict[str, Any]:
+    """Compute the determinism-firewall state over the replay/projection cone.
+
+    Returns a dict with:
+      - ``cone``: sorted list of modules in the replay/projection import cone.
+      - ``offending_edges``: sorted list of ``[importer, llm_client]`` pairs where
+        a cone module imports an LLM client (the firewall violations).
+      - ``roots``: the cone roots actually used (all resolved).
+      - ``missing_roots``: any declared root that did NOT resolve to a real module
+        (a guard-liveness failure — the caller fails loud on a non-empty list).
+      - ``llm_client_modules``: the fenced LLM-client modules that exist in the
+        tree (sanity: the fence must actually name real modules).
+      - ``parse_failures``: any AST parse failures from the graph build.
+    """
+    root = (repo_root or _DEFAULT_REPO_ROOT).resolve()
+    src_root = root / _SRC_ROOT
+
+    graph = build_import_graph(src_root)
+    all_mods = set(graph["modules"])
+    edges: dict[str, set[str]] = {m: set(v) for m, v in graph["edges"].items()}
+    for m in all_mods:
+        edges.setdefault(m, set())
+
+    present_roots = [r for r in REPLAY_PROJECTION_CONE_ROOTS if r in all_mods]
+    missing_roots = [r for r in REPLAY_PROJECTION_CONE_ROOTS if r not in all_mods]
+
+    cone = _bfs(set(present_roots), edges)
+    offending = compute_firewall_edges(edges, cone)
+
+    present_clients = sorted(m for m in all_mods if _is_llm_client(m))
+
+    return {
+        "cone": sorted(cone),
+        "offending_edges": [[src_mod, tgt] for src_mod, tgt in offending],
+        "roots": sorted(present_roots),
+        "missing_roots": sorted(missing_roots),
+        "llm_client_modules": present_clients,
+        "parse_failures": graph["parse_failures"],
+    }
+
+
 def scan_module_roles(
     repo_root: Path | None = None, coverage_path: Path | None = None
 ) -> dict[str, Any]:
@@ -644,6 +774,16 @@ def build_parser() -> argparse.ArgumentParser:
             "under coverage (see the snapshot's provenance.refresh_command)."
         ),
     )
+    parser.add_argument(
+        "--firewall",
+        action="store_true",
+        help=(
+            "Report the determinism-firewall state: the replay/projection import "
+            "cone and any offending edge where a cone module imports an LLM "
+            "client. Exit 1 if the firewall is breached (see "
+            "notes/DETERMINISM_FIREWALL.md)."
+        ),
+    )
     return parser
 
 
@@ -653,6 +793,24 @@ def main(argv: list[str] | None = None) -> int:
         out_path = update_baseline()
         print(f"Wrote module-role baseline: {out_path}")
         return 0
+    if args.firewall:
+        report = firewall_report()
+        print(
+            f"replay/projection cone: {len(report['cone'])} modules "
+            f"(roots: {len(report['roots'])})"
+        )
+        if report["missing_roots"]:
+            print("  MISSING cone roots (guard-liveness failure):")
+            for r in report["missing_roots"]:
+                print(f"    {r}")
+        offending = report["offending_edges"]
+        if offending:
+            print(f"  FIREWALL BREACH: {len(offending)} offending edge(s):")
+            for src_mod, tgt in offending:
+                print(f"    {src_mod} -> {tgt}")
+            return 1
+        print("  firewall holds: no cone module imports an LLM client.")
+        return 1 if report["missing_roots"] else 0
     state = scan_module_roles(coverage_path=args.replay_coverage)
     counts: dict[str, int] = defaultdict(int)
     for record in state["modules"].values():
