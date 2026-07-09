@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import pytest
 
-from lawvm.core.source_document.anchors import SourceAnchor
+from lawvm.core.source_document.anchors import BBox, SourceAnchor
 from lawvm.core.source_document.ir import (
     AssuranceTier,
     SourceDocumentNode,
@@ -238,7 +238,9 @@ def test_dispatch_view_uses_injected_fake_crop() -> None:
 
     ctx = _ctx(crop_fn=fake_crop)
     dispatch_affordance(ctx, AffordanceRequest(kind=AffordanceKind.VIEW, page_num=2, bbox=(0.0, 0.0, 1.0, 1.0)))
-    assert calls == [(2, (0.0, 0.0, 1.0, 1.0), 200)]
+    # The injected crop receives a BBox (the frozen render_region_crop shape),
+    # built from the control-line's 4-float region.
+    assert calls == [(2, BBox(0.0, 0.0, 1.0, 1.0), 200)]
     assert ctx.view_bytes == [b"PNGBYTES"]
     assert ctx.used.views_used == 1
 

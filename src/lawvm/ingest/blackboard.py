@@ -65,7 +65,8 @@ from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 from typing_extensions import override
 
-from lawvm.core.source_document.anchors import SourceAnchor
+from lawvm.core.source_document.anchors import BBox, SourceAnchor
+from lawvm.core.source_document.extraction import SourceManifestation
 from lawvm.core.source_document.ir import SourceDocumentNode
 from lawvm.ingest.defacsimile import (
     DeFacsimileClaim,
@@ -656,7 +657,7 @@ class KnowledgeSource:
 
 # A crop function has the FROZEN signature of ``visual.render_region_crop``:
 #   (manifestation, page_num, bbox, dpi) -> bytes
-CropFn = Callable[[object, int, Tuple[float, float, float, float], int], bytes]
+CropFn = Callable[[object, int, BBox, int], bytes]
 
 
 @dataclass
@@ -668,7 +669,7 @@ class DispatchContext:
     simulacra: Sequence[PageSimulacrum]
     budget: BlackboardBudget
     used: BudgetLedger
-    manifestation: object = None
+    manifestation: Optional[SourceManifestation] = None
     crop_fn: Optional[CropFn] = None
     view_dpi: int = 200
     # Read results accumulated for the NEXT scheduling of this region.
@@ -688,15 +689,21 @@ def _handle_view(ctx: DispatchContext, req: AffordanceRequest) -> None:
     page_num = req.page_num if req.page_num is not None else (
         ctx.region[0].page_num if ctx.region else 0
     )
-    bbox = req.bbox if req.bbox is not None else (0.0, 0.0, 1.0, 1.0)
-    crop = ctx.crop_fn
-    if crop is None:
-        try:  # live path — module owned by a parallel track, import lazily
-            from lawvm.ingest.visual import render_region_crop as crop  # type: ignore
-        except Exception:
-            return  # no crop capability available; the VIEW is a no-op (typed budget spent below)
+    _bt = req.bbox if req.bbox is not None else (0.0, 0.0, 1.0, 1.0)
+    bbox = BBox(*_bt)
     try:
-        data = crop(ctx.manifestation, page_num, bbox, ctx.view_dpi)
+        if ctx.crop_fn is not None:
+            # Injected (test) crop takes the frozen ``render_region_crop`` shape.
+            data = ctx.crop_fn(ctx.manifestation, page_num, bbox, ctx.view_dpi)
+        elif ctx.manifestation is not None:
+            # Live path: the real primitive needs a concrete manifestation.
+            from lawvm.ingest.visual import render_region_crop
+
+            data = render_region_crop(
+                ctx.manifestation, page_num, bbox, ctx.view_dpi
+            )
+        else:
+            return  # no crop capability / no manifestation — VIEW is a typed no-op
     except Exception:
         return
     ctx.used.views_used += 1
@@ -1033,7 +1040,7 @@ class BlackboardController:
         sources: Sequence[KnowledgeSource],
         *,
         budget: Optional[BlackboardBudget] = None,
-        manifestation: object = None,
+        manifestation: Optional[SourceManifestation] = None,
         crop_fn: Optional[CropFn] = None,
         view_dpi: int = 200,
     ) -> None:
@@ -1261,7 +1268,7 @@ def defacsimile_blackboard(
     *,
     adjudicator: object = None,
     budget: Optional[BlackboardBudget] = None,
-    manifestation: object = None,
+    manifestation: Optional[SourceManifestation] = None,
     crop_fn: Optional[CropFn] = None,
 ) -> Tuple[DeFacsimiledDocument, Workspace]:
     """Level 2 via the stigmergic blackboard (M3) — additive to the M1 single pass.
