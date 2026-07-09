@@ -169,3 +169,33 @@ def test_defacsimile_lane_rejoins_the_seam_paragraph_via_fallback(tmp_path, monk
         assert isinstance(rec.manifest["defacsimile_summary"]["op_histogram"], dict)
     finally:
         store.close()
+
+
+def test_tolerant_vision_forwards_the_full_converge_surface() -> None:
+    """Regression: the production `spec.vision` is a `_TolerantVision` wrapper, and
+    the converge loop calls BOTH `propose_page_struct` AND `propose_page_patch_delta`.
+    An earlier gap (the wrapper lacked `propose_page_patch_delta`) only surfaced in
+    the real defacsimile lane because hermetic tests fake vision WITHOUT the wrapper.
+    This pins the wrapper's method surface + the truncation-propagation contract."""
+    from lawvm.ingest.llm_backends.vision_producer import VisionProducerTruncated
+    from lawvm.ingest.parsed_store import _TolerantVision
+
+    class _Inner:
+        def is_available(self):
+            return True
+
+        def propose_page_patch_delta(self, manifestation, page_num, numbered_lines):
+            if numbered_lines == "TRUNCATE":
+                raise VisionProducerTruncated(page_num=page_num, detail="dense")
+            return "1 PARA 0 L1\x1f"
+
+    tv = _TolerantVision(_Inner())
+    # Forwards the refine-round call.
+    assert tv.propose_page_patch_delta(_manifestation(), 1, "[1] x") == "1 PARA 0 L1\x1f"
+    # Truncation is PROPAGATED (converge_page catches it → termination="truncated");
+    # an empty string is the CONVERGED signal, so the two must stay distinguishable.
+    try:
+        tv.propose_page_patch_delta(_manifestation(), 1, "TRUNCATE")
+        raise AssertionError("expected VisionProducerTruncated to propagate")
+    except VisionProducerTruncated:
+        pass

@@ -260,6 +260,17 @@ class _TolerantVision:
                 build=StructBuildResult(roots=()), raw_content="", images=page_elements.images
             )
 
+    def propose_page_patch_delta(
+        self, manifestation: SourceManifestation, page_num: int, numbered_lines: str
+    ) -> str:
+        """Forward one convergence refine round. Truncation is NOT swallowed here —
+        ``converge_page`` catches ``VisionProducerTruncated`` to end that page's
+        loop with ``termination="truncated"`` (an empty string is the model's
+        CONVERGED signal, so the two must stay distinguishable)."""
+        return self._inner.propose_page_patch_delta(  # ty: ignore[unresolved-attribute]
+            manifestation, page_num, numbered_lines
+        )
+
 
 class _TolerantAdjudicator:
     """Adjudicator wrapper: a page too dense to adjudicate within the token budget
