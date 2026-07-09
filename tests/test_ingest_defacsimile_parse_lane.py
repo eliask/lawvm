@@ -33,7 +33,7 @@ _DIGEST = "d" * 64
 _PIPELINE = "adjudicated_vision"
 _VERSION = (
     "vision=fake+adj+wire=structbuild.v1+leaf=patch+converge.v1"
-    "+gate=hard.v1+iters=4+structpatch=text.v1+rasterdpi=200+compose.v1"
+    "+gate=hard.v1+iters=4+structpatch=text.v1+node.v1+rasterdpi=200+compose.v1"
     "+defacsimile.v1+fallback"
 )
 

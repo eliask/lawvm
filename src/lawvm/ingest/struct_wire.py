@@ -160,6 +160,29 @@ class StructBuildResult:
     total_command_lines: int = 0
     terminated_command_lines: int = 0
     patches_applied: int = 0
+    node_patches_applied: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class NodePatch:
+    """A node-addressed structural PATCH — DELETE a node+subtree or RELABEL its kind.
+
+    Milestone-2 structural PATCH (§5 Decision 1). Unlike the line-level text PATCH
+    (an addressed correction to the numbered lines, applied BEFORE span-copy), a
+    node PATCH is a TREE-level op collected here and applied AFTER assembly:
+
+      ``PATCH 0 N7:``          delete node 7 and its whole subtree (empty inline)
+      ``PATCH 0 N7: SECTION``  relabel node 7 to the governed kind ``SECTION``
+
+    ``kind`` is ``None`` for a delete; a governed ``SourceDocumentNodeKind`` for a
+    relabel. The address space is the wire's own node ids in ``parse_struct_wire``;
+    in the converge refine loop it is the 1-based text-leaf line index (see
+    ``page_level._apply_delta_wire``). A bad id / un-governed relabel kind is
+    DROPPED with a typed finding (existing hygiene), never a silent no-op / crash.
+    """
+
+    node_id: int
+    kind: Optional[SourceDocumentNodeKind]  # None = delete; else relabel target
 
 
 # --------------------------------------------------------------------------- #
@@ -292,6 +315,36 @@ def _parse_image_ref(token: str) -> Optional[int]:
         return None
     body = token[1:]
     return int(body) if body.isdigit() else None
+
+
+def _parse_node_ref(token: str) -> Optional[int]:
+    """``N7`` → node id 7 (a structural-PATCH address); malformed → ``None``.
+
+    The ``N<id>`` src addresses a NODE (not a reading-order line): a node PATCH
+    deletes / relabels it. The id space is the wire's own node ids (in
+    ``parse_struct_wire``) or the 1-based text-leaf line index (in the converge
+    refine loop) — the caller resolves it; this only parses the token shape.
+    """
+    if not token.startswith("N"):
+        return None
+    body = token[1:]
+    return int(body) if body.isdigit() else None
+
+
+def _parse_node_patch(cmd: "_RawCommand") -> Optional[Tuple[int, Optional[str]]]:
+    """A ``PATCH 0 N<id>[: KIND]`` node op → ``(node_id, kind_token_or_None)``.
+
+    Returns ``None`` when the PATCH src is NOT an ``N<id>`` node ref (it is then a
+    line/char text PATCH, handled by ``_apply_patches``). An empty inline is a
+    DELETE (``kind`` None); a non-empty inline is a RELABEL to that KIND token
+    (validated against the governed vocabulary by the caller — an un-governed
+    relabel is dropped with a finding).
+    """
+    node_id = _parse_node_ref(cmd.src_token)
+    if node_id is None:
+        return None
+    relabel = cmd.inline_text.strip()
+    return (node_id, relabel.upper() if relabel else None)
 
 
 def _parse_freeform_bbox(token: str) -> Optional[Tuple[float, float, float, float]]:
@@ -449,6 +502,113 @@ def _apply_patches(
 
 
 # --------------------------------------------------------------------------- #
+# Node-addressed structural PATCH — DELETE subtree / RELABEL kind (milestone 2) #
+# --------------------------------------------------------------------------- #
+#
+# A ``PATCH 0 N<id>`` command is a TREE-level op (§5 Decision 1, milestone 2): it
+# RETRACTS a duplicated / hallucinated node the model emitted earlier, or fixes a
+# mis-kinded block — the ACTIVE retraction path complementing the passive
+# ``unwitnessed_content`` tripwire. Distinct from the line-level text PATCH
+# (``_apply_patches``, applied BEFORE span-copy with the no-line-shift invariant):
+# node PATCH is applied AFTER text and collected here as ``NodePatch`` ops, resolved
+# against the assembled tree by a caller-supplied ``id → node-address`` map.
+#
+# Discipline: monotone + order-insensitive where possible. Deletes are applied
+# first (a delete removes the whole subtree; a relabel of an already-deleted node
+# is then a bad-id finding, not a crash). A node id that doesn't resolve, or a
+# relabel to an un-governed kind, is DROPPED with a typed finding.
+
+
+def collect_node_patches(
+    patch_cmds: Sequence["_RawCommand"],
+) -> Tuple[List[NodePatch], List["_RawCommand"], List[str]]:
+    """Split PATCH commands into node ops + line/char ops → (node_patches, line_cmds, findings).
+
+    A PATCH whose src is ``N<id>`` is a structural node op (delete/relabel); every
+    other PATCH (``L<n>`` / ``L<n>.a-b``) is a line/char text delta for
+    ``_apply_patches``. An un-governed relabel KIND is dropped HERE with a finding
+    (the id itself is resolved later against the tree — a bad id is dropped then).
+    """
+    node_patches: List[NodePatch] = []
+    line_cmds: List["_RawCommand"] = []
+    findings: List[str] = []
+    for cmd in patch_cmds:
+        parsed = _parse_node_patch(cmd)
+        if parsed is None:
+            line_cmds.append(cmd)
+            continue
+        node_id, kind_token = parsed
+        if kind_token is None:
+            node_patches.append(NodePatch(node_id=node_id, kind=None))
+            continue
+        kind = _STRUCT_KINDS.get(kind_token)
+        if kind is None:
+            findings.append(
+                f"node PATCH N{node_id} relabel to un-governed kind {kind_token!r} dropped"
+            )
+            continue
+        node_patches.append(NodePatch(node_id=node_id, kind=kind))
+    return node_patches, line_cmds, findings
+
+
+def _apply_node_patches_by_id(
+    node_patches: Sequence[NodePatch],
+    payloads: Dict[int, "_NodePayload"],
+    parent_of: Dict[int, int],
+    emission_order: List[int],
+    findings: List[str],
+) -> int:
+    """Apply node PATCHes to the payload maps IN PLACE (delete subtree / relabel).
+
+    Address space = the wire's own node ids. Deletes are applied first (each
+    removes the target + its whole subtree from ``payloads`` / ``parent_of`` /
+    ``emission_order``), then relabels. A node id that no longer resolves (never
+    emitted, or already inside a deleted subtree) → a bad-id finding; a relabel is
+    a payload kind swap. Returns the count of applied ops (deletes + relabels)."""
+    deletes = [p.node_id for p in node_patches if p.kind is None]
+    relabels = [(p.node_id, p.kind) for p in node_patches if p.kind is not None]
+    applied = 0
+
+    def _descendants(root: int) -> set:
+        """The node id + every transitive descendant (via ``parent_of``)."""
+        kids_of: Dict[int, List[int]] = {}
+        for nid, pid in parent_of.items():
+            kids_of.setdefault(pid, []).append(nid)
+        out: set = set()
+        stack = [root]
+        while stack:
+            nid = stack.pop()
+            if nid in out:
+                continue
+            out.add(nid)
+            stack.extend(kids_of.get(nid, ()))
+        return out
+
+    for nid in deletes:
+        if nid not in payloads:
+            findings.append(f"node PATCH N{nid} delete dropped (no such node)")
+            continue
+        subtree = _descendants(nid)
+        for dead in subtree:
+            payloads.pop(dead, None)
+            parent_of.pop(dead, None)
+        emission_order[:] = [n for n in emission_order if n not in subtree]
+        applied += 1
+
+    for nid, kind in relabels:
+        payload = payloads.get(nid)
+        if payload is None:
+            findings.append(f"node PATCH N{nid} relabel dropped (no such node)")
+            continue
+        assert kind is not None
+        payloads[nid] = _NodePayload(
+            kind=kind, text=payload.text, image=payload.image, freeform=payload.freeform
+        )
+        applied += 1
+    return applied
+
+
+# --------------------------------------------------------------------------- #
 # Tree assembly                                                                #
 # --------------------------------------------------------------------------- #
 
@@ -500,11 +660,14 @@ def parse_struct_wire(
             terminated_cmds += 1
         commands.append((cmd, terminated))
 
-    # PATCH pass: apply addressed char-span/whole-line deltas to the numbered
-    # lines BEFORE any node text is span-copied, so the tree reads the corrected
-    # text. PATCH commands are consumed here (not tree nodes).
+    # PATCH pass: a PATCH is a DELTA, never a tree node. Split into node-addressed
+    # structural ops (``N<id>`` — delete subtree / relabel kind, milestone 2) and
+    # line/char text ops (``L<n>`` — applied BEFORE span-copy so the tree reads the
+    # corrected text). Node ops are applied to the assembled payloads/edges below.
     patch_cmds = [c for c, _t in commands if c.kind_token == "PATCH"]
-    lines, patch_findings, patches_applied = _apply_patches(lines, patch_cmds)
+    node_patches, line_patch_cmds, node_patch_findings = collect_node_patches(patch_cmds)
+    findings.extend(node_patch_findings)
+    lines, patch_findings, patches_applied = _apply_patches(lines, line_patch_cmds)
     findings.extend(patch_findings)
 
     # Pass 1: validate kind + resolve src → immutable payload; record emission order.
@@ -552,6 +715,15 @@ def parse_struct_wire(
         parent_of[cmd.node_id] = cmd.parent_id
         emission_order.append(cmd.node_id)
 
+    # Node-PATCH pass (milestone 2): apply structural ops to the assembled payloads
+    # BEFORE the edge map, addressing the wire's own node ids. Deletes first (a
+    # delete removes the node + its whole subtree), then relabels (a relabel of an
+    # already-deleted node is then a bad-id finding). Order-insensitive among
+    # distinct nodes; a bad id → a typed finding, never a crash.
+    node_patches_applied = _apply_node_patches_by_id(
+        node_patches, payloads, parent_of, emission_order, findings
+    )
+
     # Pass 2: build the parent→children edge map (emission order = sibling order);
     # re-parent orphans / self-parents to ROOT with a typed finding.
     child_ids: Dict[int, List[int]] = {}
@@ -597,4 +769,5 @@ def parse_struct_wire(
         total_command_lines=total_cmds,
         terminated_command_lines=terminated_cmds,
         patches_applied=patches_applied,
+        node_patches_applied=node_patches_applied,
     )

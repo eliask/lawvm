@@ -156,6 +156,70 @@ def test_out_of_range_patch_is_a_finding_not_a_crash() -> None:
     assert r.roots[0].text == _LINES[1]  # untouched
 
 
+# --------------------------------------------------------------------------- #
+# Node-addressed structural PATCH — DELETE subtree / RELABEL kind (milestone 2) #
+# --------------------------------------------------------------------------- #
+
+
+def test_node_patch_deletes_a_node_and_its_whole_subtree() -> None:
+    # A duplicated ROW: the model retracts node 2 (the dup) + its CELL child 3.
+    wire = (
+        f"1 TABLE 0 -{US}"
+        f"2 ROW 1 -{US}"
+        f"3 CELL 2 L1{US}"     # child of the deleted ROW → goes with it
+        f"4 ROW 1 -{US}"
+        f"5 CELL 4 L2{US}"
+        f"6 PATCH 0 N2:{US}"   # delete node 2 (+ subtree 3)
+    )
+    r = parse_struct_wire(wire, _LINES)
+    assert r.node_patches_applied == 1
+    table = r.roots[0]
+    assert table.kind is SourceDocumentNodeKind.TABLE
+    # Only the SECOND row (node 4/5) survives.
+    assert len(table.children) == 1
+    row = table.children[0]
+    assert row.children[0].text == _LINES[1]
+
+
+def test_node_patch_relabels_a_node_to_a_governed_kind() -> None:
+    wire = f"1 PARA 0 L1{US}2 PATCH 0 N1: HEADING{US}"
+    r = parse_struct_wire(wire, _LINES)
+    assert r.node_patches_applied == 1
+    assert r.roots[0].kind is SourceDocumentNodeKind.HEADING
+    assert r.roots[0].text == _LINES[0]  # text unchanged by a relabel
+
+
+def test_node_patch_bad_id_is_a_finding_not_a_crash() -> None:
+    wire = f"1 PARA 0 L1{US}2 PATCH 0 N99:{US}3 PATCH 0 N42: SECTION{US}"
+    r = parse_struct_wire(wire, _LINES)
+    assert r.node_patches_applied == 0
+    assert any("N99" in f and "no such node" in f for f in r.findings)
+    assert any("N42" in f and "no such node" in f for f in r.findings)
+    assert r.roots[0].kind is SourceDocumentNodeKind.PARAGRAPH  # untouched
+
+
+def test_node_patch_relabel_to_ungoverned_kind_is_dropped_with_a_finding() -> None:
+    wire = f"1 PARA 0 L1{US}2 PATCH 0 N1: BOGUS{US}"
+    r = parse_struct_wire(wire, _LINES)
+    assert r.node_patches_applied == 0
+    assert any("un-governed kind" in f for f in r.findings)
+    assert r.roots[0].kind is SourceDocumentNodeKind.PARAGRAPH  # unchanged
+
+
+def test_node_and_text_patch_coexist_in_one_wire() -> None:
+    # A text PATCH (L) and a node PATCH (N) in the same wire are independent.
+    wire = (
+        f"1 PARA 0 L1{US}"
+        f"2 PARA 0 L2{US}"
+        f"3 PATCH 0 L1: 5 §{US}"   # text delta on line 1
+        f"4 PATCH 0 N2:{US}"        # delete node 2
+    )
+    r = parse_struct_wire(wire, _LINES)
+    assert r.patches_applied == 1
+    assert r.node_patches_applied == 1
+    assert [n.text for n in r.roots] == ["5 §"]
+
+
 def test_dehyphenate_joins_discretionary_hyphens_not_real_ones() -> None:
     from lawvm.finland.source_document.page_elements import dehyphenate
 

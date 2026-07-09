@@ -59,10 +59,12 @@ from lawvm.ingest.simulacrum import (
     PageSimulacrum,
 )
 from lawvm.ingest.struct_wire import (
+    NodePatch,
     StructBuildNode,
     _apply_patches,
     _parse_command_line,
     _struct_units,
+    collect_node_patches,
 )
 
 # The Level-1 producer id stamped on ``prov.producer``.
@@ -273,9 +275,10 @@ def _rewrite_text_at(
 ) -> Tuple[StructBuildNode, ...]:
     """Return a new forest with text-leaf substitutions applied (text-PATCH only).
 
-    Structural PATCH is milestone 2 (Decision 1), so only ``.text`` changes — the
-    tree SHAPE is invariant across refine rounds, which bounds the oscillation
-    axis to text alone."""
+    Only ``.text`` changes here — the tree SHAPE is invariant. Structural change
+    (delete/relabel, milestone 2) is applied SEPARATELY by
+    ``_apply_structural_patches`` AFTER this, so the text delta always addresses a
+    stable line-index space within one round."""
 
     def _walk(n: StructBuildNode, path: Tuple[int, ...]) -> StructBuildNode:
         new_text = replacements.get(path, n.text)
@@ -297,30 +300,109 @@ def _current_numbered_lines(nodes: Sequence[StructBuildNode]) -> List[str]:
     ]
 
 
+def _apply_structural_patches(
+    nodes: Tuple[StructBuildNode, ...], node_patches: Sequence[NodePatch]
+) -> Tuple[Tuple[StructBuildNode, ...], int]:
+    """Apply node-addressed structural PATCHes to the forest → (new forest, count).
+
+    Milestone-2 structural PATCH in the converge refine loop (§5 Decision 1): the
+    address ``N<id>`` is the 1-based text-leaf LINE index (1:1 with the numbered
+    lines the model just patched, ``render_simulacrum_as_numbered_lines``). A
+    delete drops the addressed node + its whole subtree; a relabel swaps its kind.
+    A delete/relabel RENUMBERS the rendered lines the NEXT round patches against —
+    the second oscillation axis (Decision 10); the resolved-tree hash already
+    covers structural change, so the caller's oscillation guard handles it.
+
+    Deletes are resolved to STABLE node identities (by their pre-op path) before
+    any mutation, so multiple ops in one round never trip over each other's
+    renumbering; relabels are then applied by path. A line index that doesn't
+    resolve is skipped (dropped) here — its finding was already emitted upstream.
+    """
+    paths = _text_leaf_paths(nodes)
+    delete_paths: set = set()
+    relabel_by_path: Dict[Tuple[int, ...], SourceDocumentNodeKind] = {}
+    applied = 0
+    for patch in node_patches:
+        idx = patch.node_id - 1  # N<id> is the 1-based text-leaf line index
+        if not (0 <= idx < len(paths)):
+            continue  # out-of-range line index → dropped (finding upstream)
+        path = paths[idx]
+        if patch.kind is None:
+            delete_paths.add(path)
+            applied += 1
+        else:
+            relabel_by_path[path] = patch.kind
+            applied += 1
+
+    def _rebuild(
+        n: StructBuildNode, path: Tuple[int, ...]
+    ) -> Optional[StructBuildNode]:
+        # A deleted node (or one under a deleted ancestor) collapses to None; its
+        # whole subtree goes with it.
+        if path in delete_paths:
+            return None
+        children: List[StructBuildNode] = []
+        for i, c in enumerate(n.children):
+            kid = _rebuild(c, path + (i,))
+            if kid is not None:
+                children.append(kid)
+        kind = relabel_by_path.get(path, n.kind)
+        new_children = tuple(children)
+        if kind == n.kind and new_children == n.children:
+            return n
+        return StructBuildNode(
+            kind=kind, text=n.text, image=n.image, freeform=n.freeform, children=new_children
+        )
+
+    new_roots: List[StructBuildNode] = []
+    for i, n in enumerate(nodes):
+        kid = _rebuild(n, (i,))
+        if kid is not None:
+            new_roots.append(kid)
+    return tuple(new_roots), applied
+
+
 def _apply_delta_wire(
     nodes: Tuple[StructBuildNode, ...], delta_wire: str
 ) -> Tuple[Tuple[StructBuildNode, ...], int]:
     """Parse a refine round's PATCH-delta wire and apply it → (new forest, patch count).
 
     The delta wire's PATCH commands address the CURRENT numbered lines (1:1 with
-    the text-leaf pre-order). Reuses ``_apply_patches`` verbatim (Decision 1's
-    single-line invariant), then maps the patched lines back onto the leaves."""
-    paths = _text_leaf_paths(nodes)
-    lines = _current_numbered_lines(nodes)
+    the text-leaf pre-order). Two op families share the ``PATCH`` command:
+
+    * ``L<n>`` / ``L<n>.a-b`` — a TEXT delta (reuses ``_apply_patches`` verbatim,
+      Decision 1's single-line no-shift invariant), mapped back onto the leaves;
+    * ``N<id>`` — a STRUCTURAL delta (milestone 2): delete node ``<id>`` + subtree
+      (empty inline) or relabel its kind. Applied AFTER the text delta (the text
+      addresses stable line indices; the structural delta then renumbers the tree
+      for the NEXT round — the resolved-tree hash covers it, Decision 10).
+
+    Count = text patches + structural ops applied (both drive convergence)."""
     patch_cmds = []
     for unit, _terminated in _struct_units(delta_wire):
         cmd = _parse_command_line(unit)
         if cmd is not None and cmd.kind_token.upper() == "PATCH":
             patch_cmds.append(cmd)
-    patched, _findings, count = _apply_patches(lines, patch_cmds)
-    if count == 0:
-        return nodes, 0
-    replacements = {
-        paths[i]: patched[i]
-        for i in range(min(len(paths), len(patched)))
-        if patched[i] != lines[i]
-    }
-    return _rewrite_text_at(nodes, replacements), count
+    node_patches, line_patch_cmds, _findings = collect_node_patches(patch_cmds)
+
+    # Text delta first (stable line-index address space).
+    paths = _text_leaf_paths(nodes)
+    lines = _current_numbered_lines(nodes)
+    patched, _tfindings, text_count = _apply_patches(lines, line_patch_cmds)
+    if text_count:
+        replacements = {
+            paths[i]: patched[i]
+            for i in range(min(len(paths), len(patched)))
+            if patched[i] != lines[i]
+        }
+        nodes = _rewrite_text_at(nodes, replacements)
+
+    # Structural delta second — addresses the SAME (pre-structural) line indices,
+    # since the text delta never changes the tree SHAPE, only leaf text.
+    struct_count = 0
+    if node_patches:
+        nodes, struct_count = _apply_structural_patches(nodes, node_patches)
+    return nodes, text_count + struct_count
 
 
 def _freeform_index(nodes: Sequence[StructBuildNode]) -> Tuple[FreeformRegion, ...]:
@@ -367,15 +449,15 @@ def _gate_reasons(
     """The Decision-2 closed trigger set fired on the cold round-1 artifacts.
 
     Clean pages fire NOTHING → single-pass. Any of: >=1 freeform region; any
-    build findings; patches_applied>0; terminator compliance <0.98; SINGLE_WITNESS
-    DESPITE a non-empty reading-order witness; (truncation is handled by the
-    caller, which passes a ``truncated`` reason)."""
+    build findings; patches_applied>0 (text OR structural node PATCH); terminator
+    compliance <0.98; SINGLE_WITNESS DESPITE a non-empty reading-order witness;
+    (truncation is handled by the caller, which passes a ``truncated`` reason)."""
     reasons: List[str] = []
     if freeform:
         reasons.append("freeform_region")
     if build.findings:
         reasons.append("findings")
-    if build.patches_applied > 0:
+    if build.patches_applied > 0 or getattr(build, "node_patches_applied", 0) > 0:
         reasons.append("patches_applied")
     total = build.total_command_lines
     if total and (build.terminated_command_lines / total) < _TERMINATOR_COMPLIANCE_FLOOR:
@@ -404,7 +486,12 @@ def converge_page(
     resolved reconstruction back as numbered lines + the page image → a PATCH
     delta; terminate on empty-patch / fixpoint (SHA over the resolved tree) /
     oscillation (an earlier-round hash re-entry → keep last, flag) / max_iters /
-    truncation. Structural PATCH is milestone 2 — text-delta only."""
+    truncation. A refine round may now change STRUCTURE (milestone 2): a ``N<id>``
+    node PATCH deletes a duplicated/hallucinated node + subtree or relabels a
+    mis-kinded block. A delete/relabel RENUMBERS the rendered lines, adding a
+    second oscillation axis (Decision 10) — the resolved-tree fixpoint hash already
+    covers structural change, so a delete↔re-add cycle terminates via the
+    earlier-round hash re-entry guard (keep-last, flagged)."""
     from lawvm.ingest.adjudicated_ingest import _page_assurance
     from lawvm.ingest.llm_backends.vision_producer import (
         VisionProducerTruncated,

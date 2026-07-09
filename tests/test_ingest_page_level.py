@@ -387,6 +387,86 @@ def test_truncated_refine_terminates_as_truncated() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Structural PATCH in the converge loop (milestone 2) — delete / relabel.       #
+# --------------------------------------------------------------------------- #
+
+
+def test_converge_node_delete_retracts_a_duplicated_node_and_reaches_fixpoint() -> None:
+    # Round 1 emits a DUPLICATED paragraph (the annex-row-duplication class): the
+    # body PARA appears twice (nodes 1 and 2). A findings-free gate wouldn't fire,
+    # so we also reference L99 (finding → gate). The refine round DELETES the
+    # duplicate (N2 = the 2nd text-leaf line) and the next round is empty → the
+    # simulacrum converges onto the (de-duplicated) page.
+    ro = "\n".join(_LINES)
+    round1 = f"1 PARA 0 L2{US}2 PARA 0 L2{US}3 PARA 0 L99{US}"  # L99 → gate
+    delta = f"1 PATCH 0 N2:{US}"  # delete the 2nd text-leaf node (the duplicate)
+    vision = _FakeConvergeVision(round1, deltas=[delta, ""])
+    cp = converge_page(vision, _manifestation(), 1, _page_elements(), reading_order_text=ro)
+    # Exactly one copy of the paragraph remains.
+    texts = [n.text for n in cp.nodes]
+    assert texts.count(_LINES[1]) == 1
+    assert cp.convergence.termination == "empty_patch"
+    assert cp.convergence.patches_total >= 1
+
+
+def test_converge_node_delete_removes_the_whole_subtree() -> None:
+    ro = "\n".join(_LINES)
+    # A text-bearing SECTION (line 1) with a nested text-bearing PARA child (line 2).
+    # Deleting N1 (the SECTION line) removes the SECTION AND its nested PARA — the
+    # whole subtree, not just the addressed node.
+    round1 = (
+        f"1 SECTION 0 L1{US}"
+        f"2 PARA 1 L2{US}"      # nested under the SECTION
+        f"3 PARA 0 L3{US}"      # a sibling that must survive
+        f"4 PARA 0 L99{US}"     # → gate
+    )
+    delta = f"1 PATCH 0 N1:{US}"  # N1 = the SECTION (1st text leaf) → subtree gone
+    vision = _FakeConvergeVision(round1, deltas=[delta, ""])
+    cp = converge_page(vision, _manifestation(), 1, _page_elements(), reading_order_text=ro)
+    all_texts = [n.text for n in cp.nodes]
+    # The SECTION (L1) and its nested PARA (L2) are BOTH gone; the sibling L3 stays.
+    assert _LINES[0] not in all_texts   # SECTION text gone
+    assert _LINES[1] not in all_texts   # nested-child text gone with it
+    assert _LINES[2] in all_texts       # sibling survives
+
+
+def test_converge_node_relabel_changes_the_kind_across_a_round() -> None:
+    ro = "\n".join(_LINES)
+    round1 = f"1 PARA 0 L1{US}2 PARA 0 L99{US}"  # L99 → gate
+    delta = f"1 PATCH 0 N1: HEADING{US}"  # relabel the 1st text leaf to HEADING
+    vision = _FakeConvergeVision(round1, deltas=[delta, ""])
+    cp = converge_page(vision, _manifestation(), 1, _page_elements(), reading_order_text=ro)
+    assert cp.nodes[0].kind is SourceDocumentNodeKind.HEADING
+    assert cp.nodes[0].text == _LINES[0]  # text preserved
+    assert cp.convergence.termination == "empty_patch"
+
+
+def test_converge_node_relabel_oscillation_terminates_keep_last_flagged() -> None:
+    # The structural analog of the text A→B→A oscillation: relabel PARA→HEADING→PARA.
+    # The PARA re-entry is an earlier-round resolved-tree hash → oscillation, keep
+    # the LAST result, flagged, no spin.
+    ro = "\n".join(_LINES)
+    round1 = f"1 PARA 0 L1{US}2 PARA 0 L99{US}"
+    deltas = [f"1 PATCH 0 N1: HEADING{US}", f"1 PATCH 0 N1: PARA{US}"]
+    vision = _FakeConvergeVision(round1, deltas=deltas)
+    cp = converge_page(vision, _manifestation(), 1, _page_elements(), reading_order_text=ro)
+    assert cp.convergence.termination == "oscillation"
+    assert cp.nodes[0].kind is SourceDocumentNodeKind.PARAGRAPH  # kept the last
+
+
+def test_converge_node_relabel_to_ungoverned_kind_is_a_noop_not_a_crash() -> None:
+    # A relabel to an un-governed kind is dropped upstream (no op reaches the tree);
+    # the round then has count 0 → empty_patch, the kind is unchanged.
+    ro = "\n".join(_LINES)
+    round1 = f"1 PARA 0 L1{US}2 PARA 0 L99{US}"
+    delta = f"1 PATCH 0 N1: BOGUS{US}"
+    vision = _FakeConvergeVision(round1, deltas=[delta])
+    cp = converge_page(vision, _manifestation(), 1, _page_elements(), reading_order_text=ro)
+    assert cp.nodes[0].kind is SourceDocumentNodeKind.PARAGRAPH
+    assert cp.convergence.termination == "empty_patch"
+
+
+# --------------------------------------------------------------------------- #
 # Faithfulness: unwitnessed_content tripwire (Decision 1).                     #
 # --------------------------------------------------------------------------- #
 

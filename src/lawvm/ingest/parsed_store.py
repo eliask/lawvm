@@ -333,7 +333,7 @@ _STRUCT_WIRE_TAG = f"+wire=structbuild.v1+rasterdpi={RASTERIZE_DPI}"
 # (``page_simulacrum_locator``) — a DISTINCT modality from the composed IR lanes.
 _STRUCT_CONVERGE_TAG = (
     "+wire=structbuild.v1"
-    "+leaf=patch+converge.v1+gate=hard.v1+iters=4+structpatch=text.v1"
+    "+leaf=patch+converge.v1+gate=hard.v1+iters=4+structpatch=text.v1+node.v1"
     f"+rasterdpi={RASTERIZE_DPI}"
 )
 # The converged two-level lane (Track B+C integration): Level-1 patch-to-convergence
