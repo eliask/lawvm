@@ -158,7 +158,7 @@ async def load_enacted_provision(statute_id: str, section_label: str) -> Optiona
 
     graph = await build_statute_graph_fi(statute_id)
     for address, timeline in graph.timelines.items():
-        path = getattr(address, "path", ())
+        path = address.path  # LegalAddress.path: Tuple[Tuple[str, str], ...]
         if path and path[-1] == ("section", section_label) and timeline.versions:
             return timeline.versions[-1].content
     return None
