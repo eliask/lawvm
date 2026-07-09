@@ -8,6 +8,10 @@ for structured output (attachments, PDF-only bodies, draft HE bill text).
 
 See the approved plan at ``.claude/plans/calm-kindling-wand.md``.
 """
+from lawvm.finland.source_document.adjudicated_ingest import (
+    adjudicated_document_ingest,
+    reading_order_pages_from_pdf,
+)
 from lawvm.finland.source_document.he_draft import (
     HeDocKind,
     classify_he_document,
@@ -26,6 +30,8 @@ from lawvm.finland.source_document.pdf_profiles import (
 
 __all__ = [
     "HeDocKind",
+    "adjudicated_document_ingest",
+    "reading_order_pages_from_pdf",
     "HeDraftProposal",
     "PdfIngestResult",
     "classify_he_document",
