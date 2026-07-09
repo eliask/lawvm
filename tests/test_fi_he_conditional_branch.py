@@ -219,6 +219,75 @@ def test_producer_page_coverage_split_is_a_distinct_finding() -> None:
     assert any("page-coverage split" in f for f in pkg.findings)
 
 
+# An AMENDMENT whose ``seuraavasti:`` clause did not survive extraction: the
+# johtolause preamble carries an amendment verb (``muutetaan``) governing a named
+# statute + ``(id)``, but the marker + body were lost (a reading-order scramble /
+# page truncation). Mirrors the real tem038 law 16 / tem076 law 1 shape. Before
+# the positive-``säädetään`` fix this was SILENTLY reported as a "new-act
+# enactment" — fabricating a fresh-statute claim. (Corpus sweep, tem038/tem076.)
+_HE_INCOMPLETE_AMENDMENT_READING_ORDER = (
+    "Lakiehdotus\nLaki\n"
+    "vesi- ja energiahuollon hankinnoista annetun lain muuttamisesta\n\n"
+    "Eduskunnan päätöksen mukaisesti\n"
+    "muutetaan vesi- ja energiahuollon, liikenteen ja postipalvelujen alalla "
+    "toimivien yksiköiden hankinnoista ja käyttöoikeussopimuksista annetun lain "
+    "(1398/2016)\n"
+    # NOTE: no "seuraavasti:" marker and no reprinted § body follow — the clause
+    # was truncated by the extraction, exactly as in the corpus.
+)
+
+
+def test_incomplete_amendment_is_not_misclassified_as_new_act() -> None:
+    op = _operative_from_text(_HE_INCOMPLETE_AMENDMENT_READING_ORDER)
+    assert op is not None
+    # An amendment verb but no ``seuraavasti:`` → an incomplete amendment, NOT a
+    # new act. The preamble ``(id)`` is still recovered as the amended target.
+    assert op.is_new_act is False
+    assert op.incomplete_amendment is True
+    assert op.target_statute_id == "1398/2016"
+
+
+def test_incomplete_amendment_yields_distinct_finding_not_new_act() -> None:
+    pkg = extract_conditional_branch(
+        _root(("some ingested block",)),
+        "fi:he:TEM038:00/2026",
+        reading_order_text=_HE_INCOMPLETE_AMENDMENT_READING_ORDER,
+    )
+    # A distinct, honest finding — never the fabricated "new-act enactment" claim.
+    assert any("incomplete amendment" in f.lower() for f in pkg.findings)
+    assert not any("new-act" in f.lower() for f in pkg.findings)
+    # The amended target it names is surfaced in the finding.
+    assert any("1398/2016" in f for f in pkg.findings)
+    # No ops are fabricated from the truncated clause.
+    assert all(len(b.candidate_ops) == 0 for b in pkg.branches)
+
+
+def test_genuine_new_act_still_classifies_positively_on_saadetaan() -> None:
+    # The fix must NOT regress genuine ``säädetään`` new acts (the positive path).
+    op = _operative_from_text(_HE_NEW_ACT_READING_ORDER)
+    assert op is not None
+    assert op.is_new_act is True
+    assert op.incomplete_amendment is False
+    assert op.target_statute_id == ""
+
+
+def test_preamble_verb_scan_ignores_a_body_internal_amendment_word() -> None:
+    # A genuine new act whose SUBSTANTIVE BODY happens to contain the word
+    # "muutetaan" (as ordinary prose, after the first §) must stay a new act:
+    # the verb scan is bounded to the preamble (marker → first §/luku/seuraavasti).
+    reading_order = (
+        "Lakiehdotus\nLaki\nuudesta rekisteristä\n\n"
+        "Eduskunnan päätöksen mukaisesti säädetään:\n\n"
+        "1 §\nSoveltamisala\n"
+        "Rekisteriin merkittyjä tietoja muutetaan vain rekisterinpitäjän päätöksellä.\n\n"
+        "Tämä laki tulee voimaan 1 päivänä tammikuuta 2027.\n"
+    )
+    op = _operative_from_text(reading_order)
+    assert op is not None
+    assert op.is_new_act is True
+    assert op.incomplete_amendment is False
+
+
 def test_a_draft_branch_can_never_be_replay_authorized() -> None:
     with pytest.raises(ValueError):
         ConditionalBranch(

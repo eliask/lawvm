@@ -285,6 +285,10 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # Draft-HE corpus-sweep status vocabulary (scripts/he_corpus_sweep.py):
         # clean / partial / failed classification of the deterministic lowering.
         "test_he_corpus_sweep.py",
+        # Draft-HE materialize + cross-bill conflict report
+        # (scripts/he_draft_materialize_report.py): pure (statute, section)
+        # cross-bill collision grouping + typed materialize-status skips.
+        "test_fi_he_materialize_report.py",
         "test_fi_statute_name_aliases.py",
         "test_fi_statute_name_full_registry.py",
         "test_fi_statute_name_registry.py",

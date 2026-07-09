@@ -53,6 +53,24 @@ _VOIMAANTULO_MARK = "tämä laki tulee voimaan"
 _SEURAAVASTI_MARK = "seuraavasti:"
 _MAARAYS_MARK = "määräys"
 
+# The POSITIVE new-act enacting verb: a wholly new act reads ``Eduskunnan
+# päätöksen mukaisesti säädetään:`` — the enacting verb is ``säädetään``.
+_SAADETAAN_MARK = "säädetään"
+# The amendment verbs that govern an EXISTING named statute in a johtolause
+# preamble. Their presence (with no ``säädetään``) proves the region is an
+# amendment, even when its ``seuraavasti:`` clause did not survive extraction.
+_AMEND_VERBS = ("muutetaan", "lisätään", "kumotaan", "korvataan")
+# Preamble boundary: the johtolause preamble ends at the first ``seuraavasti:``,
+# the first numbered section head (``30 a §``), or the first ``N luku`` chapter
+# head — whichever comes first. Scanning verbs only within the preamble keeps a
+# body cross-reference (e.g. ``muutetaan`` used inside a substantive provision)
+# from being mistaken for an enacting verb. A bounded structural LOCATOR (fixed
+# alternation of anchored tokens), not a prose classifier — kept as a
+# module-level pattern string consumed via ``re.search`` (no raw ``re.compile``
+# in this semantic-plane module; FW-07). Applied to an already lower-cased slice,
+# so no IGNORECASE flag is needed.
+_PREAMBLE_END_PATTERN = r"seuraavasti:|(?:\d+\s*[a-zä]?\s*§)|(?:\d+\s*luku)"
+
 # The single classifier regex: an inline Finnish statute id ``(NNNN/YYYY)``.
 # lawvm-regex: owning_parser extracts the amended-statute id from the johtolause
 # preamble; the FIRST match is the target law (later ids are its amendment history).
@@ -145,9 +163,22 @@ class _Operative:
     payload_text: str
     commencement: str
     is_new_act: bool = False
-    """A wholly new act (``Eduskunnan päätöksen mukaisesti säädetään:`` with no
-    ``seuraavasti:`` amendment clause) — it amends NO existing statute, so a
-    ``(NNNN/YYYY)`` in its body is a cross-reference, never an amended target."""
+    """A wholly new act — its johtolause preamble carries the POSITIVE enacting
+    verb ``säädetään`` (``Eduskunnan päätöksen mukaisesti säädetään:``) and no
+    amendment verb. It amends NO existing statute, so a ``(NNNN/YYYY)`` in its
+    body is a cross-reference, never an amended target.
+
+    This is a POSITIVE classification (preamble carries ``säädetään``), not a
+    mere ``seuraavasti:``-absence inference: an amendment whose ``seuraavasti:``
+    clause was lost to a reading-order scramble / page truncation ALSO lacks the
+    marker, but is NOT a new act — it is flagged ``incomplete_amendment``."""
+    incomplete_amendment: bool = False
+    """An amendment region whose ``seuraavasti:`` clause did not survive
+    extraction: the preamble carries an amendment verb (``muutetaan`` /
+    ``lisätään`` / ``kumotaan`` / ``korvataan``) but NOT ``säädetään``, and no
+    ``seuraavasti:`` was found. Reporting such a region as a clean ``new-act``
+    enactment would be a silent WRONG branch (it fabricates a fresh-statute
+    claim); this flag routes it to a distinct, honest finding instead."""
 
 
 def _johtolause_starts(low: str) -> List[int]:
@@ -183,6 +214,43 @@ def _clean_payload(raw: str) -> str:
     return "\n".join(kept).strip()
 
 
+def _preamble_of(seg_low: str) -> str:
+    """The johtolause preamble — marker → first ``seuraavasti:`` / ``§`` / ``luku``.
+
+    ``seg_low`` is a lower-cased operative region beginning at the
+    ``Eduskunnan päätöksen mukaisesti`` marker. The preamble is the enacting
+    formula proper (which verb governs, and over what statute); it ends where the
+    substantive body begins. Scanning enacting verbs only within this window
+    keeps a body-internal ``muutetaan`` cross-reference from being mistaken for a
+    johtolause verb.
+    """
+    j = seg_low.find(_JOHTOLAUSE_MARK)
+    rest = seg_low[j + len(_JOHTOLAUSE_MARK):] if j != -1 else seg_low
+    m = re.search(_PREAMBLE_END_PATTERN, rest)
+    return rest[: m.start()] if m else rest
+
+
+def _classify_no_seuraavasti(seg_low: str) -> Tuple[bool, bool]:
+    """Classify a region that carries NO ``seuraavasti:`` — (is_new_act, incomplete).
+
+    A missing ``seuraavasti:`` is NOT sufficient to call a region a new act: an
+    amendment whose ``seuraavasti:`` was lost to a reading-order scramble / page
+    truncation also lacks it. Discriminate POSITIVELY on the preamble verb:
+
+    * preamble carries ``säädetään`` (and no amendment verb) → genuine new act;
+    * preamble carries an amendment verb but not ``säädetään`` → an amendment
+      with an incomplete johtolause (``incomplete_amendment``);
+    * neither verb resolves → treat as a new act by default (no amendment target
+      can be recovered anyway), but never fabricate an amended target for it.
+    """
+    preamble = _preamble_of(seg_low)
+    has_saadetaan = _SAADETAAN_MARK in preamble
+    has_amend_verb = any(v in preamble for v in _AMEND_VERBS)
+    if has_amend_verb and not has_saadetaan:
+        return False, True  # amendment with a lost seuraavasti: clause
+    return True, False  # säädetään new act, or an unresolved preamble
+
+
 def _operative_from_region(region_text: str) -> _Operative:
     """Recover johtolause clause + target statute + payload + voimaantulo.
 
@@ -194,11 +262,18 @@ def _operative_from_region(region_text: str) -> _Operative:
     seg_low = seg.lower()
     cut = seg_low.find(_SEURAAVASTI_MARK)
     # An amending lakiehdotus names its target law in the preamble that ENDS at
-    # ``seuraavasti:``. With no such clause the region is a new-act enactment
-    # (``säädetään:``): it amends no statute, so a ``(NNNN/YYYY)`` deeper in the
-    # body is a cross-reference — grabbing it as the "amended target" is a silent
-    # misattribution. Only scan the amendment preamble; a new act carries no target.
-    is_new_act = cut == -1
+    # ``seuraavasti:``. With no such clause the region is EITHER a new-act
+    # enactment (``säädetään:``) OR an amendment whose ``seuraavasti:`` clause was
+    # lost to a reading-order scramble / page truncation. Discriminate positively
+    # on the preamble verb rather than inferring "new act" from mere absence —
+    # calling a truncated amendment a new act is a silent WRONG branch. A new act
+    # amends no statute, so a ``(NNNN/YYYY)`` deeper in its body is a
+    # cross-reference; only an amendment preamble carries an amended target.
+    if cut != -1:
+        is_new_act = False
+        incomplete_amendment = False
+    else:
+        is_new_act, incomplete_amendment = _classify_no_seuraavasti(seg_low)
     clause = seg[: cut + len(_SEURAAVASTI_MARK)].strip() if cut != -1 else seg.strip()
 
     # payload = text after the johtolause clause, up to the voimaantulo line.
@@ -215,10 +290,14 @@ def _operative_from_region(region_text: str) -> _Operative:
         commencement = ""
     return _Operative(
         clause=clause,
+        # A new act names no amended statute; an amendment (complete or
+        # incomplete) may carry ``(NNNN/YYYY)`` in its preamble — resolve it so an
+        # incomplete-amendment finding can still name its target where possible.
         target_statute_id="" if is_new_act else _target_statute_id(clause),
         payload_text=payload,
         commencement=commencement,
         is_new_act=is_new_act,
+        incomplete_amendment=incomplete_amendment,
     )
 
 
@@ -329,8 +408,27 @@ def extract_conditional_branch(
             # statute — no amend ops, no amended target. Emit an honest finding
             # instead of misattributing a body cross-reference as the target.
             findings.append(
-                f"new-act enactment (no seuraavasti amendment clause){law_tag} — "
+                f"new-act enactment (säädetään preamble){law_tag} — "
                 "enacts a new statute, not modelled as amendment ops"
+            )
+            ops = []
+        elif operative.incomplete_amendment:
+            # An amendment whose ``seuraavasti:`` clause did not survive
+            # extraction (preamble carries an amendment verb but no marker). This
+            # is NOT a new act — reporting it as one would fabricate a
+            # fresh-statute claim. Emit a distinct, honest finding; no ops can be
+            # recovered from the truncated clause, but any preamble ``(id)`` is
+            # still surfaced as the (unmodelled) amended target.
+            target_desc = (
+                f" (amended target {operative.target_statute_id})"
+                if operative.target_statute_id
+                else ""
+            )
+            findings.append(
+                f"incomplete amendment johtolause{law_tag}{target_desc} — an amendment "
+                "verb (muutetaan/lisätään/kumotaan/korvataan) but no 'seuraavasti:' "
+                "clause survived extraction (reading-order scramble or page "
+                "truncation); NOT a new act, ops not recoverable"
             )
             ops = []
         else:
