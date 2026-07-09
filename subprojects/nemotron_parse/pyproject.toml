@@ -39,6 +39,17 @@ dev = [
   "pytest>=8.0",
 ]
 
+[tool.pytest.ini_options]
+# This subproject is process-isolated: its tests run standalone via
+#   uv run --project subprojects/nemotron_parse pytest subprojects/nemotron_parse/tests
+# Declaring an (empty) ini_options block here makes THIS pyproject the pytest
+# configfile/rootdir, so the MAIN repo's root pyproject.toml addopts (``-n 4``,
+# requiring pytest-xdist, which this subproject does not depend on) never leaks
+# in and breaks the documented run command. The wire-contract test is hermetic;
+# it needs no heavy deps and no parallelism.
+testpaths = ["tests"]
+addopts = ""
+
 [build-system]
 requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"

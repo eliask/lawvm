@@ -66,6 +66,29 @@ def test_wire_clean_guard_rejects_ungoverned_lead() -> None:
     wire.assert_wire_clean(_GOLDEN.read_text(encoding="utf-8"))  # golden passes
 
 
+def test_wire_clean_allows_continuation_line_that_looks_like_a_head() -> None:
+    # A wrapped continuation line INSIDE a governed block may contain a colon
+    # (legal text like ``4 §:ään``, or even a word that resembles a head). The
+    # guard only forbids an ungoverned head BEFORE any block opens; once a block
+    # is open, following lines are that block's content. This is the documented
+    # accepted hazard of the frozen compact format (wire.emit_kind_blocks note).
+    wire.assert_wire_clean("PARA: Sen 4 §:ään\nHEADING is not re-framed here\n")
+
+
+def test_wire_clean_rejects_ungoverned_head_with_no_preceding_block() -> None:
+    # Blank leading lines are ignored, but the FIRST non-empty content line must
+    # be a governed head — otherwise stdout is not the wire format.
+    with pytest.raises(ValueError):
+        wire.assert_wire_clean("\n\nnot a block at all\nPARA: too late")
+
+
 def test_labels_used_reports_governed_heads() -> None:
     labels = wire.wire_labels_used(_GOLDEN.read_text(encoding="utf-8"))
     assert labels == ("HEADING", "PARA", "ITEM", "TABLE", "FOOTNOTE")
+
+
+def test_labels_used_dedups_and_ignores_continuation_and_ungoverned() -> None:
+    # Two PARA blocks report PARA once; a wrapped continuation line and an
+    # ungoverned ``Note:`` line never count as heads.
+    blocks = "PARA: one\nwrapped continuation\nNote: not governed\nPARA: two\n"
+    assert wire.wire_labels_used(blocks) == ("PARA",)
