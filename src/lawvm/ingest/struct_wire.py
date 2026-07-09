@@ -73,7 +73,32 @@ _STRUCT_KINDS: Mapping[str, SourceDocumentNodeKind] = {
     "IMAGE": SourceDocumentNodeKind.IMAGE_REGION,
     "FOOTNOTE": SourceDocumentNodeKind.FOOTNOTE,
     "TRANSCRIBE": SourceDocumentNodeKind.PARAGRAPH,
+    # Level-1 freeform escape hatches (§1 / §5.5). Bbox-anchored (``V<bbox>`` src)
+    # + inline literal; VERBATIM carries a closed ``#reason``. Rate-limited by
+    # construction: a clean page emits ZERO freeform nodes (stays output-sparse).
+    "MATH": SourceDocumentNodeKind.MATH_REGION,
+    "VERBATIM": SourceDocumentNodeKind.VERBATIM_REGION,
 }
+
+# The closed ``#reason`` vocabulary a VERBATIM (or MATH) freeform region may carry
+# (mirrors ``ingest.metadata._FREEFORM_REASONS`` — kept in sync, imported there is
+# a cycle so it is duplicated intentionally and asserted equal in a hermetic test).
+_FREEFORM_REASONS = frozenset(
+    {
+        "marginalia",
+        "complex_layout",
+        "image_baked",
+        "garbled_source",
+        "ambiguous",
+        "rotated",
+        "handwritten",
+    }
+)
+
+# The kinds that MAY carry a ``V<bbox>`` freeform src + a ``#reason``.
+_FREEFORM_KINDS = frozenset(
+    {SourceDocumentNodeKind.MATH_REGION, SourceDocumentNodeKind.VERBATIM_REGION}
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,18 +120,33 @@ class ImageElement:
 
 
 @dataclass(frozen=True, slots=True)
+class FreeformSpec:
+    """A freeform escape-hatch region's bbox + reason (MATH / VERBATIM nodes).
+
+    ``bbox`` is the ``V<bbox>`` PDF-point anchor (never pixel-copied); ``reason``
+    is a member of the closed ``_FREEFORM_REASONS`` vocabulary. The node's inline
+    literal (the faithful math/verbatim transcription) lives in ``StructBuildNode.text``.
+    """
+
+    bbox: Tuple[float, float, float, float]
+    reason: str
+
+
+@dataclass(frozen=True, slots=True)
 class StructBuildNode:
     """A nascent tree node from the build wire — tier-free, text span-copied.
 
     ``kind`` is a governed ``SourceDocumentNodeKind``; ``text`` is the code-copied
-    span (empty for a pure container / an image); ``image`` names the referenced
-    embedded image when the node is an IMAGE; ``children`` are assembled in the
-    model's sibling-emission order.
+    span (empty for a pure container / an image; the inline literal for a freeform
+    region); ``image`` names the referenced embedded image when the node is an
+    IMAGE; ``freeform`` carries the bbox+reason for a MATH / VERBATIM escape
+    hatch; ``children`` are assembled in the model's sibling-emission order.
     """
 
     kind: SourceDocumentNodeKind
     text: str = ""
     image: Optional[ImageElement] = None
+    freeform: Optional[FreeformSpec] = None
     children: Tuple["StructBuildNode", ...] = ()
 
 
@@ -136,6 +176,7 @@ class _RawCommand:
     parent_id: int
     src_token: str
     inline_text: str
+    reason_token: str = ""  # freeform ``#reason`` (MATH/VERBATIM head only)
 
 
 def _split_head_inline(unit: str) -> Tuple[str, str]:
@@ -152,18 +193,23 @@ def _split_head_inline(unit: str) -> Tuple[str, str]:
 
 
 def _parse_command_line(unit: str) -> Optional[_RawCommand]:
-    """Parse ``<id> <kind> <parent> <src> [: inline]`` — or ``None`` if malformed.
+    """Parse ``<id> <kind> <parent> <src> [#reason] [: inline]`` — or ``None``.
 
-    No regex. The head is 4 whitespace-separated tokens: a digit id, a kind
-    token, a digit parent, a src token. A line that does not present exactly that
-    shape is dropped by the caller (never guessed).
+    No regex. The head is 4 whitespace-separated tokens (a digit id, a kind
+    token, a digit parent, a src token), OPTIONALLY a 5th ``#reason`` token for a
+    freeform ``V<bbox>`` head (the ONE head-shape change, §5 Decision — allow the
+    freeform head). Any OTHER shape is dropped by the caller (never guessed).
     """
     head, inline = _split_head_inline(unit)
     parts = head.split()
-    if len(parts) != 4:
+    if len(parts) not in (4, 5):
         return None
-    id_tok, kind_tok, parent_tok, src_tok = parts
+    id_tok, kind_tok, parent_tok, src_tok = parts[:4]
+    reason_tok = parts[4] if len(parts) == 5 else ""
     if not id_tok.isdigit() or not parent_tok.isdigit():
+        return None
+    # A 5th token is ONLY legal as a ``#reason`` on a freeform ``V<bbox>`` src.
+    if reason_tok and not reason_tok.startswith("#"):
         return None
     return _RawCommand(
         node_id=int(id_tok),
@@ -171,6 +217,7 @@ def _parse_command_line(unit: str) -> Optional[_RawCommand]:
         parent_id=int(parent_tok),
         src_token=src_tok,
         inline_text=inline,
+        reason_token=reason_tok,
     )
 
 
@@ -245,6 +292,50 @@ def _parse_image_ref(token: str) -> Optional[int]:
         return None
     body = token[1:]
     return int(body) if body.isdigit() else None
+
+
+def _parse_freeform_bbox(token: str) -> Optional[Tuple[float, float, float, float]]:
+    """``V10,20,110,70`` → the freeform region bbox (x0,y0,x1,y1); malformed → None.
+
+    The ``V`` src token bbox-anchors a MATH / VERBATIM freeform region in PDF
+    points (never pixel-copied). Four comma-separated floats with ``x1>=x0`` and
+    ``y1>=y0``; any other shape is malformed → the node is dropped by the caller.
+    """
+    if not token.startswith("V"):
+        return None
+    body = token[1:]
+    parts = body.split(",")
+    if len(parts) != 4:
+        return None
+    try:
+        x0, y0, x1, y1 = (float(p) for p in parts)
+    except ValueError:
+        return None
+    if x1 < x0 or y1 < y0:
+        return None
+    return (x0, y0, x1, y1)
+
+
+def _resolve_freeform(
+    src_token: str, reason_token: str, inline_text: str
+) -> Tuple[Optional[FreeformSpec], str, Optional[str]]:
+    """Resolve a freeform ``V<bbox> [#reason]`` head → (spec, literal, finding).
+
+    The bbox comes from ``V<bbox>`` (required, PDF points); the reason from an
+    optional ``#reason`` (defaults to ``ambiguous`` when omitted, so a bare ``V``
+    head is still faithful — the escape hatch never silently drops content), which
+    MUST be in the closed vocabulary; the faithful literal is the inline payload.
+    A malformed bbox / out-of-vocab reason yields a ``finding`` (node dropped).
+    """
+    bbox = _parse_freeform_bbox(src_token)
+    if bbox is None:
+        return None, "", f"malformed freeform V-bbox: {src_token}"
+    reason = reason_token[1:] if reason_token.startswith("#") else reason_token
+    if not reason:
+        reason = "ambiguous"
+    if reason not in _FREEFORM_REASONS:
+        return None, "", f"freeform reason out of vocab: {reason!r}"
+    return FreeformSpec(bbox=bbox, reason=reason), inline_text.strip(), None
 
 
 def _resolve_src_text(
@@ -375,6 +466,7 @@ class _NodePayload:
     kind: SourceDocumentNodeKind
     text: str
     image: Optional[ImageElement]
+    freeform: Optional[FreeformSpec] = None
 
 
 def parse_struct_wire(
@@ -429,6 +521,27 @@ def parse_struct_wire(
         if cmd.node_id in payloads:
             findings.append(f"duplicate node id dropped: {cmd.node_id}")
             continue
+        # Freeform escape-hatch head (MATH / VERBATIM): a ``V<bbox> [#reason]``
+        # src + inline literal — the ONE alternate head shape (§1 / §5.5).
+        if kind in _FREEFORM_KINDS:
+            spec, literal, ff_finding = _resolve_freeform(
+                cmd.src_token, cmd.reason_token, cmd.inline_text
+            )
+            if ff_finding is not None:
+                findings.append(f"node {cmd.node_id} dropped ({ff_finding})")
+                continue
+            payloads[cmd.node_id] = _NodePayload(
+                kind=kind, text=literal, image=None, freeform=spec
+            )
+            parent_of[cmd.node_id] = cmd.parent_id
+            emission_order.append(cmd.node_id)
+            continue
+        # A governed non-freeform kind must NOT carry a ``#reason`` token.
+        if cmd.reason_token:
+            findings.append(
+                f"node {cmd.node_id} dropped (#reason on non-freeform {cmd.kind_token})"
+            )
+            continue
         text, image, ref_finding = _resolve_src_text(
             cmd.src_token, cmd.inline_text, lines, image_by_index
         )
@@ -468,7 +581,9 @@ def parse_struct_wire(
                 findings.append(f"node {c} dropped (parent cycle)")
                 continue
             kids.append(_build(c))
-        return StructBuildNode(kind=p.kind, text=p.text, image=p.image, children=tuple(kids))
+        return StructBuildNode(
+            kind=p.kind, text=p.text, image=p.image, freeform=p.freeform, children=tuple(kids)
+        )
 
     roots = tuple(_build(r) for r in root_ids)
     for nid in emission_order:

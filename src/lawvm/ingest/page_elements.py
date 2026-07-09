@@ -30,9 +30,10 @@ from __future__ import annotations
 
 import hashlib
 import io
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Optional, Sequence, Tuple
 
+from lawvm.core.source_document.anchors import BBox
 from lawvm.ingest.struct_wire import ImageElement
 
 # Fixed rasterization DPI for region crops WITHOUT an embedded XObject. It is
@@ -40,21 +41,67 @@ from lawvm.ingest.struct_wire import ImageElement
 # re-rendered at a new DPI is a NEW content-addressed blob under a NEW path.
 RASTERIZE_DPI = 200
 
+# Margin-band split (Decision 7 / §3 geometry): a line's y-centre relative to the
+# page height buckets it into ``top`` (running header zone), ``body``, or
+# ``bottom`` (footer / page-number zone). The bands are AFFORDANCES that surface
+# furniture candidates — the model confirms furniture across pages (Level 2),
+# never obeys the band. PDF origin is bottom-left, so a SMALL y is near the
+# BOTTOM of the page and a LARGE y near the TOP.
+_TOP_BAND_FRACTION = 0.90  # y-centre above 90% of page height → top band
+_BOTTOM_BAND_FRACTION = 0.10  # y-centre below 10% of page height → bottom band
+
+# Indent quantization: the left edge (x0) in PDF points is quantized to this bin
+# so a jittery text-layer x maps to a stable indent depth for Level-2 list/section
+# continuation reasoning. A pure affordance, never authority.
+_INDENT_QUANTUM_PT = 18.0
+
+
+@dataclass(frozen=True, slots=True)
+class PageLine:
+    """One reading-order text line + its DETERMINISTIC per-line geometry (Decision 7).
+
+    Geometry is the concrete form of Level-2's "mechanical affordances surface
+    candidates, intelligence decides": ``bbox`` (page points), ``band``
+    (top/body/bottom margin zone), ``indent`` (quantized left-edge depth),
+    ``y_order`` (reading-order rank), and ``col`` (column index, where derivable)
+    ride onto the node's ``attrs``/anchor — NEVER shown to the model as authority.
+    The continuation cues + content hints are PURE string functions of ``text``.
+
+    ``text`` is the model-facing line (rendered as ``[N] text``); the geometry is
+    attached to NODES only. A line with no readable geometry carries ``bbox=None``
+    and a ``band`` of ``None`` (the extractor degraded, typed, never guessed).
+    """
+
+    text: str
+    y_order: int
+    bbox: Optional[BBox] = None
+    band: Optional[str] = None  # top | body | bottom
+    indent: Optional[int] = None
+    col: Optional[int] = None
+
 
 @dataclass(frozen=True, slots=True)
 class PageElements:
     """A page's numbered reading-order text lines + numbered embedded images.
 
-    ``lines`` are 1-indexed reading-order text lines (``[N]``). ``images`` are the
-    embedded/rasterized image elements (``{N}``) with their raw bytes attached so
-    the caller can content-address + store them. ``notes`` records any image the
-    extractor could not read (typed, never a silent drop).
+    ``lines`` are 1-indexed reading-order text lines (``[N]``) — the ONLY
+    model-facing text (geometry-free, rendered as ``[N] text``). ``page_lines``
+    carries the DETERMINISTIC per-line geometry (Decision 7) in the SAME order and
+    count as ``lines`` (or empty when the extractor could not produce geometry, a
+    graceful degrade). ``images`` are the embedded/rasterized image elements
+    (``{N}``) with their raw bytes attached; ``notes`` records any image the
+    extractor could not read (typed, never a silent drop). ``page_width`` /
+    ``page_height`` are the page's point dimensions (for band computation and the
+    node bbox), ``0.0`` when unavailable.
     """
 
     page_num: int
     lines: Tuple[str, ...]
     images: Tuple["EmbeddedImage", ...] = ()
     notes: Tuple[str, ...] = ()
+    page_lines: Tuple["PageLine", ...] = field(default_factory=tuple)
+    page_width: float = 0.0
+    page_height: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,6 +155,154 @@ def dehyphenate(text: str) -> str:
     for h in _DISCRETIONARY_HYPHENS:
         text = text.replace(h + "\n", "").replace(h, "")
     return text
+
+
+# --------------------------------------------------------------------------- #
+# Deterministic per-line continuation cues + content hints (Decision 7).       #
+# All PURE string functions of the line text — no geometry, no model, no lib.  #
+# They surface REJOIN/list/section/furniture CANDIDATES; Level 2 decides.      #
+# --------------------------------------------------------------------------- #
+
+# A line ending in one of these is a completed sentence/clause — NOT a mid-break.
+_TERMINAL_PUNCT_CHARS = (".", "!", "?", ":", ";", "—", "–", ")")
+
+# A leading list marker: ``1)`` ``a)`` ``12.`` ``(iv)`` ``-`` ``•`` ``§``. Pure
+# prefix recognition — the value is the marker literal for Level-2 continuation.
+_BULLET_CHARS = ("-", "•", "–", "*", "▪", "·")
+
+
+def line_ends_terminal(text: str) -> bool:
+    """Does the line end with terminal punctuation (a completed sentence)?
+
+    A line that does NOT end terminal is a REJOIN candidate — it may continue onto
+    the next line / next page (``cue.ends_terminal`` absent → possible split).
+    """
+    s = text.rstrip()
+    return bool(s) and s.endswith(_TERMINAL_PUNCT_CHARS)
+
+
+def line_starts_lower(text: str) -> bool:
+    """Does the line start with a lower-case letter (a mid-sentence continuation)?"""
+    s = text.lstrip()
+    return bool(s) and s[:1].islower()
+
+
+def line_has_hyphen_tail(text: str) -> bool:
+    """Does the line end with a discretionary/soft hyphen (a wrapped word)?
+
+    The soft/discretionary hyphen glyphs (U+FFFE fallback, U+00AD, and a trailing
+    real ``-``) mark a word broken across the line break — a strong REJOIN cue.
+    """
+    s = text.rstrip("\n\r ")
+    if not s:
+        return False
+    return s.endswith(_DISCRETIONARY_HYPHENS) or s.endswith("-")
+
+
+def line_list_marker(text: str) -> Optional[str]:
+    """Leading list-marker literal (``1)`` ``a)`` ``12.`` ``(iv)`` ``•``) or None.
+
+    Pure prefix recognition: an enumerated/bulleted line surfaces its marker so
+    Level 2 can recognize a list continuation across a page break. Returns the
+    marker literal (e.g. ``"1)"``) or ``None`` for an unmarked line.
+    """
+    s = text.lstrip()
+    if not s:
+        return None
+    if s[0] in _BULLET_CHARS and (len(s) == 1 or s[1] == " "):
+        return s[0]
+    # ``(iv)`` / ``(a)`` / ``(12)`` — a parenthesized token.
+    if s[0] == "(":
+        close = s.find(")")
+        if 1 < close <= 6:
+            inner = s[1:close]
+            if inner.isalnum():
+                return s[: close + 1]
+    # ``1)`` ``a)`` ``12.`` ``iv.`` — an alnum run then ``)`` or ``.``.
+    i = 0
+    while i < len(s) and i < 5 and s[i].isalnum():
+        i += 1
+    if 0 < i < len(s) and s[i] in ")." and (i + 1 == len(s) or s[i + 1] == " "):
+        return s[: i + 1]
+    return None
+
+
+def line_section_number(text: str) -> Optional[str]:
+    """Leading section-number label (``4 §`` / ``§ 4`` / ``Article 5``) or None.
+
+    A section-number line is a heading/boundary candidate — Level 2 uses it for
+    section continuation and heading-vs-body discrimination. Deliberately narrow
+    (the ``§`` sign and a bare ``Article N`` / ``Art. N`` prefix); pure string.
+    """
+    s = text.strip()
+    if not s:
+        return None
+    marker = s.find("§")
+    if 0 <= marker < 8:
+        # The label is the run up to and including the § sign (e.g. "4 §"); a
+        # leading "§ 4" keeps the trailing number too.
+        head = s[: marker + 1]
+        tail = s[marker + 1 :].lstrip()
+        num = tail.split()[0] if (tail and tail.split()[0][:1].isdigit()) else ""
+        return f"{head} {num}".strip() if num else head.strip()
+    lower = s.lower()
+    for prefix in ("article ", "art. ", "art "):
+        if lower.startswith(prefix):
+            rest = s[len(prefix) :].lstrip()
+            num = rest.split()[0] if rest.split() else ""
+            if num and num[0].isdigit():
+                return f"{s[: len(prefix)].strip()} {num}".strip()
+    return None
+
+
+def line_is_caps(text: str) -> bool:
+    """Is the line all-caps (heading/furniture affordance, text-derivable)?
+
+    True iff the line has at least one cased letter and NO lower-case letter.
+    """
+    s = text.strip()
+    has_alpha = any(c.isalpha() for c in s)
+    return has_alpha and not any(c.islower() for c in s)
+
+
+def line_is_numeric_heavy(text: str) -> bool:
+    """Is the line numeric-heavy (protect a euro amount / § / date from dedup)?
+
+    True when digits dominate the non-space characters (>= 40%). A numeric-heavy
+    line is NEVER corrupted by an over-eager Level-2 dedup (the NUMERIC guard).
+    """
+    non_space = [c for c in text if not c.isspace()]
+    if not non_space:
+        return False
+    digits = sum(1 for c in non_space if c.isdigit())
+    return digits / len(non_space) >= 0.40
+
+
+def line_has_section_ref(text: str) -> bool:
+    """Does the line contain a section sign / citation marker (``§`` / ``art.``)?"""
+    lower = text.lower()
+    return "§" in text or "article " in lower or "art." in lower or " momentissa" in lower
+
+
+def line_is_bare_page_number(text: str) -> bool:
+    """Is the line JUST a page number (a furniture candidate)?
+
+    A short line that is a bare integer (optionally ``Sivu 12`` / ``s. 12`` /
+    ``12 (34)``) — a running page-number furniture candidate. Pure string; Level 2
+    confirms furniture across pages.
+    """
+    s = text.strip()
+    if not s or len(s) > 12:
+        return False
+    if s.isdigit():
+        return True
+    # ``12 (34)`` page-of-total, ``Sivu 12``, ``s. 12``.
+    compact = s.replace("(", " ").replace(")", " ").replace(".", " ")
+    toks = compact.split()
+    non_digit = [t for t in toks if not t.isdigit()]
+    if not [t for t in toks if t.isdigit()]:
+        return False
+    return all(t.lower() in ("sivu", "s", "page", "p", "-", "/") for t in non_digit)
 
 
 def _sha256(b: bytes) -> str:
@@ -176,19 +371,132 @@ class PageElementProducer:
         self._dpi = rasterize_dpi
 
     def page_elements(self, pdf_bytes: bytes, page_num: int) -> PageElements:
-        """Reading-order text lines + embedded/rasterized images for 1-indexed page."""
+        """Reading-order text lines + per-line geometry + embedded/rasterized images.
+
+        The model-facing ``lines`` stay geometry-free ``[N] text`` strings;
+        ``page_lines`` carries the DETERMINISTIC per-line geometry (bbox, margin
+        band, quantized indent, y-order) in the SAME order/count (Decision 7). The
+        geometry lane degrades gracefully: if the textpage rect API is
+        unavailable, ``page_lines`` is empty and only ``lines`` is produced (a
+        typed note, never a crash).
+        """
         import importlib
 
         pdfium = importlib.import_module("pypdfium2")
         doc = pdfium.PdfDocument(pdf_bytes)
         try:
             page = doc[page_num - 1]
-            text = dehyphenate(page.get_textpage().get_text_range())
-            lines = tuple(ln.strip() for ln in text.splitlines() if ln.strip())
-            images, notes = self._enumerate_images(page, page_num)
-            return PageElements(page_num=page_num, lines=lines, images=images, notes=notes)
+            textpage = page.get_textpage()
+            page_w, page_h = self._page_dims(page)
+            lines, page_lines, geom_notes = self._extract_lines_with_geometry(
+                textpage, page_h
+            )
+            images, img_notes = self._enumerate_images(page, page_num)
+            return PageElements(
+                page_num=page_num,
+                lines=lines,
+                images=images,
+                notes=geom_notes + img_notes,
+                page_lines=page_lines,
+                page_width=page_w,
+                page_height=page_h,
+            )
         finally:
             doc.close()
+
+    def _page_dims(self, page: object) -> Tuple[float, float]:
+        try:
+            return (
+                float(page.get_width()),  # ty: ignore[unresolved-attribute]
+                float(page.get_height()),  # ty: ignore[unresolved-attribute]
+            )
+        except (AttributeError, TypeError, ValueError, _PdfiumError()):
+            return (0.0, 0.0)
+
+    def _extract_lines_with_geometry(
+        self, textpage: object, page_h: float
+    ) -> Tuple[Tuple[str, ...], Tuple["PageLine", ...], Tuple[str, ...]]:
+        """Extract reading-order lines + per-line geometry from a pypdfium2 textpage.
+
+        The whole-page text (dehyphenated) gives the model-facing lines; the
+        textpage rect API (``count_rects`` / ``get_rect`` / ``get_text_bounded``)
+        gives each visual line's bbox → margin band + quantized indent. When the
+        rect API is unavailable the geometry lane degrades to empty ``page_lines``
+        with a typed note (the model-facing lines are unaffected).
+        """
+        text = dehyphenate(textpage.get_text_range())  # ty: ignore[unresolved-attribute]
+        lines = tuple(ln.strip() for ln in text.splitlines() if ln.strip())
+        geom = self._line_rects(textpage, page_h)
+        if geom is None:
+            note = ("page geometry unavailable (textpage rect API absent) — lines only",)
+            return lines, (), note
+        # Align geometry rows to the model-facing lines by text match when the
+        # counts agree; otherwise fall back to lines-only (never a wrong bbox).
+        if len(geom) != len(lines):
+            note = (
+                f"page geometry line-count mismatch (rects={len(geom)} lines={len(lines)}) "
+                "— lines only",
+            )
+            return lines, (), note
+        page_lines: List["PageLine"] = []
+        for y_order, (line_text, (_cell_text, bbox)) in enumerate(
+            zip(lines, geom, strict=False)
+        ):
+            page_lines.append(self._page_line(line_text, y_order, bbox, page_h))
+        return lines, tuple(page_lines), ()
+
+    def _line_rects(
+        self, textpage: object, page_h: float
+    ) -> Optional[List[Tuple[str, Optional[BBox]]]]:
+        """Per-visual-line ``(text, bbox)`` from the textpage rect API, or None.
+
+        pypdfium2's textpage exposes ``count_rects()`` + ``get_rect(i)`` (a visual
+        line's bbox in PDF points, origin bottom-left) + ``get_text_bounded(...)``.
+        A single degraded row yields ``bbox=None`` (typed) but keeps the row. Any
+        API-shape failure → ``None`` so the caller degrades to lines-only.
+        """
+        try:
+            count = int(textpage.count_rects())  # ty: ignore[unresolved-attribute]
+        except (AttributeError, TypeError, ValueError, _PdfiumError()):
+            return None
+        rows: List[Tuple[str, Optional[BBox]]] = []
+        for i in range(count):
+            try:
+                left, bottom, right, top = textpage.get_rect(i)  # ty: ignore[unresolved-attribute]
+                x0, x1 = float(min(left, right)), float(max(left, right))
+                y0, y1 = float(min(bottom, top)), float(max(bottom, top))
+                raw = textpage.get_text_bounded(  # ty: ignore[unresolved-attribute]
+                    left=left, bottom=bottom, right=right, top=top
+                )
+                cell = dehyphenate(str(raw)).strip()
+                if not cell:
+                    continue
+                rows.append((cell, BBox(x0=x0, y0=y0, x1=x1, y1=y1)))
+            except (AttributeError, TypeError, ValueError, IndexError, _PdfiumError()):
+                # One bad rect degrades to no-bbox but keeps the extraction going.
+                continue
+        return rows or None
+
+    def _page_line(
+        self, text: str, y_order: int, bbox: Optional[BBox], page_h: float
+    ) -> "PageLine":
+        """Assemble a ``PageLine`` — bbox + margin band + quantized indent + y-order."""
+        band: Optional[str] = None
+        indent: Optional[int] = None
+        if bbox is not None:
+            indent = int(bbox.x0 // _INDENT_QUANTUM_PT)
+            if page_h > 0:
+                y_centre = (bbox.y0 + bbox.y1) / 2.0
+                frac = y_centre / page_h
+                if frac >= _TOP_BAND_FRACTION:
+                    band = "top"
+                elif frac <= _BOTTOM_BAND_FRACTION:
+                    band = "bottom"
+                else:
+                    band = "body"
+        return PageLine(
+            text=text, y_order=y_order, bbox=bbox, band=band, indent=indent, col=None
+        )
 
     def _enumerate_images(
         self, page: object, page_num: int

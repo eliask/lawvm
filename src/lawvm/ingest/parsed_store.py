@@ -48,6 +48,7 @@ if TYPE_CHECKING:
     from lawvm.core.source_document.anchors import SourceAnchor
     from lawvm.core.source_document.extraction import ExtractionAssertion
     from lawvm.ingest.page_elements import PageElementProducer
+    from lawvm.ingest.simulacrum import PageSimulacrum
 
 # Neutral default derived-IR store path. Jurisdiction callers pass their own
 # path (FI uses ``lawvm.finland.source_document.FI_PARSED_STORE`` =
@@ -83,6 +84,18 @@ class ParseBackendUnavailable(RuntimeError):
 def parsed_ir_locator(source_digest: str, pipeline_id: str, version: str) -> str:
     """Content-addressed derived-store key: source digest × pipeline × version."""
     return f"parsed/{source_digest}/{pipeline_id}@{version}"
+
+
+def page_simulacrum_locator(
+    source_digest: str, pipeline_id: str, version: str, page_num: int
+) -> str:
+    """Content-addressed per-page simulacrum key (Decision 11 / §1 interface out).
+
+    ``parsed/<digest>/<pipeline>@<version>/page/NNNN`` — the immutable Level-1
+    EVIDENCE record for one page, under the SAME per-record prefix as the IR (so a
+    Level-2 re-run reuses cached simulacra and NEVER re-runs the model). Mirrors
+    ``parsed_image_locator`` (a sibling ``/page/`` namespace, zero-padded index)."""
+    return f"parsed/{source_digest}/{pipeline_id}@{version}/page/{page_num:04d}"
 
 
 def _serialize_parsed_record(ir_dict: Dict[str, Any], manifest: Dict[str, Any]) -> bytes:
@@ -205,22 +218,40 @@ class _TolerantAdjudicator:
 # rasterization DPI is folded in so a crop re-rendered at a new DPI writes under a
 # NEW path.
 _STRUCT_WIRE_TAG = f"+wire=structbuild.v1+rasterdpi={RASTERIZE_DPI}"
+# The Level-1 patch-to-convergence lane (Track B): the struct_patch build-script
+# grammar PLUS the closed-gate refine loop (Decision 2), text-PATCH fixpoint
+# (Decisions 1/10), max_iters=4. Its records are per-PAGE simulacra
+# (``page_simulacrum_locator``) — a DISTINCT modality from the composed IR lanes.
+_STRUCT_CONVERGE_TAG = (
+    "+wire=structbuild.v1"
+    "+leaf=patch+converge.v1+gate=hard.v1+iters=4+structpatch=text.v1"
+    f"+rasterdpi={RASTERIZE_DPI}"
+)
 _MODALITY_VERSION_TAG = {
     "struct_span": _STRUCT_WIRE_TAG + "+leaf=span",
     "struct_full": _STRUCT_WIRE_TAG + "+leaf=full",
     "struct_auto": _STRUCT_WIRE_TAG + "+leaf=auto",
     "struct_patch": _STRUCT_WIRE_TAG + "+leaf=patch",
+    "struct_converge": _STRUCT_CONVERGE_TAG,
 }
 
 # The build-script lanes (share one grammar; differ in leaf-content source).
-STRUCT_BUILD_MODALITIES = ("struct_span", "struct_full", "struct_auto", "struct_patch")
+STRUCT_BUILD_MODALITIES = (
+    "struct_span",
+    "struct_full",
+    "struct_auto",
+    "struct_patch",
+    "struct_converge",
+)
 
 # Per-lane leaf-content source (what a TEXT LEAF's ``.text`` resolves from).
+# ``struct_converge`` reuses the patch leaf source and adds the refine loop.
 STRUCT_LEAF_SOURCE = {
     "struct_span": "span",
     "struct_full": "inline",
     "struct_auto": "auto",
     "struct_patch": "patch",
+    "struct_converge": "patch",
 }
 
 
@@ -476,6 +507,42 @@ class ParsedIrStore:
         if span is None:
             return None
         return self._fa.read(span.digest)
+
+    def put_page_simulacrum(
+        self, locator: str, sim: "PageSimulacrum", *, source_digest: str
+    ) -> str:
+        """Persist one immutable per-page ``PageSimulacrum`` evidence record (Decision 11).
+
+        Stored under a ``page_simulacrum`` storage class at ``page_simulacrum_locator``
+        (sibling ``/page/NNNN`` under the IR record prefix). The payload is the
+        round-trippable ``page_simulacrum_to_json`` blob (sorted-keys JSON) so a
+        Level-2 re-run reuses the cached simulacrum and NEVER re-runs the model."""
+        from lawvm.ingest.page_level import page_simulacrum_to_json
+
+        data = json.dumps(
+            page_simulacrum_to_json(sim), ensure_ascii=False, sort_keys=True
+        ).encode("utf-8")
+        return self._fa.store(
+            locator,
+            data,
+            storage_class="page_simulacrum",
+            metadata={
+                "source_digest": source_digest,
+                "page_num": str(sim.page_num),
+            },
+        )
+
+    def get_page_simulacrum(self, locator: str) -> "Optional[PageSimulacrum]":
+        """Read + reconstruct one stored ``PageSimulacrum`` (``None`` if absent)."""
+        span = self._fa.resolve(locator)
+        if span is None:
+            return None
+        data = self._fa.read(span.digest)
+        if data is None:
+            return None
+        from lawvm.ingest.page_level import page_simulacrum_from_json
+
+        return page_simulacrum_from_json(json.loads(data.decode("utf-8")))
 
     def close(self) -> None:
         self._fa.close()

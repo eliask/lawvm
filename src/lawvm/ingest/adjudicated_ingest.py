@@ -124,6 +124,21 @@ def _struct_node_to_source_node(
             "px_height": str(img.height),
             "role": img.role,
         }
+    # Freeform escape hatch (MATH / VERBATIM): a page+bbox anchor + ``freeform.*``
+    # attrs mirroring the IMAGE lowering. The inline literal rides in ``.text``.
+    elif node.kind in (  # ty: ignore[unresolved-attribute]
+        SourceDocumentNodeKind.MATH_REGION,
+        SourceDocumentNodeKind.VERBATIM_REGION,
+    ) and node.freeform is not None:  # ty: ignore[unresolved-attribute]
+        spec = node.freeform  # ty: ignore[unresolved-attribute]
+        x0, y0, x1, y1 = spec.bbox
+        anchor = SourceAnchor(
+            artifact_digest=digest,
+            locator=f"page={page_num};bbox={x0},{y0},{x1},{y1}",
+            page_num=page_num,
+            bbox=BBox(x0=x0, y0=y0, x1=x1, y1=y1),
+        )
+        attrs = {"freeform.reason": spec.reason}
     children = tuple(
         _struct_node_to_source_node(c, tier, region, digest, page_num)
         for c in node.children  # ty: ignore[unresolved-attribute]

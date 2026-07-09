@@ -675,6 +675,13 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # the NodeMetadata ↔ attrs closed-vocab codec, and the new additive
         # MATH_REGION / VERBATIM_REGION freeform node kinds.
         "test_ingest_carriers.py",
+        # Track-B Level-1 (faithful per-page simulacra): freeform MATH/VERBATIM
+        # wire parse+lowering, per-line geometry + metadata capture, the
+        # patch-to-convergence gate + termination (empty_patch/fixpoint/
+        # oscillation/max_iters/gated_single_pass/truncated), the
+        # unwitnessed_content tripwire, furniture-kept-as-hint, and the
+        # PageSimulacrum store round-trip.
+        "test_ingest_page_level.py",
         # D1 coverage metric + owned-content quality detectors.
         "test_source_document_coverage.py",
         # Producer-neutral adjudication layer: assurance_for + Adjudicator.
