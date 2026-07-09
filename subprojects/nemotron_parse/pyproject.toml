@@ -1,0 +1,50 @@
+# nemotron-parse-service — PROCESS-ISOLATED vision-parse subproject.
+#
+# ISOLATION CONTRACT (do not violate): the heavy VLM/torch dependency set is
+# declared HERE and ONLY here. The main lawvm package NEVER depends on this
+# project, never imports it, and its pyproject NEVER names any of these deps.
+# The main package talks to this service exclusively across a process boundary
+# (subprocess stdin/stdout; see README.md "Wire contract"), via the thin client
+# ``src/lawvm/finland/llm_backends/nemotron_client.py``.
+#
+# This directory is excluded from the main repo's CI (pytest norecursedirs,
+# ruff extend-exclude, ty src.exclude in the root pyproject.toml; the ratchet
+# scanners root at src/lawvm and never see it). Its own tests run with:
+#   uv run --project subprojects/nemotron_parse pytest subprojects/nemotron_parse/tests -p no:cacheprovider
+# (the wire-contract test is hermetic — it does NOT need the heavy deps installed).
+
+[project]
+name = "nemotron-parse-service"
+version = "0.1.0"
+description = "Process-isolated NVIDIA Nemotron-Parse page-parse service for LawVM (independent vision witness; adjudicated, never trusted alone)."
+requires-python = ">=3.11"
+# NVIDIA Open Model License applies to the MODEL WEIGHTS — see README.md
+# ("License caveat") BEFORE any redistribution or commercial deployment.
+# This scaffold code itself is MIT like the rest of LawVM.
+license = "MIT"
+dependencies = [
+  # Heavy inference stack — NEVER add any of these to the root pyproject.toml.
+  "torch>=2.4",
+  "transformers>=4.49",
+  "pillow>=10.0",
+  # Nemotron-Parse's C-RADIO vision encoder path pulls these in practice;
+  # pin/adjust against the model card when standing up a real deployment.
+  "timm>=1.0",
+  "einops>=0.8",
+  "accelerate>=1.0",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.0",
+]
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

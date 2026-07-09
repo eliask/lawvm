@@ -65,6 +65,10 @@ where = ["src"]
 [tool.ruff]
 target-version = "py314"
 line-length = 120
+# subprojects/ = process-isolated services with their OWN pyprojects (heavy
+# deps main CI never installs). ci.sh static-checks src/lawvm/ tests/ scripts/
+# explicitly; this exclude keeps a bare `ruff check` from reaching in too.
+extend-exclude = ["subprojects"]
 
 [tool.ruff.lint]
 # F = pyflakes (real bugs: undefined names, unused imports, f-string errors)
@@ -84,6 +88,11 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 # Test files can be looser
 "**/test_*.py" = ["F841"]
+
+[tool.ty.src]
+# Keep a bare `ty check` out of subprojects/ (isolated heavy-dep services —
+# their torch/transformers imports are unresolvable in the main env by design).
+exclude = ["subprojects/"]
 
 [tool.ty.rules]
 # LawVM's typed records, findings, and async acquisition paths are audit
@@ -199,6 +208,14 @@ pytest_add_cli_args = ["-o", "addopts=", "-p", "no:xdist", "--tb=line"]
 # For targeted runs (uv run pytest tests/ -k "...") the speedup is ~1.5-2x.
 # Override with -n 0 (or -p no:xdist) to disable: uv run pytest -n 0 tests/
 addopts = "-n 4 --tb=short"
+# Keep pytest collection out of subprojects/ (process-isolated services with
+# their own pyprojects + heavy deps main CI never installs; their tests run
+# via `uv run --project subprojects/<name> pytest`). The other entries restate
+# pytest's defaults, which setting norecursedirs would otherwise replace.
+norecursedirs = [
+    "*.egg", ".*", "_darcs", "build", "CVS", "dist", "node_modules", "venv", "{arch}",
+    "subprojects",
+]
 markers = [
     "slow: marks tests as slow (full gold corpus, 404 captures). Run with: pytest -m slow",
     "network: marks tests that require live HTTP access. Run with: pytest -m network",

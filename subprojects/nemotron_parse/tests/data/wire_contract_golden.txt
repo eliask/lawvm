@@ -1,0 +1,6 @@
+HEADING: 4 §
+PARA: Sen lisäksi, mitä 1 momentissa säädetään, hakijalle palautetaan
+valmisteveroa 4 senttiä litralta.
+ITEM: 1) ensimmäinen kohta
+TABLE: Vero | Määrä
+FOOTNOTE: 1) Sovelletaan verovuodesta 2025.

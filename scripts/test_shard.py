@@ -670,6 +670,9 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_lausuntopalvelu.py",
         # Vision page producer: compact-line transcription → anchored candidates.
         "test_fi_vision_producer.py",
+        # Nemotron-Parse thin client: process-isolated vision producer
+        # (subprojects/nemotron_parse) — wire contract + isolation ratchet.
+        "test_fi_nemotron_client.py",
         # Cross-page composition: per-page trees → one whole-document IR.
         "test_source_document_composition.py",
         # Per-page adjudicated ingest → composed whole-document IR.
@@ -1624,6 +1627,12 @@ SOURCE_SHARD_PATHS: dict[str, tuple[str, ...]] = {
 }
 GLOBAL_CHANGE_PATHS = frozenset({"pyproject.toml", "uv.lock"})
 DOCUMENTATION_PREFIXES = ("docs/", "notes/", "us/spec/")
+# Process-isolated subprojects (own pyproject + heavy deps main CI never
+# installs; e.g. subprojects/nemotron_parse). Their tests run in their own
+# env (`uv run --project subprojects/<name> pytest`), so a change there has
+# no bounded MAIN-repo shard impact. The main-side wire contract is pinned by
+# main tests (e.g. test_fi_nemotron_client.py), which map via their own paths.
+ISOLATED_SUBPROJECT_PREFIXES = ("subprojects/",)
 TOP_LEVEL_DOCUMENTATION_PATHS = frozenset({
     "AGENTS.md",
     "CHANGELOG.md",
@@ -2232,6 +2241,11 @@ def affected_path_plan(raw_path: str) -> dict[str, Any]:
             return plan(list(shards), f"known frontend prefix {prefix} maps to {', '.join(shards)}")
     if normalized.startswith(DOCUMENTATION_PREFIXES) or normalized in TOP_LEVEL_DOCUMENTATION_PATHS:
         return plan([], "documentation path has no bounded pytest shard impact")
+    if normalized.startswith(ISOLATED_SUBPROJECT_PREFIXES):
+        return plan(
+            [],
+            "process-isolated subproject (own pyproject/env); no bounded main-repo shard impact",
+        )
     if normalized.startswith(TOOLING_BLOCKED_PREFIXES):
         prefixes = ", ".join(TOOLING_BLOCKED_PREFIXES)
         return unknown(

@@ -139,6 +139,10 @@ OPTIONAL_BACKEND_MODULES: frozenset[str] = frozenset(
         # EXPECTED offline — optional, never dead (like qwen_local).
         "lawvm.finland.llm_backends.llm_adjudicator",
         "lawvm.finland.llm_backends.vision_producer",
+        # Nemotron-Parse thin client: env-gated (LAWVM_NEMOTRON_PARSE_CMD) on
+        # the process-isolated subprojects/nemotron_parse service; 0% coverage
+        # EXPECTED offline — optional, never dead (like vision_producer).
+        "lawvm.finland.llm_backends.nemotron_client",
     }
 )
 

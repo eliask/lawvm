@@ -2,13 +2,13 @@
   "_doc": "Monotone module-role baseline. The `dead` and `test_only_live` sets may only SHRINK: a module born dead must be wired or deleted, never added to the population. The `replay_exercised` map is a SNAPSHOT: a module flipping replay-exercised status (either direction) fails the ratchet until re-baselined. Regenerate with `uv run python scripts/inventory_module_roles.py --update-baseline` after legitimately retiring (deleting) a dead/test-only module, wiring it to a production consumer, or refreshing the replay-coverage snapshot (tests/data/replay_coverage_snapshot.json — see its provenance.refresh_command).",
   "counts": {
     "dead": 78,
-    "live": 1143,
+    "live": 1144,
     "test_only_live": 46
   },
   "replay_counts": {
     "exercised": 170,
-    "cold": 269,
-    "in_scope": 439
+    "cold": 270,
+    "in_scope": 440
   },
   "dead": [
     "lawvm.core.claim_assumption_binding",
@@ -245,6 +245,7 @@
     "lawvm.finland.legal_surface.union_ownership_census",
     "lawvm.finland.llm_backends",
     "lawvm.finland.llm_backends.llm_adjudicator",
+    "lawvm.finland.llm_backends.nemotron_client",
     "lawvm.finland.llm_backends.qwen_local",
     "lawvm.finland.llm_backends.vision_producer",
     "lawvm.finland.morphology",
@@ -363,6 +364,7 @@
   ],
   "optional_backend_modules": [
     "lawvm.finland.llm_backends.llm_adjudicator",
+    "lawvm.finland.llm_backends.nemotron_client",
     "lawvm.finland.llm_backends.qwen_local",
     "lawvm.finland.llm_backends.vision_producer"
   ],
@@ -624,6 +626,7 @@
     "lawvm.finland.legal_surface.union_ownership_census": false,
     "lawvm.finland.llm_backends": false,
     "lawvm.finland.llm_backends.llm_adjudicator": false,
+    "lawvm.finland.llm_backends.nemotron_client": false,
     "lawvm.finland.llm_backends.qwen_local": false,
     "lawvm.finland.llm_backends.vision_producer": false,
     "lawvm.finland.lowering_scope_recovery": true,
