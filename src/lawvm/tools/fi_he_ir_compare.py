@@ -462,17 +462,39 @@ def _xml_proposed_bodies(xml_bytes: bytes) -> dict[str, str]:
     return out
 
 
+def _lakiehdotus_body_start(flat: str) -> int:
+    """Index after the FIRST GENUINE enacting-clause terminator (skips perustelut prose).
+
+    A detailed-perustelut sentence may contain "... seuraavasti:" AND discuss provisions
+    ("Voimassa oleva 13 § korvattaisiin uudella 13 §:llä"), but only a real enacting clause
+    carries the amendment-verb head + statute citation "(N/YEAR)" + "§" before its
+    terminator. Bill-body extraction must start after the first such GENUINE terminator, so
+    the perustelut's "N §" discussions are not first-wins-captured as bill sections (which
+    truncated e.g. HE 2020/210 §13 to a 58-char perustelut fragment). Falls back to the
+    first terminator when no genuine clause is found (single born-digital bill).
+    """
+    for term in _TERMINATOR_RE.finditer(flat):
+        w0 = max(0, term.start() - _MAX_CLAUSE_CHARS)
+        window = flat[w0:term.start()]
+        for h in _HE_HEAD_VERB_RE.finditer(window):
+            cite = _CITE_RE.search(window, h.end(), min(len(window), h.end() + _HEAD_TO_CITE))
+            if cite is not None and _PROVISION_MARK_RE.search(window, cite.end()) is not None:
+                return term.end()
+    first = _TERMINATOR_RE.search(flat)
+    return first.end() if first is not None else 0
+
+
 def _pdf_proposed_bodies(reading_text: str) -> dict[str, str]:
     """Segment the bill body after "... seuraavasti:" into section label → body text.
 
-    Starts after the FIRST terminator (so the "7 §, 10 § ..." list INSIDE the enacting
-    clause is not mistaken for body headers).  First-wins on a duplicate label; a label
-    seen twice (rinnakkaistekstit repeats the bill) is marked ambiguous by keeping only
-    the first and dropping later colliding bodies to the deferral path.
+    Starts after the first GENUINE enacting-clause terminator (:func:`_lakiehdotus_body_start`
+    — skips detailed-perustelut prose) and ends before the rinnakkaistekstit appendix, so
+    only true bill sections are indexed.  First-wins on a duplicate label; a label seen twice
+    (rinnakkaistekstit repeats the bill) keeps the first and drops later colliding bodies to
+    the deferral path.
     """
-    flat = _flatten_reading_text(reading_text)
-    term = _TERMINATOR_RE.search(flat)
-    body = flat[term.end():] if term is not None else flat
+    flat = _lakiehdotus_region(_flatten_reading_text(reading_text))
+    body = flat[_lakiehdotus_body_start(flat):]
     headers = list(_PDF_SECTION_HEADER_RE.finditer(body))
     out: dict[str, str] = {}
     for i, hm in enumerate(headers):
