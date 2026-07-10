@@ -36,12 +36,16 @@ from lawvm.finland.he_branch_parser import (
     HEParseStatus,
     _ENACTING_CLAUSE_NAME,
     _PAYLOAD_CONTAINER_NAMES,
+    _build_he_statute_name_map,
     _extract_enacting_clauses_modern,
     _extract_enactment_clauses,
     _extract_proposed_voimaantulo,
     _extract_statute_citation,
+    _heading_amended_name,
     _is_enactment_section,
     _is_proposal_relative_address,
+    _normalize_statute_name,
+    _parse_one_clause,
     _strip_preamble,
     parse_he_branch,
 )
@@ -407,6 +411,123 @@ class TestHEClauseRecognizer:
         assert _is_proposal_relative_address(text) is False
 
 
+class TestStatuteIdResolution:
+    """Statute-id resolution for clauses whose number is not a parenthesised in-text cite.
+
+    Regression coverage for the BARE-REF op_missing stratum: an op whose
+    ``target_provision_ref`` lacked the ``NNNN/YYYY/`` prefix could never match its
+    full-ref counterpart on the other witness (a false op_missing).
+    """
+
+    def test_unparenthesised_citation_resolves(self) -> None:
+        # "tutkintavankeuslain 768/2005 1 luvun 1 §" — number without parentheses.
+        result = _extract_statute_citation(
+            "muutetaan tutkintavankeuslain 768/2005 1 luvun 1 §:n 2 momentti seuraavasti:"
+        )
+        assert result is not None
+        assert result[0] == "768/2005"
+
+    def test_unparenthesised_illative_name_resolves(self) -> None:
+        result = _extract_statute_citation("lisätään arpajaislakiin 1047/2001 uusi 42 a §")
+        assert result is not None
+        assert result[0] == "1047/2001"
+
+    def test_unparenthesised_bare_lain_resolves(self) -> None:
+        result = _extract_statute_citation(
+            "kumotaan henkilötietojen käsittelystä poliisitoimessa annetun lain 761/2003 19 §"
+        )
+        assert result is not None
+        assert result[0] == "761/2003"
+
+    def test_spaced_parentheses_citation_resolves(self) -> None:
+        # "(396 /1997)" — stray whitespace inside the parenthesised citation.
+        result = _extract_statute_citation(
+            "kumotaan 30 päivänä huhtikuuta 1997 annetun telemarkkinalain (396 /1997) 5 §:n 1 momentti"
+        )
+        assert result is not None
+        assert result[0] == "396/1997"
+
+    def test_amending_law_backreference_does_not_hijack_target(self) -> None:
+        # The inessive "laissa 424/2017" names an AMENDING law in the "sellaisina kuin"
+        # clause; it must NOT be resolved as the amended target (AGENTS.md §1.1).  With no
+        # base citation present, resolution returns None (op stays honestly bare).
+        result = _extract_statute_citation(
+            "muutetaan 1, 2 ja 6 §, sellaisina kuin niistä ovat 38 §:n 4 momentti "
+            "laissa 424/2017, 89 § laissa 1171/2016 seuraavasti:"
+        )
+        assert result is None
+
+    def test_parenthesised_form_unchanged(self) -> None:
+        # Pre-existing behaviour preserved for the standard parenthesised citation.
+        result = _extract_statute_citation("muutetaan lannoitelain (711/2022) 7 §:n 3 momentti")
+        assert result is not None
+        assert result[0] == "711/2022"
+
+    def test_normalize_statute_name_case_invariant(self) -> None:
+        # Genitive (heading form) and inessive (body-citation form) key to one stem.
+        assert _normalize_statute_name("pelastuslain") == _normalize_statute_name("pelastuslaissa")
+        # Distinct compound acts keep distinct stems (no meripelastuslaki collision).
+        assert _normalize_statute_name("meripelastuslain") != _normalize_statute_name("pelastuslain")
+
+    def test_heading_amended_name_extraction(self) -> None:
+        assert _heading_amended_name("Laki pelastuslain muuttamisesta") == "pelastuslain"
+        assert (
+            _heading_amended_name("Laki merenkulun ympäristönsuojelulain muuttamisesta")
+            == "ympäristönsuojelulain"
+        )
+        # A new-law title (no "muuttamisesta"/"kumoamisesta") yields no amended name.
+        assert _heading_amended_name("Laki öljyvahinkojen torjunnasta") == ""
+
+    def test_name_map_unambiguous_only(self) -> None:
+        body = (
+            "pelastuslaissa (379/2011) säädetään; "
+            "kaksoislaissa (100/2000) ja kaksoislaissa (200/2000) esiintyy ristiriita."
+        )
+        name_map = _build_he_statute_name_map(body)
+        assert name_map[_normalize_statute_name("pelastuslain")] == "379/2011"
+        # A stem cited with two different ids is ambiguous and is dropped, never guessed.
+        assert _normalize_statute_name("kaksoislaissa") not in name_map
+
+    def test_governing_statute_id_propagates_to_every_op(self) -> None:
+        # Heading names the act; number lives only in the perustelut; enactingClause omits
+        # it.  Every lowered op must still carry the full NNNN/YYYY/ prefix.
+        from lxml import etree
+
+        doc = (
+            b"<akomaNtoso xmlns='http://docs.oasis-open.org/legaldocml/ns/akn/3.0'>"
+            b"<doc><mainBody>"
+            b"  <hcontainer name='rationale'><content><p>"
+            b"    Esityksess\xc3\xa4 ehdotetaan muutettavaksi pelastuslaissa (379/2011) s\xc3\xa4\xc3\xa4detty\xc3\xa4."
+            b"  </p></content></hcontainer>"
+            b"  <hcontainer name='bills'>"
+            b"    <hcontainer name='bill' eId='bill_1'>"
+            b"      <heading>Laki pelastuslain muuttamisesta</heading>"
+            b"      <hcontainer name='enactingClause' eId='bill_1__enactingClause'>"
+            b"        <content><p>Eduskunnan p\xc3\xa4\xc3\xa4t\xc3\xb6ksen mukaisesti muutetaan 1 \xc2\xa7 ja 2 \xc2\xa7 seuraavasti:</p></content>"
+            b"      </hcontainer>"
+            b"    </hcontainer>"
+            b"  </hcontainer>"
+            b"</mainBody></doc></akomaNtoso>"
+        )
+        branch = parse_he_branch(doc, he_year=2018, he_number=138, he_id="HE 138/2018 vp")
+        assert branch.proposed_ops, "expected at least one lowered op"
+        for op in branch.proposed_ops:
+            assert op.target_statute_id == "379/2011"
+            assert op.target_provision_ref.startswith("379/2011/")
+
+    def test_governing_id_only_a_fallback_never_overrides_in_clause_cite(self) -> None:
+        # When the clause carries its own citation, the governing hint is ignored.
+        ops, _findings = _parse_one_clause(
+            "muutetaan lannoitelain (711/2022) 7 § seuraavasti:",
+            0,
+            "HE 1/2020 vp",
+            "fi/he/2020/1",
+            governing_statute_id="379/2011",
+        )
+        assert ops
+        assert all(op.target_statute_id == "711/2022" for op in ops)
+
+
 class TestEnactmentSectionRecognizer:
     """Tests for the EnactmentSectionRecognizer grammar."""
 
@@ -583,7 +704,7 @@ class TestEnactingClauseRecognizer:
         clauses = _extract_enacting_clauses_modern(main_body)
         # Should extract exactly one clause (the enactingClause)
         assert len(clauses) == 1
-        clause_text, context = clauses[0]
+        clause_text, context, _gov_id = clauses[0]
         # Text should be the directive, not the section payload
         assert "muutetaan" in clause_text.lower()
         assert "Joka" not in clause_text
@@ -617,7 +738,7 @@ class TestEnactingClauseRecognizer:
         clauses = _extract_enactment_clauses(root)
         # Primary path (enactingClause) should win; only 1 clause returned
         assert len(clauses) == 1
-        clause_text, _ctx = clauses[0]
+        clause_text, _ctx, _gov_id = clauses[0]
         assert "lannoitelain" in clause_text
         assert "rikoslain" not in clause_text  # legacy section not returned
 

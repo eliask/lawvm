@@ -360,10 +360,32 @@ _PREAMBLE_RE = re.compile(
 # Finnish statute IDs are NUMBER/YEAR format: e.g. 711/2022 = statute #711, year 2022.
 # Statute names appear in genitive form (e.g. "lannoitelain", "ympäristönsuojelulain")
 # and may start with lowercase in mid-sentence position.
+# The digits tolerate stray interior whitespace ("(396 /1997)") emitted by some HE
+# text layers — a spaced citation is otherwise dropped, forcing a bare-ref op.
 # AGENTS.md §1.11: bounded quantifiers, compiled at module scope
 _STATUTE_CITE_RE = re.compile(
     r"(?P<statute_name>[A-ZÄÖÅa-zäöå][a-zäöåA-ZÄÖÅ\-]{0,100}?)\s*"
-    r"\((?P<statute_number>\d{1,5})/(?P<statute_year>\d{4})\)",
+    r"\(\s*(?P<statute_number>\d{1,5})\s*/\s*(?P<statute_year>\d{4})\s*\)",
+)
+
+# Unparenthesised statute citation: "tutkintavankeuslain 768/2005 …",
+# "arpajaislakiin 1047/2001 …", "annetun lain 761/2003 …".  A large minority of HEs
+# (esp. pre-2010 and criminal-procedure bills) write the amended act's NUMBER/YEAR
+# *without* parentheses right after the target-name.  Requiring parentheses drops the
+# id and forces a bare-ref op (a false op_missing against the PDF witness).
+#
+# CRITICAL discriminator — the name must be in a TARGET case (genitive/illative:
+# "…lain", "…lakiin", "…kaaren", "…asetuksen") that the amendment verb governs.  The
+# ubiquitous "sellaisina kuin … laissa 424/2017" back-reference to the *amending* laws
+# is INESSIVE ("laissa"/"laeissa") — deliberately EXCLUDED from the suffix set — so this
+# never hijacks the base target to a later amending statute (AGENTS.md §1.1).
+#
+# Flat, bounded quantifiers only (FW-07 / AGENTS.md §1.11): a lazy bounded prefix then a
+# fixed suffix alternation then a disjoint "\s+\d" — no nested/adjacent variable repeats.
+_STATUTE_CITE_BARE_RE = re.compile(
+    r"\b(?P<statute_name>[A-Za-zÄÖÅäöå\-]{0,60}?"
+    r"(?:lakiin|laista|lakia|laki|lain|kaareen|kaaren|kaari|asetukseen|asetuksen|asetusta))"
+    r"\s+(?P<statute_number>\d{1,5})\s*/\s*(?P<statute_year>\d{4})\b",
 )
 
 # Pattern for "Ehdotetaan muutettavaksi" (alternative "ehdotetaan" forms)
@@ -440,11 +462,120 @@ def _extract_statute_citation(clause_text: str) -> Optional[tuple[str, str]]:
     # lawvm-regex: owning_parser HE branch owning parser extracts the statute citation from its own clause text
     m = _STATUTE_CITE_RE.search(clause_text)
     if m is None:
+        # lawvm-regex: owning_parser fallback to the UNPARENTHESISED citation form (target-case
+        # name + NUMBER/YEAR) that many pre-2010 / procedural HEs use; suffix-gated so the
+        # "sellaisina kuin … laissa NNNN" amending-law back-references cannot hijack the target.
+        m = _STATUTE_CITE_BARE_RE.search(clause_text)
+    if m is None:
         return None
     year = m.group("statute_year")
     number = m.group("statute_number")
     name = m.group("statute_name").strip()
     return f"{number}/{year}", name
+
+
+# Finnish nominal case suffixes stripped to key a statute name for cross-citation
+# matching.  A heading names the amended act in genitive ("pelastuslain"); a body
+# citation may use the inessive ("pelastuslaissa (379/2011)") — both must key to the
+# same stem.  Ordered longest-first so a longer ending is stripped before its prefix.
+_STATUTE_NAME_CASE_SUFFIXES: tuple[str, ...] = (
+    "ksessa", "ksesta", "kseen", "ksen",
+    "issa", "issä", "ista", "istä", "iksi", "iin",
+    "lla", "llä", "lle", "ksi", "ssa", "ssä", "sta", "stä",
+    "na", "nä", "ta", "tä", "in", "en",
+    "a", "ä", "n", "t",
+)
+
+#: Minimum stem length kept after case-stripping — below this a name is too generic
+#: ("lain", "laki") to key reliably, so it is dropped rather than risk a wrong match.
+_STATUTE_NAME_MIN_STEM = 5
+
+#: Bill-title heading heads: "Laki … muuttamisesta", "Laiksi … kumoamisesta".
+_HEADING_TITLE_HEADS: tuple[str, ...] = ("laki ", "laiksi ", "laeiksi ")
+#: Terminal keywords of an amend/repeal bill title; the amended act's name is the last
+#: word BEFORE the first of these.
+_HEADING_TITLE_TERMINALS: tuple[str, ...] = ("muuttamisesta", "kumoamisesta", "muutamisesta")
+
+
+def _normalize_statute_name(name: str) -> str:
+    """Reduce a Finnish statute name to a case-invariant stem key.
+
+    Lowercases and strips ONE trailing nominal case ending so that the same act cited in
+    different cases (genitive "pelastuslain" vs inessive "pelastuslaissa") keys equally.
+    Returns "" when the resulting stem is too short to be a reliable key.
+    """
+    n = name.lower().strip()
+    for suf in _STATUTE_NAME_CASE_SUFFIXES:
+        if n.endswith(suf) and len(n) - len(suf) >= _STATUTE_NAME_MIN_STEM:
+            return n[: -len(suf)]
+    return n if len(n) >= _STATUTE_NAME_MIN_STEM else ""
+
+
+def _build_he_statute_name_map(body_text: str) -> dict[str, str]:
+    """Build an UNAMBIGUOUS {normalized-name-stem → statute_id} map from an HE's body.
+
+    Scans the whole HE body (perustelut included) for both the parenthesised and the
+    unparenthesised citation forms, keyed by the case-normalized statute name.  A stem
+    that maps to more than one distinct id anywhere in the document is AMBIGUOUS and is
+    dropped — the map only ever asserts a name→id link the document itself makes
+    unambiguously (AGENTS.md §1.1: no silent target hijacking on a guessed id).
+    """
+    mapping: dict[str, str] = {}
+    ambiguous: set[str] = set()
+    # lawvm-regex: owning_parser HE owning parser harvests its own body's statute citations to
+    # resolve a heading-named amended act whose enacting clause omits the number.
+    for rx in (_STATUTE_CITE_RE, _STATUTE_CITE_BARE_RE):
+        for m in rx.finditer(body_text):
+            stem = _normalize_statute_name(m.group("statute_name"))
+            if not stem:
+                continue
+            sid = f"{m.group('statute_number')}/{m.group('statute_year')}"
+            if stem in mapping and mapping[stem] != sid:
+                ambiguous.add(stem)
+            mapping.setdefault(stem, sid)
+    for stem in ambiguous:
+        mapping.pop(stem, None)
+    return mapping
+
+
+def _heading_amended_name(heading_text: str) -> str:
+    """Extract the amended act's name from a bill-title heading, or "".
+
+    "Laki pelastuslain muuttamisesta" → "pelastuslain"; "Laki merenkulun
+    ympäristönsuojelulain muuttamisesta" → "ympäristönsuojelulain" (the head noun, the
+    last word before the terminal "muuttamisesta"/"kumoamisesta").  Plain string scanning
+    (no regex) keeps this off the perf gate and lets the multi-word name pass through.
+    """
+    low = heading_text.strip().lower()
+    if not any(low.startswith(h) for h in _HEADING_TITLE_HEADS):
+        return ""
+    words = heading_text.strip().split()
+    for i, w in enumerate(words):
+        if w.lower().rstrip(".,:;") in _HEADING_TITLE_TERMINALS and i > 0:
+            return words[i - 1].strip(".,:;")
+    return ""
+
+
+def _governing_statute_id_from_bill(
+    enacting_clause: etree._Element, name_map: dict[str, str]
+) -> str:
+    """Resolve the amended-act id for a modern enactingClause whose text omits the number.
+
+    The amended act is named only in the bill TITLE heading ("Laki pelastuslain
+    muuttamisesta"); the number lives in the perustelut.  We read the bill's first
+    title-shaped heading, take the amended-act name, and look it up in the per-HE
+    name→id map.  Returns "" when no title heading is found or the name is unmapped —
+    the op then stays honestly bare rather than acquiring a guessed id.
+    """
+    bill = enacting_clause.getparent()
+    if bill is None:
+        return ""
+    for node in bill.iter():
+        if _localname(node) == "heading":
+            name = _heading_amended_name(_element_text(node))
+            if name:
+                return name_map.get(_normalize_statute_name(name), "")
+    return ""
 
 
 def _is_proposal_relative_address(clause_text: str) -> bool:
@@ -532,6 +663,7 @@ def _parse_one_clause(
     branch_id: str,
     *,
     strict: bool = False,
+    governing_statute_id: str = "",
 ) -> tuple[list[BranchProposedOp], list[object]]:
     """Parse one amendment clause from HE body text.
 
@@ -541,6 +673,12 @@ def _parse_one_clause(
     Per AGENTS.md §1.13: we reuse johtolause/api.parse_clause for the inner
     amendment grammar, which is exactly the same grammar as enacted-amendment
     text.  We strip the "Ehdotetaan, että" preamble before handing off.
+
+    ``governing_statute_id`` is the amended act's id resolved from the clause's
+    governing citation OUTSIDE the clause text (the bill title heading), used ONLY as a
+    fallback when the clause itself carries no in-text citation.  It propagates the
+    once-named statute to every op in the clause so a heading-only amendment does not
+    lower to bare-ref ops that can never match the PDF witness.
     """
     from lawvm.finland.johtolause.api import parse_clause
 
@@ -556,7 +694,9 @@ def _parse_one_clause(
         # Try the original (preamble might have statute context)
         cite_result = _extract_statute_citation(clause_text)
 
-    statute_id = cite_result[0] if cite_result else ""
+    # Fall back to the governing citation (bill-title heading) when the clause omits the
+    # number in-text; never overrides an in-clause citation.
+    statute_id = cite_result[0] if cite_result else governing_statute_id
 
     # Detect proposal-relative address before parsing
     is_prop_rel = _is_proposal_relative_address(inner_text)
@@ -655,7 +795,8 @@ def _parse_one_clause(
 
 def _extract_enacting_clauses_modern(
     main_body: etree._Element,
-) -> list[tuple[str, str]]:
+    name_map: Optional[dict[str, str]] = None,
+) -> list[tuple[str, str, str]]:
     """Extract amendment directives from modern Finnish HE structure.
 
     Modern HEs (2020+) use:
@@ -668,10 +809,13 @@ def _extract_enacting_clauses_modern(
     e.g. "Eduskunnan päätöksen mukaisesti muutetaan lannoitelain (711/2022)
     7 §:n 3 momentti, ...".
 
-    Returns list of (clause_text, context) tuples.
+    Returns list of (clause_text, context, governing_statute_id) tuples.  The third
+    element is the amended act's id resolved from the bill TITLE heading via ``name_map``
+    (empty when ``name_map`` is None or the act cannot be resolved) — it rescues clauses
+    that name the statute only in the heading, not in the directive.
     Per AGENTS.md §1.13: single-pass, structured, not N regex passes.
     """
-    clauses: list[tuple[str, str]] = []
+    clauses: list[tuple[str, str, str]] = []
     for el in main_body.iter():
         name_attr = el.attrib.get("name", "")
         if name_attr == _ENACTING_CLAUSE_NAME:
@@ -681,7 +825,12 @@ def _extract_enacting_clauses_modern(
                 parent = el.getparent()
                 parent_eid = parent.attrib.get("eId", "") if parent is not None else ""
                 context = f"enactingClause:{parent_eid or 'unknown'}"
-                clauses.append((text, context))
+                gov_id = (
+                    _governing_statute_id_from_bill(el, name_map)
+                    if name_map is not None
+                    else ""
+                )
+                clauses.append((text, context, gov_id))
     return clauses
 
 
@@ -692,7 +841,7 @@ def _extract_enacting_clauses_modern(
 
 def _extract_enactment_clauses_legacy(
     main_body: etree._Element,
-) -> list[tuple[str, str]]:
+) -> list[tuple[str, str, str]]:
     """Legacy extractor: used when no enactingClause elements are found.
 
     Walks mainBody looking for hcontainer[name='enactment-text'] or similar
@@ -702,9 +851,11 @@ def _extract_enactment_clauses_legacy(
     - Synthetic test fixtures using hcontainer[name='enactment-text']
     - Older HE formats that don't use the bills/bill/enactingClause structure
 
-    Returns list of (clause_text, section_name) tuples.
+    Returns list of (clause_text, section_name, governing_statute_id) tuples.  The legacy
+    section format carries its statute citation inline, so the governing-id slot is always
+    "" (heading-based resolution is a modern-structure concern only).
     """
-    clauses: list[tuple[str, str]] = []
+    clauses: list[tuple[str, str, str]] = []
 
     def _walk_body(node: etree._Element) -> None:
         lname = _localname(node)
@@ -717,7 +868,7 @@ def _extract_enactment_clauses_legacy(
             # The modern path (enactingClause) avoids this entirely.
             text = _element_text(node)
             if text:
-                clauses.append((text, f"section:{name_attr or 'unnamed'}"))
+                clauses.append((text, f"section:{name_attr or 'unnamed'}", ""))
             return
 
         if lname in ("hcontainer", "div", "blockContainer"):
@@ -758,8 +909,9 @@ def _extract_enactment_clauses_legacy(
 
 def _extract_enactment_clauses(
     root: etree._Element,
-) -> list[tuple[str, str]]:
-    """Extract (clause_text, section_context) pairs from HE body enactment sections.
+    name_map: Optional[dict[str, str]] = None,
+) -> list[tuple[str, str, str]]:
+    """Extract (clause_text, section_context, governing_statute_id) triples from an HE body.
 
     Resolution order per EnactingClauseRecognizer grammar (AGENTS.md §1.13):
 
@@ -775,14 +927,14 @@ def _extract_enactment_clauses(
     The primary path is tried first.  The fallback is used only when no
     enactingClause elements are found.
 
-    Returns list of (clause_text, context_label) tuples.
+    Returns list of (clause_text, context_label, governing_statute_id) triples.
     """
     main_body = root.find(f".//{{{_AKN_NS}}}mainBody")
     if main_body is None:
         return []
 
     # Primary: modern enactingClause structure
-    clauses = _extract_enacting_clauses_modern(main_body)
+    clauses = _extract_enacting_clauses_modern(main_body, name_map)
     if clauses:
         return clauses
 
@@ -872,8 +1024,12 @@ def parse_he_branch(
 
     proposed_voimaantulo = _extract_proposed_voimaantulo(body_text)
 
+    # Build the per-HE statute name→id map so a clause naming its amended act only in the
+    # bill title (number in the perustelut) still resolves to a full-ref op.
+    statute_name_map = _build_he_statute_name_map(body_text)
+
     # Extract enactment clauses via EnactmentSectionRecognizer
-    raw_clauses = _extract_enactment_clauses(root)
+    raw_clauses = _extract_enactment_clauses(root, statute_name_map)
     enactment_count = len(raw_clauses)
 
     if enactment_count == 0:
@@ -898,7 +1054,7 @@ def parse_he_branch(
     all_findings: list[object] = []
     clauses_succeeded = 0
 
-    for clause_text, _section_ctx in raw_clauses:
+    for clause_text, _section_ctx, governing_statute_id in raw_clauses:
         if not clause_text.strip():
             continue
         op_index_start = len(all_ops)
@@ -908,6 +1064,7 @@ def parse_he_branch(
             source_he_id=he_id,
             branch_id=branch_id,
             strict=strict,
+            governing_statute_id=governing_statute_id,
         )
         all_ops.extend(new_ops)
         all_findings.extend(new_findings)
@@ -918,7 +1075,7 @@ def parse_he_branch(
     statute_ids = sorted(set(op.target_statute_id for op in all_ops if op.target_statute_id))
 
     # Determine parse status
-    clauses_attempted = len([c for c, _ in raw_clauses if c.strip()])
+    clauses_attempted = len([c for c, _, _ in raw_clauses if c.strip()])
     if clauses_attempted == 0:
         status = HEParseStatus.NOT_APPLICABLE
     elif clauses_succeeded == 0:

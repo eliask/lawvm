@@ -41,7 +41,7 @@
     "src/lawvm/finland/frontend_observations.py": 1,
     "src/lawvm/finland/group_ops.py": 3,
     "src/lawvm/finland/group_plan.py": 1,
-    "src/lawvm/finland/he_branch_parser.py": 5,
+    "src/lawvm/finland/he_branch_parser.py": 6,
     "src/lawvm/finland/he_johtolause_tagger.py": 1,
     "src/lawvm/finland/he_payload_adjudicator.py": 1,
     "src/lawvm/finland/helpers.py": 9,
@@ -206,5 +206,5 @@
     "src/lawvm/us_federal/table3.py": 4,
     "src/lawvm/us_federal/usc_witness.py": 4
   },
-  "total_raw_re_compile": 1299
+  "total_raw_re_compile": 1300
 }
