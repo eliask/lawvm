@@ -198,6 +198,15 @@ def _PdfiumError() -> type[BaseException]:
 # break, joining across it) and a bare ``<hyphen>`` (extractor emitted it inline).
 _DISCRETIONARY_HYPHENS = ("￾", "­")
 
+#: Degenerate bbox returned by ``_object_bbox`` when an image XObject has no readable
+#: geometry (missing/broken ``get_pos``). It carries NO positional meaning, so it must
+#: never drive a whole-page rasterization (that is the O(N_images) encode hang: a page
+#: with thousands of such objects would render + PNG-encode the whole page once PER
+#: object). Tier-1 bit-exact extraction runs first and is geometry-free, so an embedded
+#: image with real bytes is still captured; only a positionless, byteless object is
+#: dropped when this sentinel reaches the rasterize path.
+_ZERO_BBOX: Tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
+
 
 def dehyphenate(text: str) -> str:
     """Join words split by a discretionary/soft hyphen at a line break.
@@ -994,7 +1003,7 @@ class PageElementProducer:
         # No readable geometry (missing get_pos / non-numeric / short tuple) → zero
         # bbox sentinel; the caller's rasterize path handles it (whole-page crop).
         except (AttributeError, TypeError, ValueError, IndexError, _PdfiumError()):
-            return (0.0, 0.0, 0.0, 0.0)
+            return _ZERO_BBOX
 
     def _extract_image_bytes(
         self,
@@ -1051,6 +1060,14 @@ class PageElementProducer:
         Rendering / crop errors propagate to ``_extract_image_bytes``' typed
         handler (one bad object never sinks the page).
         """
+        # A degenerate zero-bbox image (missing ``get_pos``) carries no positional
+        # meaning: rendering + PNG-encoding the WHOLE page once per such object is the
+        # O(N_images) rasterize hang (a ~2,400-image page = minutes of libpng + ~600 MB
+        # transient PNGs). Skip it BEFORE any render call. Tier-1 bit-exact extraction
+        # already ran (geometry-free), so a real embedded image is still captured; only
+        # a positionless, byteless object is dropped here (the caller notes the skip).
+        if bbox == _ZERO_BBOX:
+            return None, None
         try:
             from PIL import Image  # noqa: F401  (import guard: pillow present)
         # Pillow is not a base dep → no rasterized crop; the caller notes the skip.

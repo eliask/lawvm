@@ -164,6 +164,41 @@ def test_xml_body_payloads_keys_align_with_op_target_refs() -> None:
     assert {op.target_ref for op in ops} == set(xb)
 
 
+def test_pdf_body_payloads_last_section_stops_at_appendix_boundary() -> None:
+    # The LAST section otherwise runs to EOF and swallows the trailing appendix
+    # tables + gazette colophon (confirmed on 1994/800 §7: body over-ran to 3875
+    # chars grabbing Liite 1/2). The body must be bounded at the first "Liite"
+    # heading line so the appendix junk never enters the payload.
+    page = (
+        _JOHTO + "\n"
+        "7 §\nVeroprosentti on 5,9.\n"
+        "Liite 1\n"
+        "TAULUKKO | sarake | sarake\n"
+        "1 | 2 | 3\n"
+        "Liite 2\n"
+        "Tämä direktiivi tulee voimaan.\n"
+    )
+    pb = _pdf_body_payloads(page)
+    assert set(pb) == {"section:7"}
+    assert pb["section:7"] == "Veroprosentti on 5,9."
+    # the appendix tables + directive footer are NOT in the payload
+    assert "TAULUKKO" not in pb["section:7"]
+    assert "Liite" not in pb["section:7"]
+    assert "direktiivi" not in pb["section:7"]
+
+
+def test_pdf_body_payloads_inline_liite_reference_does_not_clip_body() -> None:
+    # A conservative boundary: only a BARE "Liite [N]" heading line truncates. An
+    # inflected in-prose reference ("liitteen mukaisesti", "Liite 1 sisältää ...")
+    # carries trailing text on its line and must NOT clip genuine body prose.
+    page = (
+        _JOHTO + "\n"
+        "7 §\nTästä on säädetty liitteen mukaisesti tarkemmin ja jatkuu.\n"
+    )
+    pb = _pdf_body_payloads(page)
+    assert pb["section:7"] == "Tästä on säädetty liitteen mukaisesti tarkemmin ja jatkuu."
+
+
 def test_pdf_body_payloads_segments_after_johtolause() -> None:
     # The "7 §, 10 § ja 16 §" list INSIDE the johtolause must NOT be mistaken for
     # body headers: segmentation starts after "... seuraavasti:".

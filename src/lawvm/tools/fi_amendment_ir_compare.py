@@ -369,6 +369,18 @@ _LEADING_SECTION_HEADER_RE = re.compile(r"^\s{0,4}\d{1,4}\s{0,3}[a-zä]?\s{0,3}�
 #: cross-reference inside one section's body does not spuriously truncate it.
 _PDF_BODY_SECTION_RE = re.compile(r"(\d{1,4}\s{0,3}[a-zä]?)\s{0,3}§(?!\s{0,2}:)", re.IGNORECASE)
 
+#: An appendix / attachment heading line ("Liite", "Liite 1", "LIITE 2", "Liite 1a")
+#: standing ALONE on its own line. The last matched section's body otherwise runs to
+#: EOF and swallows trailing appendix tables + the gazette colophon / directive footer
+#: that the trusted main.xml body never carries — a SPURIOUS ``payload_mismatch`` on
+#: every statute whose last amended section is followed by appendices (confirmed on
+#: 1994/800 §7: the PDF body over-ran to 3875 chars vs the XML's ~429, grabbing
+#: Liite 1/2 + the directive footer). We bound each section body at the FIRST such
+#: heading. It is deliberately conservative — a bare appendix-heading line only, never
+#: inflected in-prose "liitteen"/"liitteessä" (those carry trailing text on the line) —
+#: so genuine body prose is never clipped.
+_APPENDIX_BOUNDARY_RE = re.compile(r"(?m)^\s{0,4}(?:LIITE|Liite)\b(?:\s*\d{1,3}\s{0,3}[a-zä]?)?\s*$")
+
 #: Detail-string trim width for the residual left/right canon carried to adjudication.
 _PAYLOAD_CANON_TRIM = 80
 
@@ -440,6 +452,14 @@ def _pdf_body_payloads(reading_text: str) -> "dict[str, str]":
             continue
         start = hm.end()
         end = headers[i + 1].start() if i + 1 < len(headers) else len(body)
+        # Bound the body at the FIRST appendix/attachment heading inside this segment
+        # (typically only the LAST section, which otherwise runs to EOF): the appendix
+        # tables + gazette colophon are NOT part of the section's operative body and
+        # the trusted main.xml body never carries them, so leaving them in produces a
+        # spurious payload_mismatch. Only a bare "Liite"/"LIITE" heading line truncates.
+        appendix = _APPENDIX_BOUNDARY_RE.search(body, start, end)
+        if appendix is not None:
+            end = appendix.start()
         ref = f"section:{label}"
         if ref not in out:
             out[ref] = body[start:end].strip()

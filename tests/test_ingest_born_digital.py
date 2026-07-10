@@ -196,6 +196,47 @@ def test_embedded_image_routes_to_image_region() -> None:
     assert imgs[0].attrs["image_digest"] == "d" * 64
 
 
+def test_zero_bbox_images_do_not_trigger_whole_page_encode() -> None:
+    """Zero-bbox (no ``get_pos``) image objects must NOT whole-page-encode per object.
+
+    A page with thousands of positionless image XObjects (e.g. ``2005/328`` p.3 has
+    ~2,400) previously rendered + PNG-encoded the WHOLE page ONCE PER OBJECT — minutes
+    of libpng CPU + hundreds of MB of transient PNGs (the "hang"). The render function
+    must be called a BOUNDED number of times (here: zero), not O(N_images).
+    """
+    from lawvm.ingest.page_elements import PageElementProducer
+
+    render_calls = {"n": 0}
+
+    class _FakeImageObj:
+        # FPDF_PAGEOBJ_IMAGE; NO get_pos (→ zero-bbox sentinel), NO get_data/get_bitmap
+        # (→ Tier-1 bit-exact extraction yields nothing → falls to the rasterize path).
+        type = 3
+
+    class _FakePage:
+        def get_objects(self):
+            return [_FakeImageObj() for _ in range(2400)]
+
+        def render(self, scale):  # noqa: ARG002 — spy: must never be reached
+            render_calls["n"] += 1
+            raise AssertionError("whole-page render reached for a zero-bbox image object")
+
+        def get_width(self):
+            return 595.0
+
+        def get_height(self):
+            return 842.0
+
+    reader = PageElementProducer()
+    images, notes = reader._enumerate_images(_FakePage(), 1)
+    # Positionless + byteless objects recover NO image — but crucially the render
+    # function is called O(1) (zero) times, not once per object.
+    assert images == ()
+    assert render_calls["n"] == 0
+    # each object is a typed "unreadable, skipped" note, not a whole-page PNG
+    assert len(notes) == 2400
+
+
 # --------------------------------------------------------------------------- #
 # Text losslessness + provenance + determinism.                                 #
 # --------------------------------------------------------------------------- #

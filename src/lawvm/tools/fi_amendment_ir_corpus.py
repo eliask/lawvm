@@ -184,6 +184,13 @@ class StatuteDiffRow:
     page_count: int
     detail: str
     divergences: Tuple[OpDivergence, ...]
+    #: Payload-stage census over the MATCHED ops (0 unless compared): body actually
+    #: compared on both witnesses / type-deferred (body absent on ≥1 witness) / REPEAL
+    #: tombstone (no payload). Carried so the corpus report can surface the PAYLOAD
+    #: coverage, not just the op-structure distribution.
+    payload_compared: int = 0
+    payload_deferred: int = 0
+    payload_skipped: int = 0
 
     def to_json(self) -> Dict[str, object]:
         return {
@@ -199,6 +206,9 @@ class StatuteDiffRow:
             "born_digital_fraction": round(self.born_digital_fraction, 4),
             "page_count": self.page_count,
             "detail": self.detail,
+            "payload_compared": self.payload_compared,
+            "payload_deferred": self.payload_deferred,
+            "payload_skipped": self.payload_skipped,
             "divergences": [
                 {"kind": d.kind, "target_ref": d.target_ref, "detail": d.detail}
                 for d in self.divergences
@@ -221,6 +231,9 @@ def _row_from_result(result: CompareResult, route: Route) -> StatuteDiffRow:
         page_count=route.page_count,
         detail=result.detail,
         divergences=result.divergences,
+        payload_compared=result.payload_compared,
+        payload_deferred=result.payload_deferred,
+        payload_skipped=result.payload_skipped,
     )
 
 
@@ -262,6 +275,11 @@ class CorpusDiffReport:
     total_typed_divergences: int
     bucket_counts: Dict[str, int]
     worst: Tuple[StatuteDiffRow, ...]
+    #: Corpus-wide payload-stage coverage over the compared set (folded from rows):
+    #: matched-op bodies actually compared / type-deferred / REPEAL-skipped.
+    payload_compared: int = 0
+    payload_deferred: int = 0
+    payload_skipped: int = 0
 
     @property
     def exact_match_rate(self) -> float:
@@ -288,9 +306,11 @@ def aggregate_rows(
         "op_missing_in_pdf": 0,
         "op_extra_in_pdf": 0,
         "kind_mismatch": 0,
+        "payload_mismatch": 0,
     }
     n_geom = n_vision = n_cap_skipped = n_load_error = 0
     n_compared = n_exact = total_typed = 0
+    payload_compared = payload_deferred = payload_skipped = 0
 
     for r in rows:
         status_counts[r.compare_status] = status_counts.get(r.compare_status, 0) + 1
@@ -310,6 +330,9 @@ def aggregate_rows(
             for k, v in r.counts.items():
                 if k in bucket_counts:
                     bucket_counts[k] += v
+            payload_compared += r.payload_compared
+            payload_deferred += r.payload_deferred
+            payload_skipped += r.payload_skipped
 
     return CorpusDiffReport(
         n_attempted=len(rows),
@@ -323,6 +346,9 @@ def aggregate_rows(
         total_typed_divergences=total_typed,
         bucket_counts=bucket_counts,
         worst=_rank_worst(rows, worst_limit),
+        payload_compared=payload_compared,
+        payload_deferred=payload_deferred,
+        payload_skipped=payload_skipped,
     )
 
 
@@ -425,7 +451,12 @@ def render_report(report: CorpusDiffReport) -> str:
     lines.append(
         f"  buckets: op_missing_in_pdf={report.bucket_counts['op_missing_in_pdf']}  "
         f"op_extra_in_pdf={report.bucket_counts['op_extra_in_pdf']}  "
-        f"kind_mismatch={report.bucket_counts['kind_mismatch']}"
+        f"kind_mismatch={report.bucket_counts['kind_mismatch']}  "
+        f"payload_mismatch={report.bucket_counts.get('payload_mismatch', 0)}"
+    )
+    lines.append(
+        f"  payload stage: compared={report.payload_compared}  "
+        f"deferred={report.payload_deferred}  repeal_skipped={report.payload_skipped}"
     )
     lines.append("")
     lines.append("## RANKED WORST (compared, by typed_divergence_count)")
@@ -454,6 +485,9 @@ def report_to_json(report: CorpusDiffReport) -> Dict[str, object]:
         "exact_match_rate": report.exact_match_rate,
         "total_typed_divergences": report.total_typed_divergences,
         "bucket_counts": report.bucket_counts,
+        "payload_compared": report.payload_compared,
+        "payload_deferred": report.payload_deferred,
+        "payload_skipped": report.payload_skipped,
         "worst": [
             {
                 "sid": r.sid,
