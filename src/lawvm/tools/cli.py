@@ -117,6 +117,9 @@ from lawvm.tools.uk_replay_regime import UK_APPLICABILITY_MODE_CHOICES
 from lawvm.tools.uk_replay_regime import add_uk_replay_regime_arguments
 from lawvm.tools.replay_mode_arg import replay_mode_argument
 from lawvm.tools.hyperlinks import HYPERLINK_MODES
+from lawvm.finland.he_payload_verdict_store import (
+    FI_HE_PAYLOAD_VERDICT_STORE as _FI_HE_PAYLOAD_VERDICT_STORE,
+)
 
 # Inlined from lawvm.core.invariant_detectors.SUPPORTED_INVARIANT_DETECTORS.
 # Used only as argparse choices= — no need to import the full module (which pulls
@@ -9996,6 +9999,14 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
                                   help="pages to read from each HE main.pdf (default: 400)")
     he_payload_adj_p.add_argument("--base-url", default="", dest="base_url",
                                   help="local LLM base url (default: the adjudicator's :8080)")
+    he_payload_adj_p.add_argument("--verdict-cache", default=_FI_HE_PAYLOAD_VERDICT_STORE,
+                                  dest="verdict_cache", metavar="PATH",
+                                  help="content-addressed firewall cache farchive for verdicts "
+                                       "(re-runs are cache HITS; default: data/fi_he_payload_verdicts.farchive)")
+    he_payload_adj_p.add_argument("--verdicts-jsonl", default="", dest="verdicts_jsonl",
+                                  metavar="PATH",
+                                  help="stream per-divergence verdicts here "
+                                       "(default: $CLAUDE_JOB_DIR/tmp/he_payload_verdicts.jsonl if set)")
 
     # --- fi-parse-corpus ---
     parse_corpus_p = sub.add_parser(

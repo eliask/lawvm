@@ -32,6 +32,7 @@ the two body digests + adjudicator id (no stale reads).
 """
 from __future__ import annotations
 
+import hashlib
 import re
 from enum import StrEnum
 from typing import Callable
@@ -106,6 +107,19 @@ def parse_verdict(content: str) -> DivergenceVerdict:
     """Parse the model's reply to a verdict (pure); unrecognized → UNCERTAIN, never raises."""
     m = _LABEL_RE.search(content or "")
     return _LABELS[m.group(1)] if m is not None else DivergenceVerdict.UNCERTAIN
+
+
+#: Code fingerprint of the FI-specific adjudication contract — the system prompt PLUS the
+#: closed verdict-label set. The determinism-firewall cache folds this into its content-address
+#: key (alongside the model id), so any change to the prompt or the label vocabulary MECHANICALLY
+#: invalidates every stored verdict rather than serving a stale read from a superseded classifier.
+def adjudication_prompt_fingerprint() -> str:
+    """Short SHA-256 fingerprint of the adjudication prompt + label set (cache-key input)."""
+    h = hashlib.sha256()
+    h.update(_ADJUDICATION_SYSTEM.encode("utf-8"))
+    h.update(b"\x00")
+    h.update("|".join(v.value for v in DivergenceVerdict).encode("utf-8"))
+    return h.hexdigest()[:16]
 
 
 def adjudicate_payload_divergence(
