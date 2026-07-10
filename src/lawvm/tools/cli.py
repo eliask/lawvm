@@ -9971,6 +9971,32 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
     he_ir_corpus_p.add_argument("--verbose", action="store_true",
                                 help="print per-HE progress as the sweep runs")
 
+    # --- fi-he-payload-adjudicate ---
+    he_payload_adj_p = sub.add_parser(
+        "fi-he-payload-adjudicate",
+        help="T1-adjudicate the HE payload_mismatch tail into typed witness_disagreement / defect",
+        description=(
+            "Adjudicate the surviving HE payload_mismatch residual (bodies that still differ "
+            "after the inert-encoding quotient). Re-derives each compared HE's matched-op "
+            "proposed bodies (XML oracle vs PDF bill text) and asks the T1 local-LLM adjudicator "
+            "to type each divergence: oracle_artifact / genuine_difference (first-class "
+            "witness_disagreement — accounted), reader_defect (route to a higher-fidelity read), "
+            "equivalent (graduate a new inert fold), or uncertain (escalate to the image tier). "
+            "The LLM is OPTIONAL — with no backend the residual queue is reported, never a failure."
+        ),
+    )
+    he_payload_adj_p.add_argument("--farchive", default="", metavar="PATH",
+                                  help="source farchive (default: data/fi_government_proposal.farchive)")
+    he_payload_adj_p.add_argument("--sample", type=int, default=100, metavar="N",
+                                  help="random sample of N paired HEs (deterministic via --seed)")
+    he_payload_adj_p.add_argument("--seed", type=int, default=0, help="random seed for the sample")
+    he_payload_adj_p.add_argument("--limit", type=int, default=0,
+                                  help="cap the number of HEs attempted (first N of the sample)")
+    he_payload_adj_p.add_argument("--max-pages", type=int, default=400, dest="max_pages",
+                                  help="pages to read from each HE main.pdf (default: 400)")
+    he_payload_adj_p.add_argument("--base-url", default="", dest="base_url",
+                                  help="local LLM base url (default: the adjudicator's :8080)")
+
     # --- fi-parse-corpus ---
     parse_corpus_p = sub.add_parser(
         "fi-parse-corpus",
@@ -14874,6 +14900,11 @@ def _main_impl() -> None:
         from lawvm.tools.fi_he_ir_corpus import main as fi_he_ir_corpus_main
 
         fi_he_ir_corpus_main(args)
+
+    elif args.command == "fi-he-payload-adjudicate":
+        from lawvm.tools.fi_he_payload_adjudicate import main as fi_he_payload_adjudicate_main
+
+        fi_he_payload_adjudicate_main(args)
 
     elif args.command == "fi-parse-corpus":
         from lawvm.tools.fi_parse_corpus import main as fi_parse_corpus_main
