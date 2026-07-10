@@ -110,3 +110,90 @@ def test_folds_are_deterministic_and_sorted():
 def test_empty_inputs_are_equal_never_raise():
     assert text_equivalence("", "").equal
     assert text_equivalence("   \n ", "").equal  # pure-whitespace canonicalises to ""
+
+
+# ---------------------------------------------------------------------------
+# WHITESPACE_PUNCT — whitespace adjacent to punctuation (fold #3)
+# ---------------------------------------------------------------------------
+
+
+def test_space_before_colon_folds():
+    # "9 § :n" vs "9 §:n": a space before the ":n" genitive suffix is a typesetting artifact.
+    v = text_equivalence("muutetaan 9 § :n 1 momentti", "muutetaan 9 §:n 1 momentti")
+    assert v.equal
+    assert EncodingFold.WHITESPACE_PUNCT in v.folds
+
+
+def test_spaces_inside_parens_around_slash_fold():
+    # "( / )" vs "(/)": spaces inside the parens (around a slash) are inert typesetting.
+    v = text_equivalence("kohta ( / ) korvataan", "kohta (/) korvataan")
+    assert v.equal
+    assert EncodingFold.WHITESPACE_PUNCT in v.folds
+    # all interior-space variants collapse to the same canonical "(/)"
+    for variant in ("(/ )", "( /)", "( / )"):
+        assert text_equivalence("(/)", variant).equal
+
+
+def test_space_before_period_folds():
+    # "20 ." vs "20.": a space before a period is inert (the period is still PRESENT on both).
+    v = text_equivalence("annetun lain 20 .", "annetun lain 20.")
+    assert v.equal
+    assert EncodingFold.WHITESPACE_PUNCT in v.folds
+
+
+def test_thin_space_before_section_sign_is_already_folded_by_whitespace():
+    # The convicted "2 §:n" residual differs ONLY by a THIN SPACE U+2009 (vs an ordinary
+    # space) before "§". U+2009 is in ZS_NON_ASCII_SPACE_CPS, so the pre-existing WHITESPACE
+    # fold (Zs→space + run-collapse) already equalises it — no §-specific handling is needed.
+    v = text_equivalence("2 §:n mukaan", "2 §:n mukaan")  # left "§" preceded by U+2009
+    assert v.equal
+    assert EncodingFold.WHITESPACE in v.folds
+    # U+202F NARROW NO-BREAK SPACE and U+00A0 NBSP fold the same way (all in the Zs table).
+    for zs in (" ", " "):
+        assert text_equivalence(f"2{zs}§:n mukaan", "2 §:n mukaan").equal
+
+
+def test_space_before_section_sign_is_deliberately_not_folded():
+    # "§" is EXCLUDED from the before-set: the standard "N §" reference legitimately carries
+    # a space, so WHITESPACE_PUNCT must NOT strip it (that would fire on almost every body and
+    # recover no equivalences). "3 § muutetaan" stays byte-clean → no punct fold recorded.
+    v = text_equivalence("3 § muutetaan", "3 § muutetaan")
+    assert v.equal and v.folds == ()
+    # a genuine section-number difference is of course still a residual
+    assert text_equivalence("3 § muutetaan", "4 § muutetaan").residual
+
+
+def test_whitespace_punct_recorded_only_when_it_fires():
+    # a clean payload with no punctuation-adjacent space does not record the fold
+    v = text_equivalence("3 §:n 1 momentti", "3 §:n 1 momentti")
+    assert v.equal
+    assert EncodingFold.WHITESPACE_PUNCT not in v.folds
+
+
+def test_whitespace_punct_does_not_hide_numeric_difference():
+    # WHITESPACE_PUNCT removes ONLY spaces next to punctuation — digits are untouched, so a
+    # genuine numeric difference across a comma/decimal is never hidden.
+    v = text_equivalence("veroprosentti 5,9", "veroprosentti 5,10")
+    assert not v.equal and v.residual  # 9 != 10
+    assert EncodingFold.WHITESPACE_PUNCT not in v.folds
+
+
+def test_whitespace_punct_does_not_hide_word_difference():
+    # a dropped word is content, not typesetting — stays a residual.
+    v = text_equivalence("veroviraston tai kunnan", "veroviraston kunnan")
+    assert not v.equal and v.residual
+
+
+def test_whitespace_punct_does_not_hide_citation_difference():
+    # a citation year difference survives — WHITESPACE_PUNCT touches no digit or the "/".
+    v = text_equivalence("annetun lain (768/2005)", "annetun lain (768/2006)")
+    assert not v.equal and v.residual
+    assert EncodingFold.WHITESPACE_PUNCT not in v.folds
+
+
+def test_terminal_period_presence_stays_a_residual():
+    # WHITESPACE_PUNCT folds whitespace AROUND punctuation, NEVER a terminal period's
+    # PRESENCE — a trailing period can be load-bearing, so it stays a residual.
+    v = text_equivalence("maksetaan markkaa.", "maksetaan markkaa")
+    assert not v.equal and v.residual
+    assert EncodingFold.WHITESPACE_PUNCT not in v.folds

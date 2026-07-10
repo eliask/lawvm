@@ -58,6 +58,32 @@ difference: "5—10" vs "5—11" stays a residual (the digits still differ). Thi
 class ``_normalize_fi_parse_text`` treats as inert for parse-text, now convicted inert for
 payload comparison too by same-document two-witness residuals.
 
+Graduated fold #3: WHITESPACE_PUNCT (whitespace ADJACENT to punctuation)
+-----------------------------------------------------------------------
+Whitespace sitting immediately next to a punctuation mark — a space BEFORE ``: ; , . )``
+or AFTER ``(`` — is a typesetting artifact, never content. Discovered from residuals and
+convicted inert by three independent T1 adjudication runs: ``"9 § :n"`` vs ``"9 §:n"``
+(space before ``:n``), ``"( / )"`` vs ``"(/)"`` (spaces inside the parens around a slash),
+``"20 ."`` vs ``"20."`` (space before a period), and ``"1 )"`` vs ``"1)"`` (space before a
+list-item close paren). Like SEPARATOR_DASH_RUN/DOT_LEADER this is run through ``re.sub``,
+but it is strictly WHITESPACE-ONLY: the pattern body matches spaces only, guarded by a
+zero-width lookahead/lookbehind on the punctuation glyph, so it NEVER touches or deletes a
+digit, a letter, or the punctuation mark itself. Consequently it can never hide a genuine
+numeric/citation/word difference ("5,9" vs "5,10", "(768/2005)" vs "(768/2006)",
+"veroviraston tai" vs "veroviraston" all stay residuals), and it deliberately folds only
+whitespace AROUND punctuation, never a terminal punctuation's PRESENCE ("markkaa." vs
+"markkaa" stays a residual — a trailing period can be load-bearing).
+
+``§`` is DELIBERATELY EXCLUDED from the before-set. Unlike ``: ; , . )`` — whose standard
+typographic form carries NO leading space, so a leading space is the anomaly to fold — the
+standard Finnish section reference ``"N §"`` legitimately CARRIES a space. Folding it would be
+wrong-direction normalisation that fires on almost every body (destroying the output-sparse
+audit trail) while recovering ZERO additional payload equivalences (measured: 12/12 newly-equal
+pairs on a 300-HE sample are §-independent). The one convicted ``§`` residual — a THIN SPACE
+U+2009 before ``§`` in ``"2 §:n"`` — is already equalised by the WHITESPACE fold, because
+U+2009/U+202F/U+00A0 are all in ``ZS_NON_ASCII_SPACE_CPS`` (Zs→space, then run-collapse); no
+``§``-specific handling is needed for it.
+
 Auditability
 ------------
 Every fold that materially changed a side is recorded on the verdict
@@ -111,6 +137,23 @@ _DOT_LEADER_RE = re.compile(r"\.\s{0,3}\.[\s.]{0,120}")
 # here — it is a Cf line-join char handled by ``dehyphenate`` / the Cf delete above.
 _DASH_GLYPH_TABLE = {cp: 0x2D for cp in (0x2010, 0x2011, 0x2012, 0x2013, 0x2014, 0x2015, 0x2212)}
 
+# Whitespace ADJACENT to punctuation is a typesetting artifact, never content. This
+# WHITESPACE-ONLY substitution runs AFTER the Zs→space + run-collapse of the WHITESPACE fold,
+# so its input holds only single ASCII spaces. Each branch body matches spaces only and is
+# guarded by a ZERO-WIDTH lookahead/lookbehind on the punctuation glyph, so no digit, letter,
+# or the punctuation mark itself is ever touched or deleted (a genuine numeric/citation/word
+# or terminal-punctuation-PRESENCE difference can never be hidden). See WHITESPACE_PUNCT below.
+# NOTE: "§" is deliberately NOT in the before-set. Unlike a colon/period/close-paren (whose
+# STANDARD form has no leading space), the standard Finnish section reference "N §" legitimately
+# CARRIES a space; deleting it would be wrong-direction normalisation that fires on nearly every
+# body (breaking the output-sparse audit trail) while recovering zero additional equivalences on
+# the payload. The convicted "thin space before §" residual ("2 §:n") is already equalised by the
+# WHITESPACE fold — U+2009/U+202F/U+00A0 are all in ``ZS_NON_ASCII_SPACE_CPS``.
+# One alternation, one left-to-right pass: branch 1 = space(s) immediately BEFORE ":;,.)",
+# branch 2 = space(s) immediately AFTER "(". A single non-overlapping scan removes both the
+# after-"(" and the before-")" spaces of "( / )", collapsing it to "(/)".
+_WS_ADJACENT_PUNCT_RE = re.compile(r" +(?=[:;,.)])|(?<=\() +")
+
 
 class EncodingFold(StrEnum):
     """The closed set of legally-inert folds this module applies to body text.
@@ -126,6 +169,7 @@ class EncodingFold(StrEnum):
     DASH_GLYPH = "dash_glyph"  # dash-family glyph identity normalised to "-" (dash kept, not deleted)
     SEPARATOR_DASH_RUN = "separator_dash_run"  # run of 2+ dashes ("— — —" rule/elision) deleted
     DOT_LEADER = "dot_leader"  # run of 2+ dots (table/TOC leader "....." / ellipsis) deleted
+    WHITESPACE_PUNCT = "whitespace_punct"  # space adjacent to punctuation (before ":;,.)" / after "(") removed
 
 
 def _canonicalize_text(text: str) -> Tuple[str, frozenset[EncodingFold]]:
@@ -166,7 +210,13 @@ def _canonicalize_text(text: str) -> Tuple[str, frozenset[EncodingFold]]:
     if collapsed != no_dots:
         fired.add(EncodingFold.WHITESPACE)
 
-    return collapsed, frozenset(fired)
+    # WHITESPACE_PUNCT runs LAST, on the whitespace-normalised form (single ASCII spaces): one
+    # non-overlapping pass removes spaces before ":;,.)" and after "(" (so "( / )" → "(/)").
+    punct_normed = _WS_ADJACENT_PUNCT_RE.sub("", collapsed)
+    if punct_normed != collapsed:
+        fired.add(EncodingFold.WHITESPACE_PUNCT)
+
+    return punct_normed, frozenset(fired)
 
 
 @dataclass(frozen=True, slots=True)
