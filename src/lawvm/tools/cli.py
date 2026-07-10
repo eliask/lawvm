@@ -9973,6 +9973,17 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
                                 help="emit the aggregate report as JSON instead of text")
     he_ir_corpus_p.add_argument("--verbose", action="store_true",
                                 help="print per-HE progress as the sweep runs")
+    he_ir_corpus_p.add_argument("--llm-johtolause", action="store_true", dest="llm_johtolause",
+                                help="gate enacting-clause segmentation with the local-LLM johtolause "
+                                     "tagger (removes the char bound → recovers whole mega-amendment "
+                                     "bills; ~20-30 LLM calls/HE, cached — opt-in on a slice)")
+    he_ir_corpus_p.add_argument("--johtolause-cache", default=None, dest="johtolause_cache",
+                                metavar="PATH",
+                                help="content-addressed firewall cache farchive for johtolause tags "
+                                     "(default: data/fi_he_johtolause_tags.farchive)")
+    he_ir_corpus_p.add_argument("--base-url", default="", dest="base_url",
+                                help="local LLM base url for --llm-johtolause (default: the "
+                                     "adjudicator's :8080)")
 
     # --- fi-he-payload-adjudicate ---
     he_payload_adj_p = sub.add_parser(

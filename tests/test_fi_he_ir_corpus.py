@@ -108,3 +108,86 @@ def test_rank_worst_orders_by_typed_count() -> None:
     report = aggregate_rows([_row_from_result(r1), _row_from_result(r2)], worst_limit=5)
     assert [w.he_id for w in report.worst] == ["HE 1/2020 vp", "HE 2/2020 vp"]
     assert report.worst[0].typed_divergence_count == 2
+
+
+# --------------------------------------------------------------------------- #
+# LLM johtolause opt-in wiring (make_comparer / build_llm_johtolause_classify_fn) #
+# --------------------------------------------------------------------------- #
+
+
+def test_make_comparer_default_threads_no_classify_fn(monkeypatch) -> None:
+    # Default (llm_johtolause=False) → classify_fn=None reaches compare_he_from_farchive,
+    # so the mechanical lane runs and no LLM is constructed.
+    import lawvm.tools.fi_he_ir_corpus as corpus
+
+    seen: dict = {}
+
+    def fake_compare(farchive, yr, num, *, he_id, max_pages, classify_fn):
+        seen["classify_fn"] = classify_fn
+        return HECompareResult(he_id, f"fi/he/{yr}/{num}", "not_applicable", (), 0, 0, "")
+
+    monkeypatch.setattr(corpus, "compare_he_from_farchive", fake_compare)
+    comparer = corpus.make_comparer("x.farchive")
+    comparer(HEUnit(2020, 1, "HE 1/2020 vp"))
+    assert seen["classify_fn"] is None
+
+
+def test_make_comparer_llm_threads_the_built_classify_fn(monkeypatch) -> None:
+    # llm_johtolause=True → the built classify_fn is threaded into every comparison.
+    import lawvm.tools.fi_he_ir_corpus as corpus
+
+    sentinel = object()
+    monkeypatch.setattr(
+        corpus, "build_llm_johtolause_classify_fn",
+        lambda **kw: (sentinel, lambda: None),
+    )
+    seen: dict = {}
+
+    def fake_compare(farchive, yr, num, *, he_id, max_pages, classify_fn):
+        seen["classify_fn"] = classify_fn
+        return HECompareResult(he_id, f"fi/he/{yr}/{num}", "not_applicable", (), 0, 0, "")
+
+    monkeypatch.setattr(corpus, "compare_he_from_farchive", fake_compare)
+    comparer = corpus.make_comparer("x.farchive", llm_johtolause=True)
+    comparer(HEUnit(2020, 1, "HE 1/2020 vp"))
+    assert seen["classify_fn"] is sentinel
+
+
+def test_build_llm_johtolause_classify_fn_wires_cache_and_transport(
+    tmp_path, monkeypatch
+) -> None:
+    # The real builder: a fake adjudicator (NO network) proves the chat_fn calls _chat with
+    # region_locator='johtolause_tag', the tagger_id folds the resolved model, and the tag
+    # is cached content-addressed in the given store path.
+    from lawvm.finland.he_johtolause_tagger import JohtolauseTag
+
+    calls: list = []
+
+    class _FakeAdjudicator:
+        def __init__(self, **kw) -> None:
+            self.kw = kw
+
+        def _resolve_model(self) -> str:
+            return "qwen-test"
+
+        def _chat(self, system: str, user: str, *, region_locator: str) -> str:
+            calls.append(region_locator)
+            return "JOHTOLAUSE"
+
+    monkeypatch.setattr(
+        "lawvm.ingest.llm_backends.llm_adjudicator.LlmWorkflowAdjudicator",
+        _FakeAdjudicator,
+    )
+    from lawvm.tools.fi_he_ir_corpus import build_llm_johtolause_classify_fn
+
+    store_path = str(tmp_path / "tags.farchive")
+    classify_fn, close = build_llm_johtolause_classify_fn(store_path=store_path)
+    try:
+        tag = classify_fn("muutetaan lain (320/2017) 1 § ... seuraavasti:")
+        assert tag is JohtolauseTag.JOHTOLAUSE
+        assert calls == ["johtolause_tag"]
+        # Re-classify the SAME window → cache HIT, no second transport call.
+        classify_fn("muutetaan lain (320/2017) 1 § ... seuraavasti:")
+        assert calls == ["johtolause_tag"]
+    finally:
+        close()

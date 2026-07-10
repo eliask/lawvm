@@ -32,6 +32,7 @@ import random
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
+from lawvm.finland.he_johtolause_tagger import FI_HE_JOHTOLAUSE_TAG_STORE
 from lawvm.tools.fi_he_ir_compare import (
     HECompareResult,
     OpDivergence,
@@ -283,14 +284,75 @@ def enumerate_he_units(
     return [HEUnit(yr, num, f"HE {num}/{yr} vp") for yr, num in paired]
 
 
+def build_llm_johtolause_classify_fn(
+    *,
+    base_url: Optional[str] = None,
+    store_path: str = FI_HE_JOHTOLAUSE_TAG_STORE,
+) -> Tuple[Callable[[str], object], Callable[[], None]]:
+    """Build the LLM johtolause ``classify_fn`` + a ``close`` for its cache store.
+
+    Wires the determinism-firewall cache (:class:`JohtolauseTagStore` at ``store_path``) to a
+    real local-LLM transport (:class:`LlmWorkflowAdjudicator._chat`, region_locator
+    ``'johtolause_tag'``). The returned callable is ``window -> JohtolauseTag``: a cache HIT
+    is free, a MISS makes ONE chat call and persists the tag content-addressed. The tag is a
+    pure function of ``(window, tagger_id, prompt)``; the model id is folded into
+    ``tagger_id`` so re-runs are stable and a model swap re-keys.
+    """
+    from lawvm.finland.he_johtolause_tagger import (
+        JohtolauseTagStore,
+        classify_candidate_cached,
+    )
+    from lawvm.ingest.llm_backends.llm_adjudicator import LlmWorkflowAdjudicator
+
+    adj = (
+        LlmWorkflowAdjudicator(base_url=base_url)
+        if base_url
+        else LlmWorkflowAdjudicator()
+    )
+    tagger_id = f"llm_workflow:{adj._resolve_model()}"
+    store = JohtolauseTagStore(store_path)
+
+    def chat_fn(system: str, user: str) -> str:
+        return adj._chat(system, user, region_locator="johtolause_tag")
+
+    def classify_fn(window: str) -> object:
+        return classify_candidate_cached(
+            window, chat_fn=chat_fn, tagger_id=tagger_id, store=store
+        ).tag
+
+    return classify_fn, store.close
+
+
 def make_comparer(
-    farchive: str = _DEFAULT_FARCHIVE, *, max_pages: int = 400
+    farchive: str = _DEFAULT_FARCHIVE,
+    *,
+    max_pages: int = 400,
+    llm_johtolause: bool = False,
+    johtolause_cache: str = FI_HE_JOHTOLAUSE_TAG_STORE,
+    base_url: Optional[str] = None,
 ) -> Callable[[HEUnit], HECompareResult]:
-    """Build the farchive-backed ``comparer`` (HEUnit → :class:`HECompareResult`)."""
+    """Build the farchive-backed ``comparer`` (HEUnit → :class:`HECompareResult`).
+
+    With ``llm_johtolause=False`` (default) the mechanical, char-bounded enacting-clause
+    segmentation runs (no LLM, no behaviour change). With ``llm_johtolause=True`` a real
+    cache-through LLM johtolause classifier is bound (store at ``johtolause_cache``, transport
+    at ``base_url`` or the adjudicator's default :8080) and threaded into every comparison so
+    whole mega-amendment bills are recovered rather than dropped.
+    """
+    classify_fn: Optional[Callable[[str], object]] = None
+    if llm_johtolause:
+        classify_fn, _close = build_llm_johtolause_classify_fn(
+            base_url=base_url, store_path=johtolause_cache
+        )
 
     def comparer(unit: HEUnit) -> HECompareResult:
         return compare_he_from_farchive(
-            farchive, unit.he_year, unit.he_number, he_id=unit.he_id, max_pages=max_pages
+            farchive,
+            unit.he_year,
+            unit.he_number,
+            he_id=unit.he_id,
+            max_pages=max_pages,
+            classify_fn=classify_fn,
         )
 
     return comparer
@@ -375,7 +437,13 @@ def main(args: argparse.Namespace) -> None:
     if out_path:
         open(out_path, "w", encoding="utf-8").close()
 
-    comparer = make_comparer(farchive, max_pages=args.max_pages)
+    comparer = make_comparer(
+        farchive,
+        max_pages=args.max_pages,
+        llm_johtolause=getattr(args, "llm_johtolause", False),
+        johtolause_cache=getattr(args, "johtolause_cache", None) or FI_HE_JOHTOLAUSE_TAG_STORE,
+        base_url=getattr(args, "base_url", None) or None,
+    )
 
     def progress(done: int, total: int, row: HEDiffRow) -> None:
         print(

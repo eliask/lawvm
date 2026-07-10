@@ -234,6 +234,67 @@ def test_pdf_dropping_a_section_shows_op_missing() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# LLM johtolause classify_fn routing (compare_he opt-in seam)                 #
+# --------------------------------------------------------------------------- #
+
+
+def test_compare_he_default_ignores_llm_lane() -> None:
+    # No classify_fn → the mechanical span extractor runs and the classifier is untouched.
+    from lawvm.finland.he_johtolause_tagger import JohtolauseTag
+
+    called: list[str] = []
+
+    def spy(_window: str) -> JohtolauseTag:
+        called.append(_window)
+        return JohtolauseTag.JOHTOLAUSE
+
+    xml = _he_xml(_CLAUSE)
+    r = compare_he(xml, _pdf_page(_CLAUSE), he_year=2020, he_number=99)
+    assert r.compare_status == "compared"
+    assert called == []  # spy passed nowhere → mechanical lane untouched
+
+
+def test_compare_he_uses_injected_classify_fn_positive() -> None:
+    # An injected classifier that CONFIRMS the candidate routes through the LLM lane and
+    # yields the same exact match as the mechanical lane — the classifier IS consulted.
+    from lawvm.finland.he_johtolause_tagger import JohtolauseTag
+
+    called: list[str] = []
+
+    def classify(window: str) -> JohtolauseTag:
+        called.append(window)
+        return JohtolauseTag.JOHTOLAUSE
+
+    xml = _he_xml(_CLAUSE)
+    r = compare_he(
+        xml, _pdf_page(_CLAUSE), he_year=2020, he_number=99, classify_fn=classify
+    )
+    assert r.compare_status == "compared"
+    assert r.typed_divergence_count == 0
+    assert called  # the LLM lane consulted the injected classifier
+
+
+def test_compare_he_classify_fn_rejecting_all_yields_no_clause() -> None:
+    # A classifier that rejects every candidate (PERUSTELU) drops all PDF ops → the LLM lane
+    # is proven active (the mechanical lane would have extracted the same clause).
+    from lawvm.finland.he_johtolause_tagger import JohtolauseTag
+
+    xml = _he_xml(_CLAUSE)
+    r = compare_he(
+        xml,
+        _pdf_page(_CLAUSE),
+        he_year=2020,
+        he_number=99,
+        classify_fn=lambda _w: JohtolauseTag.PERUSTELU,
+    )
+    assert r.compare_status == "pdf_no_clause"
+    # Contrast: the mechanical lane WOULD have compared it.
+    assert compare_he(xml, _pdf_page(_CLAUSE), he_year=2020, he_number=99).compare_status == (
+        "compared"
+    )
+
+
+# --------------------------------------------------------------------------- #
 # payload stage + overlap gate                                               #
 # --------------------------------------------------------------------------- #
 

@@ -787,6 +787,7 @@ def compare_he(
     he_year: int,
     he_number: int,
     he_id: Optional[str] = None,
+    classify_fn: "Optional[Callable[[str], object]]" = None,
 ) -> HECompareResult:
     """Diff an HE's proposed-op IR from its two witnesses (XML bytes + PDF reading text).
 
@@ -795,6 +796,14 @@ def compare_he(
     spans out of ``reading_text`` and lowers them through the IDENTICAL
     ``_parse_one_clause``.  Typed benign/deferred strata are returned as a status, never
     raised.
+
+    ``classify_fn`` is OPTIONAL and defaults to the mechanical, char-bounded
+    :func:`extract_enacting_clause_spans` (no behaviour change).  When supplied it selects
+    the LLM-gated :func:`extract_enacting_clause_spans_llm` instead — the injected classifier
+    (real use: cache-through ``classify_candidate_cached``) removes the char bound so a
+    whole mega-amendment bill's johtolause is recovered rather than dropped.  The LLM only
+    SEGMENTS; the spans still flow through the SAME ``_parse_one_clause`` and are EXACT-diffed
+    against the trusted XML, so the exactness invariant is untouched.
     """
     hid = he_id or f"HE {he_number}/{he_year} vp"
     branch = parse_he_branch(xml_bytes, he_year=he_year, he_number=he_number, he_id=hid)
@@ -806,8 +815,12 @@ def compare_he(
         return HECompareResult(hid, branch_id, status, (), 0, 0, detail)
 
     # PDF witness: segment enacting clauses and lower them through the SAME parser.
+    if classify_fn is None:
+        spans = extract_enacting_clause_spans(reading_text)
+    else:
+        spans = extract_enacting_clause_spans_llm(reading_text, classify_fn=classify_fn)
     pdf_ops: list = []
-    for span in extract_enacting_clause_spans(reading_text):
+    for span in spans:
         new_ops, _findings = _parse_one_clause(span, len(pdf_ops), hid, branch_id)
         pdf_ops.extend(new_ops)
     pdf_flat = flatten_branch_ops(tuple(pdf_ops))
@@ -927,11 +940,16 @@ def compare_he_from_farchive(
     he_id: Optional[str] = None,
     lang: str = "fin",
     max_pages: int = 400,
+    classify_fn: "Optional[Callable[[str], object]]" = None,
 ) -> HECompareResult:
     """Read both HE witnesses from the farchive and run :func:`compare_he`.
 
     XML from ``.../fin@/main.xml``; PDF reading text from ``.../fin@/main.pdf`` via the
     free geom lane.  A missing/unreadable witness surfaces as an ``error`` status.
+
+    ``classify_fn`` is passed straight through to :func:`compare_he` — ``None`` (default)
+    keeps the mechanical enacting-clause segmentation; an injected classifier switches the
+    PDF side onto the LLM-gated span extractor.
     """
     from farchive import Farchive
 
@@ -975,7 +993,12 @@ def compare_he_from_farchive(
             f"HE main.pdf read failed: {type(exc).__name__}: {exc}",
         )
     return compare_he(
-        xml_bytes, reading_text, he_year=he_year, he_number=he_number, he_id=he_id
+        xml_bytes,
+        reading_text,
+        he_year=he_year,
+        he_number=he_number,
+        he_id=he_id,
+        classify_fn=classify_fn,
     )
 
 
