@@ -45,11 +45,20 @@ Divergence vocabulary (typed, mirrors LawVM oracle-touch/verdict machinery):
     op_missing_in_pdf  XML has an op the PDF IR does not (PDF dropped it)
     op_extra_in_pdf    PDF IR has an op the XML does not (PDF hallucinated it)
     kind_mismatch      SAME target address, DIFFERENT op kind (e.g. REPLACE↔INSERT)
+    payload_mismatch   SAME matched op, but the replacement BODY TEXT differs
+                       between witnesses beyond the inert-encoding quotient
+                       (:mod:`lawvm.finland.op_equivalence`).  Emitted by the
+                       downstream PAYLOAD stage (:func:`diff_op_payloads`), which
+                       binds each matched op's target to its body unit on BOTH
+                       witnesses and runs ``text_equivalence`` over the two body
+                       texts.  REPEAL ops carry no payload (tombstone — skipped);
+                       a target whose body is not inventoried/segmentable on one
+                       witness (thin XML frame, scanned-thin PDF) is TYPE-DEFERRED
+                       (counted, never forced into a spurious payload_mismatch).
 
-    (reserved, NOT emitted at this — the johtolause/op-selection — stage:
-     ``target_mismatch`` and ``payload_mismatch`` require the downstream
-     body-pairing/payload stage, where each op's replacement TEXT is bound; the
-     johtolause op only names WHICH provision and HOW, not the new body text.)
+    (reserved, NOT emitted yet: ``target_mismatch`` — the johtolause op only
+     names WHICH provision and HOW; a genuine target divergence surfaces as an
+     op_missing/op_extra pair at the op-structure stage.)
 
 Benign terminal strata (typed status on ``CompareResult``, never a silent empty):
 
@@ -75,7 +84,10 @@ import json
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Callable, Optional, Union
+from typing import TYPE_CHECKING, Callable, Optional, Union
+
+if TYPE_CHECKING:
+    from lawvm.finland.body_pairing import ObservedBodyUnit
 
 from lawvm.core.clause_ast import (
     ClauseAST,
@@ -85,6 +97,7 @@ from lawvm.core.clause_ast import (
     ScopedBlock,
 )
 from lawvm.core.source_document.extraction import SourceManifestation
+from lawvm.finland.op_equivalence import text_equivalence
 
 _FINLEX_FARCHIVE = "data/finlex.farchive"
 
@@ -165,13 +178,16 @@ class FlatOp:
 
 
 # The typed divergence vocabulary (mirrors LawVM oracle-touch/verdict machinery).
-# ``target_mismatch`` / ``payload_mismatch`` are reserved for the downstream
-# body-pairing/payload stage and are NOT emitted here (see module docstring).
+# The first four are emitted by the OP-STRUCTURE stage (``diff_amendment_ops``);
+# ``payload_mismatch`` is emitted by the PAYLOAD stage (``diff_op_payloads``),
+# which compares the matched op's replacement BODY TEXT across witnesses modulo
+# the inert-encoding quotient. ``target_mismatch`` stays reserved (see docstring).
 DIVERGENCE_KINDS = (
     "matched",
     "op_missing_in_pdf",
     "op_extra_in_pdf",
     "kind_mismatch",
+    "payload_mismatch",
 )
 
 #: A comparison is a clean pass iff every divergence is "matched".
@@ -324,6 +340,187 @@ def diff_amendment_ops(xml_ops: _OpsInput, pdf_ops: _OpsInput) -> tuple[OpDiverg
 
 
 # --------------------------------------------------------------------------- #
+# Payload stage — body-text equivalence for MATCHED ops                       #
+# --------------------------------------------------------------------------- #
+#
+# The op-structure diff above proves both witnesses name the SAME provision +
+# the SAME verb. The payload stage proves the NEW BODY TEXT they carry for that
+# provision is the same too, modulo the legally-inert encoding quotient owned by
+# ``lawvm.finland.op_equivalence.text_equivalence`` (Cf-format, soft-hyphen line
+# joins, whitespace). A residual that survives every inert fold is a genuine
+# body divergence → ``payload_mismatch``.
+#
+# The replacement text lives in the amending statute BODY (the muutos section
+# bodies), NOT the johtolause — so we pair each matched op's target to its body
+# unit on BOTH witnesses and compare those two body texts. A target whose body is
+# absent on either witness (thin XML table-frame; scanned-thin PDF reconstruction)
+# is TYPE-DEFERRED — counted, never forced into a spurious payload_mismatch.
+
+#: Leading "N §" section-number header (the target address, already matched at the
+#: op-structure stage) — stripped from both witnesses so the payload comparison is
+#: over the PROSE, not the address glyphs (whose spacing differs by witness).
+_LEADING_SECTION_HEADER_RE = re.compile(r"^\s{0,4}\d{1,4}\s{0,3}[a-zä]?\s{0,3}§\s*", re.IGNORECASE)
+
+#: A body-section header inside PDF reading text ("7 §", "2 a §"): a number, an
+#: optional single letter, then the section sign. Used to segment the post-
+#: johtolause reading text into per-target body payloads. The ``(?!\s{0,2}:)``
+#: guard rejects a case-INFLECTED in-body cross-reference ("4 §:n 1 kohta", "3 §:ssä")
+#: — the case colon marks a reference, never a standalone body header — so a
+#: cross-reference inside one section's body does not spuriously truncate it.
+_PDF_BODY_SECTION_RE = re.compile(r"(\d{1,4}\s{0,3}[a-zä]?)\s{0,3}§(?!\s{0,2}:)", re.IGNORECASE)
+
+#: Detail-string trim width for the residual left/right canon carried to adjudication.
+_PAYLOAD_CANON_TRIM = 80
+
+
+def _unit_target_ref(unit: "ObservedBodyUnit") -> str:
+    """Render an ``ObservedBodyUnit`` to an op ``target_ref`` key.
+
+    Mirrors :meth:`LegalAddress.__str__` so a body unit and the matched op that
+    claims it share a lookup key (``section:7``, ``chapter:4/section:5``,
+    ``chapter:2``). Only section/chapter/part units are keyed (the payload-
+    comparable strata); anything else returns "".
+    """
+    parts: list[str] = []
+    if unit.part_label:
+        parts.append(f"part:{unit.part_label}")
+    if unit.chapter_label:
+        parts.append(f"chapter:{unit.chapter_label}")
+    if unit.kind in ("section", "chapter", "part"):
+        parts.append(f"{unit.kind}:{unit.label}")
+    else:
+        return ""
+    return "/".join(parts)
+
+
+def _xml_body_payloads(xml_data: bytes) -> "dict[str, str]":
+    """Map ``target_ref`` → replacement body text from a main.xml amendment body.
+
+    Uses the sanctioned body inventory (:func:`build_observed_body_inventory`),
+    so the payload text is exactly what the FI replay pairing lane sees. First-
+    wins on a duplicate key (rare; see the inventory's own ``#N`` disambiguation).
+    """
+    from lawvm.core.xml_parse import parse_corpus_xml
+    from lawvm.finland.body_pairing import build_observed_body_inventory
+
+    try:
+        root = parse_corpus_xml(xml_data)
+    except Exception:
+        return {}
+    out: dict[str, str] = {}
+    for unit in build_observed_body_inventory(root):
+        ref = _unit_target_ref(unit)
+        if ref and ref not in out:
+            out[ref] = unit.source_text
+    return out
+
+
+def _pdf_body_payloads(reading_text: str) -> "dict[str, str]":
+    """Segment PDF reading text into ``section:<label>`` → body payload.
+
+    The body follows the operative johtolause terminator ("... seuraavasti:"), so
+    segmentation starts after the FIRST such terminator to avoid latching onto the
+    "7 §, 10 § ..." section list INSIDE the johtolause. Each "N §" header opens a
+    segment that runs to the next header (or end). Only flat section bodies are
+    recovered here (the solid prose case); chapter/nested targets are left absent
+    and thus type-deferred. First-wins on a duplicate label.
+    """
+    from lawvm.finland.helpers import _normalize_source_section_num
+    from lawvm.ingest.page_elements import dehyphenate
+
+    text = dehyphenate(reading_text or "")
+    term = _SEURAAVASTI_RE.search(text)
+    body = text[term.end():] if term is not None else text
+
+    headers = list(_PDF_BODY_SECTION_RE.finditer(body))
+    out: dict[str, str] = {}
+    for i, hm in enumerate(headers):
+        label = _normalize_source_section_num(hm.group(0))
+        if not label:
+            continue
+        start = hm.end()
+        end = headers[i + 1].start() if i + 1 < len(headers) else len(body)
+        ref = f"section:{label}"
+        if ref not in out:
+            out[ref] = body[start:end].strip()
+    return out
+
+
+def _strip_section_header(text: str) -> str:
+    """Drop a leading "N §" address header so the payload compares over prose."""
+    return _LEADING_SECTION_HEADER_RE.sub("", text or "", count=1).strip()
+
+
+def _trim(text: str) -> str:
+    flat = " ".join(text.split())
+    return flat if len(flat) <= _PAYLOAD_CANON_TRIM else flat[:_PAYLOAD_CANON_TRIM] + "…"
+
+
+@dataclass(frozen=True, slots=True)
+class PayloadDiffResult:
+    """Outcome of the payload stage over one witness pair's matched ops.
+
+    ``divergences`` are the genuine ``payload_mismatch`` records (residual survived
+    every inert fold). ``compared`` counts matched ops whose body was present on
+    BOTH witnesses and thus actually payload-compared; ``deferred`` counts matched
+    ops whose body was absent on ≥1 witness (type-deferred, never forced); ``skipped``
+    counts REPEAL tombstones (no payload by construction).
+    """
+
+    divergences: "tuple[OpDivergence, ...]"
+    compared: int
+    deferred: int
+    skipped: int
+
+
+def diff_op_payloads(
+    xml_body: "dict[str, str]",
+    pdf_body: "dict[str, str]",
+    matched_ops: "tuple[FlatOp, ...]",
+) -> PayloadDiffResult:
+    """Compare the replacement BODY TEXT of each matched op across witnesses.
+
+    For every matched op: REPEAL is skipped (a tombstone has no payload); a target
+    whose body is absent on either witness is TYPE-DEFERRED (not payload-comparable
+    at this witness pair — thin XML frame / scanned-thin PDF); otherwise the two
+    body texts are compared with :func:`text_equivalence` and a surviving residual
+    becomes a ``payload_mismatch`` carrying the fired folds + trimmed canon forms.
+    """
+    out: list[OpDivergence] = []
+    compared = 0
+    deferred = 0
+    skipped = 0
+    for op in matched_ops:
+        if op.action == "repeal":
+            skipped += 1
+            continue
+        ref = op.target_ref
+        xml_text = xml_body.get(ref)
+        pdf_text = pdf_body.get(ref)
+        if xml_text is None or pdf_text is None:
+            deferred += 1
+            continue
+        compared += 1
+        eq = text_equivalence(_strip_section_header(xml_text), _strip_section_header(pdf_text))
+        if eq.residual:
+            folds = ",".join(f.value for f in eq.folds) or "none"
+            out.append(
+                OpDivergence(
+                    kind="payload_mismatch",
+                    target_ref=ref,
+                    xml_op=op.render,
+                    pdf_op=op.render,
+                    detail=(
+                        f"replacement body differs beyond inert encoding "
+                        f"(folds fired: {folds}); xml={_trim(eq.left_canon)!r} "
+                        f"pdf={_trim(eq.right_canon)!r}"
+                    ),
+                )
+            )
+    return PayloadDiffResult(tuple(out), compared, deferred, skipped)
+
+
+# --------------------------------------------------------------------------- #
 # Locator handling                                                            #
 # --------------------------------------------------------------------------- #
 
@@ -437,9 +634,6 @@ def amendment_ops_from_xml(
     the body is a thin table-frame (``xml_incomplete``), and
     :class:`OperativeClauseNotFound` when no enacting clause is present.
     """
-    from lawvm.finland.metadata import get_johtolause
-    from lawvm.tools.fi_parse_compare import xml_body_text
-
     loc = (
         statute_locator
         if isinstance(statute_locator, StatuteLocator)
@@ -450,6 +644,19 @@ def amendment_ops_from_xml(
         raise AmendmentIrCompareError(
             f"fi-amendment-ir-compare: main.xml not found in {farchive}: {loc.xml_locator}"
         )
+    return _xml_ast_from_bytes(data, loc.sid)
+
+
+def _xml_ast_from_bytes(data: bytes, sid: str) -> ClauseAST:
+    """Lower a main.xml's enacting johtolause to a ``ClauseAST``.
+
+    Split out so ``compare_statute`` reads the main.xml bytes ONCE and derives
+    both the op AST and the body payloads from them. Raises the same typed
+    frame-only / no-clause failures as its caller.
+    """
+    from lawvm.finland.metadata import get_johtolause
+    from lawvm.tools.fi_parse_compare import xml_body_text
+
     johto = get_johtolause(data)
     if not johto.strip():
         # No enacting clause AND a thin body ⇒ frame-only table amendment (benign,
@@ -457,14 +664,14 @@ def amendment_ops_from_xml(
         body = xml_body_text(data)
         if len(body) < _XML_BODY_MIN_CHARS:
             raise XmlIncompleteError(
-                f"fi-amendment-ir-compare: {loc.sid} main.xml is a thin table-frame "
+                f"fi-amendment-ir-compare: {sid} main.xml is a thin table-frame "
                 f"(body {len(body)} chars < {_XML_BODY_MIN_CHARS}, no enacting johtolause) "
                 "— operative content is PDF-only, comparison refused (xml_frame_only)"
             )
         raise OperativeClauseNotFound(
-            f"fi-amendment-ir-compare: {loc.sid} main.xml has no enacting johtolause"
+            f"fi-amendment-ir-compare: {sid} main.xml has no enacting johtolause"
         )
-    ast = amendment_ops_from_clause_text(johto, statute_id=loc.sid)
+    ast = amendment_ops_from_clause_text(johto, statute_id=sid)
     # A johtolause that lowers to ZERO structural ops over a thin body is a
     # frame-only table amendment: the XML→ops reference is empty, so a diff would
     # be meaningless. Flag it benign rather than forcing an all-missing comparison.
@@ -472,7 +679,7 @@ def amendment_ops_from_xml(
         body = xml_body_text(data)
         if len(body) < _XML_BODY_MIN_CHARS:
             raise XmlIncompleteError(
-                f"fi-amendment-ir-compare: {loc.sid} main.xml johtolause lowers to 0 "
+                f"fi-amendment-ir-compare: {sid} main.xml johtolause lowers to 0 "
                 f"structural ops over a thin body ({len(body)} chars < {_XML_BODY_MIN_CHARS}) "
                 "— operative content is PDF-only, comparison refused (xml_frame_only)"
             )
@@ -580,6 +787,27 @@ def amendment_ops_from_pdf(
     the farchive).  When given, ``pdf_locator`` is used only to derive the
     ``statute_id`` for parser resolution.
     """
+    loc, reading_text = _resolve_pdf_reading_text(
+        pdf_locator, farchive, lang=lang, lane=lane, max_pages=max_pages, text_fn=text_fn
+    )
+    return _pdf_ast_from_reading_text(reading_text, loc.sid)
+
+
+def _resolve_pdf_reading_text(
+    pdf_locator: Union[str, StatuteLocator],
+    farchive: str,
+    *,
+    lang: str,
+    lane: str,
+    max_pages: int,
+    text_fn: Optional[Callable[[], str]],
+) -> "tuple[StatuteLocator, str]":
+    """Resolve the (locator, reading-text) pair for the PDF witness ONCE.
+
+    Split out so ``compare_statute`` reads the vision text a single time and
+    derives BOTH the op AST and the body payloads from it (no double vision read;
+    ``pdf_reading_text`` is cache-backed but the split keeps the read explicit).
+    """
     if isinstance(pdf_locator, StatuteLocator):
         loc = pdf_locator
         media: Optional[str] = None
@@ -588,14 +816,15 @@ def amendment_ops_from_pdf(
         media = pdf_locator if _MEDIA_LOC_RE.match(pdf_locator) else None
 
     if text_fn is not None:
-        reading_text = text_fn()
-    else:
-        media_locator = media or resolve_media_locator(loc, farchive)
-        reading_text = pdf_reading_text(
-            media_locator, farchive, lane=lane, max_pages=max_pages
-        )
+        return loc, text_fn()
+    media_locator = media or resolve_media_locator(loc, farchive)
+    return loc, pdf_reading_text(media_locator, farchive, lane=lane, max_pages=max_pages)
+
+
+def _pdf_ast_from_reading_text(reading_text: str, sid: str) -> ClauseAST:
+    """Lower a PDF reading text's operative johtolause to a ``ClauseAST``."""
     johto = extract_operative_johtolause(reading_text)
-    ast = amendment_ops_from_clause_text(johto, statute_id=loc.sid)
+    ast = amendment_ops_from_clause_text(johto, statute_id=sid)
     # A real enacting johtolause always names >= 1 structural op. Zero structural
     # ops means the extractor latched onto annex/body prose that merely CONTAINS an
     # operative verb + "seuraavasti" (e.g. an annex "lisätään yksi havainto ...
@@ -603,7 +832,7 @@ def amendment_ops_from_pdf(
     # emitting a hollow clause that would diff as all-ops-missing.
     if not flatten_clause_ast(ast):
         raise OperativeClauseNotFound(
-            f"fi-amendment-ir-compare: {loc.sid} PDF reading text yielded a clause with "
+            f"fi-amendment-ir-compare: {sid} PDF reading text yielded a clause with "
             "0 structural ops (annex/body prose, not an enacting johtolause) — pdf_annex_only"
         )
     return ast
@@ -625,6 +854,13 @@ class CompareResult:
     xml_op_count: int
     pdf_op_count: int
     detail: str = ""
+    #: Payload-stage census over the MATCHED ops (only meaningful when
+    #: ``compare_status == "compared"``): how many had their replacement body text
+    #: actually compared on both witnesses, how many were type-deferred (body absent
+    #: on ≥1 witness), and how many were REPEAL tombstones (no payload).
+    payload_compared: int = 0
+    payload_deferred: int = 0
+    payload_skipped: int = 0
 
     @property
     def counts(self) -> "dict[str, int]":
@@ -672,8 +908,19 @@ def compare_statute(
     xml_spec: Union[str, StatuteLocator] = xml_locator if xml_locator else loc
     pdf_spec: Union[str, StatuteLocator] = pdf_locator if pdf_locator else loc
 
+    # --- XML witness: read the main.xml bytes ONCE; derive ops + body payloads. ---
     try:
-        xml_ast = amendment_ops_from_xml(xml_spec, farchive, lang=lang)
+        xml_loc = (
+            xml_spec
+            if isinstance(xml_spec, StatuteLocator)
+            else parse_statute_locator(xml_spec, lang=lang)
+        )
+        xml_data = _read_farchive(farchive, xml_loc.xml_locator)
+        if not xml_data:
+            raise AmendmentIrCompareError(
+                f"fi-amendment-ir-compare: main.xml not found in {farchive}: {xml_loc.xml_locator}"
+            )
+        xml_ast = _xml_ast_from_bytes(xml_data, loc.sid)
     except XmlIncompleteError as exc:
         return CompareResult(loc.sid, loc.lang, "xml_frame_only", (), 0, 0, str(exc))
     except AmendmentIrCompareError as exc:
@@ -681,10 +928,12 @@ def compare_statute(
 
     xml_flat = flatten_clause_ast(xml_ast)
 
+    # --- PDF witness: read the reading text ONCE; derive ops + body payloads. ---
     try:
-        pdf_ast = amendment_ops_from_pdf(
+        _pdf_loc, reading_text = _resolve_pdf_reading_text(
             pdf_spec, farchive, lang=lang, lane=lane, max_pages=max_pages, text_fn=pdf_text_fn
         )
+        pdf_ast = _pdf_ast_from_reading_text(reading_text, loc.sid)
     except OperativeClauseNotFound as exc:
         return CompareResult(
             loc.sid, loc.lang, "pdf_annex_only", (), len(xml_flat), 0, str(exc)
@@ -696,8 +945,24 @@ def compare_statute(
 
     pdf_flat = flatten_clause_ast(pdf_ast)
     divergences = diff_amendment_ops(xml_flat, pdf_flat)
+
+    # --- Payload stage: compare the replacement BODY TEXT of the matched ops. ---
+    matched_refs = {d.target_ref for d in divergences if d.kind == _BENIGN_MATCH}
+    matched_ops = tuple(op for op in xml_flat if op.target_ref in matched_refs)
+    xml_body = _xml_body_payloads(xml_data)
+    pdf_body = _pdf_body_payloads(reading_text)
+    payload = diff_op_payloads(xml_body, pdf_body, matched_ops)
+
     return CompareResult(
-        loc.sid, loc.lang, "compared", divergences, len(xml_flat), len(pdf_flat)
+        loc.sid,
+        loc.lang,
+        "compared",
+        divergences + payload.divergences,
+        len(xml_flat),
+        len(pdf_flat),
+        payload_compared=payload.compared,
+        payload_deferred=payload.deferred,
+        payload_skipped=payload.skipped,
     )
 
 
@@ -712,6 +977,9 @@ def result_to_json(result: CompareResult) -> dict:
         "counts": result.counts,
         "typed_divergence_count": result.typed_divergence_count,
         "exact_equivalent": result.exact_equivalent,
+        "payload_compared": result.payload_compared,
+        "payload_deferred": result.payload_deferred,
+        "payload_skipped": result.payload_skipped,
         "divergences": [
             {
                 "kind": d.kind,
@@ -730,6 +998,7 @@ _KIND_GLYPH = {
     "op_missing_in_pdf": "-",
     "op_extra_in_pdf": "+",
     "kind_mismatch": "~",
+    "payload_mismatch": "≠",
 }
 
 
@@ -747,7 +1016,12 @@ def _print_result(result: CompareResult) -> None:
     print(
         f"XML ops={result.xml_op_count}  PDF ops={result.pdf_op_count}   "
         f"matched={c['matched']}  op_missing_in_pdf={c['op_missing_in_pdf']}  "
-        f"op_extra_in_pdf={c['op_extra_in_pdf']}  kind_mismatch={c['kind_mismatch']}"
+        f"op_extra_in_pdf={c['op_extra_in_pdf']}  kind_mismatch={c['kind_mismatch']}  "
+        f"payload_mismatch={c['payload_mismatch']}"
+    )
+    print(
+        f"  payload stage: compared={result.payload_compared}  "
+        f"deferred={result.payload_deferred}  repeal_skipped={result.payload_skipped}"
     )
     print("-" * 78)
     for d in result.divergences:
@@ -758,6 +1032,8 @@ def _print_result(result: CompareResult) -> None:
             print(f"  {g} {d.target_ref:<40} XML:{d.xml_op}  (dropped by PDF)")
         elif d.kind == "op_extra_in_pdf":
             print(f"  {g} {d.target_ref:<40} PDF:{d.pdf_op}  (not in XML)")
+        elif d.kind == "payload_mismatch":
+            print(f"  {g} {d.target_ref:<40} {d.detail}")
         else:
             print(f"  {g} {d.target_ref:<40} xml={d.xml_op}  pdf={d.pdf_op}")
     print("-" * 78)
