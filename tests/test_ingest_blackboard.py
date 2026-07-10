@@ -723,3 +723,28 @@ def test_resolve_rejects_unoffered_restart() -> None:
     ws.signal_escalation(cond)
     with pytest.raises(ValueError):
         ws.resolve_escalation(cond, Restart.ABORT_REGION, OwnerLevel.HUMAN)
+
+
+def test_condition_carriers_extracted_to_conditions_and_re_exported() -> None:
+    # The level-neutral condition/restart carriers now LIVE in lawvm.ingest.conditions
+    # and are re-exported from blackboard — every existing import site keeps working,
+    # and the two module paths bind the SAME objects (a pure mechanical extraction).
+    from lawvm.ingest import conditions as C
+    from lawvm.ingest import blackboard as B
+
+    assert B.Escalation is C.Escalation
+    assert B.EscalationResolution is C.EscalationResolution
+    assert B.OwnerLevel is C.OwnerLevel
+    assert B.Restart is C.Restart
+    # The carriers are fully constructible from the new module and behave identically.
+    cond = C.Escalation(
+        origin_producer="x",
+        origin_level=C.OwnerLevel.LEVEL_1,
+        region=(SpanRef(1, (0,)),),
+        violated_expectation="unanticipated",
+        restarts=(C.Restart.ROUTE_TO_LEVEL_1,),
+        suggested_owner=C.OwnerLevel.COMPOSER,
+    )
+    assert isinstance(cond, B.Escalation)
+    assert str(C.Restart.DEFER_TO_HUMAN) == "defer-to-human"
+    assert str(C.OwnerLevel.HUMAN) == "human"

@@ -1066,3 +1066,103 @@ def test_trustworthy_lines_route_first_cold_read_to_span() -> None:
     )
     converge_page(v, _manifestation(), 1, _page_elements(), reading_order_text="\n".join(_LINES))
     assert v.leaf_modes_seen[0] == "span"
+
+
+# --------------------------------------------------------------------------- #
+# §9 region-subdivide rung: a truncated whole-page cold read is subdivided into #
+# geometric regions read on their own crops, stitched in reading order.         #
+# --------------------------------------------------------------------------- #
+
+
+def _dense_page_elements() -> PageElements:
+    """A single-column dense page (4 body lines, distinct y) → 4 vertical regions."""
+    return PageElements(
+        page_num=1,
+        lines=("line one", "line two", "line three", "line four"),
+        page_lines=(
+            PageLine(text="line one", y_order=0, bbox=BBox(72, 780, 500, 792), band="body", col=0),
+            PageLine(text="line two", y_order=1, bbox=BBox(72, 760, 500, 772), band="body", col=0),
+            PageLine(text="line three", y_order=2, bbox=BBox(72, 740, 500, 752), band="body", col=0),
+            PageLine(text="line four", y_order=3, bbox=BBox(72, 720, 500, 732), band="body", col=0),
+        ),
+        page_width=595.0,
+        page_height=842.0,
+    )
+
+
+class _SubdivideVision(_FakeConvergeVision):
+    """Fake: appraise sees content; the whole-page cold read TRUNCATES; each region
+    crop reads cold into distinct text (label = read order) so the stitch order is
+    assertable. ``region_truncates`` makes every region still too dense."""
+
+    def __init__(self, appraisal, *, region_truncates=False, deltas=("",)):
+        super().__init__("", deltas=deltas)
+        self._appraisal = appraisal
+        self._region_truncates = region_truncates
+        self.regions_seen: list = []
+
+    def appraise_page(self, man, page_num, page_elements):
+        return self._appraisal
+
+    def propose_page_struct(self, man, page_num, page_elements, *, leaf_mode="patch"):
+        from lawvm.ingest.llm_backends.vision_producer import VisionProducerTruncated
+
+        raise VisionProducerTruncated(page_num=page_num, detail="whole page too dense")
+
+    def read_region_cold(self, man, page_num, bbox, *, dpi=300, expected_lines=0):
+        from lawvm.ingest.llm_backends.vision_producer import VisionProducerTruncated
+
+        if self._region_truncates:
+            raise VisionProducerTruncated(page_num=page_num, detail="region still too dense")
+        idx = len(self.regions_seen)
+        self.regions_seen.append((bbox, expected_lines))
+        return f"region-{idx}"
+
+
+def test_truncated_cold_read_subdivides_and_stitches_regions_in_reading_order() -> None:
+    v = _SubdivideVision(_appraisal(has_content=True, lines="reliable"))
+    cp = converge_page(v, _manifestation(), 1, _dense_page_elements(), reading_order_text="x")
+    # The whole-page read truncated → subdivided into 4 vertical regions, each read
+    # cold on its own crop and stitched in the deterministic (column, band, y) order.
+    assert "subdivided" in cp.convergence.gate_reasons
+    assert cp.convergence.regions_read == 4
+    assert cp.convergence.termination != "truncated"  # content preserved, not dropped
+    # Stitched flat in reading order (top region first) — never completion order.
+    assert [n.text for n in cp.nodes] == ["region-0", "region-1", "region-2", "region-3"]
+    # Each region crop was rendered at the higher region DPI (a zoomed re-read).
+    assert len(v.regions_seen) == 4
+
+
+def test_region_still_truncated_after_subdivision_is_typed_truncated() -> None:
+    # Every region is STILL too dense → the page is typed truncated (fail-loud), never
+    # a silent drop of the page tail.
+    v = _SubdivideVision(_appraisal(has_content=True), region_truncates=True)
+    cp = converge_page(v, _manifestation(), 1, _dense_page_elements(), reading_order_text="x")
+    assert cp.convergence.termination == "truncated"
+    assert cp.convergence.regions_read == 0
+    assert cp.nodes == ()
+
+
+def test_cold_truncation_without_a_region_reader_is_typed_truncated_not_a_crash() -> None:
+    # A minimal/legacy vision producer WITHOUT ``read_region_cold`` cannot subdivide;
+    # a truncated cold read is typed truncated (never an unhandled raise / silent tree).
+    class _ColdTruncNoRegion(_FakeConvergeVision):
+        def propose_page_struct(self, man, page_num, page_elements, *, leaf_mode="patch"):
+            from lawvm.ingest.llm_backends.vision_producer import VisionProducerTruncated
+
+            raise VisionProducerTruncated(page_num=page_num, detail="dense")
+
+    v = _ColdTruncNoRegion(f"1 PARA 0 L1{US}")
+    cp = converge_page(v, _manifestation(), 1, _dense_page_elements(), reading_order_text="x")
+    assert cp.convergence.termination == "truncated"
+    assert cp.convergence.regions_read == 0
+    assert cp.nodes == ()
+
+
+def test_regions_read_round_trips_through_the_json_codec() -> None:
+    v = _SubdivideVision(_appraisal(has_content=True, lines="reliable"))
+    cp = converge_page(v, _manifestation(), 1, _dense_page_elements(), reading_order_text="x")
+    sim = build_page_simulacrum(cp, _manifestation(), 1, _dense_page_elements(), reading_order_text="x")
+    restored = page_simulacrum_from_json(page_simulacrum_to_json(sim))
+    assert restored.convergence.regions_read == cp.convergence.regions_read == 4
+    assert "subdivided" in restored.convergence.gate_reasons

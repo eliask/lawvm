@@ -68,15 +68,26 @@ class ConvergenceInfo:
     page whose whole ladder came back degenerate terminates ``unreadable_page`` (a
     typed fail-loud, NEVER a silently-cached empty read); an appraisal that saw a
     blank page terminates ``appraised_blank`` at zero cold reads.
+
+    ``regions_read`` (§9 region-subdivide, additive) counts the geometric regions
+    read on their OWN crop when a whole-page cold read TRUNCATED (too dense for the
+    token budget). Instead of accepting the truncated tree (dropping the page tail),
+    the page is subdivided by column → vertical band and each region is read via the
+    cold region reader, then the region trees are stitched into the forest in a
+    deterministic (column, band, y) order (never completion order). Zero for the
+    whole-page happy path; a subdivided page also carries the ``subdivided`` gate
+    reason. A page STILL truncated after subdivision terminates ``truncated`` (never
+    a silent drop).
     """
 
     rounds: int
     round_hashes: Tuple[str, ...]
     termination: str  # empty_patch|fixpoint|oscillation|max_iters|gated_single_pass|truncated|appraised_blank|unreadable_page
-    gate_reasons: Tuple[str, ...]  # Decision 2 closed trigger set (+ suspect_region, §8)
+    gate_reasons: Tuple[str, ...]  # Decision 2 closed trigger set (+ suspect_region §8, + subdivided §9)
     patches_total: int
     rereads: int = 0
     read_attempts: int = 1
+    regions_read: int = 0
 
 
 @dataclass(frozen=True, slots=True)

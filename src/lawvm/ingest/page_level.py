@@ -70,6 +70,7 @@ from lawvm.ingest.suspect_region import (
 from lawvm.ingest.struct_wire import (
     NodePatch,
     StructBuildNode,
+    StructBuildResult,
     _apply_patches,
     _parse_command_line,
     _struct_units,
@@ -720,6 +721,170 @@ def _is_degenerate_read(appraisal: object, reconstructed: str) -> bool:
     )
 
 
+# §9 region-decomposition (region-subdivide as a ladder rung). When a whole-page
+# cold read TRUNCATES (too dense for the token budget), the whole-page read is the
+# coarsest — and lossiest — tiling; subdividing the page into a small number of
+# geometric regions and reading each on its OWN crop is more faithful (§9). Bound
+# the region count so a page that is STILL too dense per region is typed truncated,
+# never subdivided into an unbounded fan-out.
+_MAX_SUBDIVIDE_REGIONS = 8
+# The DPI a region crop is read at — the same zoom the §8 re-read uses (a whole-page
+# cold read is ≈144 DPI; a region crop concentrates the model on a smaller area).
+_SUBDIVIDE_DPI = _REREAD_DPI
+
+
+def _union_bbox(lines: Sequence[PageLine]) -> Optional[BBox]:
+    """The union bbox of a group of page lines (None when none carry geometry)."""
+    boxes = [pl.bbox for pl in lines if pl.bbox is not None]
+    if not boxes:
+        return None
+    return BBox(
+        x0=min(b.x0 for b in boxes),
+        y0=min(b.y0 for b in boxes),
+        x1=max(b.x1 for b in boxes),
+        y1=max(b.y1 for b in boxes),
+    )
+
+
+def _split_contiguous(
+    seq: Sequence[PageLine], k: int
+) -> List[Sequence[PageLine]]:
+    """Split a reading-ordered line sequence into ``k`` near-equal contiguous chunks."""
+    n = len(seq)
+    k = max(1, min(k, n))
+    size = -(-n // k)  # ceil division → chunks of size, last shorter
+    return [seq[i : i + size] for i in range(0, n, size)]
+
+
+def _propose_regions(
+    page_elements: PageElements, max_regions: int
+) -> Tuple[Tuple[BBox, int], ...]:
+    """Deterministic geometric read regions for a truncated page (§9).
+
+    Subdivides by COLUMN (``geom.col``, left→right) then by vertical BAND within a
+    column (contiguous reading-order chunks, top→bottom). Region count is bounded by
+    ``max_regions`` (bands-per-column budget = ``max_regions // n_columns``), so a
+    dense single-column page is sliced vertically and a multi-column page is split by
+    column first. Returns ``(bbox, expected_line_count)`` pairs in the deterministic
+    (column, band, y) reading order — NEVER completion order. Empty when the page has
+    no usable geometry or cannot be split into >= 2 regions (→ the caller types the
+    page truncated rather than pretend-subdivide)."""
+    geo = [pl for pl in page_elements.page_lines if pl.bbox is not None]
+    if len(geo) < 2:
+        return ()
+    # Columns: distinct ``col`` values (None → a single implicit column), ordered
+    # left→right by their leftmost edge (a deterministic reading order for columns).
+    cols: Dict[int, List[PageLine]] = {}
+    for pl in geo:
+        cols.setdefault(pl.col if pl.col is not None else 0, []).append(pl)
+    # Every ``pl`` here has a non-None bbox (``geo`` was filtered above); the min/sort
+    # keys read ``bbox`` fields directly (ty can't narrow across the comprehension).
+    col_keys = sorted(
+        cols, key=lambda c: min(pl.bbox.x0 for pl in cols[c] if pl.bbox is not None)
+    )
+    n_cols = len(col_keys)
+    bands_per_col = max(1, max_regions // n_cols)
+    regions: List[Tuple[Tuple[int, int], BBox, int]] = []
+    for ci, ck in enumerate(col_keys):
+        # Reading order within a column: top→bottom (descending y), then left edge,
+        # then the extractor's own y_order as a stable tiebreak.
+        col_lines = sorted(
+            cols[ck],
+            key=lambda pl: (
+                (-pl.bbox.y1, pl.bbox.x0, pl.y_order)
+                if pl.bbox is not None
+                else (0.0, 0.0, pl.y_order)
+            ),
+        )
+        for bi, chunk in enumerate(_split_contiguous(col_lines, bands_per_col)):
+            bbox = _union_bbox(chunk)
+            if bbox is None or not chunk:
+                continue
+            regions.append(((ci, bi), bbox, len(chunk)))
+    if len(regions) < 2:
+        return ()
+    regions.sort(key=lambda r: r[0])  # (column, band) — deterministic reading order
+    return tuple((bbox, n) for _key, bbox, n in regions)
+
+
+def _subdivide_page_read(
+    vision,
+    manifestation,
+    page_num: int,
+    page_elements: PageElements,
+    *,
+    max_regions: int = _MAX_SUBDIVIDE_REGIONS,
+    dpi: int = _SUBDIVIDE_DPI,
+) -> Tuple[Tuple[StructBuildNode, ...], int, bool]:
+    """Read a truncated page region-by-region and stitch the trees → (nodes, regions_read, complete).
+
+    §9: the whole-page read truncated (dropped the page tail), so read each geometric
+    region on its OWN crop via the EXISTING cold region reader
+    (``vision.read_region_cold`` — content-addressed, under ``PDFIUM_LOCK``) and
+    stitch every transcribed physical line into a flat PARAGRAPH forest, assembled in
+    the deterministic region order (``_propose_regions`` — column, band, y), NEVER
+    completion order (determinism firewall). A minimal/fake vision producer WITHOUT
+    ``read_region_cold`` cannot subdivide → ``((), 0, False)`` (the caller types the
+    page truncated). ``complete`` is False when ANY region itself truncated / failed
+    (that region is still too dense) — the caller then types the page truncated while
+    KEEPING whatever was read (never a silent drop)."""
+    if not hasattr(vision, "read_region_cold"):
+        return (), 0, False
+    regions = _propose_regions(page_elements, max_regions)
+    if not regions:
+        return (), 0, False
+    from lawvm.ingest.llm_backends.vision_producer import (
+        VisionProducerFailure,
+        VisionProducerTruncated,
+    )
+
+    nodes: List[StructBuildNode] = []
+    regions_read = 0
+    complete = True
+    for bbox, expected in regions:  # already in deterministic reading order
+        try:
+            text = vision.read_region_cold(
+                manifestation, page_num, bbox, dpi=dpi, expected_lines=expected
+            )
+        except (VisionProducerTruncated, VisionProducerFailure):
+            # This region is still too dense (or un-renderable) → the page is not
+            # fully subdivided. Keep the other regions; the caller types it truncated.
+            complete = False
+            continue
+        if not text.strip():
+            continue
+        regions_read += 1
+        for physical_line in text.split("\n"):
+            s = physical_line.strip()
+            if s:
+                nodes.append(
+                    StructBuildNode(
+                        kind=SourceDocumentNodeKind.PARAGRAPH, text=s
+                    )
+                )
+    return tuple(nodes), regions_read, complete
+
+
+def _synthetic_subdivide_build(
+    nodes: Tuple[StructBuildNode, ...]
+) -> StructBuildResult:
+    """A stitched-region forest as a ``StructBuildResult`` (no wire — code-assembled).
+
+    The region stitch is assembled by code, not parsed from a model wire, so it has
+    no command-line accounting: zero findings, zero patches, and ``total_command_lines
+    = 0`` so the terminator-compliance floor is skipped (``_gate_reasons``). The
+    ``subdivided`` gate reason is added by the caller."""
+    return StructBuildResult(
+        roots=nodes,
+        findings=(),
+        terminator_used=False,
+        total_command_lines=0,
+        terminated_command_lines=0,
+        patches_applied=0,
+        node_patches_applied=0,
+    )
+
+
 def converge_page(
     vision,
     manifestation,
@@ -789,10 +954,20 @@ def converge_page(
     nodes: Tuple[StructBuildNode, ...] = ()
     reconstructed = ""
     read_attempts = 0
+    subdivided = False
+    regions_read = 0
+    truncated_cold = False
     for attempt_leaf_mode in _cold_read_ladder(appraisal, leaf_mode):
-        result = vision.propose_page_struct(
-            manifestation, page_num, page_elements, leaf_mode=attempt_leaf_mode
-        )
+        try:
+            result = vision.propose_page_struct(
+                manifestation, page_num, page_elements, leaf_mode=attempt_leaf_mode
+            )
+        except VisionProducerTruncated:
+            # The whole-page cold read is too dense for the token budget — accepting
+            # its tree DROPS the page tail. Break to the §9 region-subdivide rung
+            # (below) instead of accepting a truncated read.
+            truncated_cold = True
+            break
         read_attempts += 1
         build = result.build
         nodes = build.roots
@@ -802,7 +977,7 @@ def converge_page(
             break
     else:
         # Every rung came back degenerate → a TYPED unreadable page (fail-loud), NOT a
-        # silently-cached empty read. Later increments subdivide (§9) before giving up.
+        # silently-cached empty read.
         return ConvergedPage(
             nodes=nodes,
             convergence=ConvergenceInfo(
@@ -819,6 +994,45 @@ def converge_page(
             raw_wire_digests=tuple(raw_digests),
         )
 
+    # §9 region-subdivide rung: a truncated whole-page cold read is the COARSEST,
+    # lossiest tiling. Subdivide the page into a bounded number of geometric regions
+    # (column → vertical band), read each on its OWN crop via the existing cold region
+    # reader, and stitch the region trees into the forest in a deterministic (column,
+    # band, y) order. The stitched forest then flows through the SAME gate + refine +
+    # §8 re-read pass as any cold read (firewall preserved).
+    if truncated_cold:
+        sub_nodes, regions_read, complete = _subdivide_page_read(
+            vision, manifestation, page_num, page_elements
+        )
+        if not (sub_nodes and complete):
+            # Subdivision impossible (no region reader / no usable geometry) OR a
+            # region is STILL too dense → typed truncated (fail-loud), keeping any
+            # regions that WERE read. NEVER a silent drop of the page tail.
+            return ConvergedPage(
+                nodes=sub_nodes,
+                convergence=ConvergenceInfo(
+                    rounds=1,
+                    round_hashes=(_resolved_tree_hash(sub_nodes),),
+                    termination="truncated",
+                    gate_reasons=("truncated",)
+                    + (("subdivided",) if regions_read else ()),
+                    patches_total=0,
+                    rereads=0,
+                    read_attempts=read_attempts,
+                    regions_read=regions_read,
+                ),
+                freeform=_freeform_index(sub_nodes),
+                assurance=AssuranceTier.UNADJUDICATED_PROPOSAL,
+                raw_wire_digests=tuple(raw_digests),
+            )
+        subdivided = True
+        nodes = sub_nodes
+        build = _synthetic_subdivide_build(nodes)
+        reconstructed = "\n".join(_struct_text_of(n) for n in nodes)
+
+    # Past the ladder + subdivide rung, a non-degenerate read always set ``build``
+    # (a truncated / degenerate ladder returned early above).
+    assert build is not None
     freeform = _freeform_index(nodes)
     assurance = _page_assurance(reconstructed, reading_order_text, adjudicator, region)
 
@@ -827,6 +1041,10 @@ def converge_page(
     # is its OWN gate trigger — the page enters the refine + re-read pass.
     suspects = _detect_suspects(nodes, page_elements)
     gate_reasons = _gate_reasons(build, assurance, freeform, reading_order_text, suspects)
+    if subdivided:
+        # A subdivided page always records the §9 rung (even if no other gate fired),
+        # so it enters the normal refine/re-read pass rather than single-passing.
+        gate_reasons = gate_reasons + ("subdivided",)
     round_hashes: List[str] = [_resolved_tree_hash(nodes)]
     patches_total = build.patches_applied
     rereads = 0
@@ -842,6 +1060,7 @@ def converge_page(
                 patches_total=patches_total,
                 rereads=0,
                 read_attempts=read_attempts,
+                regions_read=regions_read,
             ),
             freeform=freeform,
             assurance=assurance,
@@ -913,6 +1132,7 @@ def converge_page(
             patches_total=patches_total,
             rereads=rereads,
             read_attempts=read_attempts,
+            regions_read=regions_read,
         ),
         freeform=freeform,
         assurance=assurance,
@@ -1238,6 +1458,8 @@ def page_simulacrum_to_json(sim: PageSimulacrum) -> dict:
             "gate_reasons": list(sim.convergence.gate_reasons),
             "patches_total": sim.convergence.patches_total,
             "rereads": sim.convergence.rereads,
+            "read_attempts": sim.convergence.read_attempts,
+            "regions_read": sim.convergence.regions_read,
         },
         "assurance": sim.assurance.value,
         "raw_wire_digests": list(sim.raw_wire_digests),
@@ -1266,6 +1488,8 @@ def page_simulacrum_from_json(raw: dict) -> PageSimulacrum:
             gate_reasons=tuple(conv["gate_reasons"]),
             patches_total=conv["patches_total"],
             rereads=conv.get("rereads", 0),
+            read_attempts=conv.get("read_attempts", 1),
+            regions_read=conv.get("regions_read", 0),
         ),
         assurance=AssuranceTier(raw["assurance"]),
         raw_wire_digests=tuple(raw.get("raw_wire_digests", ())),
