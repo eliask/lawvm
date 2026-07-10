@@ -47,7 +47,7 @@ from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
 from lawvm.core.source_document.extraction import (
     SourceManifestation,
 )
-from lawvm.ingest.llm_backends import token_meter
+from lawvm.ingest.llm_backends import model_io_log, token_meter
 
 if TYPE_CHECKING:
     from lawvm.core.source_document.anchors import BBox
@@ -529,6 +529,11 @@ class VisionPageProducer:
             token_meter.METER.observe(out, wall_ms)
         except Exception:
             pass
+        # Durable model-I/O log (opt-in via LAWVM_MODEL_IO_LOG): the full prompt +
+        # completion (images as metadata, never blobs) so calls are auditable +
+        # replayable offline without re-inference. Inert + fully guarded — another
+        # pure side channel that never perturbs the returned content.
+        model_io_log.record(payload, out, wall_ms)
         try:
             choice = out["choices"][0]
             content = str(choice["message"]["content"])
