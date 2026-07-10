@@ -87,8 +87,12 @@ MAX_CONVERGE_ITERS = 4
 # Terminator-compliance floor below which the gate fires (Decision 2).
 _TERMINATOR_COMPLIANCE_FLOOR = 0.98
 
-# §8 agentic re-read: the DPI a suspect region is re-rendered + re-read at (the
-# cold read is ≈144 DPI; a garble is often a resolution artifact, so we zoom in).
+# §8 agentic re-read: the DPI a suspect region is re-rendered + re-read at. The
+# recovery lever is ISOLATION, not DPI: cropping the region into its OWN image lets
+# its text command a large share of the vision encoder's fixed token grid (a glyph
+# lost as a tiny fraction of the whole page is resolved once it fills a crop —
+# measured on a scanned gazette, correct even at a 400 px crop). This DPI just sets
+# the crop's sharpness once isolated; see ``visual.DEFAULT_REREAD_DPI``.
 _REREAD_DPI = 300
 # Cap the re-reads per page — output-sparsity guard (a page with a dozen garbles
 # is a page-level failure, not a re-read case; the residue stays typed-suspect).
@@ -728,8 +732,9 @@ def _is_degenerate_read(appraisal: object, reconstructed: str) -> bool:
 # the region count so a page that is STILL too dense per region is typed truncated,
 # never subdivided into an unbounded fan-out.
 _MAX_SUBDIVIDE_REGIONS = 8
-# The DPI a region crop is read at — the same zoom the §8 re-read uses (a whole-page
-# cold read is ≈144 DPI; a region crop concentrates the model on a smaller area).
+# The DPI a region crop is read at — the same zoom the §8 re-read uses. What matters
+# is that a region crop concentrates the encoder's fixed token grid on a SMALLER area
+# (isolation), so its text is transcribed faithfully; the DPI just sets crop sharpness.
 _SUBDIVIDE_DPI = _REREAD_DPI
 
 
@@ -823,7 +828,10 @@ def _subdivide_page_read(
     (``vision.read_region_cold`` — content-addressed, under ``PDFIUM_LOCK``) and
     stitch every transcribed physical line into a flat PARAGRAPH forest, assembled in
     the deterministic region order (``_propose_regions`` — column, band, y), NEVER
-    completion order (determinism firewall). A minimal/fake vision producer WITHOUT
+    completion order (determinism firewall). When the page has NO pdfium text-layer
+    geometry (a genuinely SCANNED page), the regions are instead derived from the
+    page IMAGE (``visual.segment_page_regions`` — recursive XY-cut), so the scanned
+    stratum subdivides too. A minimal/fake vision producer WITHOUT
     ``read_region_cold`` cannot subdivide → ``((), 0, False)`` (the caller types the
     page truncated). ``complete`` is False when ANY region itself truncated / failed
     (that region is still too dense) — the caller then types the page truncated while
@@ -831,6 +839,14 @@ def _subdivide_page_read(
     if not hasattr(vision, "read_region_cold"):
         return (), 0, False
     regions = _propose_regions(page_elements, max_regions)
+    if not regions:
+        # No pdfium text-layer geometry (a genuinely SCANNED page) — derive the read
+        # regions from the page IMAGE instead (recursive XY-cut over the ink
+        # projection), so the scanned residual can subdivide too. Empty when the
+        # image cannot be segmented, and the caller then types the page truncated.
+        from lawvm.ingest.visual import segment_page_regions
+
+        regions = segment_page_regions(manifestation, page_num)
     if not regions:
         return (), 0, False
     from lawvm.ingest.llm_backends.vision_producer import (
@@ -883,6 +899,17 @@ def _synthetic_subdivide_build(
         patches_applied=0,
         node_patches_applied=0,
     )
+
+
+def _page_lacks_text_geometry(page_elements: PageElements) -> bool:
+    """True when the page has NO pdfium text-layer geometry — a genuinely SCANNED page.
+
+    The whole-page vision read loses small text on such a page (the encoder grid),
+    and the geometry-driven §9 subdivide cannot run (no per-line bboxes). Detecting
+    this routes the page to the IMAGE-segmented region read (``segment_page_regions``)
+    by default. A page whose extractor bound ANY per-line bbox is NOT scanned in this
+    sense — its geometry lane is left untouched."""
+    return not any(pl.bbox is not None for pl in page_elements.page_lines)
 
 
 def converge_page(
@@ -957,7 +984,33 @@ def converge_page(
     subdivided = False
     regions_read = 0
     truncated_cold = False
-    for attempt_leaf_mode in _cold_read_ladder(appraisal, leaf_mode):
+
+    # §9 SCANNED-page default: a page with no pdfium text geometry is read whole ONLY
+    # by the vision model, whose encoder under-samples small text (a 6-8 pt italic
+    # heading misreads at ANY whole-page render scale — the grid, not the DPI). Read
+    # it region-by-region FROM THE PAGE IMAGE up front (``segment_page_regions`` via
+    # ``_subdivide_page_read``) so each region's text commands enough of the encoder
+    # grid to transcribe faithfully — the same fidelity lever the §8 re-read uses,
+    # applied by DEFAULT to the scanned residual rather than only on a suspect flag.
+    # Only when the image cannot be segmented (or a region truncates) does the
+    # whole-page ladder below run (no regression to the current behaviour).
+    if (
+        appraisal is not None
+        and _page_lacks_text_geometry(page_elements)
+        and hasattr(vision, "read_region_cold")
+    ):
+        sub_nodes, regions_read, complete = _subdivide_page_read(
+            vision, manifestation, page_num, page_elements
+        )
+        if sub_nodes and complete:
+            subdivided = True
+            nodes = sub_nodes
+            build = _synthetic_subdivide_build(nodes)
+            reconstructed = "\n".join(_struct_text_of(n) for n in nodes)
+            read_attempts = regions_read
+
+    ladder = () if subdivided else _cold_read_ladder(appraisal, leaf_mode)
+    for attempt_leaf_mode in ladder:
         try:
             result = vision.propose_page_struct(
                 manifestation, page_num, page_elements, leaf_mode=attempt_leaf_mode
@@ -976,23 +1029,24 @@ def converge_page(
         if not _is_degenerate_read(appraisal, reconstructed):
             break
     else:
-        # Every rung came back degenerate → a TYPED unreadable page (fail-loud), NOT a
-        # silently-cached empty read.
-        return ConvergedPage(
-            nodes=nodes,
-            convergence=ConvergenceInfo(
-                rounds=1,
-                round_hashes=(_resolved_tree_hash(nodes),),
-                termination="unreadable_page",
-                gate_reasons=("unreadable_page",),
-                patches_total=build.patches_applied if build is not None else 0,
-                rereads=0,
-                read_attempts=read_attempts,
-            ),
-            freeform=(),
-            assurance=AssuranceTier.UNADJUDICATED_PROPOSAL,
-            raw_wire_digests=tuple(raw_digests),
-        )
+        if not subdivided:
+            # Every rung came back degenerate → a TYPED unreadable page (fail-loud),
+            # NOT a silently-cached empty read.
+            return ConvergedPage(
+                nodes=nodes,
+                convergence=ConvergenceInfo(
+                    rounds=1,
+                    round_hashes=(_resolved_tree_hash(nodes),),
+                    termination="unreadable_page",
+                    gate_reasons=("unreadable_page",),
+                    patches_total=build.patches_applied if build is not None else 0,
+                    rereads=0,
+                    read_attempts=read_attempts,
+                ),
+                freeform=(),
+                assurance=AssuranceTier.UNADJUDICATED_PROPOSAL,
+                raw_wire_digests=tuple(raw_digests),
+            )
 
     # §9 region-subdivide rung: a truncated whole-page cold read is the COARSEST,
     # lossiest tiling. Subdivide the page into a bounded number of geometric regions
