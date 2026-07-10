@@ -9796,6 +9796,45 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
                                    "(EXTRA+STRUCTURE down, MISSING not up, NUMERIC unchanged)"))
     parse_cmp_p.add_argument("--json", action="store_true", help="emit JSON instead of the text report")
 
+    # --- fi-amendment-ir-compare ---
+    amend_ir_p = sub.add_parser(
+        "fi-amendment-ir-compare",
+        help="amendment IR-EQUIVALENCE: PDF→ops vs trusted XML→ops (op-level diff)",
+        description=(
+            "The CENTERPIECE product-level eval. LawVM's output is the legal IR "
+            "(amendment operations → consolidation), not PDF text, so the real "
+            "accuracy target is: does PDF→IR produce the SAME amendment operations "
+            "as the trusted XML→IR path? Both witnesses are fed through the IDENTICAL "
+            "clause parser (johtolause/api.parse_clause): the authoritative main.xml's "
+            "enacting johtolause on one side, the gazette PDF's vision-reconstructed "
+            "operative clause on the other. This is EXACTNESS: every op is either "
+            "MATCHED or a TYPED divergence (op_missing_in_pdf / op_extra_in_pdf / "
+            "kind_mismatch, matched by §/chapter/moment/kohta target reference); the "
+            "result PASSes iff zero typed divergences — there is no coverage/WER score. "
+            "A dropped section or a REPLACE misread as INSERT shows up; harmless "
+            "whitespace does not. A frame-only table main.xml is FLAGGED xml_frame_only "
+            "(benign, PDF-only); an annex-only media PDF is FLAGGED pdf_annex_only "
+            "(benign). The defacsimile lane needs the vision backend (localhost:8080)."
+        ),
+    )
+    amend_ir_p.add_argument("statute", nargs="?", default=None,
+                            help="statute id YEAR/NUM (e.g. 1994/800), or omit and pass --xml/--pdf")
+    amend_ir_p.add_argument("--farchive", default=None, metavar="PATH",
+                            help="source farchive (default: data/finlex.farchive)")
+    amend_ir_p.add_argument("--xml", default=None, metavar="LOCATOR",
+                            help="explicit main.xml locator (with --pdf) instead of a statute id")
+    amend_ir_p.add_argument("--pdf", default=None, metavar="LOCATOR",
+                            help="explicit media PDF locator (with --xml) instead of a statute id")
+    amend_ir_p.add_argument("--lang", default="fin", help="statute language (default: fin)")
+    amend_ir_p.add_argument("--lane", default="defacsimile",
+                            choices=["defacsimile", "struct_span"],
+                            help="PDF reconstruction lane (default: defacsimile = vision converge)")
+    amend_ir_p.add_argument("--max-pages", type=int, default=20, dest="max_pages",
+                            help="pages to read from the media PDF (default: 20)")
+    amend_ir_p.add_argument("--json", action="store_true", help="emit JSON instead of the text report")
+    amend_ir_p.add_argument("--json-out", default=None, metavar="PATH", dest="json_out",
+                            help="also write the JSON payload to this path")
+
     # --- fi-parse-corpus ---
     parse_corpus_p = sub.add_parser(
         "fi-parse-corpus",
@@ -14674,6 +14713,11 @@ def _main_impl() -> None:
         from lawvm.tools.fi_parse_compare import main as fi_parse_compare_main
 
         fi_parse_compare_main(args)
+
+    elif args.command == "fi-amendment-ir-compare":
+        from lawvm.tools.fi_amendment_ir_compare import main as fi_amendment_ir_compare_main
+
+        fi_amendment_ir_compare_main(args)
 
     elif args.command == "fi-parse-corpus":
         from lawvm.tools.fi_parse_corpus import main as fi_parse_corpus_main
