@@ -1101,14 +1101,20 @@ def _pdfium_text_layer(data: bytes, max_pages: int) -> str:
 
 
 def he_pdf_reading_text(
-    farchive: str, pdf_locator: str, *, max_pages: int = 400
+    farchive: str, pdf_locator: str, *, max_pages: int = 5000
 ) -> str:
     """Reconstruct an HE main.pdf's reading text (born-digital, zero image tokens).
 
     Reads ALL pages up to ``max_pages`` because the lakiehdotus (bill text) sits near the
-    END of the HE, after the perustelut.  PRIMARY lane is the native pdfium TEXT LAYER
-    (correct reading order for born-digital HEs); it falls back to the geom bbox
-    reconstruction only when the text layer is absent/sparse (a scanned HE).
+    END of the HE, after the perustelut — and in a GIANT multi-bill omnibus HE the later
+    bills sit hundreds of pages in (HE 61/2018 is 1760 pages, its bills printed
+    alphabetically).  The cap is deliberately high (5000, guarded by ``_MAX_HE_PDF_BYTES``
+    for pathological outliers): a low page cap SILENTLY drops whole late bills from the
+    op-set (the dominant op_missing cause on mega-omnibus HEs), and the native text-layer
+    read is zero-token so there is no reason to truncate a born-digital document early.
+    PRIMARY lane is the native pdfium TEXT LAYER (correct reading order for born-digital
+    HEs); it falls back to the geom bbox reconstruction only when the text layer is
+    absent/sparse (a scanned HE).
     """
     import hashlib
     from datetime import datetime, timezone
@@ -1147,7 +1153,7 @@ def compare_he_from_farchive(
     *,
     he_id: Optional[str] = None,
     lang: str = "fin",
-    max_pages: int = 400,
+    max_pages: int = 5000,
     classify_fn: "Optional[Callable[[str], object]]" = None,
 ) -> HECompareResult:
     """Read both HE witnesses from the farchive and run :func:`compare_he`.

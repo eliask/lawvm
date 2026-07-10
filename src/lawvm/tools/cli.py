@@ -9936,8 +9936,8 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
     he_ir_p.add_argument("--farchive", default=None, metavar="PATH",
                          help="source farchive (default: data/fi_government_proposal.farchive)")
     he_ir_p.add_argument("--lang", default="fin", help="HE language variant (default: fin)")
-    he_ir_p.add_argument("--max-pages", type=int, default=400, dest="max_pages",
-                         help="pages to geom-read from the HE main.pdf (default: 400; lakiehdotus is near the end)")
+    he_ir_p.add_argument("--max-pages", type=int, default=5000, dest="max_pages",
+                         help="pages to read from the HE main.pdf (default: 5000 = full born-digital doc; a low cap silently drops late bills in giant omnibus HEs)")
     he_ir_p.add_argument("--json", action="store_true", help="emit JSON instead of the text report")
     he_ir_p.add_argument("--json-out", default=None, metavar="PATH", dest="json_out",
                          help="also write the JSON payload to this path")
@@ -9965,8 +9965,8 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
                                 help="random seed for the sample (default: 0)")
     he_ir_corpus_p.add_argument("--limit", type=int, default=None,
                                 help="cap the number of HEs attempted (first N of the sampled list)")
-    he_ir_corpus_p.add_argument("--max-pages", type=int, default=400, dest="max_pages",
-                                help="pages to geom-read from each HE main.pdf (default: 400)")
+    he_ir_corpus_p.add_argument("--max-pages", type=int, default=5000, dest="max_pages",
+                                help="pages to read from each HE main.pdf (default: 5000 = full born-digital doc)")
     he_ir_corpus_p.add_argument("--out", default=None, metavar="PATH",
                                 help="JSONL residual-queue output path (one row per HE)")
     he_ir_corpus_p.add_argument("--json", action="store_true",
@@ -10006,8 +10006,8 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
     he_payload_adj_p.add_argument("--seed", type=int, default=0, help="random seed for the sample")
     he_payload_adj_p.add_argument("--limit", type=int, default=0,
                                   help="cap the number of HEs attempted (first N of the sample)")
-    he_payload_adj_p.add_argument("--max-pages", type=int, default=400, dest="max_pages",
-                                  help="pages to read from each HE main.pdf (default: 400)")
+    he_payload_adj_p.add_argument("--max-pages", type=int, default=5000, dest="max_pages",
+                                  help="pages to read from each HE main.pdf (default: 5000 = full born-digital doc)")
     he_payload_adj_p.add_argument("--base-url", default="", dest="base_url",
                                   help="local LLM base url (default: the adjudicator's :8080)")
     he_payload_adj_p.add_argument("--verdict-cache", default=_FI_HE_PAYLOAD_VERDICT_STORE,

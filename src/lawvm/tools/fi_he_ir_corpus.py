@@ -330,7 +330,7 @@ def build_llm_johtolause_classify_fn(
 def make_comparer(
     farchive: str = _DEFAULT_FARCHIVE,
     *,
-    max_pages: int = 400,
+    max_pages: int = 5000,
     llm_johtolause: bool = False,
     johtolause_cache: str = FI_HE_JOHTOLAUSE_TAG_STORE,
     base_url: Optional[str] = None,
