@@ -9932,6 +9932,53 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
     sweep_p.add_argument("--json-out", default=None, metavar="PATH", dest="json_out",
                          help="also write the JSON payload to this path")
 
+    # --- fi-producer-compare ---
+    prodcmp_p = sub.add_parser(
+        "fi-producer-compare",
+        help="Level-1 producer usefulness A/B (geom/vision/docling/nemotron + combos) vs HE XML gold",
+        description=(
+            "Compare the Level-1 page PRODUCERS against each other on the same "
+            "faithfulness scale. Gold stratum: HE government proposals "
+            "(akn/fi/doc/government-proposal/<y>/<n>/fin@/main.pdf <-> main.xml in "
+            "fi_government_proposal.farchive) — born-digital PROSE, a clean "
+            "same-document match (~0.98 word overlap); pairs are kept only when the "
+            "XML is a valid inline gold (no .pdf/media ref, substantial body). For "
+            "each PDF, reconstruct the reading text with EACH available producer "
+            "(geom = deterministic born-digital lane; vision = the build-script read; "
+            "docling / nemotron when their backends are up) and each 2-combination "
+            "(geom+vision, docling+vision — per-page UNION, corroboration accounted "
+            "through the core adjudication.assurance_for), then score every "
+            "reconstruction against xml_body_text with the EXISTING scorers "
+            "(NUMERIC-exact recall+precision over the defacsimile token grabber, WER, "
+            "word-coverage). Per-producer model token + wall cost comes from "
+            "token_meter. Each PDF is stratified by its dominant appraise_page "
+            "page-kind (prose/tables/mixed) when the vision backend is up; the "
+            "aggregate names the per-(stratum,kind) winner on faithfulness-per-token "
+            "(a free deterministic lane wins at >= coverage). Unavailable producers "
+            "are always printed as a SKIP list, never silently omitted; a producer "
+            "that fails on a PDF is a typed row, not a crash. --dry-run plans (probes "
+            "availability) with no inference. ADDITIVE — never edits the ingest pipeline."
+        ),
+    )
+    prodcmp_p.add_argument("--he-farchive", default=None, metavar="PATH", dest="he_farchive",
+                           help="HE proposals farchive (default: data/fi_government_proposal.farchive)")
+    prodcmp_p.add_argument("--lang", default="fin", help="language segment (default: fin)")
+    prodcmp_p.add_argument("--locator", default=None, metavar="LOCATOR",
+                           help="compare ONE HE .../main.pdf locator; the sibling main.xml is derived")
+    prodcmp_p.add_argument("--limit", type=int, default=None, metavar="N",
+                           help="compare the first N valid-gold HE pairs (deterministic prefix)")
+    prodcmp_p.add_argument("--base-url", default="http://127.0.0.1:8080", dest="base_url",
+                           help="vision backend base URL (default: http://127.0.0.1:8080)")
+    prodcmp_p.add_argument("--max-pages", type=int, default=200, dest="max_pages",
+                           help="pages to load per PDF (default: 200)")
+    prodcmp_p.add_argument("--no-appraise", action="store_true", dest="no_appraise",
+                           help="skip vision appraise_page stratification (kind = unappraised)")
+    prodcmp_p.add_argument("--dry-run", action="store_true", dest="dry_run",
+                           help="plan the run (probe producer availability) — no inference")
+    prodcmp_p.add_argument("--json", action="store_true", help="emit JSON instead of the text report")
+    prodcmp_p.add_argument("--json-out", default=None, metavar="PATH", dest="json_out",
+                           help="also write the JSON payload to this path")
+
     # --- structural-review ---
     sr_p = sub.add_parser(
         "structural-review",
@@ -14642,6 +14689,11 @@ def _main_impl() -> None:
         from lawvm.tools.fi_sweep import main as fi_sweep_main
 
         fi_sweep_main(args)
+
+    elif args.command == "fi-producer-compare":
+        from lawvm.tools.fi_producer_compare import main as fi_producer_compare_main
+
+        fi_producer_compare_main(args)
 
     elif args.command == "structural-review":
         from lawvm.tools.structural_review import (
