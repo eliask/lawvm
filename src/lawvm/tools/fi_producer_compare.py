@@ -473,7 +473,7 @@ class ProducerScore:
     """One producer's usefulness on one PDF (or a typed non-scored status)."""
 
     producer: str
-    status: str  # "scored" | "unavailable" | "failed"
+    score_status: str  # "scored" | "unavailable" | "failed"
     numeric_recall: float = 0.0
     numeric_precision: float = 0.0
     wer: float = 1.0
@@ -528,7 +528,7 @@ def score_producer(
     the reported tokens/wall are EXACTLY this producer's model calls. A raise is a
     typed ``failed`` row (mirrors ``fi_parse_corpus._process_one``), never a crash."""
     if not producer.is_available():
-        return ProducerScore(producer=producer.name, status="unavailable")
+        return ProducerScore(producer=producer.name, score_status="unavailable")
 
     token_meter.reset()  # clear any prior producer's rows
     t0 = time.monotonic()
@@ -543,7 +543,7 @@ def score_producer(
         token_meter.reset()
         return ProducerScore(
             producer=producer.name,
-            status="failed",
+            score_status="failed",
             detail=f"{type(exc).__name__}: {exc}",
         )
     wall_s = time.monotonic() - t0
@@ -556,7 +556,7 @@ def score_producer(
     ) else assurance_for(1).name
     return ProducerScore(
         producer=producer.name,
-        status="scored",
+        score_status="scored",
         numeric_recall=recall,
         numeric_precision=precision,
         wer=wer,
@@ -586,7 +586,7 @@ class PdfProducerReport:
     pdf_locator: str
     xml_locator: Optional[str]
     stratum: str
-    status: str  # "compared" | "failed"
+    pair_status: str  # "compared" | "failed"
     dominant_kind: str = "unappraised"
     page_kinds: Dict[str, int] = field(default_factory=dict)
     scores: Tuple[ProducerScore, ...] = ()
@@ -672,7 +672,7 @@ def compare_pdf(
             pdf_locator=pair.pdf_locator,
             xml_locator=pair.xml_locator,
             stratum=pair.stratum,
-            status="failed",
+            pair_status="failed",
             detail=f"load: {type(exc).__name__}: {exc}",
         )
 
@@ -685,7 +685,7 @@ def compare_pdf(
             pdf_locator=pair.pdf_locator,
             xml_locator=pair.xml_locator,
             stratum=pair.stratum,
-            status="failed",
+            pair_status="failed",
             detail=f"xml: {type(exc).__name__}: {exc}",
         )
     finally:
@@ -695,7 +695,7 @@ def compare_pdf(
             pdf_locator=pair.pdf_locator,
             xml_locator=pair.xml_locator,
             stratum=pair.stratum,
-            status="failed",
+            pair_status="failed",
             detail="xml: empty gold blob",
         )
     xml_text = xml_body_text(xml_bytes)
@@ -707,7 +707,7 @@ def compare_pdf(
             pdf_locator=pair.pdf_locator,
             xml_locator=pair.xml_locator,
             stratum=pair.stratum,
-            status="failed",
+            pair_status="failed",
             detail=f"pages: {type(exc).__name__}: {exc}",
         )
 
@@ -725,7 +725,7 @@ def compare_pdf(
         pdf_locator=pair.pdf_locator,
         xml_locator=pair.xml_locator,
         stratum=pair.stratum,
-        status="compared",
+        pair_status="compared",
         dominant_kind=dominant,
         page_kinds=hist,
         scores=scores,
@@ -784,11 +784,11 @@ def build_rollup(
     cells: Dict[Tuple[str, str, str], List[ProducerScore]] = {}
     groups: set[Tuple[str, str]] = set()
     for rep in reports:
-        if rep.status != "compared":
+        if rep.pair_status != "compared":
             continue
         groups.add((rep.stratum, rep.dominant_kind))
         for sc in rep.scores:
-            if sc.status != "scored":
+            if sc.score_status != "scored":
                 continue
             cells.setdefault((rep.stratum, rep.dominant_kind, sc.producer), []).append(sc)
 
@@ -860,8 +860,8 @@ def render_report(rollup: RollupReport) -> str:
         "gold (word-coverage / WER / NUMERIC-exact recall+precision, per-producer "
         "token cost)"
     )
-    compared = [r for r in rollup.reports if r.status == "compared"]
-    failed = [r for r in rollup.reports if r.status != "compared"]
+    compared = [r for r in rollup.reports if r.pair_status == "compared"]
+    failed = [r for r in rollup.reports if r.pair_status != "compared"]
     by_stratum: Dict[str, int] = {}
     for r in compared:
         by_stratum[r.stratum] = by_stratum.get(r.stratum, 0) + 1
@@ -879,7 +879,7 @@ def render_report(rollup: RollupReport) -> str:
     lines.append("## PER-PDF x PER-PRODUCER")
     lines.append(_SCORE_HEADER)
     for rep in sorted(rollup.reports, key=lambda r: (r.stratum, r.pdf_locator)):
-        if rep.status != "compared":
+        if rep.pair_status != "compared":
             lines.append(f"# FAILED [{rep.stratum}] {rep.pdf_locator}: {rep.detail}")
             continue
         for sc in rep.scores:
@@ -891,7 +891,7 @@ def render_report(rollup: RollupReport) -> str:
                         rep.stratum,
                         rep.dominant_kind,
                         sc.producer,
-                        sc.status,
+                        sc.score_status,
                         f"{sc.numeric_recall:.4f}",
                         f"{sc.numeric_precision:.4f}",
                         f"{sc.wer:.4f}",
@@ -945,14 +945,14 @@ def report_to_json(rollup: RollupReport) -> Dict[str, Any]:
                 "pdf_locator": r.pdf_locator,
                 "xml_locator": r.xml_locator,
                 "stratum": r.stratum,
-                "status": r.status,
+                "pair_status": r.pair_status,
                 "dominant_kind": r.dominant_kind,
                 "page_kinds": r.page_kinds,
                 "detail": r.detail,
                 "scores": [
                     {
                         "producer": s.producer,
-                        "status": s.status,
+                        "score_status": s.score_status,
                         "numeric_recall": s.numeric_recall,
                         "numeric_precision": s.numeric_precision,
                         "wer": s.wer,
