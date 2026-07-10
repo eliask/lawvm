@@ -9835,6 +9835,42 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
     amend_ir_p.add_argument("--json-out", default=None, metavar="PATH", dest="json_out",
                             help="also write the JSON payload to this path")
 
+    # --- fi-amendment-ir-corpus ---
+    amend_ir_corpus_p = sub.add_parser(
+        "fi-amendment-ir-corpus",
+        help="corpus driver for the amendment-IR op-diff (VoI lane routing + capped vision)",
+        description=(
+            "Drive fi-amendment-ir-compare over the amendment corpus (sd/fin ORIGINAL "
+            "statutes that are amendment acts AND have a media PDF) to produce the first "
+            "corpus-wide GENUINE-divergence distribution. Value-of-Information lane "
+            "routing minimises image tokens: each PDF's pages are loaded ONCE via the "
+            "cheap pdfium text-layer census (no vision) and born-digital PDFs are diffed "
+            "with a FREE geom text_fn (zero tokens), while scanned PDFs route to the "
+            "EXPENSIVE vision (defacsimile) lane — which is CAPPED (--vision-cap, default "
+            "50) so a first pass costs bounded GPU. The cap is LOGGED (cap_skipped), never "
+            "a silent truncation. Every statute's result is persisted as a JSONL row (the "
+            "residual queue the downstream adjudicator consumes), and the run folds the "
+            "EXACT-MATCH rate, the typed-bucket totals (op_missing_in_pdf / op_extra_in_pdf "
+            "/ kind_mismatch) and the ranked worst statutes."
+        ),
+    )
+    amend_ir_corpus_p.add_argument("--farchive", default=None, metavar="PATH",
+                                   help="source farchive (default: data/finlex.farchive)")
+    amend_ir_corpus_p.add_argument("--sids", default=None, metavar="PATH",
+                                   help="JSON list of amendment-corpus sids (YEAR/NUM)")
+    amend_ir_corpus_p.add_argument("--limit", type=int, default=None,
+                                   help="cap the number of statutes attempted (first N of the sid list)")
+    amend_ir_corpus_p.add_argument("--vision-cap", type=int, default=50, dest="vision_cap",
+                                   help="ceiling on EXPENSIVE vision-lane statutes (default: 50; geom is uncapped)")
+    amend_ir_corpus_p.add_argument("--max-pages", type=int, default=20, dest="max_pages",
+                                   help="pages to read from each media PDF (default: 20)")
+    amend_ir_corpus_p.add_argument("--out", default=None, metavar="PATH",
+                                   help="JSONL residual-queue output path (one row per statute)")
+    amend_ir_corpus_p.add_argument("--json", action="store_true",
+                                   help="emit the aggregate report as JSON instead of text")
+    amend_ir_corpus_p.add_argument("--verbose", action="store_true",
+                                   help="print per-statute progress as the sweep runs")
+
     # --- fi-parse-corpus ---
     parse_corpus_p = sub.add_parser(
         "fi-parse-corpus",
@@ -14718,6 +14754,11 @@ def _main_impl() -> None:
         from lawvm.tools.fi_amendment_ir_compare import main as fi_amendment_ir_compare_main
 
         fi_amendment_ir_compare_main(args)
+
+    elif args.command == "fi-amendment-ir-corpus":
+        from lawvm.tools.fi_amendment_ir_corpus import main as fi_amendment_ir_corpus_main
+
+        fi_amendment_ir_corpus_main(args)
 
     elif args.command == "fi-parse-corpus":
         from lawvm.tools.fi_parse_corpus import main as fi_parse_corpus_main
