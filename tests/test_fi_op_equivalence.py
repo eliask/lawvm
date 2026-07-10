@@ -38,6 +38,37 @@ def test_nbsp_and_whitespace_collapse():
     assert EncodingFold.WHITESPACE in v.folds
 
 
+def test_intra_cell_newline_folds_to_space():
+    # A multi-line CELL: the wrapped Docling read has a newline where the witness has a space;
+    # the WHITESPACE fold (\s runs, newline included) makes them compare equal.
+    v = text_equivalence("Sahkon\nkulutus", "Sahkon kulutus")
+    assert v.equal
+    assert EncodingFold.WHITESPACE in v.folds
+
+
+def test_real_hyphen_at_line_break_dehyphenates():
+    # A REAL hyphen falling at a wrapped line break ("veroluok-\nka") is fused, mirroring the
+    # soft-hyphen join - the same de-hyphenation the reconciled cell witness relies on.
+    v = text_equivalence("veroluok-\nka", "veroluokka")
+    assert v.equal
+    assert EncodingFold.SOFT_HYPHEN_JOIN in v.folds
+
+
+def test_control_char_noise_from_broken_cmap_is_stripped():
+    # A broken ToUnicode CMap sprays C0/C1 control bytes into the text layer; those are pure
+    # noise (category Cc) and are DELETED, so the witnessed cell compares equal to Docling.
+    v = text_equivalence("Nimi\x01\x1f ja\x7f numero\x9f", "Nimi ja numero")
+    assert v.equal
+    assert EncodingFold.CONTROL_STRIP in v.folds
+
+
+def test_control_strip_cannot_hide_a_genuine_difference():
+    # The control-strip is inert: deleting only control codepoints can never mask a real
+    # digit/letter difference - a changed figure still falls through as a residual.
+    v = text_equivalence("numero\x01 5,9", "numero 6,5")
+    assert not v.equal and v.residual
+
+
 def test_genuine_numeric_difference_is_a_residual():
     v = text_equivalence("veroprosentti 5,9", "veroprosentti 6,5")
     assert not v.equal and v.residual

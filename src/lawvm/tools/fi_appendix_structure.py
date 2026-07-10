@@ -52,7 +52,7 @@ import argparse
 import json
 import re
 import threading
-from collections import Counter
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
@@ -330,6 +330,181 @@ def verify_table_exact(
         n_no_witness=n_no_witness,
         divergences=tuple(divergences),
     )
+
+
+# --------------------------------------------------------------------------- #
+# GEOMETRY RECONCILIATION: page text-runs → (row,col) witness (the Fix-1 unlock). #
+# --------------------------------------------------------------------------- #
+#
+# The dominant NON-font failure: Docling wraps a long line and routes the tail into the
+# NEIGHBOURING column, drawing that cell's bbox too narrow. Reading each cell's OWN bbox
+# then makes the true owner read empty while the neighbour over-reads — a segmentation
+# defect, not a content one. The bboxes already threaded onto the grid carry enough
+# geometry to repair it deterministically: a COLUMN's true x-band is the union of all its
+# cells' bboxes (wider than any single mis-drawn cell), and likewise a ROW's y-band. So for a
+# cell the simple per-bbox read MISSES (reads empty though Docling placed content), we gather
+# the pdfium CHARACTERS whose centre lands in that (row,col) band and reconstruct its witness
+# from them. Character (not ``get_rect`` line-run) granularity is essential: a pdfium rect
+# spans a whole visual line across ALL columns, so assigning it by centre would dump an entire
+# row into one column; a single char localises to exactly one column. NO fuzzy matching (each
+# char lands in exactly one band or none). The reconciliation is applied ONLY to under-read
+# cells and never overrides a per-bbox read that already found text — reconstructing a well-read
+# cell from chars risks reading-order artifacts (a decimal comma sits below its digits), and the
+# empirically-measured wrap defect is an EMPTY witness, so empty-rescue captures the structural
+# unlock while staying strictly non-regressive. GUARD: if the column/row bands are not cleanly
+# separable (degenerate/overlapping bboxes) a char could map ambiguously, so the whole table
+# keeps the per-bbox read. Never crash, never drop a cell.
+
+
+@dataclass(frozen=True, slots=True)
+class TextRun:
+    """One pdfium text-layer run: its text and TOP-LEFT-origin bbox (points).
+
+    Same coordinate frame as :class:`StructuredCell` ``bbox`` so a run's centre lines up
+    directly with the cell/column/row bands (no flip needed at the reconciliation layer —
+    the pdfium bottom-left→top-left flip happens once where the runs are harvested).
+    """
+
+    text: str
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+
+    @property
+    def center_x(self) -> float:
+        return (self.x0 + self.x1) / 2.0
+
+    @property
+    def center_y(self) -> float:
+        return (self.y0 + self.y1) / 2.0
+
+
+#: Bands closer than this (points) are treated as touching, not overlapping — Docling draws
+#: adjacent cell bboxes edge-to-edge (and occasionally a hair past), so a sub-point overlap is
+#: an artifact, not the ambiguity the reconciliation guard is meant to catch.
+_BAND_SEPARATION_TOL = 1.0
+
+#: Vertical gap (points) between two chars' centres that starts a NEW line inside a cell — a
+#: wrapped multi-line cell reconstructs with a ``\n`` at each line break (so a hyphen-at-break
+#: can be de-hyphenated by the op-equivalence quotient). Comfortably below a single line's
+#: advance and above within-line baseline jitter / sub/superscript wobble.
+_LINE_Y_GAP = 3.0
+
+
+def _reconstruct_cell_text(runs: List[TextRun]) -> str:
+    """Join a cell's assigned char/fragment runs in reading order (top→bottom, left→right).
+
+    Runs are clustered into visual LINES by a vertical-centre gap; within a line they are
+    concatenated left-to-right (kept spaces reproduce the spacing), and lines are joined with
+    ``\\n`` so a hyphen falling at a line break stays a de-hyphenatable ``"-\\n"``.
+    """
+    if not runs:
+        return ""
+    ordered = sorted(runs, key=lambda r: (r.center_y, r.x0))
+    lines: List[List[TextRun]] = [[ordered[0]]]
+    for r in ordered[1:]:
+        if r.center_y - lines[-1][-1].center_y > _LINE_Y_GAP:
+            lines.append([r])
+        else:
+            lines[-1].append(r)
+    return "\n".join(
+        "".join(rr.text for rr in sorted(line, key=lambda r: r.x0)) for line in lines
+    )
+
+
+def _axis_bands(
+    cells: Sequence[StructuredCell], *, by_col: bool
+) -> Dict[int, Tuple[float, float]]:
+    """Per-column x-band (``by_col``) or per-row y-band: union of that group's cell bboxes."""
+    bands: Dict[int, Tuple[float, float]] = {}
+    for c in cells:
+        if c.bbox is None:
+            continue
+        key = c.col if by_col else c.row
+        a, b = (c.bbox[0], c.bbox[2]) if by_col else (c.bbox[1], c.bbox[3])
+        lo, hi = (a, b) if a <= b else (b, a)
+        cur = bands.get(key)
+        bands[key] = (lo, hi) if cur is None else (min(cur[0], lo), max(cur[1], hi))
+    return bands
+
+
+def _bands_cleanly_separated(bands: Dict[int, Tuple[float, float]]) -> bool:
+    """True iff no two bands OVERLAP by more than the touching tolerance (sweep by lo edge)."""
+    ordered = sorted(bands.values())
+    prev_hi: Optional[float] = None
+    for lo, hi in ordered:
+        if prev_hi is not None and prev_hi - lo > _BAND_SEPARATION_TOL:
+            return False
+        prev_hi = hi if prev_hi is None else max(prev_hi, hi)
+    return True
+
+
+def _band_of(center: float, bands: Dict[int, Tuple[float, float]]) -> Optional[int]:
+    """The single band key containing ``center`` (None if zero or — impossibly, given the
+    clean-separation guard — more than one)."""
+    hit = [k for k, (lo, hi) in bands.items() if lo <= center <= hi]
+    return hit[0] if len(hit) == 1 else None
+
+
+def reconcile_table_witness(
+    table: StructuredTable,
+    runs: Sequence[TextRun],
+    per_bbox_fallback: Callable[[Tuple[float, float, float, float]], str],
+) -> Dict[Tuple[int, int], str]:
+    """Build each cell's witness, rescuing UNDER-READ cells from page chars by x/y-band (pure).
+
+    Returns a ``(row, col) -> witness_text`` map. The per-cell bbox read (``per_bbox_fallback``)
+    is the default witness and is TRUSTED wherever it finds text — reconstructing a well-read
+    cell from individual chars only risks reading-order artifacts (a decimal comma sits below
+    its digits). Reconciliation is applied ONLY to a cell the per-bbox read returns EMPTY for
+    while Docling placed content in it — the wrapped-tail defect, where the cell's glyphs were
+    drawn under a neighbour's bbox. For such a cell, the chars whose centre lands in this column's
+    x-band and this row's y-band (unions of the column/row cell bboxes) are gathered and joined
+    in reading order (a ``"-\\n"`` line break survives so de-hyphenation can fuse it). This can
+    only convert an existing empty-witness divergence into an exact match, so it is strictly
+    non-regressive. If the bands are not cleanly separable (degenerate/overlapping bboxes → a
+    char could map ambiguously) the whole table keeps the per-bbox read — never a crash, never a
+    dropped cell.
+    """
+    col_bands = _axis_bands(table.cells, by_col=True)
+    row_bands = _axis_bands(table.cells, by_col=False)
+    if not (_bands_cleanly_separated(col_bands) and _bands_cleanly_separated(row_bands)):
+        # Ambiguous geometry: keep the conservative per-bbox witness for this table.
+        return {
+            (c.row, c.col): per_bbox_fallback(c.bbox)
+            for c in table.cells
+            if c.bbox is not None
+        }
+    buckets: Dict[Tuple[int, int], List[TextRun]] = defaultdict(list)
+    for run in runs:
+        col = _band_of(run.center_x, col_bands)
+        row = _band_of(run.center_y, row_bands)
+        if col is None or row is None:
+            continue  # a run outside the grid (page header/footer) — not a cell's content
+        buckets[(row, col)].append(run)
+    witness: Dict[Tuple[int, int], str] = {}
+    for c in table.cells:
+        if c.bbox is None:
+            continue
+        pb = per_bbox_fallback(c.bbox)
+        if pb.strip():
+            # The simple per-cell read already witnessed this cell — TRUST it. Reconstructing a
+            # well-read cell from chars only risks re-ordering artifacts (a decimal comma sits on
+            # a lower baseline than its digits, so naive line-clustering would split "0,05"), so
+            # reconciliation is reserved for the cells the simple read MISSES.
+            witness[(c.row, c.col)] = pb
+            continue
+        if c.text.strip():
+            # UNDER-READ RESCUE: per-bbox read this cell EMPTY though Docling placed content here
+            # — the wrapped-tail defect (the cell's glyphs got drawn under a neighbour's bbox).
+            # Reconstruct it from the chars whose geometry lands in this (row,col) band. This can
+            # only turn an existing empty-witness divergence into an exact match; it never touches
+            # a cell the per-bbox read already handled, so it is strictly non-regressive.
+            witness[(c.row, c.col)] = _reconstruct_cell_text(buckets.get((c.row, c.col), []))
+        else:
+            witness[(c.row, c.col)] = pb  # genuinely empty (spacer): both sides blank
+    return witness
 
 
 # --------------------------------------------------------------------------- #
@@ -743,21 +918,94 @@ def _page_texts(pdf_bytes: bytes) -> List[str]:
             doc.close()
 
 
-#: Points to inset each Docling cell bbox before the pdfium witness read, to drop the
-#: stray edge glyph a touching neighbour cell bleeds in. Small (sub-character) so it
-#: never clips real content.
-_BBOX_INSET = 2.0
+#: Points to inset each Docling cell bbox on the PER-CELL FALLBACK pdfium read (only used
+#: when the geometry-reconciliation path bails on ambiguous bboxes). Kept SUB-POINT so it
+#: never clips a trailing glyph — the ``'Nimi'→'Nim'`` edge-clip was the 2 pt inset eating
+#: the last character. The primary path (``reconcile_table_witness``) reads whole text-runs
+#: with NO inset, so trailing glyphs are never clipped there; neighbour-bleed on the primary
+#: path is handled by x-band assignment, not by an inset, which is why this can shrink.
+_BBOX_INSET = 0.5
+
+
+def _page_text_runs(textpage: Any, page_height: float) -> List[TextRun]:
+    """Harvest the page text layer as PER-CHARACTER :class:`TextRun`s in TOP-LEFT points.
+
+    Deliberately CHARACTER granularity, not pdfium's ``get_rect`` runs: those rects span a
+    whole visual LINE (all columns at once), so assigning one by its centre would dump an
+    entire row into a single column. A character's own box localises it to exactly one
+    (row,col) band, which is what makes the wrapped-tail reconciliation faithful. Each char's
+    box (``get_charbox`` → bottom-left ``(left, bottom, right, top)``) is flipped to the
+    StructuredCell top-left frame (``y := page_height - y``). Ordinary spaces are KEPT (they
+    are real chars with a box, so cell text reconstructs with its spacing); newline/tab/other
+    control chars — degenerate boxes, folded away downstream anyway — are dropped. Any pdfium
+    hiccup on a char is skipped (never a crash).
+    """
+    runs: List[TextRun] = []
+    try:
+        n_chars = textpage.count_chars()
+    except Exception:
+        return runs
+    for i in range(n_chars):
+        try:
+            ch = textpage.get_text_range(i, 1)
+            left, bottom, right, top = textpage.get_charbox(i)
+        except Exception:
+            continue
+        if not ch or (ch.isspace() and ch != " "):  # keep the space glyph; drop \r\n\t etc.
+            continue
+        runs.append(
+            TextRun(
+                text=ch,
+                x0=left,
+                y0=page_height - top,
+                x1=right,
+                y1=page_height - bottom,
+            )
+        )
+    return runs
+
+
+def _make_per_bbox_reader(
+    textpage: Any, page_height: Optional[float]
+) -> Callable[[Tuple[float, float, float, float]], str]:
+    """Build the conservative per-cell bbox pdfium reader (the reconciliation FALLBACK).
+
+    Reads the text inside a cell's OWN bbox (top-left points → pdfium bottom-left), with a
+    sub-point inset that trims neighbour edge-bleed without clipping a trailing glyph. Only
+    used when :func:`reconcile_table_witness` bails on ambiguous geometry; the primary path
+    reconstructs from whole runs and never insets.
+    """
+
+    def read(bbox: Tuple[float, float, float, float]) -> str:
+        if textpage is None or page_height is None:
+            return ""
+        x0, y0, x1, y1 = bbox
+        lo_x, hi_x = min(x0, x1), max(x0, x1)
+        lo_y, hi_y = min(y0, y1), max(y0, y1)
+        mx = min(_BBOX_INSET, (hi_x - lo_x) / 3.0)
+        my = min(_BBOX_INSET, (hi_y - lo_y) / 3.0)
+        try:  # pdfium wants (left, bottom, right, top) in bottom-left origin
+            return textpage.get_text_bounded(
+                left=lo_x + mx, bottom=page_height - (hi_y - my),
+                right=hi_x - mx, top=page_height - (lo_y + my),
+            )
+        except Exception:
+            return ""
+
+    return read
 
 
 def _verify_tables_against_pdfium(
     pdf_bytes: bytes, tables: Sequence[StructuredTable]
 ) -> Tuple[TableVerification, ...]:
-    """Exact-verify every table's cells against the pdfium text read WITHIN each cell bbox.
+    """Exact-verify every table via GEOMETRY-RECONCILED pdfium witnesses (Fix-1 primary path).
 
-    Opens the PDF ONCE, reads each cell's own bbox via ``get_text_bounded`` (pdfium is
-    bottom-left origin; the StructuredCell bbox is top-left points, so y is flipped against
-    the page height), and defers to :func:`verify_table_exact`. Any pdfium hiccup yields an
-    empty witness for that cell (→ a typed divergence, never a crash).
+    Opens the PDF ONCE, harvests every page's text-runs, and for each table reconstructs a
+    ``(row,col)`` witness with :func:`reconcile_table_witness` (re-assigning wrapped-line
+    tails to the column their geometry belongs to), falling back to the per-cell bbox read
+    only where the table's bboxes are ambiguous. The reconciled/fallback text is handed to
+    the unchanged :func:`verify_table_exact` exactness contract. Any pdfium hiccup yields an
+    empty witness (→ a typed divergence, never a crash).
     """
     import importlib
 
@@ -768,32 +1016,35 @@ def _verify_tables_against_pdfium(
             heights = {i: doc[i].get_size()[1] for i in range(len(doc))}
             textpages = {i: doc[i].get_textpage() for i in range(len(doc))}
             try:
+                runs_by_page = {
+                    i: _page_text_runs(textpages[i], heights[i]) for i in range(len(doc))
+                }
+                results: List[TableVerification] = []
+                for table in tables:
+                    idx = table.page_num - 1  # Docling 1-indexed → pdfium 0-indexed
+                    per_bbox = _make_per_bbox_reader(textpages.get(idx), heights.get(idx))
+                    reconciled = reconcile_table_witness(
+                        table, runs_by_page.get(idx, ()), per_bbox
+                    )
 
-                def bbox_witness(page_num: int, bbox: Tuple[float, float, float, float]) -> str:
-                    # Docling page_num is 1-indexed; pdfium pages are 0-indexed.
-                    idx = page_num - 1
-                    tp = textpages.get(idx)
-                    h = heights.get(idx)
-                    if tp is None or h is None:
-                        return ""
-                    x0, y0, x1, y1 = bbox
-                    lo_x, hi_x = min(x0, x1), max(x0, x1)
-                    lo_y, hi_y = min(y0, y1), max(y0, y1)
-                    # Inset the box by a small margin so the read does not catch a stray
-                    # glyph from the ADJACENT cell (Docling cell bboxes touch/slightly
-                    # overlap their neighbours → edge bleed). Bounded so a thin cell never
-                    # inverts.
-                    mx = min(_BBOX_INSET, (hi_x - lo_x) / 3.0)
-                    my = min(_BBOX_INSET, (hi_y - lo_y) / 3.0)
-                    try:  # pdfium wants (left, bottom, right, top) in bottom-left origin
-                        return tp.get_text_bounded(
-                            left=lo_x + mx, bottom=h - (hi_y - my),
-                            right=hi_x - mx, top=h - (lo_y + my),
-                        )
-                    except Exception:
-                        return ""
+                    def bbox_witness(
+                        page_num: int,
+                        bbox: Tuple[float, float, float, float],
+                        _table: StructuredTable = table,
+                        _recon: Dict[Tuple[int, int], str] = reconciled,
+                        _per: Callable[[Tuple[float, float, float, float]], str] = per_bbox,
+                    ) -> str:
+                        # Resolve this bbox back to its (row,col) within the table so the
+                        # reconciled witness is used; any bbox not reconciled (defensive)
+                        # falls back to the conservative per-cell read.
+                        for cell in _table.cells:
+                            if cell.bbox == bbox:
+                                got = _recon.get((cell.row, cell.col))
+                                return got if got is not None else _per(bbox)
+                        return _per(bbox)
 
-                return tuple(verify_table_exact(t, bbox_witness) for t in tables)
+                    results.append(verify_table_exact(table, bbox_witness))
+                return tuple(results)
             finally:
                 for tp in textpages.values():
                     close = getattr(tp, "close", None)

@@ -74,6 +74,29 @@ numeric/citation/word difference ("5,9" vs "5,10", "(768/2005)" vs "(768/2006)",
 whitespace AROUND punctuation, never a terminal punctuation's PRESENCE ("markkaa." vs
 "markkaa" stays a residual — a trailing period can be load-bearing).
 
+Graduated fold #4: CONTROL_STRIP (C0/C1 control-char noise from broken CMaps)
+----------------------------------------------------------------------------
+A broken ToUnicode CMap (the dominant appendix-table failure mode) does not only mis-map
+visible glyphs — it also emits stray C0/C1 CONTROL characters (Unicode category ``Cc``:
+U+0000–U+001F, U+007F–U+009F, minus the TAB/LF/VT/FF/CR whitespace controls the WHITESPACE
+fold already owns) interspersed in the text layer. Those control bytes carry no lexical
+meaning in a statute — they are the EXACT same "invisible noise, unarguably inert" class as
+the Cf format chars, just in the sibling ``Cc`` category — so they are DELETED. ``Cc`` is a
+FIXED, closed codepoint range that never changes across Unicode versions, so no drift-guard
+literal is needed. Because the substitution deletes only control codepoints, it can never
+hide a digit/letter/citation difference (those all survive).
+
+Why NOT a unicode-confusable substitution
+-----------------------------------------
+The same broken CMaps also map ``ä``→``‰``, ``ö``→a control char, ``§``→``ß`` — a *visible-
+glyph* corruption. It is TEMPTING to add a confusable→canonical substitution to rescue those
+cells, but that is deliberately NOT done here: a confusable fold is NOT inert — mapping
+``ß``→``§`` (or any visible glyph to another) could hide a genuine content difference, exactly
+the failure this quotient exists to prevent. That corrupt-font stratum is instead routed to a
+vision second-witness (``fi_appendix_structure.table_escalation_route`` →
+``vision_escalate``), never folded away. Only the *invisible* control-char noise (CONTROL_STRIP)
+graduates; the *visible* corruption stays a residual for adjudication.
+
 ``§`` is DELIBERATELY EXCLUDED from the before-set. Unlike ``: ; , . )`` — whose standard
 typographic form carries NO leading space, so a leading space is the anomaly to fold — the
 standard Finnish section reference ``"N §"`` legitimately CARRIES a space. Folding it would be
@@ -109,6 +132,19 @@ from lawvm.ingest.page_elements import dehyphenate
 # ``dehyphenate`` so the two word halves fuse rather than leaving a stray space.
 _CF_DELETE_TABLE = {cp: None for cp in CF_FORMAT_CPS}
 _ZS_TO_SPACE_TABLE = {cp: 0x20 for cp in ZS_NON_ASCII_SPACE_CPS}
+
+# C0/C1 CONTROL characters (Unicode general category Cc) EXCEPT the whitespace controls
+# (TAB U+0009, LF U+000A, VT U+000B, FF U+000C, CR U+000D) that the WHITESPACE fold below
+# legitimately normalises. Cc is a FIXED, closed range (U+0000–U+001F, U+007F–U+009F) that
+# never changes across Unicode versions, so it is written inline — no drift-guard literal is
+# needed. Broken ToUnicode CMaps spray these as stray noise bytes into the text layer; they
+# carry no lexical meaning, so they are DELETED (the same inert class as the Cf format chars).
+_WHITESPACE_CONTROL_CPS = frozenset({0x09, 0x0A, 0x0B, 0x0C, 0x0D})
+_CC_CONTROL_DELETE_TABLE = {
+    cp: None
+    for cp in [*range(0x00, 0x20), 0x7F, *range(0x80, 0xA0)]
+    if cp not in _WHITESPACE_CONTROL_CPS
+}
 
 _WS_RUN = re.compile(r"\s+")
 
@@ -165,6 +201,7 @@ class EncodingFold(StrEnum):
 
     SOFT_HYPHEN_JOIN = "soft_hyphen_join"  # dehyphenate: soft-hyphen line break → fused word
     CF_FORMAT = "cf_format"  # invisible Unicode Cf control chars deleted
+    CONTROL_STRIP = "control_strip"  # C0/C1 Cc control-char noise (broken CMap) deleted
     WHITESPACE = "whitespace"  # Zs→space + all whitespace runs collapsed + trimmed
     DASH_GLYPH = "dash_glyph"  # dash-family glyph identity normalised to "-" (dash kept, not deleted)
     SEPARATOR_DASH_RUN = "separator_dash_run"  # run of 2+ dashes ("— — —" rule/elision) deleted
@@ -191,10 +228,17 @@ def _canonicalize_text(text: str) -> Tuple[str, frozenset[EncodingFold]]:
     if no_cf != dehyph:
         fired.add(EncodingFold.CF_FORMAT)
 
+    # Delete C0/C1 control-char noise (the broken-CMap sibling of the Cf delete). Runs after
+    # dehyphenate (which owns the LF-bearing line joins) so only the non-whitespace controls,
+    # i.e. the pure noise bytes, are removed here.
+    no_ctrl = no_cf.translate(_CC_CONTROL_DELETE_TABLE)
+    if no_ctrl != no_cf:
+        fired.add(EncodingFold.CONTROL_STRIP)
+
     # Normalise dash GLYPHS first (a 1:1 substitution that keeps the dash), so the RUN fold
     # then sees a uniform "-" alphabet and a lone surviving dash is a canonical hyphen-minus.
-    no_dashglyph = no_cf.translate(_DASH_GLYPH_TABLE)
-    if no_dashglyph != no_cf:
+    no_dashglyph = no_ctrl.translate(_DASH_GLYPH_TABLE)
+    if no_dashglyph != no_ctrl:
         fired.add(EncodingFold.DASH_GLYPH)
 
     no_run = _SEPARATOR_DASH_RUN_RE.sub(" ", no_dashglyph)

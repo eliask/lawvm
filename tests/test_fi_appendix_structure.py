@@ -23,10 +23,13 @@ from lawvm.tools.fi_appendix_structure import (
     TableCellDivergence,
     TableVerification,
     TableVisionVerification,
+    TextRun,
+    _make_per_bbox_reader,
     cross_witness,
     make_vision_region_reader,
     number_tokens,
     numeric_recall,
+    reconcile_table_witness,
     structural_sanity,
     structured_table_from_node,
     table_escalation_route,
@@ -246,6 +249,148 @@ def test_structural_sanity_flags_ragged_grid() -> None:
     s = structural_sanity(structured_table_from_node(node, locator="x", table_index=0))
     assert s.rectangular is False
     assert s.header_row_found is False
+
+
+# --------------------------------------------------------------------------- #
+# GEOMETRY RECONCILIATION (Fix 1) — page text-runs → (row,col) witness.         #
+# --------------------------------------------------------------------------- #
+#
+# The wrapped-tail defect: Docling routes a wrapped line's tail into the neighbouring column
+# and draws the owning cell's bbox too narrow, so the per-bbox read of that cell comes back
+# EMPTY. Reconciliation is empty-RESCUE: it trusts the per-bbox read wherever it found text
+# (reconstructing a well-read cell from chars risks reading-order artifacts — a decimal comma
+# sits below its digits) and reconstructs ONLY the under-read cells from the page chars whose
+# x/y-band centre lands in that (row,col). All hermetic: chars + a scripted per-bbox read injected.
+
+
+def _two_col_table() -> StructuredTable:
+    # Two cleanly-separated columns: col0 x-band [0,10], col1 x-band [10,20]; one row.
+    return StructuredTable(
+        locator="finlex://sd/2003/917/fin/media/x.pdf",
+        page_num=1,
+        table_index=0,
+        n_rows=1,
+        n_cols=2,
+        caption="",
+        cells=(
+            StructuredCell(0, 0, "Sähkön kulutus", is_header=False, bbox=(0.0, 0.0, 10.0, 10.0)),
+            StructuredCell(0, 1, "1,2", is_header=False, bbox=(10.0, 0.0, 20.0, 10.0)),
+        ),
+    )
+
+
+def test_reconcile_rescues_under_read_wrapped_tail_column() -> None:
+    # col0's per-bbox read comes back EMPTY (the wrapped-tail defect) though Docling placed
+    # "Sähkön kulutus" there; the wrapped label's chars — "Sähkön" on line 1, "kulutus" on the
+    # tail line — both have their centre in col0's x-band, so reconciliation reconstructs the
+    # cell (reading order, top line first, "-\n"-preserving). col1's per-bbox read found the
+    # value, so it is TRUSTED (not reconstructed).
+    table = _two_col_table()
+    runs = [
+        TextRun("Sähkön", x0=1.0, y0=0.0, x1=9.0, y1=4.0),   # col0, top line (centre_y=2)
+        TextRun("kulutus", x0=1.0, y0=5.0, x1=9.0, y1=9.0),  # col0, wrapped tail (centre_y=7)
+        TextRun("1,2", x0=11.0, y0=0.0, x1=19.0, y1=4.0),    # col1 (ignored — per-bbox found it)
+    ]
+
+    def per_bbox(bb: tuple[float, float, float, float]) -> str:
+        return "" if bb[0] < 10 else "1,2"  # col0 under-read (empty); col1 read fine
+
+    witness = reconcile_table_witness(table, runs, per_bbox)
+    assert witness[(0, 0)] == "Sähkön\nkulutus"  # rescued from chars, tail re-united
+    assert witness[(0, 1)] == "1,2"              # per-bbox read trusted
+    # and the rescued witness makes the table verify EXACTLY (newline↔space folds equal)
+    v = verify_table_exact(table, lambda _pn, bb: witness[(0, 0) if bb[0] < 10 else (0, 1)])
+    assert v.exact
+
+
+def test_reconcile_trusts_per_bbox_read_over_char_reconstruction() -> None:
+    # STRICT NON-REGRESSION: where the per-bbox read already found text, it is kept verbatim —
+    # reconciliation must never override a well-read cell (that is what would scramble a decimal
+    # like "0,05", whose comma sits on a lower baseline). Even though a char run exists for col0,
+    # the per-bbox "0,05" wins.
+    table = _two_col_table()
+    runs = [TextRun("garbage", x0=1.0, y0=0.0, x1=9.0, y1=4.0)]
+
+    def per_bbox(bb: tuple[float, float, float, float]) -> str:
+        return "0,05" if bb[0] < 10 else "1,2"
+
+    witness = reconcile_table_witness(table, runs, per_bbox)
+    assert witness[(0, 0)] == "0,05"  # per-bbox trusted, NOT the char reconstruction
+    assert witness[(0, 1)] == "1,2"
+
+
+def test_reconcile_falls_back_on_overlapping_bands_without_crashing() -> None:
+    # Degenerate geometry: the two columns' x-bands OVERLAP (col0 [0,15], col1 [10,20]) by more
+    # than the touching tolerance, so a char could map ambiguously → the whole table keeps the
+    # per-cell bbox read (never a crash, never a dropped cell).
+    table = StructuredTable(
+        locator="x", page_num=1, table_index=0, n_rows=1, n_cols=2, caption="",
+        cells=(
+            StructuredCell(0, 0, "a", is_header=False, bbox=(0.0, 0.0, 15.0, 10.0)),
+            StructuredCell(0, 1, "b", is_header=False, bbox=(10.0, 0.0, 20.0, 10.0)),
+        ),
+    )
+    seen: list[tuple[float, float, float, float]] = []
+
+    def fallback(bb: tuple[float, float, float, float]) -> str:
+        seen.append(bb)
+        return f"per-bbox:{bb[0]}"
+
+    witness = reconcile_table_witness(table, [TextRun("noise", 1.0, 1.0, 2.0, 2.0)], fallback)
+    assert witness == {(0, 0): "per-bbox:0.0", (0, 1): "per-bbox:10.0"}
+    assert len(seen) >= 2  # every cell went through the fallback, none crashed/dropped
+
+
+def test_reconcile_empty_cell_under_both_stays_empty() -> None:
+    # A genuine spacer cell: Docling empty AND per-bbox empty → witness empty (no stray char is
+    # invented for it — reconciliation only rescues cells Docling placed content in).
+    table = StructuredTable(
+        locator="x", page_num=1, table_index=0, n_rows=1, n_cols=2, caption="",
+        cells=(
+            StructuredCell(0, 0, "", is_header=False, bbox=(0.0, 0.0, 10.0, 10.0)),
+            StructuredCell(0, 1, "v", is_header=False, bbox=(10.0, 0.0, 20.0, 10.0)),
+        ),
+    )
+    # a stray char whose centre lands in col0 must NOT be invented into the empty spacer
+    runs = [TextRun("x", x0=1.0, y0=1.0, x1=2.0, y1=2.0), TextRun("v", 11.0, 1.0, 12.0, 2.0)]
+    witness = reconcile_table_witness(table, runs, lambda bb: "" if bb[0] < 10 else "v")
+    assert witness[(0, 0)] == ""   # spacer stays empty
+    assert witness[(0, 1)] == "v"
+
+
+def test_reconcile_bboxless_cell_is_omitted_not_crashed() -> None:
+    # A cell with no bbox contributes to no band and yields no witness entry (it is handled
+    # upstream as no_witness) — reconciliation must not crash on it.
+    table = StructuredTable(
+        locator="x", page_num=1, table_index=0, n_rows=1, n_cols=2, caption="",
+        cells=(
+            StructuredCell(0, 0, "a", is_header=False, bbox=(0.0, 0.0, 10.0, 10.0)),
+            StructuredCell(0, 1, "b", is_header=False, bbox=None),
+        ),
+    )
+    witness = reconcile_table_witness(table, [TextRun("a", 1.0, 1.0, 9.0, 9.0)], lambda _bb: "")
+    assert witness == {(0, 0): "a"}  # only the bbox'd cell; no crash on the bboxless one
+
+
+def test_per_bbox_reader_inset_does_not_clip_trailing_glyph() -> None:
+    # Fix 2's edge-clip case ('Nimi'→'Nim'): the per-bbox read now insets by a sub-point margin
+    # (0.5 pt), not 2 pt, so the right edge is not pulled in far enough to drop the final glyph.
+    # A fake textpage records the requested bounds and returns the full read only when the right
+    # edge reaches the last glyph.
+    class _FakeTextpage:
+        def __init__(self) -> None:
+            self.calls: list[tuple[float, float, float, float]] = []
+
+        def get_text_bounded(self, *, left: float, bottom: float, right: float, top: float) -> str:
+            self.calls.append((left, bottom, right, top))
+            return "Nimi" if right >= 49.0 else "Nim"  # glyph 'i' sits at x∈[49,50]
+
+    tp = _FakeTextpage()
+    read = _make_per_bbox_reader(tp, 100.0)
+    # cell bbox right edge x1=50 on a 100-pt page: a 2 pt inset → right=48 (clips 'i'); 0.5 → 49.5
+    out = read((0.0, 0.0, 50.0, 10.0))
+    assert out == "Nimi"                       # full trailing glyph preserved
+    assert tp.calls[0][2] == 49.5              # right edge inset by only 0.5 pt, not 2.0
 
 
 # --------------------------------------------------------------------------- #
