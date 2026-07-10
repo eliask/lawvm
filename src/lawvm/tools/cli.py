@@ -9918,10 +9918,6 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
                          dest="accept_regression_tolerance", metavar="F",
                          help="max acceptance-rate drop vs the prior stage before the gate "
                               "STOPS (default: 0.05)")
-    sweep_p.add_argument("--checkpoint", default=None, metavar="PATH",
-                         help="per-stage JSON checkpoint file (enables --resume)")
-    sweep_p.add_argument("--resume", action="store_true",
-                         help="resume from --checkpoint, re-using completed PDFs (nested stages)")
     sweep_p.add_argument("--workers", type=int, default=None, metavar="N",
                          help="whole-PDF concurrency (default: 6; pages stay sequential per PDF)")
     sweep_p.add_argument("--max-pages", type=int, default=5000, dest="max_pages",

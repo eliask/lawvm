@@ -88,6 +88,28 @@ def parsed_ir_locator(source_digest: str, pipeline_id: str, version: str) -> str
     return f"parsed/{source_digest}/{pipeline_id}@{version}"
 
 
+# Bump when the A/B predicate or the diff adjudicator's identity changes, so a
+# stored verdict from an older evaluator does not shadow a fresh re-evaluation.
+_AB_EVAL_VERSION = "v1"
+
+
+def defacsimile_ab_locator(
+    source_digest: str, pipeline_id: str, version: str, gold_digest: str
+) -> str:
+    """Content-addressed key for the persisted de-facsimile A/B benchmark verdict.
+
+    A sibling of :func:`parsed_ir_locator` under the SAME per-record prefix, further
+    keyed by the XML GOLD digest (replacing the gold invalidates the verdict) and an
+    eval-version tag (an adjudicator/predicate change invalidates it). The verdict is
+    a derived benchmark artifact of ``(source × pipeline × gold × evaluator)``, so a
+    sweep can SKIP any member whose verdict already exists rather than re-running the
+    two diff model calls — the output farchive IS the resume ledger (no side cache)."""
+    return (
+        f"parsed/{source_digest}/{pipeline_id}@{version}"
+        f"/defacsimile_ab.{_AB_EVAL_VERSION}/{gold_digest}"
+    )
+
+
 def page_simulacrum_locator(
     source_digest: str, pipeline_id: str, version: str, page_num: int
 ) -> str:
@@ -756,6 +778,25 @@ class ParsedIrStore:
                 "pipeline_id": record.manifest.get("pipeline_id", ""),
                 "pipeline_version": record.manifest.get("pipeline_version", ""),
             },
+        )
+
+    def get_ab(self, locator: str) -> Optional[Dict[str, Any]]:
+        """Read a persisted de-facsimile A/B verdict row (``None`` if absent)."""
+        span = self._fa.resolve(locator)
+        if span is None:
+            return None
+        data = self._fa.read(span.digest)
+        if data is None:
+            return None
+        return json.loads(data.decode("utf-8"))
+
+    def put_ab(self, locator: str, row: Dict[str, Any]) -> str:
+        """Persist one de-facsimile A/B verdict row (the sweep's resume ledger)."""
+        return self._fa.store(
+            locator,
+            json.dumps(row, sort_keys=True).encode("utf-8"),
+            storage_class="defacsimile_ab",
+            metadata={"source_locator": str(row.get("pdf_locator", ""))},
         )
 
     def put_image(

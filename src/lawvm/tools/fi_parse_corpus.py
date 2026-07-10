@@ -43,7 +43,7 @@ import argparse
 import json
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, fields
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 from lawvm.finland.source_document import FI_PARSED_STORE
@@ -176,6 +176,31 @@ def _row_from_ab(member: CorpusMember, ab: DeFacsimileABReport) -> RowResult:
     )
 
 
+_ROW_FIELDS = frozenset(f.name for f in fields(RowResult))
+
+
+def _row_to_jsonable(row: RowResult) -> Dict[str, Any]:
+    """RowResult → a stable dict for persistence in the output farchive."""
+    return asdict(row)
+
+
+def _row_from_jsonable(d: Dict[str, Any]) -> RowResult:
+    """Reconstruct a RowResult from a persisted verdict (tolerant of extra keys)."""
+    return RowResult(**{k: v for k, v in d.items() if k in _ROW_FIELDS})
+
+
+def _defacsimile_ab_locator_for(source_digest: str, gold_digest: str) -> str:
+    """The output-farchive key for THIS member's A/B verdict (parse spec × gold).
+
+    Uses the SAME de-facsimile pipeline spec the parse cache keys on, so the verdict
+    record sits under the parsed IR's per-record prefix — the output farchive is the
+    single durable ledger (no side checkpoint file)."""
+    from lawvm.ingest.parsed_store import defacsimile_ab_locator, resolve_pipeline
+
+    spec = resolve_pipeline(transcription_modality="defacsimile", vision_max_tokens=3000)
+    return defacsimile_ab_locator(source_digest, spec.pipeline_id, spec.version, gold_digest)
+
+
 def _process_one(
     member: CorpusMember,
     *,
@@ -239,6 +264,7 @@ def _process_one(
     fa = Farchive(finlex_path)
     try:
         span = fa.resolve(member.xml_locator)
+        gold_digest = span.digest if span is not None else ""
         xml_bytes = fa.read(span.digest) if span is not None else b""
     except Exception as exc:
         return RowResult(
@@ -257,11 +283,39 @@ def _process_one(
             detail="xml: empty gold blob",
         )
 
+    # Resume by construction: if this member's A/B verdict already exists in the
+    # output farchive (source × pipeline × gold), skip ALL model work and return it.
+    from lawvm.ingest.parsed_store import ParsedIrStore
+
+    try:
+        ab_locator = _defacsimile_ab_locator_for(manifestation.artifact_digest, gold_digest)
+        _store = ParsedIrStore(store_path)
+        try:
+            cached_row = _store.get_ab(ab_locator)
+        finally:
+            _store.close()
+    except Exception as exc:
+        return RowResult(
+            pdf_locator=member.pdf_locator,
+            xml_locator=member.xml_locator,
+            status="failed",
+            detail=f"resume-probe: {type(exc).__name__}: {exc}",
+        )
+    if cached_row is not None:
+        return _row_from_jsonable(cached_row)
+
     try:
         xml_text = xml_body_text(xml_bytes)
         baseline_text = _lane_reconstructed_text(manifestation, max_pages)
         defac_text = _defacsimile_reconstructed_text(manifestation, max_pages)
         ab = evaluate_defacsimile_ab(xml_text, baseline_text, defac_text)
+        row = _row_from_ab(member, ab)
+        # Persist the verdict into the output farchive so a later sweep skips it.
+        _store_out = ParsedIrStore(store_path)
+        try:
+            _store_out.put_ab(ab_locator, _row_to_jsonable(row))
+        finally:
+            _store_out.close()
     except Exception as exc:
         return RowResult(
             pdf_locator=member.pdf_locator,
@@ -269,7 +323,7 @@ def _process_one(
             status="failed",
             detail=f"adjudicate: {type(exc).__name__}: {exc}",
         )
-    return _row_from_ab(member, ab)
+    return row
 
 
 # --------------------------------------------------------------------------- #

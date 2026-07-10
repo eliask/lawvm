@@ -7,19 +7,16 @@ canned ``RowResult`` rows, and the per-locator stratum is an injected dict. Asse
   * ``--dry-run`` plans deterministically (two runs identical);
   * the gate PROCEEDS on a clean widening and STOPS on an injected NUMERIC
     regression (dropping — never running — the next, larger tranche);
-  * resume SKIPS completed PDFs (a processor that raises on a completed locator is
-    never called for it);
+  * the A/B verdict round-trips through the OUTPUT FARCHIVE (resume-by-construction:
+    a durable verdict reconstructs a bit-identical row, keyed on source×pipeline×gold);
   * the report shape + the ranked residual-defect-class table.
 """
 from __future__ import annotations
 
 import json
 
-import pytest
-
 from lawvm.tools.fi_parse_corpus import CorpusMember, RowResult
 from lawvm.tools.fi_sweep import (
-    Checkpoint,
     plan_stages,
     render_report,
     report_to_json,
@@ -231,63 +228,54 @@ def test_numeric_tolerance_allows_bounded_regression() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_resume_skips_completed_pdfs(tmp_path) -> None:
-    members = _members()
-    smap = _stratum_map()
-    ckpt = str(tmp_path / "sweep.ckpt.json")
-    stages = resolve_stages("10,full", 30)
+def test_ab_verdict_roundtrips_through_output_farchive(tmp_path) -> None:
+    """Resume-by-construction primitive: a member's A/B verdict is durable in the
+    OUTPUT FARCHIVE and reconstructs a bit-identical RowResult (no side checkpoint).
 
-    # First run: only stage 0 (10 PDFs). We stop escalation by injecting a numeric
-    # regression on a stage-1 PDF is not needed — instead run just to build the
-    # checkpoint by completing stage 0, then simulate a kill by rewriting the
-    # checkpoint to completed_stage_index=0.
-    r1 = run_sweep(
-        members, _stratum_of(smap), _clean_processor(),
-        stages=stages, checkpoint_path=ckpt, workers=4,
+    The real processor persists each verdict under a ``(source × pipeline × gold)``
+    key and short-circuits on it, so a re-run re-walks completed members as fast
+    farchive lookups. This exercises that persistence layer hermetically."""
+    from lawvm.ingest.parsed_store import ParsedIrStore, defacsimile_ab_locator
+    from lawvm.tools.fi_parse_corpus import _row_from_jsonable, _row_to_jsonable
+
+    row = RowResult(
+        pdf_locator="finlex://sd/2020/born_digital-001/fin/media/x.pdf",
+        xml_locator="finlex://sd/2020/born_digital-001/fin/main.xml",
+        status="ab",
+        baseline_extra=3,
+        baseline_structure=2,
+        baseline_missing=1,
+        baseline_numeric=0,
+        extra_delta=-2,
+        structure_delta=-1,
+        missing_delta=0,
+        numeric_delta=0,
+        accepted=True,
     )
-    assert r1.stopped_at is None  # clean run completes both stages
+    assert _row_from_jsonable(_row_to_jsonable(row)) == row  # pure round-trip
 
-    # The checkpoint holds all completed rows. Now RESUME with a processor that
-    # RAISES if called for ANY already-completed locator → proves resume skips them.
-    with open(ckpt, "r", encoding="utf-8") as fh:
-        saved = Checkpoint.from_json(json.load(fh))
-    # Force a resume from the FIRST stage by rewinding the completed index; the
-    # rows are all present, so no processor call should happen at all.
-    saved.completed_stage_index = 0
-    with open(ckpt, "w", encoding="utf-8") as fh:
-        json.dump(saved.to_json(), fh)
-
-    completed = set(saved.rows)
-
-    def forbidding_processor(m: CorpusMember) -> RowResult:
-        if m.pdf_locator in completed:
-            raise AssertionError(f"re-processed a completed PDF: {m.pdf_locator}")
-        return _clean_row(m.pdf_locator)
-
-    r2 = run_sweep(
-        members, _stratum_of(smap), forbidding_processor,
-        stages=stages, checkpoint_path=ckpt, resume=True, workers=4,
-    )
-    # Resumed run reproduces the same final result without re-processing.
-    assert r2.stages[-1].n_ab == 30
-    assert render_report(r1) == render_report(r2)
+    loc = defacsimile_ab_locator("srcdigest", "adjudicated_pdf", "v9", "golddigest")
+    store = ParsedIrStore(str(tmp_path / "parsed.farchive"))
+    try:
+        assert store.get_ab(loc) is None  # absent before the run
+        store.put_ab(loc, _row_to_jsonable(row))
+        got = store.get_ab(loc)
+    finally:
+        store.close()
+    assert got is not None
+    assert _row_from_jsonable(got) == row  # durable + faithful → skippable next time
 
 
-def test_resume_config_mismatch_fails_loud(tmp_path) -> None:
-    members = _members()
-    smap = _stratum_map()
-    ckpt = str(tmp_path / "sweep.ckpt.json")
-    run_sweep(
-        members, _stratum_of(smap), _clean_processor(),
-        stages=resolve_stages("10,full", 30), checkpoint_path=ckpt, workers=4,
-    )
-    # Resume under a DIFFERENT ladder → config-key mismatch → fail loud.
-    with pytest.raises(SystemExit):
-        run_sweep(
-            members, _stratum_of(smap), _clean_processor(),
-            stages=resolve_stages("5,full", 30), checkpoint_path=ckpt,
-            resume=True, workers=4,
-        )
+def test_ab_locator_keys_on_source_pipeline_and_gold() -> None:
+    """A changed source, pipeline version, OR gold digest must MISS the prior verdict
+    (so a re-crawl / pipeline bump never silently reuses a stale benchmark row)."""
+    from lawvm.ingest.parsed_store import defacsimile_ab_locator
+
+    base = defacsimile_ab_locator("srcA", "adjudicated_pdf", "v1", "goldA")
+    assert base != defacsimile_ab_locator("srcB", "adjudicated_pdf", "v1", "goldA")
+    assert base != defacsimile_ab_locator("srcA", "adjudicated_pdf", "v2", "goldA")
+    assert base != defacsimile_ab_locator("srcA", "adjudicated_pdf", "v1", "goldB")
+    assert base == defacsimile_ab_locator("srcA", "adjudicated_pdf", "v1", "goldA")
 
 
 # --------------------------------------------------------------------------- #

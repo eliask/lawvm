@@ -31,10 +31,12 @@ Design (spec §10 dec. 4 / §10.2 sequencing):
      ``accept_regression_tolerance``, and there were no run errors. Otherwise STOP
      and print WHY + what was DROPPED (the un-run tranche), so a bad assumption
      never spends the next, larger GPU tranche.
-  3. **Resumable + deterministic.** Per-PDF ``RowResult`` rows are checkpointed to
-     a JSON file after each stage; because the stages are nested, a resumed run
-     re-uses every completed PDF and only processes the new members of the next
-     stage. The stratified order is a pure function of the (locator, stratum) set,
+  3. **Resumable + deterministic.** Resume is by CONSTRUCTION — the processor
+     persists each member's verdict into the OUTPUT FARCHIVE and returns any
+     pre-existing one without recompute, so a re-run (after a shutdown, or the next
+     batch up the ladder) re-walks completed PDFs as fast farchive lookups and only
+     spends tokens on genuinely new members. No side checkpoint file to keep in
+     sync. The stratified order is a pure function of the (locator, stratum) set,
      so two runs diff-empty.
   4. **Report.** Per-stage + cumulative acceptance rate, NUMERIC-exact regression
      count, EXTRA/STRUCTURE/MISSING deltas, and a RANKED residual-defect-class
@@ -49,10 +51,9 @@ touching vision.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import asdict, dataclass, replace
+from dataclasses import dataclass, replace
 from typing import Callable, Dict, List, Optional, Protocol, Sequence, Tuple
 
 from lawvm.tools.fi_parse_corpus import (
@@ -327,84 +328,6 @@ def gate(
 
 
 # --------------------------------------------------------------------------- #
-# Checkpoint (resume without re-doing completed PDFs).                           #
-# --------------------------------------------------------------------------- #
-
-
-@dataclass(slots=True)
-class Checkpoint:
-    """The resumable state: per-PDF rows + the last fully-completed stage index."""
-
-    config_key: str
-    completed_stage_index: int
-    rows: Dict[str, RowResult]
-
-    def to_json(self) -> Dict[str, object]:
-        return {
-            "version": 1,
-            "config_key": self.config_key,
-            "completed_stage_index": self.completed_stage_index,
-            "rows": {loc: asdict(r) for loc, r in sorted(self.rows.items())},
-        }
-
-    @classmethod
-    def from_json(cls, payload: Dict[str, object]) -> "Checkpoint":
-        raw_rows = payload.get("rows", {})
-        assert isinstance(raw_rows, dict)
-        rows: Dict[str, RowResult] = {}
-        for loc, row in raw_rows.items():
-            assert isinstance(row, dict)
-            rows[str(loc)] = RowResult(**row)  # ty: ignore[invalid-argument-type]
-        idx = payload.get("completed_stage_index", -1)
-        return cls(
-            config_key=str(payload.get("config_key", "")),
-            completed_stage_index=int(idx) if isinstance(idx, (int, str)) else -1,
-            rows=rows,
-        )
-
-
-def _config_key(
-    *,
-    stages: Sequence[int],
-    numeric_tolerance: int,
-    accept_regression_tolerance: float,
-    stratum_filter: Optional[str],
-    only_with_xml: bool,
-    n_selected: int,
-) -> str:
-    """A digest guarding a resume against a mismatched configuration.
-
-    Resuming under a DIFFERENT ladder / pool / gate would silently mix incomparable
-    runs; the key folds the run-shaping inputs so a mismatch fails loud instead.
-    """
-    material = "|".join(
-        str(x)
-        for x in (
-            list(stages),
-            numeric_tolerance,
-            f"{accept_regression_tolerance:.6f}",
-            stratum_filter or "",
-            int(only_with_xml),
-            n_selected,
-        )
-    )
-    return hashlib.sha256(material.encode("utf-8")).hexdigest()[:16]
-
-
-def _load_checkpoint(path: str) -> Optional[Checkpoint]:
-    try:
-        with open(path, "r", encoding="utf-8") as fh:
-            return Checkpoint.from_json(json.load(fh))
-    except FileNotFoundError:
-        return None
-
-
-def _write_checkpoint(path: str, ckpt: Checkpoint) -> None:
-    with open(path, "w", encoding="utf-8") as fh:
-        json.dump(ckpt.to_json(), fh, ensure_ascii=False, indent=2, sort_keys=True)
-
-
-# --------------------------------------------------------------------------- #
 # The staged sweep run.                                                          #
 # --------------------------------------------------------------------------- #
 
@@ -464,73 +387,33 @@ def run_sweep(
     numeric_tolerance: int = 0,
     accept_regression_tolerance: float = DEFAULT_ACCEPT_REGRESSION_TOLERANCE,
     workers: int = _DEFAULT_WORKERS,
-    checkpoint_path: Optional[str] = None,
-    resume: bool = False,
     stratum_filter: Optional[str] = None,
     only_with_xml: bool = False,
     meter: Optional[TokenMeter] = None,
 ) -> SweepReport:
-    """Run the escalating, gated, resumable staged sweep over ``members``.
+    """Run the escalating, gated staged sweep over ``members``.
 
     ``processor`` maps ONE member → its ``RowResult`` (the real driver binds
     ``fi_parse_corpus._process_one``; tests inject a scripted stub). Stages are the
     superset-nested prefixes of the stratified order; each stage processes only its
     NEW members (nested → prior rows re-used), folds the aggregate, and GATES. On a
     STOP the later, larger tranches are DROPPED (logged) and never run.
+
+    Resume is by CONSTRUCTION, not a side checkpoint: the real processor persists
+    every member's verdict into the OUTPUT FARCHIVE and returns any pre-existing one
+    without recompute, so a re-run (after a shutdown, or the next batch up the ladder)
+    re-walks completed members as fast farchive lookups and only spends model tokens
+    on the genuinely new ones. There is no checkpoint file to keep in sync.
     """
     plans = plan_stages(members, stratum_of, stages)
     n_selected = len(members)
-    config_key = _config_key(
-        stages=stages,
-        numeric_tolerance=numeric_tolerance,
-        accept_regression_tolerance=accept_regression_tolerance,
-        stratum_filter=stratum_filter,
-        only_with_xml=only_with_xml,
-        n_selected=n_selected,
-    )
 
     rows_by_locator: Dict[str, RowResult] = {}
-    start_stage = 0
-    if resume and checkpoint_path is not None:
-        ckpt = _load_checkpoint(checkpoint_path)
-        if ckpt is not None:
-            if ckpt.config_key != config_key:
-                raise SystemExit(
-                    "fi-sweep: --resume checkpoint config mismatch "
-                    f"(checkpoint={ckpt.config_key} current={config_key}); "
-                    "the ladder/pool/gate changed — start a fresh checkpoint."
-                )
-            rows_by_locator = dict(ckpt.rows)
-            start_stage = ckpt.completed_stage_index + 1
-
     stage_aggs: List[StageAggregate] = []
     stopped_at: Optional[int] = None
     prev_agg: Optional[StageAggregate] = None
 
     for plan in plans:
-        if plan.index < start_stage:
-            # Already completed in a prior (resumed) run — re-derive its aggregate
-            # from the checkpointed rows so the report is whole, but do NOT re-run.
-            done_rows = [
-                rows_by_locator[m.pdf_locator]
-                for m in plan.members
-                if m.pdf_locator in rows_by_locator
-            ]
-            agg = gate(
-                aggregate_rows(
-                    done_rows,
-                    index=plan.index,
-                    planned_size=plan.planned_size,
-                    stratum_counts=plan.stratum_counts,
-                ),
-                prev_agg,
-                numeric_tolerance=numeric_tolerance,
-                accept_regression_tolerance=accept_regression_tolerance,
-            )
-            stage_aggs.append(agg)
-            prev_agg = agg
-            continue
-
         # Only the NEW members of this stage need processing (stages are nested).
         new_members = [m for m in plan.members if m.pdf_locator not in rows_by_locator]
 
@@ -558,16 +441,6 @@ def run_sweep(
             accept_regression_tolerance=accept_regression_tolerance,
         )
         stage_aggs.append(agg)
-
-        if checkpoint_path is not None:
-            _write_checkpoint(
-                checkpoint_path,
-                Checkpoint(
-                    config_key=config_key,
-                    completed_stage_index=plan.index,
-                    rows=rows_by_locator,
-                ),
-            )
 
         if not agg.gate_ok:
             stopped_at = plan.index
@@ -875,8 +748,6 @@ def main(args: argparse.Namespace) -> None:
         numeric_tolerance=args.numeric_tolerance,
         accept_regression_tolerance=args.accept_regression_tolerance,
         workers=workers,
-        checkpoint_path=args.checkpoint,
-        resume=bool(args.resume),
         stratum_filter=args.stratum,
         only_with_xml=bool(args.only_with_xml),
     )
