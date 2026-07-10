@@ -22,13 +22,16 @@ from lawvm.tools.fi_appendix_structure import (
     StructuredTable,
     TableCellDivergence,
     TableVerification,
+    TableVisionVerification,
     cross_witness,
+    make_vision_region_reader,
     number_tokens,
     numeric_recall,
     structural_sanity,
     structured_table_from_node,
     table_escalation_route,
     verify_table_exact,
+    verify_tables_vision,
 )
 
 
@@ -243,3 +246,177 @@ def test_structural_sanity_flags_ragged_grid() -> None:
     s = structural_sanity(structured_table_from_node(node, locator="x", table_index=0))
     assert s.rectangular is False
     assert s.header_row_found is False
+
+
+# --------------------------------------------------------------------------- #
+# VISION second-witness seam (injected reader — no model / PDF).                #
+# --------------------------------------------------------------------------- #
+#
+# The 2003/917 pathology: the deterministic pdfium witness is CORRUPT for the PDF's
+# font (ä->‰ etc.), so it diverges on cells Docling in fact read correctly. The
+# injected render-based vision reader reproduces the Docling text on those routed
+# cells → corroboration. These drive the seam (route -> re-read routed cells ->
+# exact-compare) with a scripted reader; the pdfium/vision transport is LIVE-only.
+
+# bbox convention: top-left points; three cells in row 0.
+_B00 = (0.0, 0.0, 1.0, 1.0)
+_B01 = (1.0, 0.0, 2.0, 1.0)
+_B02 = (2.0, 0.0, 3.0, 1.0)
+
+
+def _escalated_table() -> StructuredTable:
+    return StructuredTable(
+        locator="finlex://sd/2003/917/fin/media/x.pdf",
+        page_num=1,
+        table_index=0,
+        n_rows=1,
+        n_cols=3,
+        caption="",
+        cells=(
+            StructuredCell(0, 0, "Sähkö 1,2", is_header=False, bbox=_B00),
+            StructuredCell(0, 1, "Kaasu 3,4", is_header=False, bbox=_B01),
+            StructuredCell(0, 2, "9", is_header=False, bbox=_B02),
+        ),
+    )
+
+
+def _det_verification(divergent_positions: list[tuple[int, int]]) -> TableVerification:
+    # The deterministic (corrupt-witness) verdict: the given cells diverged; the rest
+    # of the 3-cell table verified exact.
+    text = {(0, 0): "Sähkö 1,2", (0, 1): "Kaasu 3,4", (0, 2): "9"}
+    divs = tuple(
+        TableCellDivergence(row=r, col=c, docling_text=text[(r, c)], witness_text="‰")
+        for (r, c) in divergent_positions
+    )
+    return TableVerification(
+        locator="finlex://sd/2003/917/fin/media/x.pdf",
+        page_num=1,
+        table_index=0,
+        n_cells=3,
+        n_exact=3 - len(divergent_positions),
+        n_no_witness=0,
+        divergences=divs,
+    )
+
+
+def test_vision_witness_corroborates_routed_cells() -> None:
+    # The pdfium witness diverged on the two text cells (corrupt font); the render-based
+    # vision reader reproduces the Docling text EXACTLY → both routed cells corroborated.
+    table = _escalated_table()
+    det = _det_verification([(0, 0), (0, 1)])
+    reader_map = {_B00: "Sähkö  1,2", _B01: "Kaasu 3,4"}  # _B00 inert-equal (spacing)
+    vvs = verify_tables_vision([table], [det], lambda _pn, bb: reader_map[bb])
+    assert len(vvs) == 1
+    vv = vvs[0]
+    assert isinstance(vv, TableVisionVerification)
+    assert vv.n_routed == 2
+    assert vv.n_corroborated == 2
+    assert vv.all_corroborated
+    assert set(vv.corroborated) == {(0, 0), (0, 1)}
+    assert not vv.uncorroborated
+
+
+def test_vision_witness_leaves_genuine_divergence_open() -> None:
+    # Vision confirms one routed cell but reads the other differently from Docling →
+    # that cell stays an OPEN divergence carrying the vision read (never forced).
+    table = _escalated_table()
+    det = _det_verification([(0, 0), (0, 1)])
+    reader_map = {_B00: "Sähkö 1,2", _B01: "Kaasu 9,9"}
+    vvs = verify_tables_vision([table], [det], lambda _pn, bb: reader_map[bb])
+    vv = vvs[0]
+    assert vv.n_routed == 2 and vv.n_corroborated == 1
+    assert vv.corroborated == ((0, 0),)
+    assert len(vv.uncorroborated) == 1
+    d = vv.uncorroborated[0]
+    assert (d.row, d.col) == (0, 1)
+    assert d.docling_text == "Kaasu 3,4" and d.witness_text == "Kaasu 9,9"
+    assert not vv.all_corroborated
+
+
+def test_vision_witness_only_reads_routed_cells_and_skips_self_verified() -> None:
+    # A self-verified table (no divergences) spends NO vision reads and is not emitted;
+    # for the escalated table, the reader is called on ONLY the routed cell (not (0,2)).
+    escalated = _escalated_table()
+    det_escalated = _det_verification([(0, 0)])
+    clean = _escalated_table()
+    det_clean = _det_verification([])  # 0 divergences -> self_verified, skipped
+
+    seen: list[tuple[float, float, float, float]] = []
+
+    def reader(_pn: int, bb: tuple[float, float, float, float]) -> str:
+        seen.append(bb)
+        return "Sähkö 1,2"
+
+    vvs = verify_tables_vision([escalated, clean], [det_escalated, det_clean], reader)
+    assert len(vvs) == 1  # only the escalated table
+    assert vvs[0].table_index == 0
+    assert seen == [_B00]  # only the routed cell was re-read; (0,1)/(0,2) untouched
+
+
+def test_vision_witness_max_cells_caps_the_render_spend() -> None:
+    # Two escalated tables, one routed cell each; a budget of 1 re-reads only the first
+    # (n_read=1) while n_routed still reflects the true escalation-set size.
+    t0, t1 = _escalated_table(), _escalated_table()
+    d0, d1 = _det_verification([(0, 0)]), _det_verification([(0, 1)])
+    calls: list[tuple[float, float, float, float]] = []
+
+    def reader(_pn: int, bb: tuple[float, float, float, float]) -> str:
+        calls.append(bb)
+        return "Sähkö 1,2"  # corroborates cell (0,0); differs from (0,1)'s "Kaasu 3,4"
+
+    vvs = verify_tables_vision([t0, t1], [d0, d1], reader, max_cells=1)
+    assert len(calls) == 1  # budget honoured: exactly one render/read
+    total_read = sum(vv.n_read for vv in vvs)
+    assert total_read == 1
+    assert vvs[0].n_routed == 1 and vvs[0].n_read == 1  # first table read
+    assert vvs[1].n_read == 0 and vvs[1].n_routed == 1  # second left un-read
+
+
+def test_make_vision_region_reader_flips_topleft_bbox_to_bottomleft(monkeypatch) -> None:
+    # The production wiring must flip the top-left cell bbox to bottom-left for the
+    # render crop (y := page_height - y). Stub the page-height read (no PDF) and record
+    # the BBox the producer receives.
+    import lawvm.tools.fi_appendix_structure as mod
+
+    monkeypatch.setattr(mod, "_pdf_page_heights", lambda _b: {1: 100.0})
+
+    captured: dict[str, BBox] = {}
+
+    class _FakeProducer:
+        def read_region_cold(
+            self, manifestation: object, page_num: int, bbox: BBox, *,
+            dpi: int, expected_lines: int,
+        ) -> str:
+            captured["bbox"] = bbox
+            return "read-ok"
+
+    reader = make_vision_region_reader(
+        _FakeProducer(),
+        b"%PDF-fake",
+        artifact_digest="d" * 64,
+        locator="finlex://sd/2003/917/fin/media/x.pdf",
+    )
+    # top-left cell bbox (10,20)-(30,40) on a 100-pt-tall page -> bottom-left (10,60)-(30,80)
+    out = reader(1, (10.0, 20.0, 30.0, 40.0))
+    assert out == "read-ok"
+    bb = captured["bbox"]
+    assert (bb.x0, bb.y0, bb.x1, bb.y1) == (10.0, 60.0, 30.0, 80.0)
+
+
+def test_make_vision_region_reader_swallows_failure_to_empty(monkeypatch) -> None:
+    # A render/read failure is an empty read (-> a typed open divergence), never a crash.
+    import lawvm.tools.fi_appendix_structure as mod
+    from lawvm.ingest.llm_backends.vision_producer import VisionProducerFailure
+
+    monkeypatch.setattr(mod, "_pdf_page_heights", lambda _b: {1: 100.0})
+
+    class _FailingProducer:
+        def read_region_cold(self, *a, **k):
+            raise VisionProducerFailure(page_num=1, reason_code="x", detail="boom")
+
+    reader = make_vision_region_reader(
+        _FailingProducer(), b"%PDF", artifact_digest="e" * 64, locator="loc://x"
+    )
+    assert reader(1, (10.0, 20.0, 30.0, 40.0)) == ""
+    # a page with no known height also yields an empty read, not a KeyError
+    assert reader(99, (10.0, 20.0, 30.0, 40.0)) == ""

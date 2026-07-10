@@ -374,6 +374,139 @@ def table_escalation_route(verification: TableVerification) -> str:
     return ROUTE_NO_WITNESS_DEFERRED
 
 
+# --------------------------------------------------------------------------- #
+# VISION SECOND-WITNESS (the escalation target — an INDEPENDENT render read).    #
+# --------------------------------------------------------------------------- #
+#
+# When the deterministic (pdfium text-layer) witness cannot self-verify a table it
+# is routed ``vision_escalate`` — overwhelmingly because the text layer itself is
+# corrupt for that PDF's font (broken ToUnicode CMap), NOT because Docling read the
+# cell wrong. The honest resolution is a SECOND, independent witness that does not
+# depend on the corrupt text layer: RENDER each escalated cell's own bbox region
+# (region-isolation crop, never a whole-page downscale) and read that pixel region
+# back to text, then apply the SAME EXACT contract as ``verify_table_exact`` —
+# ``text_equivalence`` modulo the legally-inert op-equivalence quotient.
+#
+# The witness is INJECTABLE (``region_reader(page_num, bbox) -> str``), exactly like
+# ``verify_table_exact``'s ``bbox_witness``, so the seam (render → read → exact
+# compare) is hermetically testable with a scripted reader — no model / PDF in CI.
+# ``make_vision_region_reader`` is the production wiring (crop via
+# ``ingest.visual.render_region_crop`` + read via the :8080 vision producer's
+# ``read_region_cold``). Only the ROUTED (deterministically-divergent) cells are
+# re-read: the deterministic lane already verified the rest, so vision spend is
+# bounded to exactly the cells the free lane could not adjudicate.
+
+
+@dataclass(frozen=True, slots=True)
+class TableVisionVerification:
+    """Vision second-witness verdict for ONE deterministically-escalated table.
+
+    ``n_routed`` is the deterministic escalation set (the cells the pdfium witness
+    could not verify); ``n_corroborated`` is how many of those the render-based
+    vision witness reproduces EXACTLY (agreeing with Docling where the corrupt text
+    layer could not), and ``uncorroborated`` are the routed cells vision ALSO could
+    not confirm — the genuinely-open divergences (each carrying the vision read).
+    """
+
+    locator: str
+    page_num: int
+    table_index: int
+    n_routed: int
+    n_corroborated: int
+    corroborated: Tuple[Tuple[int, int], ...]
+    uncorroborated: Tuple[TableCellDivergence, ...]
+
+    @property
+    def n_read(self) -> int:
+        """Routed cells the vision witness actually re-read (corroborated + open).
+
+        Equals ``n_routed`` when unbudgeted; less when a ``max_cells`` cap curtailed
+        the render spend (the un-read routed cells are neither confirmed nor open)."""
+        return self.n_corroborated + len(self.uncorroborated)
+
+    @property
+    def all_corroborated(self) -> bool:
+        """True iff every routed cell the witness READ was confirmed (0 open reads)."""
+        return not self.uncorroborated
+
+    def to_jsonable(self) -> Dict[str, object]:
+        return {
+            "locator": self.locator,
+            "page_num": self.page_num,
+            "table_index": self.table_index,
+            "n_routed": self.n_routed,
+            "n_read": self.n_read,
+            "n_corroborated": self.n_corroborated,
+            "corroborated": [list(rc) for rc in self.corroborated],
+            "uncorroborated": [
+                {"row": d.row, "col": d.col, "docling": d.docling_text, "vision": d.witness_text}
+                for d in self.uncorroborated
+            ],
+        }
+
+
+def verify_tables_vision(
+    tables: Sequence[StructuredTable],
+    det_verifications: Sequence[TableVerification],
+    region_reader: Callable[[int, Tuple[float, float, float, float]], str],
+    *,
+    max_cells: Optional[int] = None,
+) -> Tuple[TableVisionVerification, ...]:
+    """Vision second-witness over the ``vision_escalate`` stratum (injectable reader).
+
+    For every table the deterministic lane routed ``vision_escalate``, re-read ONLY
+    its divergent cells' bbox regions through ``region_reader`` (the render-based
+    witness; injected so this is hermetically testable) and re-apply the identical
+    exactness check ``verify_table_exact`` uses (``text_equivalence`` modulo the
+    inert op-equivalence quotient). A routed cell whose vision read reproduces the
+    Docling text is CORROBORATED; one that still differs is a genuinely-open
+    divergence. Tables not routed to vision are skipped (nothing to spend on).
+
+    ``max_cells`` caps the TOTAL number of routed cells re-read across the run (a
+    vision-spend budget, mirroring the corpus lane's ``--vision-cap``); ``None`` is
+    unbounded. Under a cap the un-read routed cells stay in ``n_routed`` (the honest
+    escalation-set size) but are absent from ``corroborated``/``uncorroborated`` — so
+    ``n_read`` (< ``n_routed``) is the sampled base. Pure apart from the injected reader.
+    """
+    out: List[TableVisionVerification] = []
+    budget = max_cells
+    for table, det in zip(tables, det_verifications, strict=True):
+        if table_escalation_route(det) != ROUTE_VISION_ESCALATE:
+            continue
+        cells_by_pos = {(c.row, c.col): c for c in table.cells}
+        corroborated: List[Tuple[int, int]] = []
+        uncorroborated: List[TableCellDivergence] = []
+        for d in det.divergences:
+            if budget is not None and budget <= 0:
+                break  # vision-spend budget exhausted; leave the rest un-read
+            cell = cells_by_pos.get((d.row, d.col))
+            if cell is None or cell.bbox is None:  # divergent ⇒ had a bbox; defensive
+                continue
+            vision_text = region_reader(table.page_num, cell.bbox)
+            if budget is not None:
+                budget -= 1
+            if text_equivalence(cell.text, vision_text).equal:
+                corroborated.append((d.row, d.col))
+            else:
+                uncorroborated.append(
+                    TableCellDivergence(
+                        row=d.row, col=d.col, docling_text=cell.text, witness_text=vision_text
+                    )
+                )
+        out.append(
+            TableVisionVerification(
+                locator=table.locator,
+                page_num=table.page_num,
+                table_index=table.table_index,
+                n_routed=len(det.divergences),
+                n_corroborated=len(corroborated),
+                corroborated=tuple(corroborated),
+                uncorroborated=tuple(uncorroborated),
+            )
+        )
+    return tuple(out)
+
+
 def structured_table_from_node(
     node: SourceDocumentNode, *, locator: str, table_index: int
 ) -> StructuredTable:
@@ -495,10 +628,23 @@ class StatuteTableReport:
     #: EXACT per-table cell verdicts (Docling cell ≡ pdfium-in-bbox, modulo op_equivalence).
     #: This is the HEADLINE — a table is verified only when every witnessable cell is exact.
     verifications: Tuple[TableVerification, ...] = ()
+    #: VISION second-witness verdicts over the ``vision_escalate`` stratum (empty when the
+    #: vision witness was not run): render-based corroboration of the routed cells.
+    vision_verifications: Tuple[TableVisionVerification, ...] = ()
 
     @property
     def n_cells_verified(self) -> int:
         return sum(v.n_exact for v in self.verifications)
+
+    @property
+    def n_cells_routed_to_vision(self) -> int:
+        """Deterministically-divergent cells handed to the vision second-witness."""
+        return sum(v.n_routed for v in self.vision_verifications)
+
+    @property
+    def n_cells_vision_corroborated(self) -> int:
+        """Routed cells the render-based vision witness reproduced EXACTLY (≡ Docling)."""
+        return sum(v.n_corroborated for v in self.vision_verifications)
 
     @property
     def n_cells_witnessed(self) -> int:
@@ -564,6 +710,12 @@ class StatuteTableReport:
                     {**v.to_jsonable(), "route": route}
                     for v, route in zip(self.verifications, self.routes, strict=True)
                 ],
+            },
+            "vision_second_witness": {
+                "ran": bool(self.vision_verifications),
+                "n_cells_routed": self.n_cells_routed_to_vision,
+                "n_cells_corroborated": self.n_cells_vision_corroborated,
+                "tables": [vv.to_jsonable() for vv in self.vision_verifications],
             },
             "note": self.note,
         }
@@ -651,6 +803,92 @@ def _verify_tables_against_pdfium(
             doc.close()
 
 
+#: The DPI a routed cell's region crop is rendered at before the vision read. What
+#: recovers a glyph a whole-page read drops is ISOLATION (the cell cropped into its
+#: own image), not raw zoom — this is a sharpness bound on the isolated crop.
+_VISION_REGION_DPI = 300
+
+
+def _pdf_page_heights(pdf_bytes: bytes) -> Dict[int, float]:
+    """1-indexed page_num → page height in points (for the top-left↔bottom-left flip).
+
+    The StructuredCell bbox is top-left origin (points); ``render_region_crop`` wants
+    bottom-left, so the vision region reader flips y against the page height. Reads
+    the heights ONCE under the systemic pdfium lock (the render path uses the same
+    canonical lock)."""
+    import importlib
+
+    from lawvm.ingest.visual import PDFIUM_LOCK
+
+    pdfium = importlib.import_module("pypdfium2")
+    with PDFIUM_LOCK:
+        doc = pdfium.PdfDocument(pdf_bytes)
+        try:
+            return {i + 1: float(doc[i].get_size()[1]) for i in range(len(doc))}
+        finally:
+            doc.close()
+
+
+def make_vision_region_reader(
+    producer: Any,
+    pdf_bytes: bytes,
+    *,
+    artifact_digest: str,
+    locator: str,
+    dpi: int = _VISION_REGION_DPI,
+    expected_lines: int = 1,
+) -> Callable[[int, Tuple[float, float, float, float]], str]:
+    """Build the production render-based region reader (the injectable vision witness).
+
+    Returns a ``region_reader(page_num, bbox) -> str`` with the SAME signature as
+    ``verify_table_exact``'s ``bbox_witness``. It renders JUST the cell's bbox region
+    (region-isolation crop via ``ingest.visual.render_region_crop``, invoked inside
+    ``producer.read_region_cold``) and reads that pixel region back to text through
+    the :8080 vision producer — an INDEPENDENT witness that never touches the corrupt
+    text layer. The cell bbox is top-left points; ``render_region_crop`` is bottom-left,
+    so y is flipped against the page height (read once up front). A render/read failure
+    or a degenerate box yields an empty read → a typed uncorroborated divergence, never
+    a crash. Vision imports stay lazy here (determinism firewall)."""
+    from datetime import datetime, timezone
+
+    from lawvm.core.source_document.anchors import BBox
+    from lawvm.core.source_document.extraction import SourceManifestation
+    from lawvm.ingest.llm_backends.vision_producer import (
+        VisionProducerFailure,
+        VisionProducerTruncated,
+    )
+
+    heights = _pdf_page_heights(pdf_bytes)
+    manifestation = SourceManifestation(
+        artifact_digest=artifact_digest or ("0" * 64),
+        source_bytes=pdf_bytes,
+        locator=locator,
+        source_role="statute",
+        fetched_at=datetime.now(timezone.utc),
+        media_type="application/pdf",
+    )
+
+    def region_reader(page_num: int, bbox: Tuple[float, float, float, float]) -> str:
+        h = heights.get(page_num)
+        if h is None:
+            return ""
+        x0, y0, x1, y1 = bbox
+        lo_x, hi_x = min(x0, x1), max(x0, x1)
+        lo_y, hi_y = min(y0, y1), max(y0, y1)  # top-left: lo_y=top edge, hi_y=bottom edge
+        try:  # flip to bottom-left origin for render_region_crop; BBox validates area
+            bb = BBox(x0=lo_x, y0=h - hi_y, x1=hi_x, y1=h - lo_y)
+        except ValueError:
+            return ""
+        try:
+            return producer.read_region_cold(
+                manifestation, page_num, bb, dpi=dpi, expected_lines=expected_lines
+            )
+        except (VisionProducerFailure, VisionProducerTruncated):
+            return ""
+
+    return region_reader
+
+
 def _docling_document(pdf_bytes: bytes, *, name: str) -> Any:
     """Convert PDF bytes → a ``DoclingDocument`` on CPU (lazy import).
 
@@ -678,7 +916,14 @@ def _docling_document(pdf_bytes: bytes, *, name: str) -> Any:
 
 
 def structure_statute_pdf(
-    locator: str, pdf_bytes: bytes, artifact_digest: str
+    locator: str,
+    pdf_bytes: bytes,
+    artifact_digest: str,
+    *,
+    vision_region_reader: Optional[
+        Callable[[int, Tuple[float, float, float, float]], str]
+    ] = None,
+    vision_max_cells: Optional[int] = None,
 ) -> StatuteTableReport:
     """Docling-structure ONE appendix PDF into tables + fidelity metrics.
 
@@ -687,6 +932,12 @@ def structure_statute_pdf(
     preserves), then triangulates fidelity: numeric completeness vs the PDF's own
     text layer, cross-witness numeric agreement vs pypdfium2, and per-table
     structural sanity.
+
+    When ``vision_region_reader`` is supplied (the injectable render-based witness),
+    the ``vision_escalate`` stratum — tables the deterministic pdfium witness could
+    not self-verify — is additionally adjudicated by re-reading each routed cell's
+    isolated bbox region and re-applying the exactness contract, corroborating
+    Docling where the corrupt text layer could not.
     """
     from lawvm.ingest.llm_backends.docling_producer import (
         _docling_document_to_page_views,
@@ -717,6 +968,11 @@ def structure_statute_pdf(
 
     sanities = tuple(structural_sanity(t) for t in tables)
     verifications = _verify_tables_against_pdfium(pdf_bytes, tables)
+    vision_verifications: Tuple[TableVisionVerification, ...] = ()
+    if vision_region_reader is not None:
+        vision_verifications = verify_tables_vision(
+            tables, verifications, vision_region_reader, max_cells=vision_max_cells
+        )
     all_cell_texts = tuple(txt for t in tables for txt in t.cell_texts())
     reference_text = "\n".join(page_texts)
     numeric = numeric_recall(reference_text, all_cell_texts)
@@ -740,11 +996,23 @@ def structure_statute_pdf(
         crosswitness=xwit,
         note=note,
         verifications=verifications,
+        vision_verifications=vision_verifications,
     )
 
 
-def _measure_one(locator: str, *, finlex_path: str) -> StatuteTableReport:
-    """Resolve + structure ONE media PDF locator; a bad PDF is a typed record."""
+def _measure_one(
+    locator: str,
+    *,
+    finlex_path: str,
+    vision_producer: Any = None,
+    vision_max_cells: Optional[int] = None,
+) -> StatuteTableReport:
+    """Resolve + structure ONE media PDF locator; a bad PDF is a typed record.
+
+    When ``vision_producer`` is supplied, the render-based vision second-witness is
+    built for this PDF and the ``vision_escalate`` stratum is corroborated by it
+    (bounded to ``vision_max_cells`` routed-cell re-reads).
+    """
     from farchive import Farchive
 
     fa = Farchive(finlex_path)
@@ -756,7 +1024,18 @@ def _measure_one(locator: str, *, finlex_path: str) -> StatuteTableReport:
         if not pdf_bytes:
             raise ValueError("empty bytes")
         digest = getattr(span, "digest", "") or "0" * 64
-        return structure_statute_pdf(locator, pdf_bytes, digest)
+        reader = None
+        if vision_producer is not None:
+            reader = make_vision_region_reader(
+                vision_producer, pdf_bytes, artifact_digest=digest, locator=locator
+            )
+        return structure_statute_pdf(
+            locator,
+            pdf_bytes,
+            digest,
+            vision_region_reader=reader,
+            vision_max_cells=vision_max_cells,
+        )
     except Exception as exc:  # a bad PDF is a typed record, not a pool-sinking crash
         return StatuteTableReport(
             locator=locator,
@@ -853,6 +1132,15 @@ def render_report_text(reports: Sequence[StatuteTableReport]) -> str:
             f"vision_escalate={r.n_tables_vision_escalate} "
             f"no_witness_deferred={r.routes.count(ROUTE_NO_WITNESS_DEFERRED)}"
         )
+        # VISION second-witness: render-based corroboration of the routed cells (the
+        # cells the corrupt text layer could not verify). Only emitted when it ran.
+        if r.vision_verifications:
+            n_read = sum(vv.n_read for vv in r.vision_verifications)
+            lines.append(
+                f"  VISION: corroborated={r.n_cells_vision_corroborated}/{n_read} read "
+                f"(routed={r.n_cells_routed_to_vision}, "
+                f"open={n_read - r.n_cells_vision_corroborated})"
+            )
         lines.append("")
     return "\n".join(lines) + "\n"
 
@@ -882,7 +1170,31 @@ def main(args: argparse.Namespace) -> None:
             print(f"# no media PDF for {statute} (lang={args.lang})")
         locators.extend(found)
 
-    reports = [_measure_one(loc, finlex_path=finlex_path) for loc in locators]
+    # Optional VISION second-witness over the vision_escalate stratum. Requested via
+    # ``--vision`` (read forward-compatibly; the argparse flag lives in the CLI module,
+    # owned elsewhere). The :8080 vision server is probed once; if absent we fall back
+    # to the deterministic-only report rather than fail.
+    vision_producer: Any = None
+    vision_cap: Optional[int] = getattr(args, "vision_cap", None)
+    if getattr(args, "vision", False):
+        from lawvm.ingest.llm_backends.vision_producer import VisionPageProducer
+
+        producer = VisionPageProducer()
+        if producer.is_available():
+            vision_producer = producer
+        else:
+            print("# --vision requested but the :8080 vision server is unavailable; "
+                  "running deterministic-only")
+
+    reports = [
+        _measure_one(
+            loc,
+            finlex_path=finlex_path,
+            vision_producer=vision_producer,
+            vision_max_cells=vision_cap,
+        )
+        for loc in locators
+    ]
 
     if args.json:
         payload = {"reports": [r.to_jsonable() for r in reports]}
