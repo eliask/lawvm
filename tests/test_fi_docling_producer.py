@@ -22,12 +22,14 @@ import pytest
 from lawvm.core.source_document import SourceManifestation
 from lawvm.core.source_document.ir import AssuranceTier, SourceDocumentNodeKind
 from lawvm.finland.source_document.docling_producer import (
+    DoclingBBoxView,
     DoclingBlockView,
     DoclingCellView,
     DoclingPageView,
     DoclingStructuralProducer,
     DoclingTableView,
     DoclingUnavailable,
+    _normalized_bbox,
     docling_document_to_nodes,
     docling_page_nodes,
 )
@@ -102,6 +104,66 @@ def test_table_lowers_to_real_cell_grid() -> None:
     # cell text preserved
     assert rows[1].children[0].text == "2025"
     assert rows[2].children[1].text == "5"
+
+
+def test_bottom_left_bbox_normalizes_to_top_left_convention() -> None:
+    # A Docling BOTTOMLEFT bbox (origin at the page bottom, ``top`` the larger y)
+    # must flip to the anchors.BBox top-left convention (y grows downward,
+    # y0=top-edge <= y1=bottom-edge) via ``page_height - y``.
+    view = DoclingBBoxView(
+        left=10.0, top=700.0, right=200.0, bottom=650.0,
+        coord_origin="BOTTOMLEFT", page_height=842.0,
+    )
+    bb = _normalized_bbox(view)
+    assert bb is not None
+    assert (bb.x0, bb.x1) == (10.0, 200.0)
+    # top edge 700 -> 842-700 = 142 (smaller y); bottom edge 650 -> 842-650 = 192
+    assert bb.y0 == 142.0 and bb.y1 == 192.0
+    assert bb.y1 >= bb.y0  # the BBox invariant holds after the flip
+
+
+def test_top_left_bbox_passes_through_unflipped() -> None:
+    view = DoclingBBoxView(left=5.0, top=20.0, right=90.0, bottom=60.0, coord_origin="TOPLEFT")
+    bb = _normalized_bbox(view)
+    assert bb is not None
+    assert (bb.x0, bb.y0, bb.x1, bb.y1) == (5.0, 20.0, 90.0, 60.0)
+
+
+def test_cell_and_block_bbox_thread_onto_source_anchor() -> None:
+    # A fake docling page whose cell + block carry a native (BOTTOMLEFT) bbox must
+    # populate SourceAnchor.bbox on the lowered nodes, coord-normalized top-left.
+    cell_bbox = DoclingBBoxView(
+        left=10.0, top=700.0, right=100.0, bottom=680.0,
+        coord_origin="BOTTOMLEFT", page_height=800.0,
+    )
+    block_bbox = DoclingBBoxView(
+        left=0.0, top=50.0, right=500.0, bottom=90.0, coord_origin="TOPLEFT",
+    )
+    page = DoclingPageView(
+        elements=(
+            DoclingBlockView(label="text", text="para", bbox=block_bbox),
+            DoclingTableView(rows=((DoclingCellView("x", bbox=cell_bbox),),), caption="cap"),
+        )
+    )
+    nodes = docling_document_to_nodes(page, artifact_digest=_DIGEST, page_num=3)
+    block = next(n for n in nodes if n.kind is SourceDocumentNodeKind.PARAGRAPH)
+    assert block.anchor.bbox is not None
+    assert (block.anchor.bbox.y0, block.anchor.bbox.y1) == (50.0, 90.0)
+    table = next(n for n in nodes if n.kind is SourceDocumentNodeKind.TABLE)
+    cell = table.children[0].children[0]
+    assert cell.kind is SourceDocumentNodeKind.TABLE_CELL
+    assert cell.anchor.bbox is not None
+    assert (cell.anchor.bbox.x0, cell.anchor.bbox.x1) == (10.0, 100.0)
+    assert (cell.anchor.bbox.y0, cell.anchor.bbox.y1) == (100.0, 120.0)
+
+
+def test_missing_bbox_leaves_anchor_bbox_none() -> None:
+    # Reading order / no geometry: a cell without a bbox lowers to anchor.bbox None
+    # (unchanged behaviour — the field is optional).
+    page = DoclingPageView(elements=(DoclingTableView(rows=((DoclingCellView("x"),),)),))
+    nodes = docling_document_to_nodes(page, artifact_digest=_DIGEST, page_num=1)
+    table = next(n for n in nodes if n.kind is SourceDocumentNodeKind.TABLE)
+    assert table.children[0].children[0].anchor.bbox is None
 
 
 def test_every_node_is_single_witness_and_anchored() -> None:

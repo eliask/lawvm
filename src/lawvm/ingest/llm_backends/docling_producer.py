@@ -30,9 +30,9 @@ never list; a page Docling cannot read is a typed raise, never a silent empty.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Iterable, List, Protocol, Sequence, Tuple
+from typing import Iterable, List, Optional, Protocol, Sequence, Tuple
 
-from lawvm.core.source_document.anchors import SourceAnchor
+from lawvm.core.source_document.anchors import BBox, SourceAnchor
 from lawvm.core.source_document.extraction import SourceManifestation
 from lawvm.core.source_document.ir import (
     AssuranceTier,
@@ -60,19 +60,71 @@ _FOOTNOTE_LABELS: frozenset[str] = frozenset({"footnote"})
 
 
 @dataclass(frozen=True, slots=True)
+class DoclingBBoxView:
+    """A Docling provenance bbox in its NATIVE coord system (pre-normalization).
+
+    Docling emits geometry as a ``docling_core`` ``BoundingBox`` carrying
+    ``l/t/r/b`` in PDF points and a ``coord_origin`` that is TOPLEFT for some
+    inputs and BOTTOMLEFT for others. This view carries the raw fields plus the
+    page height so the coord-origin normalization into the top-left ``BBox``
+    convention (``anchors.py::BBox``) is a PURE function testable with a fake —
+    the flip never hides inside the untested docling seam.
+    """
+
+    left: float
+    top: float
+    right: float
+    bottom: float
+    coord_origin: str = "TOPLEFT"
+    page_height: float = 0.0
+
+
+def _normalized_bbox(view: Optional[DoclingBBoxView]) -> Optional[BBox]:
+    """Normalize a native Docling bbox into the top-left ``BBox`` convention.
+
+    ``anchors.py::BBox`` is PDF points, origin TOP-LEFT (y grows downward, so
+    ``y0`` is the top edge and ``y1`` the bottom edge, ``y1 >= y0``). A Docling
+    BOTTOMLEFT bbox has its origin at the page bottom (y grows upward, ``top`` is
+    the larger value), so it is flipped by ``page_height - y``; a TOPLEFT bbox is
+    already in the target convention. Degenerate (page_height == 0 on a bottom-
+    left box, or otherwise unorderable) geometry returns ``None`` rather than a
+    bogus anchor — the cell simply carries no geometry.
+    """
+    if view is None:
+        return None
+    if view.coord_origin.strip().upper() == "BOTTOMLEFT":
+        y0 = view.page_height - view.top
+        y1 = view.page_height - view.bottom
+    else:
+        y0 = view.top
+        y1 = view.bottom
+    x0, x1 = view.left, view.right
+    if x1 < x0:
+        x0, x1 = x1, x0
+    if y1 < y0:
+        y0, y1 = y1, y0
+    try:
+        return BBox(x0=float(x0), y0=float(y0), x1=float(x1), y1=float(y1))
+    except (ValueError, TypeError):
+        return None
+
+
+@dataclass(frozen=True, slots=True)
 class DoclingCellView:
-    """One TableFormer grid cell: its text + whether it is a header cell."""
+    """One TableFormer grid cell: its text, header flag, and native geometry."""
 
     text: str
     is_header: bool = False
+    bbox: Optional[DoclingBBoxView] = None
 
 
 @dataclass(frozen=True, slots=True)
 class DoclingBlockView:
-    """One non-table Docling element: a governed label + its transcribed text."""
+    """One non-table Docling element: a governed label, text, and geometry."""
 
     label: str
     text: str
+    bbox: Optional[DoclingBBoxView] = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,6 +133,7 @@ class DoclingTableView:
 
     rows: Tuple[Tuple[DoclingCellView, ...], ...]
     caption: str = ""
+    bbox: Optional[DoclingBBoxView] = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,6 +175,7 @@ def _cell_node(
             artifact_digest=artifact_digest,
             locator=f"docling:page={page_num};table;row={row};col={col}",
             page_num=page_num,
+            bbox=_normalized_bbox(cell.bbox),
         ),
         text=cell.text,
         attrs={"is_header": "1" if cell.is_header else "0"},
@@ -163,6 +217,7 @@ def _table_node(
             artifact_digest=artifact_digest,
             locator=f"docling:page={page_num};table",
             page_num=page_num,
+            bbox=_normalized_bbox(table.bbox),
         ),
         text=table.caption,
         children=tuple(row_nodes),
@@ -188,6 +243,7 @@ def _block_node(
             artifact_digest=artifact_digest,
             locator=f"docling:page={page_num}",
             page_num=page_num,
+            bbox=_normalized_bbox(block.bbox),
         ),
         text=block.text,
     )
@@ -228,13 +284,65 @@ def docling_document_to_nodes(
 # ---------------------------------------------------------------------------
 
 
-def _row_cells_from_table_item(table_item: object) -> Tuple[Tuple[DoclingCellView, ...], ...]:
+def _as_float(value: object) -> Optional[float]:
+    """A numeric ``value`` as a float, or ``None`` (bools are not coordinates)."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    return None
+
+
+def _bbox_view_from_docling(raw_bbox: object, page_height: float) -> Optional[DoclingBBoxView]:
+    """Read a docling ``BoundingBox`` into the native ``DoclingBBoxView``.
+
+    Reads ``l/t/r/b`` and the ``coord_origin`` (a docling ``CoordOrigin`` enum
+    exposing ``.value`` == ``"TOPLEFT"`` / ``"BOTTOMLEFT"``) via getattr, so a
+    field rename narrows to text-only cells rather than crashing. The pure
+    ``_normalized_bbox`` does the coord flip; this seam only transcribes.
+    """
+    if raw_bbox is None:
+        return None
+    left = _as_float(getattr(raw_bbox, "l", None))
+    top = _as_float(getattr(raw_bbox, "t", None))
+    right = _as_float(getattr(raw_bbox, "r", None))
+    bottom = _as_float(getattr(raw_bbox, "b", None))
+    if left is None or top is None or right is None or bottom is None:
+        return None
+    origin = getattr(raw_bbox, "coord_origin", None)
+    origin_str = str(getattr(origin, "value", None) or getattr(origin, "name", None) or origin or "TOPLEFT")
+    return DoclingBBoxView(
+        left=left,
+        top=top,
+        right=right,
+        bottom=bottom,
+        coord_origin=origin_str,
+        page_height=float(page_height),
+    )
+
+
+def _prov_bbox_view(item: object, page_heights: dict[int, float]) -> Optional[DoclingBBoxView]:
+    """Read a docling item's first provenance bbox (``item.prov[0].bbox``)."""
+    prov = getattr(item, "prov", None)
+    if not prov:
+        return None
+    first = prov[0]
+    page_no = getattr(first, "page_no", None)
+    page_height = page_heights.get(page_no, 0.0) if isinstance(page_no, int) else 0.0
+    return _bbox_view_from_docling(getattr(first, "bbox", None), page_height)
+
+
+def _row_cells_from_table_item(
+    table_item: object, page_height: float
+) -> Tuple[Tuple[DoclingCellView, ...], ...]:
     """Read a docling ``TableItem``'s grid into rows of ``DoclingCellView``.
 
     Docling exposes a table as ``table_item.data`` with a ``grid`` (a list of
-    rows, each a list of cells carrying ``.text`` and a ``.column_header`` /
-    ``.row_header`` flag). Read defensively via getattr so a docling minor-version
-    field rename degrades to text-only cells rather than crashing the ingest.
+    rows, each a list of cells carrying ``.text``, a ``.column_header`` /
+    ``.row_header`` flag, and a native ``.bbox``). Read defensively via getattr so
+    a docling minor-version field rename degrades to text-only cells rather than
+    crashing the ingest. Each cell's ``.bbox`` is threaded (unnormalized) so the
+    pure converter can populate ``SourceAnchor.bbox``.
     """
     data = getattr(table_item, "data", None)
     grid = getattr(data, "grid", None) if data is not None else None
@@ -248,7 +356,13 @@ def _row_cells_from_table_item(table_item: object) -> Tuple[Tuple[DoclingCellVie
             is_header = bool(
                 getattr(cell, "column_header", False) or getattr(cell, "row_header", False)
             )
-            cells.append(DoclingCellView(text=text, is_header=is_header))
+            cells.append(
+                DoclingCellView(
+                    text=text,
+                    is_header=is_header,
+                    bbox=_bbox_view_from_docling(getattr(cell, "bbox", None), page_height),
+                )
+            )
         rows.append(tuple(cells))
     return tuple(rows)
 
@@ -265,6 +379,14 @@ def _docling_document_to_page_views(doc: _DoclingDocumentLike) -> dict[int, Docl
     import importlib
 
     table_item_cls = importlib.import_module("docling_core.types.doc").TableItem
+
+    # Per-(1-indexed)-page height (PDF points) for the bottom-left→top-left flip.
+    page_heights: dict[int, float] = {}
+    for page_no, page_item in getattr(doc, "pages", {}).items():
+        size = getattr(page_item, "size", None)
+        height = getattr(size, "height", None)
+        if isinstance(page_no, int) and isinstance(height, (int, float)):
+            page_heights[page_no] = float(height)
 
     by_page: dict[int, List[object]] = {}
 
@@ -286,15 +408,20 @@ def _docling_document_to_page_views(doc: _DoclingDocumentLike) -> dict[int, Docl
             caption = caption_attr(doc) if callable(caption_attr) else caption_attr
             bucket.append(
                 DoclingTableView(
-                    rows=_row_cells_from_table_item(item),
+                    rows=_row_cells_from_table_item(item, page_heights.get(page, 0.0)),
                     caption=str(caption or ""),
+                    bbox=_prov_bbox_view(item, page_heights),
                 )
             )
         else:
             label = str(getattr(item, "label", "") or "")
             text = str(getattr(item, "text", "") or "")
             if text:
-                bucket.append(DoclingBlockView(label=label, text=text))
+                bucket.append(
+                    DoclingBlockView(
+                        label=label, text=text, bbox=_prov_bbox_view(item, page_heights)
+                    )
+                )
 
     return {page: DoclingPageView(elements=tuple(items)) for page, items in by_page.items()}
 

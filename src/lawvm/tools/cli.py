@@ -9760,6 +9760,41 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
     scan_stratum_p.add_argument("--out", default=None, metavar="PATH",
                                 help="write to PATH instead of stdout")
 
+    # --- fi-appendix-structure ---
+    appendix_p = sub.add_parser(
+        "fi-appendix-structure",
+        help="appendix/table statute PDF -> structured cell-grid IR + fidelity metrics (phase-3 prototype)",
+        description=(
+            "PROTOTYPE for the phase-1 TYPE-DEFERRED stratum (appendix_only / "
+            "xml_frame_only): amendments whose real content is a TABLE the "
+            "section-keyed XML and flat N-§ segmenter cannot op-compare. Runs the "
+            "Docling TableFormer producer (CPU) over each statute's media PDF, "
+            "lowers every table into a structured rows x cols cell-grid IR "
+            "(carrying per-cell bbox geometry), and — since XML op-gold is "
+            "thin/absent here — MEASURES fidelity by three producer-neutral "
+            "witnesses: numeric completeness (all number tokens in the PDF text "
+            "layer present in the cells), cross-witness numeric agreement "
+            "(Docling cells vs the pypdfium2 layer), and structural sanity "
+            "(rectangular grid, header row, and the known Docling dual-table "
+            "merge flagged). READ-ONLY, additive; emits a per-statute report and "
+            "a JSONL of the structured tables."
+        ),
+    )
+    appendix_p.add_argument(
+        "statutes", nargs="+", metavar="YEAR/NUM",
+        help="statute ids (e.g. 2016/1422 2003/917), or full finlex:// media PDF locators",
+    )
+    appendix_p.add_argument("--finlex", default=None, metavar="PATH",
+                            help="source farchive (default: data/finlex.farchive)")
+    appendix_p.add_argument("--lang", default="fin",
+                            help="statute language for media PDF resolution (default: fin)")
+    appendix_p.add_argument("--json", action="store_true",
+                            help="emit the report as JSON instead of text")
+    appendix_p.add_argument("--report-out", default=None, metavar="PATH", dest="report_out",
+                            help="write the report to PATH instead of stdout")
+    appendix_p.add_argument("--jsonl-out", default=None, metavar="PATH", dest="jsonl_out",
+                            help="persist the structured tables as JSONL to PATH")
+
     # --- fi-parse-compare ---
     parse_cmp_p = sub.add_parser(
         "fi-parse-compare",
@@ -14744,6 +14779,11 @@ def _main_impl() -> None:
         from lawvm.tools.fi_scan_stratum import main as fi_scan_stratum_main
 
         fi_scan_stratum_main(args)
+
+    elif args.command == "fi-appendix-structure":
+        from lawvm.tools.fi_appendix_structure import main as fi_appendix_structure_main
+
+        fi_appendix_structure_main(args)
 
     elif args.command == "fi-parse-compare":
         from lawvm.tools.fi_parse_compare import main as fi_parse_compare_main
