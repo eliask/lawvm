@@ -24,9 +24,9 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, Optional
+from typing import Callable, Optional
 
 from lawvm.finland.he_payload_adjudicator import (
     DivergenceVerdict,
@@ -78,6 +78,24 @@ class CachedVerdict:
     cache_hit: bool
 
 
+@dataclass(frozen=True, slots=True)
+class VerdictRow:
+    """The persisted, self-describing verdict provenance record — the TYPED carrier crossing the
+    store seam (a named record, never a bare ``dict[str, Any]``). Its field names are exactly the
+    persisted JSON keys, so serialization is a mechanical :func:`dataclasses.asdict` round-trip."""
+
+    verdict: str
+    is_witness_disagreement: bool
+    adjudicator_id: str
+    prompt_fingerprint: str
+    schema_version: str
+    left_sha256: str
+    right_sha256: str
+    left_len: int
+    right_len: int
+    created_at: str
+
+
 class PayloadVerdictStore:
     """A farchive of content-addressed HE payload-divergence verdicts (the firewall cache)."""
 
@@ -87,7 +105,7 @@ class PayloadVerdictStore:
         self._fa = Farchive(path)
         self.path = path
 
-    def get(self, key: str) -> Optional[Dict[str, Any]]:
+    def get(self, key: str) -> Optional[VerdictRow]:
         """Read a persisted verdict row by key (``None`` on miss)."""
         span = self._fa.resolve(verdict_locator(key))
         if span is None:
@@ -95,17 +113,17 @@ class PayloadVerdictStore:
         data = self._fa.read(span.digest)
         if data is None:
             return None
-        return json.loads(data.decode("utf-8"))
+        return VerdictRow(**json.loads(data.decode("utf-8")))
 
-    def put(self, key: str, row: Dict[str, Any]) -> str:
+    def put(self, key: str, row: VerdictRow) -> str:
         """Persist one verdict row (deterministic sorted-keys JSON); returns the blob digest."""
         return self._fa.store(
             verdict_locator(key),
-            json.dumps(row, ensure_ascii=False, sort_keys=True).encode("utf-8"),
+            json.dumps(asdict(row), ensure_ascii=False, sort_keys=True).encode("utf-8"),
             storage_class="he_payload_verdict",
             metadata={
-                "verdict": str(row.get("verdict", "")),
-                "adjudicator_id": str(row.get("adjudicator_id", "")),
+                "verdict": row.verdict,
+                "adjudicator_id": row.adjudicator_id,
             },
         )
 
@@ -115,20 +133,20 @@ class PayloadVerdictStore:
 
 def _verdict_row(
     verdict: DivergenceVerdict, left: str, right: str, *, adjudicator_id: str
-) -> Dict[str, Any]:
+) -> VerdictRow:
     """Build the persisted verdict row (self-describing provenance, no bodies stored)."""
-    return {
-        "verdict": verdict.value,
-        "is_witness_disagreement": verdict.is_witness_disagreement,
-        "adjudicator_id": adjudicator_id,
-        "prompt_fingerprint": adjudication_prompt_fingerprint(),
-        "schema_version": _CACHE_SCHEMA_VERSION,
-        "left_sha256": hashlib.sha256(left.encode("utf-8")).hexdigest(),
-        "right_sha256": hashlib.sha256(right.encode("utf-8")).hexdigest(),
-        "left_len": len(left),
-        "right_len": len(right),
-        "created_at": datetime.now(tz=timezone.utc).isoformat(),
-    }
+    return VerdictRow(
+        verdict=verdict.value,
+        is_witness_disagreement=verdict.is_witness_disagreement,
+        adjudicator_id=adjudicator_id,
+        prompt_fingerprint=adjudication_prompt_fingerprint(),
+        schema_version=_CACHE_SCHEMA_VERSION,
+        left_sha256=hashlib.sha256(left.encode("utf-8")).hexdigest(),
+        right_sha256=hashlib.sha256(right.encode("utf-8")).hexdigest(),
+        left_len=len(left),
+        right_len=len(right),
+        created_at=datetime.now(tz=timezone.utc).isoformat(),
+    )
 
 
 def adjudicate_payload_divergence_cached(
@@ -149,7 +167,7 @@ def adjudicate_payload_divergence_cached(
     key = verdict_cache_key(left, right, adjudicator_id=adjudicator_id)
     cached = store.get(key)
     if cached is not None:
-        return CachedVerdict(verdict=DivergenceVerdict(cached["verdict"]), cache_hit=True)
+        return CachedVerdict(verdict=DivergenceVerdict(cached.verdict), cache_hit=True)
     verdict = adjudicate_payload_divergence(left, right, chat_fn=chat_fn)
     store.put(key, _verdict_row(verdict, left, right, adjudicator_id=adjudicator_id))
     return CachedVerdict(verdict=verdict, cache_hit=False)

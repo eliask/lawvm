@@ -12,6 +12,7 @@ from __future__ import annotations
 from lawvm.finland.he_johtolause_tagger import (
     JohtolauseTag,
     JohtolauseTagStore,
+    TagRow,
     classify_candidate,
     classify_candidate_cached,
     parse_tag,
@@ -82,6 +83,30 @@ def test_cache_survives_reopen_and_ignores_model_reflip(tmp_path) -> None:
     out = classify_candidate_cached(w, chat_fn=flip, tagger_id="m", store=store2)
     assert out.cache_hit is True and out.tag is JohtolauseTag.JOHTOLAUSE and flip.calls == 1
     store2.close()
+
+
+def test_store_put_get_round_trips_the_typed_carrier(tmp_path) -> None:
+    # put/get carry a named TagRow across the store seam (FW-09), not a bare dict; a round-trip
+    # returns an equal typed record, and the model-facing tag survives.
+    store = _store(tmp_path)
+    row = TagRow(
+        tag=JohtolauseTag.JOHTOLAUSE.value,
+        is_genuine=True,
+        tagger_id="llm:qwen",
+        prompt_fingerprint=tag_prompt_fingerprint(),
+        schema_version="johtolause_tag.v1",
+        window_sha256="0" * 64,
+        window_len=7,
+        created_at="2026-07-11T00:00:00+00:00",
+    )
+    key = tag_cache_key("w", tagger_id="llm:qwen")
+    store.put(key, row)
+    got = store.get(key)
+    assert got == row
+    assert isinstance(got, TagRow)
+    assert JohtolauseTag(got.tag) is JohtolauseTag.JOHTOLAUSE
+    assert store.get(tag_cache_key("absent", tagger_id="x")) is None
+    store.close()
 
 
 def test_key_folds_window_and_model_and_prompt() -> None:

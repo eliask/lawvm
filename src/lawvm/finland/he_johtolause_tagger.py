@@ -36,10 +36,10 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from enum import StrEnum
-from typing import Any, Callable, Dict, Optional
+from typing import Callable, Optional
 
 
 class JohtolauseTag(StrEnum):
@@ -165,6 +165,22 @@ class CachedTag:
     cache_hit: bool
 
 
+@dataclass(frozen=True, slots=True)
+class TagRow:
+    """The persisted, self-describing tag provenance record — the TYPED carrier crossing the
+    store seam (a named record, never a bare ``dict[str, Any]``). Its field names are exactly the
+    persisted JSON keys, so serialization is a mechanical :func:`dataclasses.asdict` round-trip."""
+
+    tag: str
+    is_genuine: bool
+    tagger_id: str
+    prompt_fingerprint: str
+    schema_version: str
+    window_sha256: str
+    window_len: int
+    created_at: str
+
+
 class JohtolauseTagStore:
     """A farchive of content-addressed johtolause tags (the determinism-firewall cache)."""
 
@@ -174,7 +190,7 @@ class JohtolauseTagStore:
         self._fa = Farchive(path)
         self.path = path
 
-    def get(self, key: str) -> Optional[Dict[str, Any]]:
+    def get(self, key: str) -> Optional[TagRow]:
         """Read a persisted tag row by key (``None`` on miss)."""
         span = self._fa.resolve(tag_locator(key))
         if span is None:
@@ -182,33 +198,33 @@ class JohtolauseTagStore:
         data = self._fa.read(span.digest)
         if data is None:
             return None
-        return json.loads(data.decode("utf-8"))
+        return TagRow(**json.loads(data.decode("utf-8")))
 
-    def put(self, key: str, row: Dict[str, Any]) -> str:
+    def put(self, key: str, row: TagRow) -> str:
         """Persist one tag row (deterministic sorted-keys JSON); returns the blob digest."""
         return self._fa.store(
             tag_locator(key),
-            json.dumps(row, ensure_ascii=False, sort_keys=True).encode("utf-8"),
+            json.dumps(asdict(row), ensure_ascii=False, sort_keys=True).encode("utf-8"),
             storage_class="he_johtolause_tag",
-            metadata={"tag": str(row.get("tag", "")), "tagger_id": str(row.get("tagger_id", ""))},
+            metadata={"tag": row.tag, "tagger_id": row.tagger_id},
         )
 
     def close(self) -> None:
         self._fa.close()
 
 
-def _tag_row(tag: JohtolauseTag, window: str, *, tagger_id: str) -> Dict[str, Any]:
+def _tag_row(tag: JohtolauseTag, window: str, *, tagger_id: str) -> TagRow:
     """Build the persisted tag row (self-describing provenance, no full window stored)."""
-    return {
-        "tag": tag.value,
-        "is_genuine": tag.is_genuine,
-        "tagger_id": tagger_id,
-        "prompt_fingerprint": tag_prompt_fingerprint(),
-        "schema_version": _CACHE_SCHEMA_VERSION,
-        "window_sha256": hashlib.sha256(window.encode("utf-8")).hexdigest(),
-        "window_len": len(window),
-        "created_at": datetime.now(tz=timezone.utc).isoformat(),
-    }
+    return TagRow(
+        tag=tag.value,
+        is_genuine=tag.is_genuine,
+        tagger_id=tagger_id,
+        prompt_fingerprint=tag_prompt_fingerprint(),
+        schema_version=_CACHE_SCHEMA_VERSION,
+        window_sha256=hashlib.sha256(window.encode("utf-8")).hexdigest(),
+        window_len=len(window),
+        created_at=datetime.now(tz=timezone.utc).isoformat(),
+    )
 
 
 def classify_candidate_cached(
@@ -228,7 +244,7 @@ def classify_candidate_cached(
     key = tag_cache_key(window, tagger_id=tagger_id)
     cached = store.get(key)
     if cached is not None:
-        return CachedTag(tag=JohtolauseTag(cached["tag"]), cache_hit=True)
+        return CachedTag(tag=JohtolauseTag(cached.tag), cache_hit=True)
     tag = classify_candidate(window, chat_fn=chat_fn)
     store.put(key, _tag_row(tag, window, tagger_id=tagger_id))
     return CachedTag(tag=tag, cache_hit=False)

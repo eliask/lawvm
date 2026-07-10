@@ -13,6 +13,7 @@ from lawvm.finland.he_payload_adjudicator import (
 )
 from lawvm.finland.he_payload_verdict_store import (
     PayloadVerdictStore,
+    VerdictRow,
     adjudicate_payload_divergence_cached,
     verdict_cache_key,
 )
@@ -95,6 +96,32 @@ def test_verdict_never_reflips_even_if_the_model_would(tmp_path) -> None:
     assert v2.verdict is DivergenceVerdict.GENUINE_DIFFERENCE
     assert v2.cache_hit is True
     assert flip.calls == 1
+    store.close()
+
+
+def test_store_put_get_round_trips_the_typed_carrier(tmp_path) -> None:
+    # put/get carry a named VerdictRow across the store seam (FW-09), not a bare dict; a round-trip
+    # returns an equal typed record and the verdict value survives.
+    store = _store(tmp_path)
+    row = VerdictRow(
+        verdict=DivergenceVerdict.ORACLE_ARTIFACT.value,
+        is_witness_disagreement=DivergenceVerdict.ORACLE_ARTIFACT.is_witness_disagreement,
+        adjudicator_id="llm_workflow:qwen",
+        prompt_fingerprint=adjudication_prompt_fingerprint(),
+        schema_version="verdict.v1",
+        left_sha256="0" * 64,
+        right_sha256="1" * 64,
+        left_len=3,
+        right_len=4,
+        created_at="2026-07-11T00:00:00+00:00",
+    )
+    key = verdict_cache_key("l", "r", adjudicator_id="llm_workflow:qwen")
+    store.put(key, row)
+    got = store.get(key)
+    assert got == row
+    assert isinstance(got, VerdictRow)
+    assert DivergenceVerdict(got.verdict) is DivergenceVerdict.ORACLE_ARTIFACT
+    assert store.get(verdict_cache_key("x", "y", adjudicator_id="z")) is None
     store.close()
 
 
