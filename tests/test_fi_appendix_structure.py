@@ -20,9 +20,11 @@ from lawvm.tools.fi_appendix_structure import (
     ROUTE_VISION_ESCALATE,
     StructuredCell,
     StructuredTable,
+    StructuredTextBlock,
     TableCellDivergence,
     TableVerification,
     TableVisionVerification,
+    TextBlockVerification,
     TextRun,
     _make_per_bbox_reader,
     cross_witness,
@@ -30,11 +32,15 @@ from lawvm.tools.fi_appendix_structure import (
     number_tokens,
     numeric_recall,
     reconcile_table_witness,
+    should_run_text_block_lane,
     structural_sanity,
     structured_table_from_node,
+    structured_text_block_from_node,
     table_escalation_route,
+    text_block_escalation_route,
     verify_table_exact,
     verify_tables_vision,
+    verify_text_blocks_exact,
 )
 
 
@@ -565,3 +571,136 @@ def test_make_vision_region_reader_swallows_failure_to_empty(monkeypatch) -> Non
     assert reader(1, (10.0, 20.0, 30.0, 40.0)) == ""
     # a page with no known height also yields an empty read, not a KeyError
     assert reader(99, (10.0, 20.0, 30.0, 40.0)) == ""
+
+
+# --------------------------------------------------------------------------- #
+# TEXT-BLOCK LANE (0-grid appendix → ordered verbatim text blocks).             #
+# --------------------------------------------------------------------------- #
+#
+# For an appendix PDF Docling yields ZERO grid tables from (laskuperusteet / formula-prose /
+# short textual annex) but that HAS a text layer, the lane structures the page's own
+# PARAGRAPH/HEADING/FOOTNOTE blocks into ordered verbatim text blocks and verifies each one
+# EXACTLY against an independent pdfium read of its bbox — the identical two-witness contract
+# ``verify_table_exact`` uses (``text_equivalence`` modulo the inert op-equivalence quotient),
+# never a fuzzy/coverage score. All hermetic: injected block text + a scripted bbox witness.
+
+_LOC = "finlex://sd/1997/532/fin/media/x.pdf"
+
+
+def _blocks(items: list[tuple[str, tuple[float, float, float, float] | None]]) -> list[StructuredTextBlock]:
+    return [
+        StructuredTextBlock(
+            locator=_LOC, page_num=1, block_index=i, kind="paragraph", text=text, bbox=bbox
+        )
+        for i, (text, bbox) in enumerate(items)
+    ]
+
+
+def test_text_block_lane_clean_block_verifies_exact() -> None:
+    # Each block's Docling text is reproduced EXACTLY by the independent bbox witness.
+    blocks = _blocks([("Vakuutusmaksu lasketaan kaavalla P = k * S.", (0.0, 0.0, 10.0, 2.0))])
+    witness = {(0.0, 0.0, 10.0, 2.0): "Vakuutusmaksu lasketaan kaavalla P = k * S."}
+    v = verify_text_blocks_exact(blocks, lambda _pn, bb: witness[bb])
+    assert v.exact and v.n_exact == 1 and not v.divergences
+    assert text_block_escalation_route(v) == ROUTE_SELF_VERIFIED
+
+
+def test_text_block_lane_inert_quotient_fold_still_verifies() -> None:
+    # A block differing ONLY by legally-inert folds (a wrapped-line "\n" folding to a space
+    # and a "— —" dash run) still verifies exact — mirrors the table lane's quotient.
+    blocks = _blocks([("Perusteet:\nkerroin k ja summa S", (0.0, 0.0, 10.0, 4.0))])
+    witness = {(0.0, 0.0, 10.0, 4.0): "Perusteet: — — kerroin  k ja summa S"}
+    v = verify_text_blocks_exact(blocks, lambda _pn, bb: witness[bb])
+    assert v.exact and v.n_exact == 1 and not v.divergences
+
+
+def test_text_block_lane_genuine_difference_is_typed_divergence() -> None:
+    # A block the witness does NOT reproduce (a real content difference) is a TYPED
+    # divergence carrying both reads → the appendix routes to a vision second-witness.
+    blocks = _blocks([("kerroin k = 1,5", (0.0, 0.0, 10.0, 2.0))])
+    witness = {(0.0, 0.0, 10.0, 2.0): "kerroin k = 9,9"}
+    v = verify_text_blocks_exact(blocks, lambda _pn, bb: witness[bb])
+    assert not v.exact and v.n_exact == 0 and len(v.divergences) == 1
+    d = v.divergences[0]
+    assert d.docling_text == "kerroin k = 1,5" and d.witness_text == "kerroin k = 9,9"
+    assert d.block_index == 0 and d.page_num == 1 and d.kind == "paragraph"
+    assert text_block_escalation_route(v) == ROUTE_VISION_ESCALATE
+
+
+def test_text_block_lane_bboxless_block_is_deferred_not_forced() -> None:
+    # A block with no bbox cannot be cross-verified → no_witness (deferred), never forced.
+    blocks = _blocks([("floating note", None)])
+    v = verify_text_blocks_exact(blocks, lambda _pn, _bb: "")
+    assert v.n_no_witness == 1 and v.exact and not v.divergences
+    # nothing witnessable → deferred, NOT self-verified
+    assert text_block_escalation_route(v) == ROUTE_NO_WITNESS_DEFERRED
+
+
+def test_text_block_lane_mixed_blocks_route_to_vision_on_any_divergence() -> None:
+    blocks = _blocks(
+        [
+            ("Liite 1", (0.0, 0.0, 10.0, 1.0)),
+            ("kerroin k = 1,5", (0.0, 1.0, 10.0, 2.0)),
+        ]
+    )
+    witness = {
+        (0.0, 0.0, 10.0, 1.0): "Liite 1",
+        (0.0, 1.0, 10.0, 2.0): "kerroin k = 2,5",  # corrupt/differs → divergence
+    }
+    v = verify_text_blocks_exact(blocks, lambda _pn, bb: witness[bb])
+    assert v.n_exact == 1 and len(v.divergences) == 1 and v.n_witnessed == 2
+    assert text_block_escalation_route(v) == ROUTE_VISION_ESCALATE
+
+
+def test_should_run_text_block_lane_gates_on_zero_grid_and_born_digital() -> None:
+    # 0 grid tables + a real (born-digital) text layer → run the lane.
+    assert should_run_text_block_lane(n_tables=0, mean_text_chars=800.0) is True
+    # ≥1 grid table → the table lane owns it, text-block lane does NOT run.
+    assert should_run_text_block_lane(n_tables=2, mean_text_chars=800.0) is False
+
+
+def test_should_run_text_block_lane_skips_sparse_scanned_page() -> None:
+    # A sparse/scanned page (near-empty text layer) must NOT be self-verified off a weak
+    # reference — it keeps its text_layer_sparse status and is routed to vision/OCR.
+    assert should_run_text_block_lane(n_tables=0, mean_text_chars=12.0) is False
+
+
+def test_structured_text_block_from_node_carries_kind_text_and_bbox() -> None:
+    # Lowering a Docling PARAGRAPH node preserves its kind, verbatim text and geometry.
+    node = SourceDocumentNode(
+        kind=SourceDocumentNodeKind.PARAGRAPH,
+        assurance_tier=AssuranceTier.SINGLE_WITNESS,
+        anchor=SourceAnchor(
+            artifact_digest=_DIGEST,
+            locator="docling:page=1",
+            page_num=1,
+            bbox=BBox(x0=1.0, y0=2.0, x1=3.0, y1=4.0),
+        ),
+        text="Vakuutusmaksu lasketaan\nkaavalla",
+    )
+    b = structured_text_block_from_node(node, locator=_LOC, block_index=3)
+    assert b.kind == "paragraph"
+    assert b.text == "Vakuutusmaksu lasketaan\nkaavalla"  # line structure verbatim
+    assert b.bbox == (1.0, 2.0, 3.0, 4.0)
+    assert b.block_index == 3 and b.page_num == 1
+
+
+def test_structured_text_block_from_node_without_bbox_is_no_witness_shaped() -> None:
+    node = SourceDocumentNode(
+        kind=SourceDocumentNodeKind.HEADING,
+        assurance_tier=AssuranceTier.SINGLE_WITNESS,
+        anchor=SourceAnchor(artifact_digest=_DIGEST, locator="docling:page=1", page_num=1),
+        text="LIITE",
+    )
+    b = structured_text_block_from_node(node, locator=_LOC, block_index=0)
+    assert b.kind == "heading" and b.bbox is None and b.text == "LIITE"
+
+
+def test_text_block_verification_reuses_table_route_shape() -> None:
+    # The text-block verdict is duck-compatible with the shared route rule (self-verified
+    # when every witnessable block is exact and ≥1 was witnessed).
+    v = TextBlockVerification(
+        locator=_LOC, n_blocks=3, n_exact=2, n_no_witness=1, divergences=()
+    )
+    assert v.exact and v.n_witnessed == 2
+    assert text_block_escalation_route(v) == ROUTE_SELF_VERIFIED

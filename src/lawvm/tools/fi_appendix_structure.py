@@ -69,6 +69,12 @@ _PDFIUM_LOCK = threading.Lock()
 # dual-table merge (two side-by-side municipality columns collapsed into one).
 _DUAL_MERGE_COL_THRESHOLD = 9
 
+# Mean pdfium text-layer chars/page below this = a sparse/scanned PDF: the deterministic
+# text lanes (numeric_recall, cross_witness, the text-block lane) lean on a WEAK reference,
+# so the honest reader is vision/OCR. Shared by the ``text_layer_sparse`` note and the
+# text-block-lane gate so both draw the born-digital / scanned boundary at the same place.
+_MIN_TEXT_LAYER_CHARS = 50.0
+
 
 # --------------------------------------------------------------------------- #
 # PURE metric helpers (hermetically testable — no docling, no PDF, no network) #
@@ -533,6 +539,21 @@ ROUTE_VISION_ESCALATE = "vision_escalate"
 ROUTE_NO_WITNESS_DEFERRED = "no_witness_deferred"
 
 
+def _route_from_verdict(*, has_divergence: bool, n_exact: int) -> str:
+    """Shared meta-routing rule (same contract for the table and text-block lanes).
+
+    A unit whose independent witness reproduced EVERY witnessable member exactly is
+    self-verified; one with ≥1 typed divergence is escalated to a vision second-witness
+    (never hand-repaired — the dominant failure is a corrupt text-layer witness); a unit
+    with nothing witnessable is deferred.
+    """
+    if has_divergence:
+        return ROUTE_VISION_ESCALATE
+    if n_exact > 0:
+        return ROUTE_SELF_VERIFIED
+    return ROUTE_NO_WITNESS_DEFERRED
+
+
 def table_escalation_route(verification: TableVerification) -> str:
     """Meta-level routing verdict for one table's deterministic-witness result.
 
@@ -542,11 +563,9 @@ def table_escalation_route(verification: TableVerification) -> str:
     the cells (the dominant failure is a corrupt text-layer witness, unrepairable in
     the general case). A table with no witnessable cell is deferred.
     """
-    if verification.divergences:
-        return ROUTE_VISION_ESCALATE
-    if verification.n_exact > 0:
-        return ROUTE_SELF_VERIFIED
-    return ROUTE_NO_WITNESS_DEFERRED
+    return _route_from_verdict(
+        has_divergence=bool(verification.divergences), n_exact=verification.n_exact
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -682,6 +701,258 @@ def verify_tables_vision(
     return tuple(out)
 
 
+# --------------------------------------------------------------------------- #
+# TEXT-BLOCK LANE: a 0-grid appendix → ordered verbatim text blocks (Phase 3).  #
+# --------------------------------------------------------------------------- #
+#
+# Half the deferred appendix stratum is NOT a grid table: laskuperusteet / formula-
+# prose / short textual annexes that Docling yields ZERO ``TABLE`` nodes from. Before
+# this lane those PDFs fell through ``structure_statute_pdf`` with an empty table set —
+# silently DROPPED, neither verified nor typed. This lane structures such a page's own
+# Docling PARAGRAPH/HEADING/FOOTNOTE blocks (each already carrying its bbox from the
+# enhanced adapter) as an ORDERED sequence of verbatim text blocks — line structure is
+# PRESERVED verbatim, math is NEVER parsed — and verifies each block against exactly the
+# same two-witness EXACT contract the table lane uses: an independent pdfium read WITHIN
+# the block's own bbox must reproduce the Docling text modulo the legally-inert
+# op-equivalence quotient (:mod:`lawvm.finland.op_equivalence`), else a TYPED divergence.
+# The self-consistency of two independent PDF reads is the reference (there is no trusted
+# appendix XML oracle here — the statute XML body is the thin ``appendix_only`` frame),
+# identical to ``verify_table_exact``. Routing reuses ``_route_from_verdict``: a 0-grid
+# appendix becomes ONE verified-or-typed unit (self_verified / vision_escalate /
+# no_witness_deferred), never a silent drop. Sparse/scanned PDFs (near-empty text layer)
+# keep their existing ``text_layer_sparse`` typed status — those need vision/OCR, so this
+# text-layer lane does not run on them.
+
+#: The Docling block kinds this lane treats as verbatim text blocks (everything the
+#: adapter emits that is not a TABLE/TABLE_ROW/TABLE_CELL and carries text + geometry).
+_TEXT_BLOCK_KINDS = frozenset(
+    {
+        SourceDocumentNodeKind.PARAGRAPH,
+        SourceDocumentNodeKind.HEADING,
+        SourceDocumentNodeKind.FOOTNOTE,
+    }
+)
+
+
+@dataclass(frozen=True, slots=True)
+class StructuredTextBlock:
+    """One verbatim appendix text block: reading-order index, kind, text, and bbox.
+
+    ``text`` preserves the block's line structure verbatim (no math parsing); ``kind`` is
+    the Docling role (``paragraph``/``heading``/``footnote``). ``bbox`` is the normalized
+    top-left-origin region (points) the independent pdfium witness is read within — the
+    text-block analog of :class:`StructuredCell`.
+    """
+
+    locator: str
+    page_num: int
+    block_index: int
+    kind: str
+    text: str
+    bbox: Optional[Tuple[float, float, float, float]]
+
+    def to_jsonable(self) -> Dict[str, object]:
+        return {
+            "locator": self.locator,
+            "page_num": self.page_num,
+            "block_index": self.block_index,
+            "kind": self.kind,
+            "text": self.text,
+            "bbox": list(self.bbox) if self.bbox is not None else None,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class TextBlockDivergence:
+    """One block where the independent bbox witness did not reproduce the Docling text."""
+
+    block_index: int
+    page_num: int
+    kind: str
+    docling_text: str
+    witness_text: str
+
+
+@dataclass(frozen=True, slots=True)
+class TextBlockVerification:
+    """Per-appendix EXACT cross-witness verdict over the ordered text blocks.
+
+    The text-block analog of :class:`TableVerification`: blocks are the members that
+    :func:`verify_text_blocks_exact` cross-verifies (a block is the text-lane counterpart
+    of a table cell). ``.divergences`` and ``.n_exact`` give it the same duck-typed shape
+    :func:`_route_from_verdict` routes on, so a 0-grid appendix is one verified-or-typed
+    unit.
+    """
+
+    locator: str
+    n_blocks: int
+    n_exact: int
+    n_no_witness: int
+    divergences: Tuple[TextBlockDivergence, ...]
+
+    @property
+    def exact(self) -> bool:
+        """True iff EVERY witnessable block reproduced exactly (0 typed divergences)."""
+        return not self.divergences
+
+    @property
+    def n_witnessed(self) -> int:
+        """Blocks that had a bbox to cross-verify (exact + divergent; excludes no_witness)."""
+        return self.n_exact + len(self.divergences)
+
+    def to_jsonable(self) -> Dict[str, object]:
+        return {
+            "locator": self.locator,
+            "n_blocks": self.n_blocks,
+            "n_exact": self.n_exact,
+            "n_no_witness": self.n_no_witness,
+            "n_witnessed": self.n_witnessed,
+            "exact": self.exact,
+            "divergences": [
+                {
+                    "block_index": d.block_index,
+                    "page_num": d.page_num,
+                    "kind": d.kind,
+                    "docling": d.docling_text,
+                    "witness": d.witness_text,
+                }
+                for d in self.divergences
+            ],
+        }
+
+
+def text_block_escalation_route(verification: TextBlockVerification) -> str:
+    """Meta-level routing verdict for a 0-grid appendix's text-block set (mirrors tables).
+
+    Same honest contract as :func:`table_escalation_route`: every witnessable block
+    reproduced exactly → ``self_verified``; ≥1 typed divergence → ``vision_escalate`` (the
+    text layer is sent to a vision second-witness, never hand-repaired); nothing
+    witnessable → ``no_witness_deferred``.
+    """
+    return _route_from_verdict(
+        has_divergence=bool(verification.divergences), n_exact=verification.n_exact
+    )
+
+
+def should_run_text_block_lane(*, n_tables: int, mean_text_chars: float) -> bool:
+    """Gate the text-block lane: ONLY a 0-grid appendix with a real (born-digital) text layer.
+
+    Pure. False when the PDF yielded ≥1 grid table (the table lane owns it) OR the text layer
+    is sparse/scanned (``mean_text_chars`` below the born-digital floor) — a sparse page keeps
+    its existing ``text_layer_sparse`` typed status and is routed to vision/OCR, never
+    self-verified off a near-empty text layer.
+    """
+    return n_tables == 0 and mean_text_chars >= _MIN_TEXT_LAYER_CHARS
+
+
+def structured_text_block_from_node(
+    node: SourceDocumentNode, *, locator: str, block_index: int
+) -> StructuredTextBlock:
+    """Lower one Docling PARAGRAPH/HEADING/FOOTNOTE node into a verbatim text block.
+
+    Reads the node text VERBATIM (line structure preserved; no math parsing) and the
+    geometry the enhanced Docling adapter threads onto ``anchor.bbox`` (normalized
+    top-left points) — the same bbox seam :func:`structured_table_from_node` reads.
+    """
+    bb = node.anchor.bbox
+    return StructuredTextBlock(
+        locator=locator,
+        page_num=node.anchor.page_num or 0,
+        block_index=block_index,
+        kind=node.kind.value,
+        text=node.text or "",
+        bbox=(bb.x0, bb.y0, bb.x1, bb.y1) if bb is not None else None,
+    )
+
+
+def verify_text_blocks_exact(
+    blocks: Sequence[StructuredTextBlock],
+    bbox_witness: Callable[[int, Tuple[float, float, float, float]], str],
+) -> TextBlockVerification:
+    """Verify each text block EXACTLY against an independent in-bbox pdfium witness.
+
+    Mirrors :func:`verify_table_exact` exactly, block-for-cell: ``bbox_witness(page_num,
+    bbox) -> str`` returns the pdfium text-layer content inside the block's region
+    (injected so this is hermetically testable and the pdfium transport stays at the
+    boundary). A block is exact iff :func:`text_equivalence` finds the Docling block text
+    and the witness equal modulo the legally-inert op-equivalence quotient (so a wrapped
+    line ``"\\n"`` folding to a space, or a ``"— —"`` run, still verifies); otherwise it is
+    a typed :class:`TextBlockDivergence`. A block with no bbox is ``no_witness`` (deferred,
+    never a forced diff).
+    """
+    n_exact = 0
+    n_no_witness = 0
+    divergences: List[TextBlockDivergence] = []
+    locator = blocks[0].locator if blocks else ""
+    for block in blocks:
+        if block.bbox is None:
+            n_no_witness += 1
+            continue
+        witness = bbox_witness(block.page_num, block.bbox)
+        if text_equivalence(block.text, witness).equal:
+            n_exact += 1
+        else:
+            divergences.append(
+                TextBlockDivergence(
+                    block_index=block.block_index,
+                    page_num=block.page_num,
+                    kind=block.kind,
+                    docling_text=block.text,
+                    witness_text=witness,
+                )
+            )
+    return TextBlockVerification(
+        locator=locator,
+        n_blocks=len(blocks),
+        n_exact=n_exact,
+        n_no_witness=n_no_witness,
+        divergences=tuple(divergences),
+    )
+
+
+def _verify_text_blocks_against_pdfium(
+    pdf_bytes: bytes, blocks: Sequence[StructuredTextBlock]
+) -> TextBlockVerification:
+    """Exact-verify every text block via a per-bbox pdfium witness (the production seam).
+
+    Opens the PDF ONCE, harvests each page's textpage + height, and reads each block's own
+    bbox region with the conservative per-cell reader (:func:`_make_per_bbox_reader`). Unlike
+    the table lane, a paragraph bbox already encloses its whole (possibly multi-line) text —
+    there is no wrapped-tail column defect to reconcile — so the plain per-bbox read is the
+    right independent witness. The read text is handed to the unchanged
+    :func:`verify_text_blocks_exact` exactness contract; any pdfium hiccup yields an empty
+    witness (→ a typed divergence, never a crash).
+    """
+    import importlib
+
+    pdfium = importlib.import_module("pypdfium2")
+    with _PDFIUM_LOCK:
+        doc = pdfium.PdfDocument(pdf_bytes)
+        try:
+            n = len(doc)
+            heights = {i: doc[i].get_size()[1] for i in range(n)}
+            textpages = {i: doc[i].get_textpage() for i in range(n)}
+            try:
+                readers = {
+                    i: _make_per_bbox_reader(textpages[i], heights[i]) for i in range(n)
+                }
+
+                def bbox_witness(
+                    page_num: int, bbox: Tuple[float, float, float, float]
+                ) -> str:
+                    reader = readers.get(page_num - 1)  # Docling 1-indexed → pdfium 0-indexed
+                    return reader(bbox) if reader is not None else ""
+
+                return verify_text_blocks_exact(blocks, bbox_witness)
+            finally:
+                for tp in textpages.values():
+                    close = getattr(tp, "close", None)
+                    if close is not None:
+                        close()
+        finally:
+            doc.close()
+
+
 def structured_table_from_node(
     node: SourceDocumentNode, *, locator: str, table_index: int
 ) -> StructuredTable:
@@ -806,6 +1077,30 @@ class StatuteTableReport:
     #: VISION second-witness verdicts over the ``vision_escalate`` stratum (empty when the
     #: vision witness was not run): render-based corroboration of the routed cells.
     vision_verifications: Tuple[TableVisionVerification, ...] = ()
+    #: TEXT-BLOCK LANE: for a 0-grid appendix with a text layer, the ordered verbatim text
+    #: blocks (paragraphs / labelled formula lines) this PDF was structured into. Empty when
+    #: the PDF yielded ≥1 grid table (the table lane owns it) or the text layer was sparse.
+    text_blocks: Tuple[StructuredTextBlock, ...] = ()
+    #: The single EXACT cross-witness verdict over ``text_blocks`` (None when the lane did
+    #: not run): the 0-grid appendix as one verified-or-typed unit.
+    text_block_verification: Optional[TextBlockVerification] = None
+
+    @property
+    def text_block_route(self) -> Optional[str]:
+        """Meta route for the 0-grid text-block appendix (None when the lane did not run)."""
+        if self.text_block_verification is None:
+            return None
+        return text_block_escalation_route(self.text_block_verification)
+
+    @property
+    def n_text_blocks_exact(self) -> int:
+        v = self.text_block_verification
+        return v.n_exact if v is not None else 0
+
+    @property
+    def n_text_blocks_witnessed(self) -> int:
+        v = self.text_block_verification
+        return v.n_witnessed if v is not None else 0
 
     @property
     def n_cells_verified(self) -> int:
@@ -891,6 +1186,18 @@ class StatuteTableReport:
                 "n_cells_routed": self.n_cells_routed_to_vision,
                 "n_cells_corroborated": self.n_cells_vision_corroborated,
                 "tables": [vv.to_jsonable() for vv in self.vision_verifications],
+            },
+            "text_block_lane": {
+                "ran": self.text_block_verification is not None,
+                "route": self.text_block_route,
+                "n_blocks": len(self.text_blocks),
+                "n_blocks_exact": self.n_text_blocks_exact,
+                "n_blocks_witnessed": self.n_text_blocks_witnessed,
+                "verification": (
+                    self.text_block_verification.to_jsonable()
+                    if self.text_block_verification is not None
+                    else None
+                ),
             },
             "note": self.note,
         }
@@ -1145,6 +1452,15 @@ def _docling_document(pdf_bytes: bytes, *, name: str) -> Any:
 
     CPU-pinned (``AcceleratorDevice.CPU``) so the conversion never contends with
     the GPU-resident :8080 vision server.
+
+    OCR is DISABLED (``do_ocr=False``): this tool's stratum is BORN-DIGITAL appendix
+    PDFs (they carry a real text layer — scanned/sparse PDFs are routed out to their
+    ``text_layer_sparse`` status and handled by the vision/OCR lane), so the layout +
+    TableFormer producers read the existing text directly. Leaving OCR on makes docling's
+    default pipeline pull an OCR/VLM model over the network at convert-time (an
+    ``AutoModelForImageTextToText`` fetch from a remote hub) — a determinism-firewall
+    violation (AGENTS.md §1.3: no network at ingest) that also adds nothing on a text-layer
+    PDF. Disabling it keeps the conversion offline, deterministic, and CPU-cheap.
     """
     import importlib
     import io
@@ -1154,6 +1470,7 @@ def _docling_document(pdf_bytes: bytes, *, name: str) -> Any:
     popts = importlib.import_module("docling.datamodel.pipeline_options")
 
     pipeline = popts.PdfPipelineOptions()
+    pipeline.do_ocr = False
     pipeline.accelerator_options = popts.AcceleratorOptions(
         device=popts.AcceleratorDevice.CPU
     )
@@ -1205,17 +1522,32 @@ def structure_statute_pdf(
     page_views = _docling_document_to_page_views(doc)
 
     tables: List[StructuredTable] = []
+    block_nodes: List[SourceDocumentNode] = []
     for page_num in sorted(page_views):
         nodes = docling_document_to_nodes(
             page_views[page_num], artifact_digest=artifact_digest, page_num=page_num
         )
-        table_nodes = [n for n in nodes if n.kind is SourceDocumentNodeKind.TABLE]
-        for node in table_nodes:
-            tables.append(
-                structured_table_from_node(
-                    node, locator=locator, table_index=len(tables)
+        for node in nodes:
+            if node.kind is SourceDocumentNodeKind.TABLE:
+                tables.append(
+                    structured_table_from_node(
+                        node, locator=locator, table_index=len(tables)
+                    )
                 )
-            )
+            elif node.kind in _TEXT_BLOCK_KINDS:
+                block_nodes.append(node)  # reading order preserved (page, then in-page)
+
+    # TEXT-BLOCK LANE: a 0-grid appendix with a real text layer is structured into ordered
+    # verbatim text blocks and exact-verified — so it is no longer silently dropped. Sparse/
+    # scanned PDFs keep their existing text_layer_sparse typed status (they need vision/OCR).
+    text_blocks: Tuple[StructuredTextBlock, ...] = ()
+    text_block_verification: Optional[TextBlockVerification] = None
+    if should_run_text_block_lane(n_tables=len(tables), mean_text_chars=mean_chars):
+        text_blocks = tuple(
+            structured_text_block_from_node(node, locator=locator, block_index=i)
+            for i, node in enumerate(block_nodes)
+        )
+        text_block_verification = _verify_text_blocks_against_pdfium(pdf_bytes, text_blocks)
 
     sanities = tuple(structural_sanity(t) for t in tables)
     verifications = _verify_tables_against_pdfium(pdf_bytes, tables)
@@ -1230,7 +1562,7 @@ def structure_statute_pdf(
     xwit = cross_witness(all_cell_texts, reference_text)
 
     note = ""
-    if mean_chars < 50.0:
+    if mean_chars < _MIN_TEXT_LAYER_CHARS:
         note = (
             "text_layer_sparse: pdfium reference is near-empty (image-baked/OCR-"
             "less), so numeric_recall/cross_witness lean on a WEAK reference — a "
@@ -1248,6 +1580,8 @@ def structure_statute_pdf(
         note=note,
         verifications=verifications,
         vision_verifications=vision_verifications,
+        text_blocks=text_blocks,
+        text_block_verification=text_block_verification,
     )
 
 
@@ -1391,6 +1725,16 @@ def render_report_text(reports: Sequence[StatuteTableReport]) -> str:
                 f"  VISION: corroborated={r.n_cells_vision_corroborated}/{n_read} read "
                 f"(routed={r.n_cells_routed_to_vision}, "
                 f"open={n_read - r.n_cells_vision_corroborated})"
+            )
+        # TEXT-BLOCK LANE (0-grid appendix): the born-digital text annex structured into
+        # verbatim blocks and exact-verified — one verified-or-typed unit, never dropped.
+        if r.text_block_verification is not None:
+            tv = r.text_block_verification
+            lines.append(
+                f"  TEXT-BLOCK: blocks={len(r.text_blocks)} "
+                f"exact={tv.n_exact}/{tv.n_witnessed} witnessed "
+                f"(divergences={len(tv.divergences)}, no_witness={tv.n_no_witness}) "
+                f"route={r.text_block_route}"
             )
         lines.append("")
     return "\n".join(lines) + "\n"
