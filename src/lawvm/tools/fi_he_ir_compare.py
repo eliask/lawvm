@@ -219,6 +219,50 @@ def _lakiehdotus_region(flat: str) -> str:
     return flat[: m.start()] if m else flat
 
 
+def _next_bill_head_pos(flat: str, lo: int, hi: int) -> int:
+    """Start offset of the next amendment-verb head+citation in ``flat[lo:hi]``, else -1.
+
+    An amendment-verb head (:data:`_HE_HEAD_VERB_RE`) followed by a parenthesized statute
+    citation ``(NUM/YEAR)`` (:data:`_CITE_RE`) is the candidate signature of a NEW enacting
+    directive — but it is only a CANDIDATE: a same-bill continuation verb
+    ("kumotaan (id) N §, muutetaan 3 §:n 6 kohta ... sellaisina kuin ... ja (668/2013) ...")
+    also matches, because a provenance clause's LAST enumerated law is sometimes
+    parenthesized. The caller (:func:`_resolve_span_end`) disambiguates on a sentence-ending
+    period, so this only has to locate the nearest candidate head.
+    """
+    for h in _HE_HEAD_VERB_RE.finditer(flat, lo, hi):
+        cite = _CITE_RE.search(flat, h.end(), min(hi, h.end() + _HEAD_TO_CITE))
+        if cite is not None:
+            return h.start()
+    return -1
+
+
+def _resolve_span_end(flat: str, cite_end: int, term: "re.Match[str]") -> int:
+    """Resolve a directive span's end, guarding a terminator-less repeal from a foreign one.
+
+    Normally a directive ends at its own "... seuraavasti:" terminator (``term.end()``).
+    A **terminator-less repeal** ("kumotaan <laki> (329/1999)." / "kumotaan (id) 5 §.") owns
+    no "seuraavasti:", so its nearest FORWARD terminator belongs to whatever bill comes next
+    — binding that bill's whole provision list to the repealed statute (the dominant op_extra
+    source). We detect this by the SENTENCE BOUNDARY: a genuine repeal ends in a PERIOD, and
+    the next bill's head+citation lies AFTER that period. So if a candidate later-bill head
+    (:func:`_next_bill_head_pos`) is separated from this citation by a sentence-ending period,
+    the terminator is FOREIGN and we re-bound the span to that period (a whole-law repeal then
+    carries no "§" and is dropped by the caller's provision guard; a single-§ repeal keeps its
+    "§" and lowers to its genuine repeal op). If NO period separates them, the "later head" is
+    really a SAME-BILL continuation verb ("kumotaan (id) N §, muutetaan ... seuraavasti:")
+    whose provenance clause merely happens to carry a parenthesized citation — so the full
+    span to "seuraavasti:" is kept, and the combined bill's ops are preserved.
+    """
+    nxt = _next_bill_head_pos(flat, cite_end, term.start())
+    if nxt < 0:
+        return term.end()
+    # A plain ``str.find`` (not a regex) locates the sentence-ending period between this
+    # citation and the candidate later head — keeping the raw-``re.compile`` census flat.
+    period = flat.find(".", cite_end, nxt)
+    return period + 1 if period >= 0 else term.end()
+
+
 def extract_enacting_clause_spans(
     reading_text: str, *, max_clause_chars: int = _MAX_CLAUSE_CHARS
 ) -> list[str]:
@@ -249,9 +293,13 @@ def extract_enacting_clause_spans(
         term = _TERMINATOR_RE.search(flat, hstart, hstart + max_clause_chars)
         if term is None:
             continue
-        end = term.end()
+        # A terminator-less repeal ("kumotaan (id).") owns no "seuraavasti:"; if the nearest
+        # one belongs to a LATER bill, re-bound the span to this directive's own sentence so
+        # that bill's provision list is not mis-attributed to the repealed statute.
+        end = _resolve_span_end(flat, cite.end(), term)
         # A genuine amendment directive lists provisions ("§") it touches; a stray
-        # perustelut sentence with an amendment verb + citation does not.
+        # perustelut sentence with an amendment verb + citation does not. (A whole-law repeal
+        # names no "§" and is dropped here; a single-§ repeal keeps its "§".)
         if _PROVISION_MARK_RE.search(flat, cite.end(), end) is None:
             continue
         # No (hstart, end) dedup needed: finditer yields non-overlapping heads, so each span's
@@ -310,7 +358,9 @@ def extract_enacting_clause_spans_llm(
         term = _TERMINATOR_RE.search(flat, hstart, hstart + max_clause_chars)
         if term is None:
             continue
-        end = term.end()
+        # Terminator-less repeal guard (see extract_enacting_clause_spans): a foreign later
+        # bill's terminator is not claimed for this repeal — re-bound to its own sentence.
+        end = _resolve_span_end(flat, cite.end(), term)
         if _PROVISION_MARK_RE.search(flat, cite.end(), end) is None:
             continue
         # No (hstart, end) dedup set needed: finditer yields non-overlapping heads, so hstart —

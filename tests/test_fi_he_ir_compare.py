@@ -159,6 +159,118 @@ def test_extract_tolerates_reordered_formula() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# terminator-less repeal must not claim a later bill's terminator/provisions   #
+# --------------------------------------------------------------------------- #
+
+
+def test_wholelaw_repeal_does_not_steal_next_bill_provisions() -> None:
+    # A whole-law repeal ("kumotaan <laki> (329/1999).") owns NO "seuraavasti:"; its
+    # nearest forward terminator belongs to the NEXT bill. The repeal must be re-bound at
+    # its own sentence period so the later bill's provision list is NOT mis-attributed to
+    # the repealed statute. The whole-law repeal names no "§" → it lowers to nothing; only
+    # the genuine (986/2011) bill's span survives.
+    from lawvm.finland.he_branch_parser import _parse_one_clause
+    from lawvm.tools.fi_he_ir_compare import flatten_branch_ops
+
+    text = (
+        "Lakiehdotukset 1. Laki maaseutuelinkeinojen rahoituslain kumoamisesta "
+        "kumotaan maaseutuelinkeinojen rahoituslaki (329/1999). "
+        "Lain voimaan tullessa vireillä olevaan asiaan sovelletaan vanhoja säännöksiä. "
+        "2. Laki porotalouden rakennetuista "
+        "muutetaan porotalouden rakennetuista annetun lain (986/2011) 7 "
+        + _SEC
+        + " ja 11 "
+        + _SEC
+        + " seuraavasti: Uusi 7 §."
+    )
+    spans = extract_enacting_clause_spans(text)
+    # Exactly one span, the genuine 986/2011 bill; no span claims the (329/1999) repeal's
+    # citation as head of the later provision list.
+    assert len(spans) == 1
+    assert "(986/2011)" in spans[0]
+    assert "(329/1999)" not in spans[0]
+    flat = flatten_branch_ops(
+        tuple(
+            op
+            for span in spans
+            for op in _parse_one_clause(span, 0, "HE x", "fi/he/x")[0]
+        )
+    )
+    # No phantom op is attributed to the repealed 329/1999 statute; the genuine bill survives.
+    assert not any(op.target_ref.startswith("329/1999") for op in flat)
+    assert any(op.target_ref.startswith("986/2011") for op in flat)
+
+
+def test_single_section_repeal_emits_only_its_own_repeal() -> None:
+    # A single-§ repeal ("kumotaan (13/2003) 5 §.") likewise owns no "seuraavasti:", but
+    # DOES name a provision before its period: it must lower to exactly its own repeal op,
+    # never the following bill's provision list.
+    from lawvm.finland.he_branch_parser import _parse_one_clause
+    from lawvm.tools.fi_he_ir_compare import flatten_branch_ops
+
+    text = (
+        "Lakiehdotukset 1. Laki erään lain muuttamisesta "
+        "kumotaan erään lain (13/2003) 5 "
+        + _SEC
+        + ". "
+        "2. Laki testilain muuttamisesta "
+        "muutetaan testilain (123/2020) 8 "
+        + _SEC
+        + " seuraavasti: Uusi 8 §."
+    )
+    spans = extract_enacting_clause_spans(text)
+    flat = flatten_branch_ops(
+        tuple(
+            op
+            for span in spans
+            for op in _parse_one_clause(span, 0, "HE x", "fi/he/x")[0]
+        )
+    )
+    refs = {op.render for op in flat}
+    assert "repeal 13/2003/5" in refs
+    # The (123/2020) bill's §8 op is still recovered; nothing from it is bound to 13/2003.
+    assert any(op.target_ref.startswith("123/2020") for op in flat)
+    assert not any(op.target_ref.startswith("13/2003") and op.action != "repeal" for op in flat)
+
+
+def test_combined_repeal_plus_amend_single_bill_still_extracts_fully() -> None:
+    # A single COMBINED bill ("kumotaan (301/2004) 79 §, muutetaan 3 §:n 6 kohta ...
+    # sellaisina kuin ... ja (668/2013) ... seuraavasti:") is NOT two bills: the second
+    # verb is a same-bill continuation and the parenthesized citation is a provenance
+    # reference, with NO sentence period separating them. The full span to "seuraavasti:"
+    # must be kept (the repeal guard must not truncate it).
+    text = (
+        "Lakiehdotukset 1. Laki ulkomaalaislain muuttamisesta "
+        "kumotaan ulkomaalaislain (301/2004) 79 "
+        + _SEC
+        + ", muutetaan 3 "
+        + _SEC
+        + ":n 6 ja 7 kohta, sellaisina kuin niistä ovat 79 "
+        + _SEC
+        + " laeissa 34/2006 ja (668/2013), seuraavasti: Uusi 3 §."
+    )
+    spans = extract_enacting_clause_spans(text)
+    assert len(spans) == 1
+    assert "(301/2004)" in spans[0]
+    assert spans[0].rstrip().endswith("seuraavasti:")
+
+
+def test_genuine_muutetaan_bill_extracts_fully() -> None:
+    # A plain genuine amendment bill (no repeal head) is untouched by the repeal guard.
+    genuine = (
+        "Lakiehdotukset muutetaan testilain (123/2020) 5 "
+        + _SEC
+        + " sekä lisätään uusi 7 "
+        + _SEC
+        + " seuraavasti: Uusi 5 §."
+    )
+    spans = extract_enacting_clause_spans(genuine)
+    assert len(spans) == 1
+    assert spans[0].startswith("muutetaan testilain (123/2020)")
+    assert spans[0].rstrip().endswith("seuraavasti:")
+
+
+# --------------------------------------------------------------------------- #
 # flatten + diff                                                             #
 # --------------------------------------------------------------------------- #
 
