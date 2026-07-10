@@ -22,41 +22,33 @@ normalization are the signal that DISCOVERS the next operator. The loop is
 confirmed-inert pattern into a new deterministic fold here``. So the equality relation
 grows empirically from what actually survives, never from a spec written in advance.
 
-Presence vs glyph-identity: what "a dash may be substantive" really means
--------------------------------------------------------------------------
+Why NOT fold a dash's glyph identity (en-dash vs em-dash) here
+-------------------------------------------------------------
 ``metadata._normalize_fi_parse_text`` folds em-dash→en-dash and Zs→space, but its
 docstring is explicit that it MUST NOT be applied to body text compared against oracle
-content — those folds are for *parse-text* (extracting section numbers). The distinction
-that matters for *payload* text is between a dash's PRESENCE and its GLYPH IDENTITY. The
-PRESENCE is substantive: an en-dash range "5—10", an em-dash aside, a compound hyphen
-"sotilas- ja" all carry meaning, so a dash must never be DELETED. The GLYPH IDENTITY is
-not: which of {hyphen, non-breaking hyphen, figure/en/em dash, horizontal bar, minus
-sign} a text layer emits for the same underlying document is a rendering artifact that
-changes no word, number, or citation. Quotes are held to the same test but are NOT folded
-yet — no residual has convicted a curly/straight quote as the sole inert difference, so
-adding it would be speculative. Visible-glyph equivalence is graduated only when residuals
-convict it, with the same auditability the Unicode-fold sets carry.
+content — those folds are for *parse-text* (extracting section numbers), where a dash is
+a range separator, not for *payload* text, where a dash may be substantive. It is TEMPTING
+to argue the GLYPH IDENTITY of a single dash (which of {hyphen, non-breaking hyphen,
+figure/en/em dash, horizontal bar, minus sign} the text layer emitted) is a mere rendering
+artifact and fold it to a canonical hyphen-minus. That is deliberately NOT done: a
+speculative always-on single-dash glyph fold is exactly the "exactness, not slop" failure
+this quotient exists to prevent — it silently declares "16 a–b" and "16 a—b" EQUAL, hiding
+a VISIBLE difference that only the discovery loop (T1 adjudication → image tier) is
+entitled to judge inert. A single dash's presence AND glyph therefore stay substantive: a
+visible dash difference SURVIVES as a typed residual, never folded to equal. (Quotes are
+held to the same test and are likewise NOT folded — no residual has convicted a
+curly/straight quote as inert either.) The ONE dash fold that graduates is a run DELETION,
+below, which cannot touch a lone substantive dash.
 
-Graduated visible-glyph fold #1: SEPARATOR_DASH_RUN (dash PRESENCE, run only)
-----------------------------------------------------------------------------
+Graduated visible-glyph fold: SEPARATOR_DASH_RUN (dash PRESENCE, run only)
+-------------------------------------------------------------------------
 A RUN of 2+ dashes ("— — —") is a visual rule / statute elision marker, never
 substantive content — discovered from residuals (52 HE payload bodies differed ONLY by a
 trailing "— — —" the text layer captured but the clean XML omits) and adjudicated inert.
 It is DELETED, but a SINGLE dash is deliberately preserved from deletion — the ``{2,}``
-requirement is what keeps this inside the "unarguably inert" boundary.
-
-Graduated visible-glyph fold #2: DASH_GLYPH (dash IDENTITY, 1:1 substitution)
-----------------------------------------------------------------------------
-The dash family (U+2010–2015, U+2212) is normalised to ASCII hyphen-minus U+002D — a 1:1
-substitution that KEEPS the dash, so it is orthogonal to SEPARATOR_DASH_RUN (which deletes
-runs) and consistent with "a single dash stays substantive" (the dash is still present,
-just canonicalised). Discovered from residuals: HE proposed-body ranges that differ ONLY by
-the dash glyph the extractor emitted — "1 momentin 1 ― 6 kohdassa" vs "1 - 6", "60―62 §:ssä"
-vs "60-62 §:ssä", "9-11 §" vs "9—11 §" — same digits, same range, different dash glyph.
-Because the substitution touches ONLY dash codepoints, it can never hide a numeric/citation
-difference: "5—10" vs "5—11" stays a residual (the digits still differ). This is the exact
-class ``_normalize_fi_parse_text`` treats as inert for parse-text, now convicted inert for
-payload comparison too by same-document two-witness residuals.
+requirement is what keeps this inside the "unarguably inert" boundary. A lone dash keeps
+BOTH its presence and its glyph, so an en-dash-vs-em-dash difference on a single dash still
+falls through as a residual (see above).
 
 Graduated fold #3: WHITESPACE_PUNCT (whitespace ADJACENT to punctuation)
 -----------------------------------------------------------------------
@@ -196,14 +188,6 @@ _SEPARATOR_DASH_RUN_RE = re.compile(r"[‒-―\-]\s{0,3}[‒-―\-][\s‒-―\-]
 # only runs fold. Flat quantifiers (no nested-backtracking risk).
 _DOT_LEADER_RE = re.compile(r"\.\s{0,3}\.[\s.]{0,120}")
 
-# The Unicode dash family — HYPHEN U+2010, NON-BREAKING HYPHEN U+2011, FIGURE DASH U+2012,
-# EN DASH U+2013, EM DASH U+2014, HORIZONTAL BAR U+2015, MINUS SIGN U+2212 — mapped to the
-# ASCII HYPHEN-MINUS U+002D. This canonicalises the *glyph identity* of a dash while keeping
-# the dash PRESENT (a 1:1 substitution, never a deletion). See DASH_GLYPH below for why this
-# is inert for same-document two-witness comparison. U+00AD SOFT HYPHEN is deliberately NOT
-# here — it is a Cf line-join char handled by ``dehyphenate`` / the Cf delete above.
-_DASH_GLYPH_TABLE = {cp: 0x2D for cp in (0x2010, 0x2011, 0x2012, 0x2013, 0x2014, 0x2015, 0x2212)}
-
 # Whitespace ADJACENT to punctuation is a typesetting artifact, never content. This
 # WHITESPACE-ONLY substitution runs AFTER the Zs→space + run-collapse of the WHITESPACE fold,
 # so its input holds only single ASCII spaces. Each branch body matches spaces only and is
@@ -245,7 +229,6 @@ class EncodingFold(StrEnum):
     CF_FORMAT = "cf_format"  # invisible Unicode Cf control chars deleted
     CONTROL_STRIP = "control_strip"  # C0/C1 Cc control-char noise (broken CMap) deleted
     WHITESPACE = "whitespace"  # Zs→space + all whitespace runs collapsed + trimmed
-    DASH_GLYPH = "dash_glyph"  # dash-family glyph identity normalised to "-" (dash kept, not deleted)
     SEPARATOR_DASH_RUN = "separator_dash_run"  # run of 2+ dashes ("— — —" rule/elision) deleted
     DOT_LEADER = "dot_leader"  # run of 2+ dots (table/TOC leader "....." / ellipsis) deleted
     WHITESPACE_PUNCT = "whitespace_punct"  # space adjacent to punctuation (before ":;,.)" / after "(") removed
@@ -278,14 +261,11 @@ def _canonicalize_text(text: str) -> Tuple[str, frozenset[EncodingFold]]:
     if no_ctrl != no_cf:
         fired.add(EncodingFold.CONTROL_STRIP)
 
-    # Normalise dash GLYPHS first (a 1:1 substitution that keeps the dash), so the RUN fold
-    # then sees a uniform "-" alphabet and a lone surviving dash is a canonical hyphen-minus.
-    no_dashglyph = no_ctrl.translate(_DASH_GLYPH_TABLE)
-    if no_dashglyph != no_ctrl:
-        fired.add(EncodingFold.DASH_GLYPH)
-
-    no_run = _SEPARATOR_DASH_RUN_RE.sub(" ", no_dashglyph)
-    if no_run != no_dashglyph:
+    # Delete RUNS of 2+ dashes (visual rule / "— — —" elision marker). A SINGLE dash is
+    # deliberately left untouched — its presence AND glyph identity stay substantive, so an
+    # en-dash-vs-em-dash difference on a lone dash falls through as a residual (not folded).
+    no_run = _SEPARATOR_DASH_RUN_RE.sub(" ", no_ctrl)
+    if no_run != no_ctrl:
         fired.add(EncodingFold.SEPARATOR_DASH_RUN)
 
     no_dots = _DOT_LEADER_RE.sub(" ", no_run)

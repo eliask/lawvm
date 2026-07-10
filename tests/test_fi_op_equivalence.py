@@ -77,16 +77,16 @@ def test_genuine_numeric_difference_is_a_residual():
     assert v.right_canon == "veroprosentti 6,5"
 
 
-def test_dash_glyph_variants_fold_to_canonical():
-    # en-dash vs em-dash (and hyphen, horizontal bar, minus): the dash GLYPH identity is a
-    # rendering artifact — the discovery loop convicted it inert (DASH_GLYPH). The dash is
-    # KEPT (1:1 to "-"), not deleted, so a single dash stays present/substantive.
+def test_single_dash_glyph_difference_is_not_folded_survives_as_residual():
+    # en-dash vs em-dash (and every dash-family glyph): the GLYPH IDENTITY of a SINGLE dash is
+    # a VISIBLE difference that is deliberately NOT speculatively folded. Exactness, not slop:
+    # it survives as a residual for the discovery loop (T1 adjudication → image tier) to judge,
+    # never silently declared equal.
     v = text_equivalence("16 a–b", "16 a—b")
-    assert v.equal
-    assert EncodingFold.DASH_GLYPH in v.folds
-    # all dash-family codepoints collapse to the same canonical hyphen-minus
-    for other in ("16 a-b", "16 a―b", "16 a‐b", "16 a−b"):
-        assert text_equivalence("16 a—b", other).equal
+    assert not v.equal and v.residual
+    # the dash is PRESENT in both canon forms (never deleted) — only its glyph differs, and
+    # that visible difference is preserved for adjudication, not folded away.
+    assert v.left_canon == "16 a–b" and v.right_canon == "16 a—b"
 
 
 def test_separator_dash_run_is_folded():
@@ -110,26 +110,26 @@ def test_dot_leader_run_is_folded_decimal_preserved():
     assert not v2.equal and EncodingFold.DOT_LEADER not in v2.folds
 
 
-def test_single_dash_is_normalized_not_deleted_as_a_run():
+def test_single_dash_is_not_swept_by_the_run_fold():
     # The {2,}-dash requirement keeps a SINGLE dash from being SWEPT (deleted) by the run
-    # fold: DASH_GLYPH normalises its glyph (em/en → "-") but SEPARATOR_DASH_RUN must not
-    # fire, so the dash stays PRESENT (not merged away).
+    # fold. Its glyph is NOT folded either, so an em/en difference on a lone dash falls through
+    # as a residual — but the dash's PRESENCE is preserved (the run fold does not fire, words
+    # are not merged away).
     v = text_equivalence("veroluokka 5—10", "veroluokka 5–10")
-    assert v.equal  # same range, only the dash glyph differs
-    assert EncodingFold.DASH_GLYPH in v.folds
+    assert not v.equal and v.residual  # same range, but the visible dash glyph differs
     assert EncodingFold.SEPARATOR_DASH_RUN not in v.folds  # single dash: not a run, not deleted
-    # the dash is preserved in the canon (words not merged): "a—b" -> "a-b", never "ab"
-    solo = text_equivalence("a—b", "a-b")
-    assert solo.equal and solo.left_canon == "a-b"
+    # the dash is preserved in the canon (present, never merged): "a—b" stays "a—b", never "ab"
+    solo = text_equivalence("a—b", "a—b")
+    assert solo.equal and solo.left_canon == "a—b"
 
 
-def test_dash_glyph_does_not_hide_numeric_difference():
-    # DASH_GLYPH touches ONLY dash codepoints — the digits around a range are untouched, so
-    # a genuine numeric difference across a range separator is NEVER hidden.
+def test_numeric_difference_across_a_range_is_a_residual():
+    # A genuine numeric difference across a range separator is a residual regardless of the
+    # dash glyph — there is no dash-glyph fold at all, so a changed figure always survives.
     v = text_equivalence("momentin 5—10 kohta", "momentin 5—11 kohta")
     assert not v.equal and v.residual  # 10 != 11
     v2 = text_equivalence("60―62 §", "60―63 §")
-    assert not v2.equal and v2.residual  # 62 != 63, even with the horizontal-bar glyph folded
+    assert not v2.equal and v2.residual  # 62 != 63 (same horizontal-bar glyph, only digits differ)
 
 
 def test_folds_are_deterministic_and_sorted():
