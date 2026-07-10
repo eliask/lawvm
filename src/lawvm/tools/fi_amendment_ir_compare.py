@@ -838,6 +838,27 @@ def _pdf_ast_from_reading_text(reading_text: str, sid: str) -> ClauseAST:
     return ast
 
 
+def _pdf_is_annex_by_disjoint_targets(
+    xml_flat: tuple[FlatOp, ...], pdf_flat: tuple[FlatOp, ...]
+) -> bool:
+    """True iff the PDF clause is annex/body prose, not this statute's enacting gazette.
+
+    The >=1-op check in ``_pdf_ast_from_reading_text`` catches annex prose that lowers to
+    ZERO ops, but annex/body prose that latches a stray operative verb + ``seuraavasti``
+    can lower to a HANDFUL of ops targeting provisions the amendment never touches
+    (F-corpus finding: 1-op annex prose defeated the >=1-op guard). A real gazette's
+    enacting clause shares op TARGETS with the XML enacting clause, so DISJOINT targets
+    mean a different clause. Gated additionally on the PDF having FEWER ops than the XML
+    so a genuine EQUAL-size mis-read (all targets wrong) still SURFACES as a typed defect
+    (op_missing/op_extra) rather than being silently absorbed as annex.
+    """
+    if not (xml_flat and pdf_flat):
+        return False
+    xml_targets = {op.target_ref for op in xml_flat}
+    pdf_targets = {op.target_ref for op in pdf_flat}
+    return xml_targets.isdisjoint(pdf_targets) and len(pdf_flat) < len(xml_flat)
+
+
 # --------------------------------------------------------------------------- #
 # Top-level comparison + report                                              #
 # --------------------------------------------------------------------------- #
@@ -944,6 +965,20 @@ def compare_statute(
         )
 
     pdf_flat = flatten_clause_ast(pdf_ast)
+
+    if _pdf_is_annex_by_disjoint_targets(xml_flat, pdf_flat):
+        pdf_targets = sorted({op.target_ref for op in pdf_flat})
+        return CompareResult(
+            loc.sid,
+            loc.lang,
+            "pdf_annex_only",
+            (),
+            len(xml_flat),
+            len(pdf_flat),
+            f"PDF ops {pdf_targets} disjoint from XML targets and fewer "
+            f"({len(pdf_flat)}<{len(xml_flat)}) — annex/body prose, not the enacting gazette",
+        )
+
     divergences = diff_amendment_ops(xml_flat, pdf_flat)
 
     # --- Payload stage: compare the replacement BODY TEXT of the matched ops. ---

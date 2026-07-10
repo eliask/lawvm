@@ -24,6 +24,7 @@ from lawvm.tools.fi_amendment_ir_compare import (
     OperativeClauseNotFound,
     OpDivergence,
     StatuteLocator,
+    _pdf_is_annex_by_disjoint_targets,
     amendment_ops_from_clause_text,
     amendment_ops_from_pdf,
     compare_statute,
@@ -184,6 +185,37 @@ def test_pdf_annex_prose_with_operative_verb_is_flagged_not_forced() -> None:
     )
     with pytest.raises(OperativeClauseNotFound):
         amendment_ops_from_pdf("2017/822", farchive="unused", text_fn=lambda: annex)
+
+
+def test_annex_disjoint_targets_gate_flags_stray_op_annex() -> None:
+    # F-corpus pathology: annex/body prose lowers to a HANDFUL of ops (here 1) that
+    # target provisions the amendment never touches. Disjoint targets + fewer ops than
+    # the XML enacting clause ⇒ annex-only, not the operative gazette.
+    xml_flat = (
+        FlatOp("replace", "section:7"),
+        FlatOp("replace", "section:10"),
+        FlatOp("replace", "section:16"),
+    )
+    pdf_flat = (FlatOp("replace", "section:3"),)  # stray annex op
+    assert _pdf_is_annex_by_disjoint_targets(xml_flat, pdf_flat) is True
+
+
+def test_annex_gate_does_not_hide_equal_size_misread() -> None:
+    # A genuine EQUAL-size reconstruction whose targets are all wrong must NOT be
+    # absorbed as annex — it must SURFACE as a typed op_missing/op_extra defect.
+    xml_flat = (FlatOp("replace", "section:7"),)
+    pdf_flat = (FlatOp("replace", "section:9"),)  # same count, wrong target
+    assert _pdf_is_annex_by_disjoint_targets(xml_flat, pdf_flat) is False
+
+
+def test_annex_gate_passes_when_targets_overlap() -> None:
+    # Sharing even one target ⇒ the same enacting clause ⇒ compare normally.
+    xml_flat = (
+        FlatOp("replace", "section:7"),
+        FlatOp("replace", "section:10"),
+    )
+    pdf_flat = (FlatOp("replace", "section:7"),)
+    assert _pdf_is_annex_by_disjoint_targets(xml_flat, pdf_flat) is False
 
 
 def test_compare_statute_returns_typed_status_never_raises(tmp_path) -> None:
