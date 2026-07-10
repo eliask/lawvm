@@ -29,6 +29,8 @@ it — this module does NOT rewire the existing compose orchestration (scope gua
 from __future__ import annotations
 
 import hashlib
+import os
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
@@ -89,6 +91,17 @@ _REREAD_DPI = 300
 # Cap the re-reads per page — output-sparsity guard (a page with a dozen garbles
 # is a page-level failure, not a re-read case; the residue stays typed-suspect).
 _MAX_REREADS_PER_PAGE = 8
+
+# Default per-PDF Level-1 page concurrency (§ pipeline concurrency): each page's
+# ``converge_page`` runs in its own worker so the independent per-page vision HTTP
+# calls overlap and keep the GPU fed while ONE PDF is processed. Bounded — the
+# vision backend serves a fixed batch of requests, so more workers than that just
+# queue. Overridable per-call (``build_page_simulacra(max_workers=…)``) or by env
+# (``LAWVM_INGEST_PAGE_CONCURRENCY``). Determinism is INDEPENDENT of this value:
+# results are assembled strictly by page index, never by completion order.
+_DEFAULT_PAGE_CONCURRENCY = int(
+    os.environ.get("LAWVM_INGEST_PAGE_CONCURRENCY", "8") or "8"
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -1177,22 +1190,47 @@ def build_page_simulacra(
     leaf_mode: str = "patch",
     max_iters: int = MAX_CONVERGE_ITERS,
     max_pages: int = 5000,
+    max_workers: Optional[int] = None,
 ) -> Tuple[PageSimulacrum, ...]:
     """Produce the ``Sequence[PageSimulacrum]`` for a manifestation (§1 interface out).
 
     Runs the recurrence pre-pass over ALL pages first (whole-doc furniture
-    affordance, §4), then per page: ``converge_page`` (gate + patch-to-fixpoint) →
-    ``build_page_simulacrum`` (metadata + tripwire). The result is the Level-1 →
-    Level-2 bridge; persist it via ``ParsedIrStore.put_page_simulacrum`` so
-    re-running Level 2 never re-runs the model (Decision 11)."""
+    affordance, §4), then processes the pages through ``converge_page`` (gate +
+    patch-to-fixpoint) → ``build_page_simulacrum`` (metadata + tripwire) in a
+    BOUNDED ``ThreadPoolExecutor``. The result is the Level-1 → Level-2 bridge;
+    persist it via ``ParsedIrStore.put_page_simulacrum`` so re-running Level 2
+    never re-runs the model (Decision 11).
+
+    **Per-PDF GPU saturation (§ pipeline concurrency).** Level-1 per-page simulacra
+    are INDEPENDENT by design (§1: no cross-page reasoning at Level 1), so the
+    per-page vision work is embarrassingly parallel. Each worker runs the existing
+    ``converge_page`` SYNCHRONOUSLY — its vision HTTP calls (``propose_page_struct``
+    / ``propose_page_patch_delta`` / ``reread_region`` / ``read_region_cold``) then
+    overlap across workers, keeping the GPU fed instead of idling between serial
+    pages. pdfium rendering inside those calls is serialized by the shared
+    ``ingest.visual.PDFIUM_LOCK``, so concurrent workers parallelize inference while
+    still serializing every pdfium touch safely.
+
+    **Determinism is index-ordered, never completion-ordered (review Decision 7).**
+    Each page's simulacrum is already deterministic (temp=0, content-addressed); the
+    workers write into an index-slotted list and the tuple is assembled STRICTLY by
+    page index (reading order). The output is therefore BYTE-IDENTICAL to the serial
+    version for the same inputs regardless of worker count or which page finishes
+    first. ``max_workers`` (or ``LAWVM_INGEST_PAGE_CONCURRENCY``) is a throughput
+    knob ONLY — it cannot change the result. A per-page exception is contained to its
+    own worker (siblings still complete) and re-raised deterministically at the
+    LOWEST failing page index, matching the serial loop's fail-at-first-bad-page
+    order (fail-loud — never a silently dropped page)."""
     page_count = min(len(reading_order_pages), max_pages)
+    if page_count == 0:
+        return ()
     all_elements: List[PageElements] = [
         page_element_producer.page_elements(manifestation.source_bytes, i + 1)
         for i in range(page_count)
     ]
     recurrence = band_recurrence_map(all_elements)
-    out: List[PageSimulacrum] = []
-    for idx in range(page_count):
+
+    def _simulacrum_for_index(idx: int) -> PageSimulacrum:
         page_num = idx + 1
         pe = all_elements[idx]
         ro_text = reading_order_pages[idx]
@@ -1206,15 +1244,25 @@ def build_page_simulacra(
             leaf_mode=leaf_mode,
             max_iters=max_iters,
         )
-        out.append(
-            build_page_simulacrum(
-                converged,
-                manifestation,
-                page_num,
-                pe,
-                reading_order_text=ro_text,
-                recurrence=recurrence,
-                page_count=page_count,
-            )
+        return build_page_simulacrum(
+            converged,
+            manifestation,
+            page_num,
+            pe,
+            reading_order_text=ro_text,
+            recurrence=recurrence,
+            page_count=page_count,
         )
+
+    workers = max_workers if max_workers is not None else _DEFAULT_PAGE_CONCURRENCY
+    workers = max(1, min(workers, page_count))
+
+    # Submit every page, then collect BY INDEX (never completion order). Calling
+    # ``.result()`` in index order re-raises the lowest-index failure first — the
+    # same page the serial loop would have raised on — so the fail-loud behavior is
+    # deterministic and byte-identical for the successful prefix. Siblings already
+    # ran concurrently, so one bad page never prevents the others from computing.
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(_simulacrum_for_index, idx) for idx in range(page_count)]
+        out: List[PageSimulacrum] = [f.result() for f in futures]
     return tuple(out)

@@ -736,3 +736,244 @@ def test_align_lines_to_geom_recurring_lines_each_get_own_row() -> None:
     geom = [("X", b[0]), ("X", b[1]), ("X", b[2])]
     out = _align_lines_to_geom(["X", "X", "X"], geom)
     assert [bb for _, bb in out] == b  # each occurrence → its own row, in order
+
+
+# --------------------------------------------------------------------------- #
+# Per-PDF page concurrency (§ pipeline concurrency): bounded ThreadPoolExecutor #
+# over converge_page — GPU-saturating, INDEX-ORDERED determinism, contained     #
+# failures, pdfium-lock-serialized renders.                                     #
+# --------------------------------------------------------------------------- #
+
+import json
+import threading
+import time
+
+
+def _distinct_pages_producer():
+    """A fake page producer: each page has DISTINCT content (so simulacra differ)."""
+
+    class _DistinctPageProducer:
+        def page_elements(self, pdf_bytes, page_num):
+            # A body line unique per page + a recurring bottom-band page-number footer.
+            return PageElements(
+                page_num=page_num,
+                lines=(f"Body of page {page_num} with content.", str(page_num)),
+                page_lines=(
+                    PageLine(
+                        text=f"Body of page {page_num} with content.",
+                        y_order=0,
+                        bbox=BBox(72, 400, 500, 420),
+                        band="body",
+                        indent=4,
+                    ),
+                    PageLine(
+                        text=str(page_num),
+                        y_order=1,
+                        bbox=BBox(280, 20, 320, 34),
+                        band="bottom",
+                        indent=15,
+                    ),
+                ),
+                page_width=595.0,
+                page_height=842.0,
+            )
+
+    return _DistinctPageProducer()
+
+
+class _ProbeVision:
+    """Instrumented fake vision: records concurrency + can fail a page + can gate a
+    ``PDFIUM_LOCK``-guarded 'render' phase, all deterministic in OUTPUT.
+
+    ``propose_page_struct`` span-copies both page lines (``1 PARA 0 L1``/``L2``) so
+    each page's simulacrum is a pure function of its (distinct) page content — the
+    OUTPUT never depends on scheduling. The instrumentation only observes timing.
+    """
+
+    def __init__(self, *, barrier=None, fail_on=(), guard_render=False):
+        self._barrier = barrier
+        self._fail_on = set(fail_on)
+        self._guard_render = guard_render
+        self._lock = threading.Lock()
+        self._inflight = 0
+        self.max_inflight = 0
+        self._render_inflight = 0
+        self.render_max_concurrency = 0
+        self.completed: set[int] = set()
+        self.barrier_broke = False
+
+    def is_available(self) -> bool:
+        return True
+
+    def propose_page_struct(self, man, page_num, pe, *, leaf_mode="patch"):
+        from lawvm.ingest.llm_backends.vision_producer import StructPageResult
+        from lawvm.ingest.visual import PDFIUM_LOCK
+
+        with self._lock:
+            self._inflight += 1
+            self.max_inflight = max(self.max_inflight, self._inflight)
+        try:
+            if page_num in self._fail_on:
+                raise RuntimeError(f"boom on page {page_num}")
+            # Inference phase: rendezvous proves >1 page is genuinely in-flight.
+            if self._barrier is not None:
+                try:
+                    self._barrier.wait(timeout=10)
+                except threading.BrokenBarrierError:
+                    self.barrier_broke = True
+            # Render phase: pdfium is process-global + thread-unsafe, so every touch
+            # MUST serialize on the ONE shared lock even while inference parallelizes.
+            if self._guard_render:
+                with PDFIUM_LOCK:
+                    with self._lock:
+                        self._render_inflight += 1
+                        self.render_max_concurrency = max(
+                            self.render_max_concurrency, self._render_inflight
+                        )
+                    time.sleep(0.01)  # widen the overlap window a racy lock would lose
+                    with self._lock:
+                        self._render_inflight -= 1
+            wire = f"1 PARA 0 L1{US}2 PARA 0 L2{US}"
+            build = parse_struct_wire(wire, pe.lines, [])
+            with self._lock:
+                self.completed.add(page_num)
+            return StructPageResult(build=build, raw_content=wire, images=())
+        finally:
+            with self._lock:
+                self._inflight -= 1
+
+    def propose_page_patch_delta(self, man, page_num, numbered_lines):
+        return ""
+
+
+def _sim_json(sim) -> str:
+    return json.dumps(page_simulacrum_to_json(sim), sort_keys=True, ensure_ascii=False)
+
+
+def test_pooled_build_is_byte_identical_to_serial_baseline() -> None:
+    # (a) Order-independent determinism: the pooled build (8 workers) is BYTE-
+    # IDENTICAL to the serial baseline (1 worker) over the same fake pages — the
+    # simulacra are assembled by page index, never completion order.
+    ro = [f"Body of page {i} with content.\n{i}" for i in range(1, 7)]
+    serial = build_page_simulacra(
+        _ProbeVision(), _manifestation(), _distinct_pages_producer(), ro, max_workers=1
+    )
+    pooled = build_page_simulacra(
+        _ProbeVision(), _manifestation(), _distinct_pages_producer(), ro, max_workers=8
+    )
+    assert [s.page_num for s in pooled] == [1, 2, 3, 4, 5, 6]
+    assert [_sim_json(s) for s in serial] == [_sim_json(s) for s in pooled]
+
+
+def test_pooled_build_is_stable_across_repeated_runs() -> None:
+    # Determinism under scheduling churn: many pooled runs all agree byte-for-byte.
+    ro = [f"Body of page {i} with content.\n{i}" for i in range(1, 6)]
+    runs = [
+        [
+            _sim_json(s)
+            for s in build_page_simulacra(
+                _ProbeVision(),
+                _manifestation(),
+                _distinct_pages_producer(),
+                ro,
+                max_workers=5,
+            )
+        ]
+        for _ in range(5)
+    ]
+    assert all(r == runs[0] for r in runs)
+
+
+def test_pages_converge_concurrently_not_serially() -> None:
+    # (b) Concurrency actually happens: a barrier of width == page_count only
+    # releases if every page's converge is in-flight SIMULTANEOUSLY. A serial loop
+    # would hang here (each waits for the next that never starts) → the 10s barrier
+    # timeout would break it. It does not.
+    n = 4
+    ro = [f"Body of page {i} with content.\n{i}" for i in range(1, n + 1)]
+    vision = _ProbeVision(barrier=threading.Barrier(n))
+    sims = build_page_simulacra(
+        vision, _manifestation(), _distinct_pages_producer(), ro, max_workers=n
+    )
+    assert len(sims) == n
+    assert vision.barrier_broke is False   # all n rendezvoused → all n concurrent
+    assert vision.max_inflight == n
+
+
+def test_pdfium_render_stays_serialized_under_the_page_pool() -> None:
+    # (d) The shared PDFIUM_LOCK still serializes renders: even though inference runs
+    # concurrently (max_inflight > 1), the lock-guarded 'render' phase is never
+    # entered by two workers at once (render_max_concurrency == 1). This is the
+    # invariant that keeps concurrent pdfium safe (a racy lock would segfault).
+    n = 4
+    ro = [f"Body of page {i} with content.\n{i}" for i in range(1, n + 1)]
+    vision = _ProbeVision(guard_render=True)
+    sims = build_page_simulacra(
+        vision, _manifestation(), _distinct_pages_producer(), ro, max_workers=n
+    )
+    assert len(sims) == n
+    assert vision.max_inflight > 1            # inference genuinely parallelized
+    assert vision.render_max_concurrency == 1  # pdfium never overlapped
+
+
+def test_pooled_build_shares_the_one_visual_pdfium_lock() -> None:
+    # The pool relies on the SAME systemic lock the render primitive holds — not a
+    # private reinvention (#250). Assert object identity across the two modules.
+    from lawvm.ingest import page_elements as _pe
+    from lawvm.ingest import visual as _visual
+
+    assert _pe.PDFIUM_LOCK is _visual.PDFIUM_LOCK
+
+
+def test_per_page_failure_is_contained_and_raised_at_lowest_index() -> None:
+    # (c) A per-page failure is CONTAINED: pages 2 and 4 raise, but their sibling
+    # pages still fully process (converge completed), and the batch re-raises the
+    # LOWEST failing index (page 2) — matching the serial loop's fail-at-first-bad-
+    # page order (fail-loud, never a silently dropped page).
+    ro = [f"Body of page {i} with content.\n{i}" for i in range(1, 6)]
+    vision = _ProbeVision(fail_on=(2, 4))
+    import pytest
+
+    with pytest.raises(RuntimeError, match="boom on page 2"):
+        build_page_simulacra(
+            vision, _manifestation(), _distinct_pages_producer(), ro, max_workers=5
+        )
+    # The good pages ran to completion despite the failing siblings (containment).
+    assert {1, 3, 5} <= vision.completed
+    assert 2 not in vision.completed and 4 not in vision.completed
+
+
+def test_zero_pages_returns_empty_tuple() -> None:
+    # Degenerate input: no pages → empty tuple, no pool spun up, no crash.
+    out = build_page_simulacra(
+        _ProbeVision(), _manifestation(), _distinct_pages_producer(), []
+    )
+    assert out == ()
+
+
+def test_env_default_concurrency_is_read_and_bounded(monkeypatch) -> None:
+    # The default worker count is env-overridable (LAWVM_INGEST_PAGE_CONCURRENCY) and
+    # bounded to [1, page_count]; the RESULT is invariant to it (determinism knob).
+    import importlib
+
+    import lawvm.ingest.page_level as pl
+
+    monkeypatch.setenv("LAWVM_INGEST_PAGE_CONCURRENCY", "3")
+    reloaded = importlib.reload(pl)
+    try:
+        assert reloaded._DEFAULT_PAGE_CONCURRENCY == 3
+        ro = [f"Body of page {i} with content.\n{i}" for i in range(1, 5)]
+        env_default = reloaded.build_page_simulacra(
+            _ProbeVision(), _manifestation(), _distinct_pages_producer(), ro
+        )
+        explicit1 = reloaded.build_page_simulacra(
+            _ProbeVision(),
+            _manifestation(),
+            _distinct_pages_producer(),
+            ro,
+            max_workers=1,
+        )
+        assert [_sim_json(s) for s in env_default] == [_sim_json(s) for s in explicit1]
+    finally:
+        monkeypatch.delenv("LAWVM_INGEST_PAGE_CONCURRENCY", raising=False)
+        importlib.reload(pl)

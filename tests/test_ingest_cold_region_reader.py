@@ -267,3 +267,115 @@ def test_pdfium_lock_is_one_shared_object_across_the_primitives() -> None:
 
     assert pe_lock is visual_lock
     assert cal_lock is visual_lock
+
+
+# --------------------------------------------------------------------------- #
+# GLOBAL vision-inference concurrency gate (§ pipeline concurrency).           #
+# The ONE process-wide semaphore at the client boundary bounds total in-flight #
+# requests against :8080 so nested per-PDF × per-page pools don't oversubscribe.#
+# --------------------------------------------------------------------------- #
+
+
+def _json_ok() -> bytes:
+    import json
+
+    return json.dumps(
+        {"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}]}
+    ).encode("utf-8")
+
+
+class _RecordingResp:
+    """A minimal urlopen() context manager that records concurrent in-flight count."""
+
+    def __init__(self, body: bytes) -> None:
+        self._body = body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def read(self) -> bytes:
+        return self._body
+
+
+def test_global_gate_bounds_in_flight_requests_below_the_cap(monkeypatch) -> None:
+    # Submit FAR more concurrent _post_chat calls than the cap; the ONE shared
+    # semaphore keeps the number actually hitting the server <= the cap, even though
+    # the caller pool is generously sized (work-decomposition decoupled from rate).
+    import time
+
+    from lawvm.ingest.llm_backends import vision_producer as vp
+
+    cap = 3
+    monkeypatch.setattr(vp, "VISION_INFLIGHT_GATE", threading.BoundedSemaphore(cap))
+
+    lock = threading.Lock()
+    inflight = [0]
+    peak = [0]
+
+    def _fake_urlopen(req, timeout=None):
+        with lock:
+            inflight[0] += 1
+            peak[0] = max(peak[0], inflight[0])
+        try:
+            time.sleep(0.02)  # widen the overlap an unbounded path would reveal
+            return _RecordingResp(_json_ok())
+        finally:
+            with lock:
+                inflight[0] -= 1
+
+    monkeypatch.setattr(vp.urllib.request, "urlopen", _fake_urlopen)
+
+    producer = vp.VisionPageProducer(base_url="http://unused")
+    errors: list = []
+
+    def _call(i: int) -> None:
+        try:
+            assert producer._post_chat({"n": i}, page_num=i) == "ok"
+        except Exception as exc:  # pragma: no cover - surfaced via errors list
+            errors.append(exc)
+
+    threads = [threading.Thread(target=_call, args=(i,)) for i in range(12)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert not errors
+    assert peak[0] <= cap        # HARD invariant: never oversubscribed
+    assert peak[0] >= 2          # the gate genuinely admitted concurrency (not serial)
+
+
+def test_gate_is_a_single_shared_module_object_not_per_instance() -> None:
+    # Two producers must contend on the SAME gate (a per-instance semaphore would
+    # not bound cross-pool concurrency — the whole point of the choke point).
+    from lawvm.ingest.llm_backends import vision_producer as vp
+
+    a = vp.VisionPageProducer(base_url="http://a")
+    b = vp.VisionPageProducer(base_url="http://b")
+    # _post_chat reads the module global at call time, so both see one gate.
+    assert vp.VISION_INFLIGHT_GATE is vp.VISION_INFLIGHT_GATE
+    assert isinstance(vp.VISION_INFLIGHT_GATE, threading.BoundedSemaphore)
+    assert a is not b
+
+
+def test_gate_cap_is_env_configurable(monkeypatch) -> None:
+    # LAWVM_VISION_MAX_INFLIGHT sizes the cap at import; reload proves the knob wires
+    # through to both the constant and the semaphore's bound.
+    import importlib
+
+    from lawvm.ingest.llm_backends import vision_producer as vp
+
+    monkeypatch.setenv("LAWVM_VISION_MAX_INFLIGHT", "2")
+    reloaded = importlib.reload(vp)
+    try:
+        assert reloaded.VISION_MAX_INFLIGHT == 2
+        # A BoundedSemaphore sized to 2 admits exactly 2 tokens before blocking.
+        assert reloaded.VISION_INFLIGHT_GATE.acquire(blocking=False) is True
+        assert reloaded.VISION_INFLIGHT_GATE.acquire(blocking=False) is True
+        assert reloaded.VISION_INFLIGHT_GATE.acquire(blocking=False) is False
+    finally:
+        monkeypatch.delenv("LAWVM_VISION_MAX_INFLIGHT", raising=False)
+        importlib.reload(vp)

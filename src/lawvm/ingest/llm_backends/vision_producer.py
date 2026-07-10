@@ -36,6 +36,8 @@ from __future__ import annotations
 import base64
 import io
 import json
+import os
+import threading
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -69,6 +71,32 @@ class StructPageResult:
     images: Tuple["EmbeddedImage", ...] = ()
 
 DEFAULT_BASE_URL = "http://127.0.0.1:8080"
+
+# --------------------------------------------------------------------------- #
+# GLOBAL vision-inference concurrency gate (§ pipeline concurrency).           #
+# --------------------------------------------------------------------------- #
+#
+# The vision backend (llama.cpp @ :8080) serves a FIXED number of parallel slots
+# (``--parallel``). Work decomposition and rate-limiting are DECOUPLED: the
+# per-page ThreadPool (single PDF) and the corpus harness's per-PDF ThreadPool can
+# each be generously sized, but the number of requests actually IN FLIGHT against
+# the one server must be bounded so nested pools (per-PDF × per-page) don't MULTIPLY
+# and oversubscribe it. This ONE process-wide semaphore is that bound: every model
+# HTTP call acquires a token at the client boundary (``_post_chat``) and releases it
+# after the response, so total in-flight vision requests <= the cap regardless of
+# how the pools nest — always saturated, never oversubscribed.
+#
+# Sized from ``LAWVM_VISION_MAX_INFLIGHT`` (default 8, a typical ``--parallel``).
+# ORTHOGONAL to ``ingest.visual.PDFIUM_LOCK`` (which serializes the thread-unsafe
+# pdfium C lib — a mutex); this rate-limits the HTTP inference path — a counting
+# semaphore. Both are held; they guard different resources. Determinism is
+# unaffected: the gate only shapes TIMING (results assemble by index, temp=0).
+VISION_MAX_INFLIGHT = max(1, int(os.environ.get("LAWVM_VISION_MAX_INFLIGHT", "8") or "8"))
+
+# The shared token bucket. Module-level so EVERY ``VisionPageProducer`` (and any
+# other caller that imports it) contends on the SAME object — a per-instance
+# semaphore would not actually bound cross-pool concurrency.
+VISION_INFLIGHT_GATE = threading.BoundedSemaphore(VISION_MAX_INFLIGHT)
 
 # Build-script wire framing: every command the model emits is TERMINATED by the
 # ASCII unit-separator control char (0x1F) — newlines inside an inline / patch
@@ -395,9 +423,14 @@ class VisionPageProducer:
             data=data,
             headers={"Content-Type": "application/json"},
         )
+        # Acquire a global inference token ONLY around the actual server round-trip
+        # (payload build + response parse stay outside), so total concurrent requests
+        # against :8080 never exceed VISION_MAX_INFLIGHT no matter how the per-page /
+        # per-PDF pools nest. The gate shapes timing only — never the result.
         try:
-            with urllib.request.urlopen(req, timeout=self._timeout) as resp:
-                out = json.loads(resp.read())
+            with VISION_INFLIGHT_GATE:
+                with urllib.request.urlopen(req, timeout=self._timeout) as resp:
+                    out = json.loads(resp.read())
         except urllib.error.HTTPError as exc:
             raise VisionProducerFailure(
                 page_num=page_num,
