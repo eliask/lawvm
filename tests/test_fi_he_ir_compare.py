@@ -581,6 +581,10 @@ _BODY_CLAUSE = (
 )
 _PROVISION = "Uusi viidennen pykälän sisältö joka on riittävän pitkä vertailua varten."
 
+#: ``_pdf_proposed_bodies`` keys each body by (governing-statute-id, section label); the
+#: single-bill ``_BODY_CLAUSE`` amends testilaki (123/2020), so its 5 § body lands here.
+_BODY_KEY = ("123/2020", "5")
+
 
 def _body_reading(body: str, *, tail: str = "") -> str:
     """Lakiehdotus reading text carrying one clause and 5 §'s body (+ trailing furniture)."""
@@ -594,7 +598,7 @@ def _body_reading(body: str, *, tail: str = "") -> str:
 def test_body_clean_is_unchanged() -> None:
     from lawvm.tools.fi_he_ir_compare import _pdf_proposed_bodies
 
-    assert _pdf_proposed_bodies(_body_reading(_PROVISION))["5"] == _PROVISION
+    assert _pdf_proposed_bodies(_body_reading(_PROVISION))[_BODY_KEY] == _PROVISION
 
 
 def test_body_starts_at_lakiehdotus_not_preceding_perustelut_mention() -> None:
@@ -615,7 +619,7 @@ def test_body_starts_at_lakiehdotus_not_preceding_perustelut_mention() -> None:
         + _BODY_CLAUSE
         + f" 5 {_SEC} {_PROVISION}"
     )
-    assert _pdf_proposed_bodies(rt)["5"] == _PROVISION
+    assert _pdf_proposed_bodies(rt)[_BODY_KEY] == _PROVISION
 
 
 def test_no_enacting_clause_yields_no_body_not_perustelut_prose() -> None:
@@ -639,15 +643,15 @@ def test_genuine_body_is_never_emptied() -> None:
     # A valid single-bill clause + its 5 § body: the body must be present and non-empty
     # (the wrong-START guard must never defer a body that a genuine enacting clause anchors).
     bodies = _pdf_proposed_bodies(_body_reading(_PROVISION))
-    assert bodies.get("5")
-    assert bodies["5"] == _PROVISION
+    assert bodies.get(_BODY_KEY)
+    assert bodies[_BODY_KEY] == _PROVISION
 
 
 def test_body_trimmed_at_signature_block() -> None:
     from lawvm.tools.fi_he_ir_compare import _pdf_proposed_bodies
 
     rt = _body_reading(_PROVISION, tail="Tasavallan Presidentti MATTI MEIKÄLÄINEN Ministeri Aku Ankka")
-    assert _pdf_proposed_bodies(rt)["5"] == _PROVISION
+    assert _pdf_proposed_bodies(rt)[_BODY_KEY] == _PROVISION
 
 
 def test_body_trimmed_at_dash_running_header() -> None:
@@ -655,7 +659,7 @@ def test_body_trimmed_at_dash_running_header() -> None:
 
     # The "<YEAR> vp - HE <NUM> <page>" running header the lakiehdotus reprint carries.
     rt = _body_reading(_PROVISION, tail="1992 vp - HE 231 3")
-    assert _pdf_proposed_bodies(rt)["5"] == _PROVISION
+    assert _pdf_proposed_bodies(rt)[_BODY_KEY] == _PROVISION
 
 
 def test_body_trimmed_at_trailing_page_number() -> None:
@@ -663,21 +667,21 @@ def test_body_trimmed_at_trailing_page_number() -> None:
 
     # A lone page number appended after the provision's own sentence-ending period.
     rt = _body_reading(_PROVISION, tail="40")
-    assert _pdf_proposed_bodies(rt)["5"] == _PROVISION
+    assert _pdf_proposed_bodies(rt)[_BODY_KEY] == _PROVISION
 
 
 def test_body_does_not_bleed_into_next_law_heading() -> None:
     from lawvm.tools.fi_he_ir_compare import _pdf_proposed_bodies
 
     rt = _body_reading(_PROVISION, tail="2. Laki toisen lain muuttamisesta ja tarkennuksista")
-    assert _pdf_proposed_bodies(rt)["5"] == _PROVISION
+    assert _pdf_proposed_bodies(rt)[_BODY_KEY] == _PROVISION
 
 
 def test_body_trimmed_at_appended_voimaantulo() -> None:
     from lawvm.tools.fi_he_ir_compare import _pdf_proposed_bodies
 
     rt = _body_reading(_PROVISION + " Tämä laki tulee voimaan päivänä kuuta 20 .")
-    assert _pdf_proposed_bodies(rt)["5"] == _PROVISION
+    assert _pdf_proposed_bodies(rt)[_BODY_KEY] == _PROVISION
 
 
 def test_genuine_voimaantulo_section_is_not_over_trimmed() -> None:
@@ -686,7 +690,7 @@ def test_genuine_voimaantulo_section_is_not_over_trimmed() -> None:
     # A §-body that IS a commencement provision starts with the phrase (no preceding in-body
     # period) — it must be kept whole, never truncated to empty.
     voim = "Tämä laki tulee voimaan 1 päivänä tammikuuta 2020 ja on voimassa toistaiseksi."
-    assert _pdf_proposed_bodies(_body_reading(voim))["5"] == voim
+    assert _pdf_proposed_bodies(_body_reading(voim))[_BODY_KEY] == voim
 
 
 def test_genuine_presidentin_reference_is_not_trimmed() -> None:
@@ -694,7 +698,7 @@ def test_genuine_presidentin_reference_is_not_trimmed() -> None:
 
     # A body's own lowercase "tasavallan presidentin asetuksella" is not the signature block.
     body = "Tarkempia säännöksiä annetaan tasavallan presidentin asetuksella tarvittaessa."
-    assert _pdf_proposed_bodies(_body_reading(body))["5"] == body
+    assert _pdf_proposed_bodies(_body_reading(body))[_BODY_KEY] == body
 
 
 def test_scattered_signature_date_lets_split_word_rejoin() -> None:
@@ -706,6 +710,98 @@ def test_scattered_signature_date_lets_split_word_rejoin() -> None:
     flat = _flatten_reading_text(raw)
     assert "työnantajanaan" in flat
     assert "Helsingissä" not in flat
+
+
+# --------------------------------------------------------------------------- #
+# cross-bill body scoping — an omnibus HE reuses a section number across bills  #
+# --------------------------------------------------------------------------- #
+
+# Two bills that BOTH carry a "5 §", each with a DISTINCT body: an omnibus HE routinely
+# reuses a section number across its bills. A bare-``label`` body key first-wins-collapsed
+# the two into one, so an op matched to bill A's ``.../5`` was compared against bill B's
+# "5 §" body — a spurious payload_mismatch. Each body must be scoped to its OWN bill.
+# Bill A's body is realistically long (a real bill runs many provisions) so the two johtolauses
+# are more than one clause window apart — the regime real omnibus HEs sit in; the two "5 §"
+# bodies are then both captured, and the fix must key them distinctly rather than collapse them.
+_BODY_A = (
+    "Ensimmaisen lain viidennen pykalan sisalto on tassa ainutlaatuinen alfasana. "
+    + "Tassa pykalassa saadetaan menettelysta ja sen soveltamisesta yksityiskohtaisesti. " * 40
+).strip()
+_BODY_B = "Toisen lain viidennen pykalan sisalto on tassa ainutlaatuinen beetasana ja riittava pituus."
+
+
+def _two_bill_xml() -> bytes:
+    """Synthetic omnibus HE: bill A amends 111/2011 §5=alfa, bill B amends 222/2022 §5=beeta."""
+    def _bill(eid: str, cite: str, body: str) -> str:
+        return (
+            f'<hcontainer name="bill" eId="{eid}">'
+            f'<hcontainer name="enactingClause"><p>Eduskunnan paatoksen mukaisesti '
+            f"muutetaan testilain {cite} 5 {_SEC} seuraavasti:</p></hcontainer>"
+            f'<hcontainer name="statuteProvisionsWrapper">'
+            f'<section eId="{eid}__sec_5"><p>5 {_SEC} {body}</p></section>'
+            "</hcontainer></hcontainer>"
+        )
+
+    return (
+        '<akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">'
+        "<act><mainBody>"
+        '<hcontainer name="bills">'
+        + _bill("bill_1", "(111/2011)", _BODY_A)
+        + _bill("bill_2", "(222/2022)", _BODY_B)
+        + "</hcontainer></mainBody></act></akomaNtoso>"
+    ).encode("utf-8")
+
+
+def _two_bill_reading() -> str:
+    return (
+        "Hallituksen esitys eduskunnalle laeiksi testilakien muuttamisesta "
+        "YLEISPERUSTELUT jossa saadetaan monista asioista. Lakiehdotukset "
+        "1. Laki ensimmaisen testilain muuttamisesta "
+        f"Eduskunnan paatoksen mukaisesti muutetaan testilain (111/2011) 5 {_SEC} seuraavasti: "
+        f"5 {_SEC} {_BODY_A} "
+        "2. Laki toisen testilain muuttamisesta "
+        f"Eduskunnan paatoksen mukaisesti muutetaan testilain (222/2022) 5 {_SEC} seuraavasti: "
+        f"5 {_SEC} {_BODY_B}"
+    )
+
+
+def test_cross_bill_section_reuse_pairs_each_bills_own_body() -> None:
+    # The core fix: bill A's "5 §" body and bill B's "5 §" body are keyed by their bill's
+    # (statute-id, label), NOT bare label — so each op pairs its OWN bill's body.
+    from lawvm.tools.fi_he_ir_compare import _pdf_proposed_bodies, _xml_proposed_bodies
+
+    pdf = _pdf_proposed_bodies(_two_bill_reading())
+    xml = _xml_proposed_bodies(_two_bill_xml())
+    for bodies in (pdf, xml):
+        assert bodies[("111/2011", "5")] == _BODY_A
+        assert bodies[("222/2022", "5")] == _BODY_B
+        # NEVER first-wins-collapsed onto a single bare "5" key that aliases the two bills.
+        assert "alfasana" in bodies[("111/2011", "5")]
+        assert "beetasana" not in bodies[("111/2011", "5")]
+        assert "beetasana" in bodies[("222/2022", "5")]
+
+
+def test_cross_bill_section_reuse_is_exact_not_a_payload_mismatch() -> None:
+    # End to end: both bills' §5 ops match and each pairs its OWN body → zero payload_mismatch,
+    # EXACT. Under the bare-label bug bill A's op compared against bill B's body → a mismatch.
+    r = compare_he(_two_bill_xml(), _two_bill_reading(), he_year=2014, he_number=19)
+    assert r.compare_status == "compared"
+    matched = {d.target_ref for d in r.divergences if d.kind == "matched"}
+    assert {"111/2011/5", "222/2022/5"} <= matched
+    assert [d for d in r.divergences if d.kind == "payload_mismatch"] == []
+    assert r.exact_equivalent
+
+
+def test_single_bill_body_scoping_is_unchanged() -> None:
+    # A single-bill HE keeps exactly its one (statute, label) body and compares exact — the
+    # scoping change must not perturb the common single-bill case.
+    from lawvm.tools.fi_he_ir_compare import _pdf_proposed_bodies
+
+    bodies = _pdf_proposed_bodies(_body_reading(_PROVISION))
+    assert bodies == {_BODY_KEY: _PROVISION}
+    r = compare_he(_he_xml(_CLAUSE, bodies={"5": f"5 {_SEC} {_PROVISION}"}), _pdf_page(_CLAUSE, body5=_PROVISION), he_year=2020, he_number=7)
+    assert r.compare_status == "compared"
+    assert [d for d in r.divergences if d.kind == "payload_mismatch"] == []
 
 
 # --------------------------------------------------------------------------- #

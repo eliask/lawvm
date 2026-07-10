@@ -679,8 +679,9 @@ def _reclassify_out_of_scope_second_bills(
 # The payload stage proves the PROPOSED BODY TEXT they carry for that provision is the
 # same too, modulo ``op_equivalence.text_equivalence``'s inert quotient.  The proposed
 # text lives in the bill body (XML: the statuteProvisionsWrapper <section> bodies; PDF:
-# the bill text after "... seuraavasti:").  Both are keyed by section label; a label
-# absent (or ambiguous across bills) on either witness is TYPE-DEFERRED — counted, never
+# the bill text after "... seuraavasti:").  Both are keyed by (statute-id, section label) —
+# the op's BILL scope — so an omnibus HE's cross-bill "N §" reuse never pairs bill A's body
+# against bill B's op; a key absent on either witness is TYPE-DEFERRED — counted, never
 # forced into a spurious payload_mismatch.  REPEAL / commencement ops carry no body.
 
 #: Section-body header inside a bill's PDF reading text ("7 §", "2 a §"); the
@@ -762,12 +763,57 @@ def _normalize_section_label(raw: str) -> str:
     return re.sub(r"\s+", "", raw or "").lower()
 
 
-def _xml_proposed_bodies(xml_bytes: bytes) -> dict[str, str]:
-    """Map section label → proposed body text from the HE bill statuteProvisionsWrapper.
+def _governing_amendment_statute_id(text: str) -> str:
+    """Statute id AMENDED by the enacting clause in ``text`` ("609/1986"), else "".
 
-    First-wins on a duplicate label (a label recurring across bills is ambiguous and the
-    payload stage will simply have one entry; a genuinely colliding second body is left
-    for the deferral path).  Legacy enactment <section> children are also indexed.
+    The amended act is the citation "(N/YEAR)" governed by an amendment-verb head
+    ("muutetaan … lain (609/1986) 17 § … seuraavasti:") — NOT merely the first citation in
+    the text, because a NEW-law bill ("… säädetään:") carries no amended act yet its section
+    bodies cross-reference other laws ("… yhdenvertaisuuslain ja tasa-arvolain (609/1986)"),
+    whose citation would otherwise mis-scope that new law's sections onto an unrelated statute.
+    We take the FIRST amendment-head-governed citation followed by a "§" provision marker — the
+    same gate :func:`_enacting_clause_regions` uses on the PDF side, so both witnesses resolve a
+    bill's scope identically. A johtolause precedes its section bodies in document order, so this
+    first gated head+cite is the genuine amended act; a new-law bill (no amendment head) yields "".
+    """
+    for h in _HE_HEAD_VERB_RE.finditer(text):
+        cite = _CITE_RE.search(text, h.end(), min(len(text), h.end() + _HEAD_TO_CITE))
+        if cite is None:
+            continue
+        if _PROVISION_MARK_RE.search(text, cite.end(), min(len(text), cite.end() + _MAX_CLAUSE_CHARS)):
+            return _statute_id_of_cite(cite.group())
+    return ""
+
+
+def _wrapper_statute_id(wrapper) -> str:
+    """Governing statute id of a ``statuteProvisionsWrapper``'s bill ("609/1986"), else "".
+
+    A wrapper sits inside its bill's ``hcontainer name="bill"`` (or, defensively, its direct
+    parent). Its bill scope is the act AMENDED by the bill's enacting clause
+    (:func:`_governing_amendment_statute_id`) — the same governing-citation the parser resolves
+    each op's ``target_statute_id`` from. Scoping the section bodies to this id keeps an omnibus
+    HE's cross-bill "N §" reuse from first-wins collapsing (bill A "17 §" vs bill B "17 §"). A
+    new-law bill / unresolvable scope → "" (the op payload is then deferred, precision-first,
+    never paired to a wrong bill's body).
+    """
+    node = wrapper
+    while node is not None and node.attrib.get("name") != "bill":
+        node = node.getparent()
+    scope = node if node is not None else wrapper.getparent()
+    if scope is None:
+        return ""
+    return _governing_amendment_statute_id(_element_text(scope))
+
+
+def _xml_proposed_bodies(xml_bytes: bytes) -> dict[tuple[str, str], str]:
+    """Map (statute-id, section label) → proposed body text from the HE bill wrappers.
+
+    Each ``statuteProvisionsWrapper``'s section bodies are scoped to their bill's governing
+    statute id (:func:`_wrapper_statute_id`) so an omnibus HE that reuses a section number
+    across bills keeps the two bodies DISTINCT — a bare-label key first-wins-collapsed them,
+    so an op matched to bill A's ``.../17`` was compared against bill B's ``17 §`` body. A
+    wrapper whose bill scope is unresolvable ("") is skipped (its ops defer, precision-first).
+    First-wins within a single ``(statute, label)`` scope. Legacy enactment sections indexed.
     """
     from lxml import etree
 
@@ -775,9 +821,12 @@ def _xml_proposed_bodies(xml_bytes: bytes) -> dict[str, str]:
         root = etree.fromstring(xml_bytes)
     except etree.XMLSyntaxError:
         return {}
-    out: dict[str, str] = {}
+    out: dict[tuple[str, str], str] = {}
     for el in root.iter():
         if el.attrib.get("name") != _PAYLOAD_WRAPPER_NAME:
+            continue
+        sid = _wrapper_statute_id(el)
+        if not sid:
             continue
         for sec in el:
             tag = sec.tag
@@ -789,9 +838,21 @@ def _xml_proposed_bodies(xml_bytes: bytes) -> dict[str, str]:
             if hm is None:
                 continue
             label = _normalize_section_label(hm.group(1))
-            if label and label not in out:
-                out[label] = _LEADING_SECTION_HEADER_RE.sub("", text, count=1).strip()
+            key = (sid, label)
+            if label and key not in out:
+                out[key] = _LEADING_SECTION_HEADER_RE.sub("", text, count=1).strip()
     return out
+
+
+def _statute_id_of_cite(cite_text: str) -> str:
+    """Reduce a parenthesised statute citation ("(609/1986)") to its id ("609/1986").
+
+    The id string is the SAME shape as :func:`_statute_id_of`'s output and the parser's
+    ``target_statute_id`` (num/year), so a body keyed on a clause's governing citation and
+    an op keyed on its ``target_provision_ref`` land in the same bill scope. ``str.strip``
+    (no regex) keeps the semantic-plane regex census flat.
+    """
+    return cite_text.strip("()")
 
 
 def _enacting_clause_regions(flat: str) -> list[tuple[int, int]]:
@@ -816,15 +877,61 @@ def _enacting_clause_regions(flat: str) -> list[tuple[int, int]]:
     return regions
 
 
-def _pdf_proposed_bodies(reading_text: str) -> dict[str, str]:
-    """Segment the bill body into section label → body text, clause-region aware.
+def _bill_head_scopes(flat: str) -> list[tuple[int, str]]:
+    """Sorted (head-start, governing-statute-id) of every GENUINE johtolause head in ``flat``.
+
+    A body's BILL scope is the amended act of the enacting clause that most recently PRECEDES
+    it (:func:`_governing_body_statute_id`). This is derived from the HEAD positions — NOT the
+    exclusion regions (:func:`_enacting_clause_regions`) — so it is robust to a region whose
+    terminator-anchored span reaches back across an intervening clause: each head carries its
+    OWN "(N/YEAR)" citation (the amended act the parser resolves that clause's ops against). A
+    multi-verb johtolause ("kumotaan (A) 1 §, muutetaan (B) 2 § seuraavasti:") yields both heads,
+    so the "greatest head-start ≤ body-pos" rule scopes the "2 §" body to B (the later amend
+    head whose §-body follows), never to A. Same head+cite+"§" gate as the region recognizer.
+    """
+    scopes: list[tuple[int, str]] = []
+    for h in _HE_HEAD_VERB_RE.finditer(flat):
+        cite = _CITE_RE.search(flat, h.end(), min(len(flat), h.end() + _HEAD_TO_CITE))
+        if cite is None:
+            continue
+        if _PROVISION_MARK_RE.search(flat, cite.end(), min(len(flat), cite.end() + _MAX_CLAUSE_CHARS)) is None:
+            continue
+        scopes.append((h.start(), _statute_id_of_cite(cite.group())))
+    return scopes
+
+
+def _governing_body_statute_id(scopes: list[tuple[int, str]], pos: int) -> str:
+    """Statute id of the johtolause head that most recently precedes body offset ``pos``, else "".
+
+    Of the genuine johtolause heads (:func:`_bill_head_scopes`) starting at/before ``pos``, the
+    one with the GREATEST head-start governs — the bill whose enacting clause the body follows.
+    Greatest head-start (not nearest terminator) is what makes an omnibus HE's cross-bill "N §"
+    reuse resolve to the right bill, and a multi-verb johtolause's body resolve to its amend head.
+    """
+    best_start, best_sid = -1, ""
+    for start, sid in scopes:
+        if start <= pos and start > best_start:
+            best_start, best_sid = start, sid
+    return best_sid
+
+
+def _pdf_proposed_bodies(reading_text: str) -> dict[tuple[str, str], str]:
+    """Segment the bill body into (statute-id, section label) → body text, clause-region aware.
 
     Section-body headers are searched only OUTSIDE the enacting-clause regions
     (:func:`_enacting_clause_regions`) and after the first such clause (skipping
     detailed-perustelut prose), bounded before the rinnakkaistekstit appendix. This keeps
     a later bill's provision-list "N §" refs from being first-wins-captured as the earlier
     bill's section body.  A section body also STOPS at the next clause region (it must not
-    run into the next bill's enacting clause).  First-wins on a duplicate label.
+    run into the next bill's enacting clause).
+
+    Each body is keyed by ``(governing-statute-id, section label)`` — the statute id of the
+    enacting clause that most recently PRECEDES the header (its bill scope).  An omnibus HE
+    routinely REUSES a section number across bills (bill A "17 §" and bill B "17 §"); a bare
+    ``label`` key first-wins-collapsed the two into one body, so an op correctly matched to
+    bill A's ``.../17`` was payload-compared against bill B's ``17 §`` body — a spurious
+    payload_mismatch. Scoping the body to its bill keeps them distinct. First-wins within a
+    single ``(statute, label)`` scope (a rinnakkaistekstit dupe of the same bill's section).
     """
     flat = _lakiehdotus_region(_flatten_reading_text(reading_text))
     regions = _enacting_clause_regions(flat)
@@ -843,6 +950,7 @@ def _pdf_proposed_bodies(reading_text: str) -> dict[str, str]:
         # wrong provision (which could silently drop genuine leading body text).
         return {}
     body_start = regions[0][1]
+    scopes = _bill_head_scopes(flat)
 
     def _in_region(pos: int) -> bool:
         return any(a <= pos < b for a, b in regions)
@@ -856,10 +964,13 @@ def _pdf_proposed_bodies(reading_text: str) -> dict[str, str]:
         for hm in _PDF_SECTION_HEADER_RE.finditer(flat, body_start)
         if not _in_region(hm.start())
     ]
-    out: dict[str, str] = {}
+    out: dict[tuple[str, str], str] = {}
     for i, hm in enumerate(headers):
         label = _normalize_section_label(hm.group(1))
         if not label:
+            continue
+        sid = _governing_body_statute_id(scopes, hm.start())
+        if not sid:  # precision-first: an unresolved bill scope is deferred, never guessed
             continue
         start = hm.end()
         end = headers[i + 1].start() if i + 1 < len(headers) else len(flat)
@@ -873,10 +984,11 @@ def _pdf_proposed_bodies(reading_text: str) -> dict[str, str]:
         voim = _PDF_BODY_VOIMAANTULO_RE.search(flat, start, end)
         if voim is not None:
             end = voim.start()
-        if label not in out:
+        key = (sid, label)
+        if key not in out:
             body = flat[start:end].strip()
             body = _PDF_BODY_TRAILING_PAGENUM_RE.sub("", body)
-            out[label] = body
+            out[key] = body
     return out
 
 
@@ -917,8 +1029,8 @@ def _trim(text: str) -> str:
 
 
 def diff_proposed_payloads(
-    xml_bodies: dict[str, str],
-    pdf_bodies: dict[str, str],
+    xml_bodies: dict[tuple[str, str], str],
+    pdf_bodies: dict[tuple[str, str], str],
     matched_ops: tuple[HEFlatOp, ...],
 ) -> PayloadDiffResult:
     """Compare the proposed BODY TEXT of each matched op across witnesses.
@@ -927,23 +1039,27 @@ def diff_proposed_payloads(
     body is absent on either witness — or whose PDF segment shares too few words with the
     XML body to be the same provision (a geom segmentation miss) — is TYPE-DEFERRED;
     otherwise the two bodies are compared with :func:`text_equivalence` and a surviving
-    residual becomes a ``payload_mismatch``.  Section labels are matched once (first op
-    per label).
+    residual becomes a ``payload_mismatch``.
+
+    Both body maps are keyed by ``(statute-id, section label)`` (the op's bill scope), so
+    an omnibus HE's cross-bill "N §" reuse never pairs bill A's "17 §" body against bill B's
+    "17 §" op. Each ``(statute, label)`` scope is compared once (first op in it).
     """
     out: list[OpDivergence] = []
     compared = deferred = skipped = 0
-    seen_labels: set[str] = set()
+    seen_labels: set[tuple[str, str]] = set()
     for op in matched_ops:
         if op.action in ("repeal", "commencement", "expiry"):
             skipped += 1
             continue
         label = _section_label_of(op.target_ref)
-        if not label or label in seen_labels:
+        key = (_statute_id_of(op.target_ref), label)
+        if not label or key in seen_labels:
             deferred += 1
             continue
-        seen_labels.add(label)
-        xml_text = xml_bodies.get(label)
-        pdf_text = pdf_bodies.get(label)
+        seen_labels.add(key)
+        xml_text = xml_bodies.get(key)
+        pdf_text = pdf_bodies.get(key)
         if xml_text is None or pdf_text is None:
             deferred += 1
             continue
