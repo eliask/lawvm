@@ -259,18 +259,32 @@ def test_classify_no_johtolause_sami_is_language_mismatch() -> None:
     assert status == "pdf_language_mismatch"
 
 
-def test_classify_no_johtolause_verb_without_annex_is_suspect_defect() -> None:
-    # Finnish amendment verb present, no annex heading, but no johtolause closed:
-    # a SUSPECT reader/segmentation defect — surfaced, not absolved as an annex.
+def test_classify_no_johtolause_full_signature_is_suspect_defect() -> None:
+    # The FULL enacting signature (verb + "(N/YEAR)" + "§" + "seuraavasti") present but
+    # no johtolause closed, not annex-headed: a SUSPECT reader/segmentation defect.
     from lawvm.tools.fi_amendment_ir_compare import classify_no_operative_johtolause
 
     text = (
-        "Eduskunnan paatoksen mukaisesti muutetaan jonkin lain useita pykalia "
-        "ja niiden nojalla annettuja saannoksia koskien monenlaisia asioita "
+        "Eduskunnan paatoksen mukaisesti muutetaan testilain (123/2020) 5 § ja 7 § "
+        "seuraavasti mutta segmentointi rikkoi lauseen eika sita saatu suljettua "
     ) * 4
     status, detail = classify_no_operative_johtolause(text)
     assert status == "pdf_johtolause_unparsed"
     assert "suspect" in detail
+
+
+def test_classify_bare_verb_table_prose_is_benign_annex() -> None:
+    # An appendix/table with an amendment verb in BODY prose but NO co-located
+    # enacting signature (no "(N/YEAR)" citation) must type as benign annex, NOT a
+    # suspect defect — the adjudicated johtolause_unparsed queue was ALL such tables.
+    from lawvm.tools.fi_amendment_ir_compare import classify_no_operative_johtolause
+
+    fee_table = (
+        "SISAASIAINMINISTERION MAKSULLISET JULKISOIKEUDELLISET SUORITTEET "
+        "Pelastusosasto todistus lisataan kohtaan uusi maksuluokka hinnasto "
+    ) * 4
+    status, _ = classify_no_operative_johtolause(fee_table)
+    assert status == "pdf_annex_only"
 
 
 def test_classify_no_johtolause_annex_heading_is_benign_annex() -> None:

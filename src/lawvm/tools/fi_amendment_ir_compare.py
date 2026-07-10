@@ -177,6 +177,13 @@ _ANNEX_HEADING_RE = compile_classifier_regex(
     re.IGNORECASE,
     classifier_id="fi_amendment_ir.pdf_annex_heading",
 )
+#: A bare statute citation "(NUM/YEAR)" — the target anchor a genuine enacting
+#: johtolause names right after its amendment verb. Required (with a "§" and
+#: "seuraavasti") to call a no-johtolause PDF a SUSPECT reader defect rather than
+#: a benign appendix: a fee schedule / requirements table / laskuperuste carries an
+#: amendment verb in body prose but NOT the co-located verb+citation+§+seuraavasti
+#: enacting SIGNATURE, so it must type as annex, not suspect.
+_PDF_CITE_RE = re.compile(r"\(\d{1,5}/\d{4}\)")
 
 
 def classify_no_operative_johtolause(reading_text: str) -> "tuple[str, str]":
@@ -196,10 +203,13 @@ def classify_no_operative_johtolause(reading_text: str) -> "tuple[str, str]":
                                 Swedish manifestation under the fin/ path) — a
                                 pairing artifact; benign for FI-vs-FI, typed
                                 distinct so it is not miscounted as an annex.
-      ``pdf_johtolause_unparsed`` a Finnish amendment VERB is present yet no
+      ``pdf_johtolause_unparsed`` the FULL enacting SIGNATURE (verb + "(N/YEAR)"
+                                citation + "§" + "seuraavasti") is present yet no
                                 johtolause closed and it is not annex-headed —
                                 SUSPECT reader/segmentation defect; surfaced for
-                                adjudication, never silently absolved.
+                                adjudication, never silently absolved. (A bare
+                                amendment verb without the co-located signature is
+                                appendix/table body prose → pdf_annex_only.)
       ``pdf_annex_only``        substantial Finnish non-amendment prose (annex /
                                 table / body), no enacting johtolause — the
                                 genuine benign annex case.
@@ -219,13 +229,25 @@ def classify_no_operative_johtolause(reading_text: str) -> "tuple[str, str]":
             "media PDF is a Northern Sámi manifestation (wrong-language pairing "
             "under the fin/ path), not the Finnish gazette — no FI johtolause",
         )
-    # A Finnish amendment verb present but NO annex heading ⇒ the page looks like
-    # an enacting gazette whose johtolause we failed to close: a suspect defect.
-    if _OPERATIVE_VERB_RE.search(flat) and not _ANNEX_HEADING_RE.search(flat[:200]):
+    # The FULL enacting-johtolause SIGNATURE present but no clause closed ⇒ the page
+    # looks like an enacting gazette whose johtolause we failed to segment: a suspect
+    # defect. The signature is ALL of {operative verb, statute citation "(N/YEAR)",
+    # "§", "seuraavasti"} — the same anchors ``extract_operative_johtolause`` needs.
+    # Requiring all four (not just a verb) keeps appendix/table/laskuperuste PDFs —
+    # which carry an amendment verb in body prose but no co-located enacting signature
+    # — OUT of the suspect stratum (adjudication of the whole johtolause_unparsed queue
+    # found every bare-verb case was an appendix/table, 0 genuine reader defects).
+    if (
+        _OPERATIVE_VERB_RE.search(flat)
+        and _SEURAAVASTI_RE.search(flat)
+        and _PDF_CITE_RE.search(flat)
+        and "§" in flat
+        and not _ANNEX_HEADING_RE.search(flat[:200])
+    ):
         return (
             "pdf_johtolause_unparsed",
-            f"Finnish amendment verb present but no johtolause closed ({n} chars) "
-            "— suspect reader/segmentation defect, adjudicate",
+            f"full enacting signature (verb + (N/YEAR) + § + seuraavasti) present but no "
+            f"johtolause closed ({n} chars) — suspect reader/segmentation defect, adjudicate",
         )
     if _ANNEX_HEADING_RE.search(flat[:300]):
         return (

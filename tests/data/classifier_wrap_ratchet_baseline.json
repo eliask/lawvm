@@ -115,7 +115,7 @@
     "src/lawvm/tools/evidence.py": 2,
     "src/lawvm/tools/export_markdown_git.py": 5,
     "src/lawvm/tools/faults.py": 2,
-    "src/lawvm/tools/fi_amendment_ir_compare.py": 8,
+    "src/lawvm/tools/fi_amendment_ir_compare.py": 9,
     "src/lawvm/tools/fi_appendix_structure.py": 1,
     "src/lawvm/tools/fi_he_ir_compare.py": 10,
     "src/lawvm/tools/fi_parse_corpus.py": 1,
@@ -204,5 +204,5 @@
     "src/lawvm/us_federal/table3.py": 4,
     "src/lawvm/us_federal/usc_witness.py": 4
   },
-  "total_raw_re_compile": 1293
+  "total_raw_re_compile": 1294
 }
