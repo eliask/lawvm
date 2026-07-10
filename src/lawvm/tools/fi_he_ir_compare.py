@@ -150,8 +150,14 @@ _HE_HEAD_VERB_RE = re.compile(
 #: directive head must be followed by (the parser resolves the op targets against it).
 _CITE_RE = re.compile(r"\(\d{1,5}/\d{4}\)")
 
-#: Max distance from an amendment-verb head to the statute citation it governs.
-_HEAD_TO_CITE = 160
+#: Max distance from an amendment-verb head to the statute citation it governs. Must
+#: span a full Finnish law TITLE, which for EU-implementation acts is long ("lisätään
+#: hallinnollisesta yhteistyöstä verotuksen alalla … annettuun lakiin (185/2013)" ≈ 238
+#: chars) — at 160 the second bill of a multi-bill HE was dropped (op_missing). The head
+#: verb matches only enacting-PRESENT forms (not the conditional perustelut discuss in),
+#: and a "§" + "seuraavasti" are still required in-window, so a wide title budget does not
+#: admit perustelut prose.
+_HEAD_TO_CITE = 400
 
 #: A provision marker ("§") — a genuine amendment directive lists the provisions it
 #: touches (7 §, 9 §:n 2 momentti, ...) between its statute citation and "seuraavasti:".
