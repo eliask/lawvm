@@ -748,6 +748,44 @@ _PDF_BODY_VOIMAANTULO_RE = re.compile(
 #: leaves genuine content untouched.  Fixed-width look-behind, flat quantifiers (FW-07).
 _PDF_BODY_TRAILING_PAGENUM_RE = re.compile(r"(?<=\.)\s{1,3}\d{1,3}\s{0,3}$")
 
+#: A section's TITLE heading (otsikko) sits in reading order just BEFORE that section's "N §"
+#: number, so when a body runs up to the FOLLOWING "N §" header it over-captures the next
+#: section's title ("…1 luvun 1 §:ssä. Poliisimiehen virka-asemaan liittyvät säännökset" —
+#: the trailing phrase is the NEXT section's heading; "…virkamieslaissa. Erinäiset säännökset").
+#: The current boundary stops at the next "N §" NUMBER, but the title precedes that number, so
+#: the boundary is too LATE. The XML section body never carries the next title, so it is a
+#: spurious payload_mismatch. A section otsikko is a SHORT, Capitalized noun phrase (often
+#: ending "…säännökset", "Voimaantulo", "Määritelmät", "Soveltamisala") that — unlike genuine
+#: body prose — carries NO sentence-ending period; we trim it off the body's tail, keeping the
+#: body's own final sentence (through its last period) INTACT. Below are the precision bounds:
+#: only a short, few-word, punctuation-free, digit-free Capitalized trailing phrase is treated
+#: as a title. Anything else leaves the body slightly under-trimmed (a typed divergence) rather
+#: than risk CUTTING real content — a title is short/Capitalized/§-adjacent, body prose is not.
+_SECTION_TITLE_MAX_CHARS = 64
+_SECTION_TITLE_MAX_WORDS = 8
+
+
+def _looks_like_section_title(tail: str) -> bool:
+    """True iff ``tail`` is a short Capitalized section-title heading (no sentence period).
+
+    A section otsikko is a brief Capitalized noun phrase ("Erinäiset säännökset",
+    "Voimaantulo", "Määritelmät") carrying NO sentence-ending period, ":" list-intro, ";",
+    "§" marker, or digit — the discriminators that separate it from a genuine trailing body
+    SENTENCE (which ends in a period) or a provision cross-reference. Pure bounded ``str``
+    scan (no regex) so the semantic-plane regex census stays flat (the same discipline as
+    :func:`_statute_id_of` / :func:`_resolve_span_end`). Precision-first: a phrase failing
+    ANY test is NOT trimmed, leaving the body under-trimmed rather than cutting real content.
+    """
+    if not tail or len(tail) > _SECTION_TITLE_MAX_CHARS:
+        return False
+    if not tail[0].isupper():
+        return False
+    for ch in tail:
+        if ch in ".:;§" or ch.isdigit():
+            return False
+    return len(tail.split()) <= _SECTION_TITLE_MAX_WORDS
+
+
 #: Payload-body containers whose <section> children are proposed statute text.
 _PAYLOAD_WRAPPER_NAME = "statuteProvisionsWrapper"
 
@@ -985,8 +1023,8 @@ def _pdf_proposed_bodies(reading_text: str) -> dict[tuple[str, str], str]:
         if not sid:  # precision-first: an unresolved bill scope is deferred, never guessed
             continue
         start = hm.end()
-        end = headers[i + 1].start() if i + 1 < len(headers) else len(flat)
-        end = min(end, _next_region_start(start))  # do not spill into the next bill's clause
+        raw_end = headers[i + 1].start() if i + 1 < len(headers) else len(flat)
+        end = min(raw_end, _next_region_start(start))  # do not spill into the next bill's clause
         trailer = _PDF_BODY_TRAILER_RE.search(flat, start, end)
         if trailer is not None:
             end = trailer.start()
@@ -996,6 +1034,21 @@ def _pdf_proposed_bodies(reading_text: str) -> dict[tuple[str, str], str]:
         voim = _PDF_BODY_VOIMAANTULO_RE.search(flat, start, end)
         if voim is not None:
             end = voim.start()
+        # Next-section TITLE over-capture: a section otsikko sits in reading order just BEFORE
+        # the following "N §" number (see _looks_like_section_title), so a body that ran all the
+        # way up to that next header (no furniture trailer / voimaantulo fired first, i.e. end is
+        # still the next-header boundary raw_end) swallowed the next section's title heading.
+        # Trim it off the body's tail — the last sentence-ending period splits the body's own
+        # final sentence from the trailing title, so keep everything through that period and drop
+        # only a short Capitalized title after it. Precision-first: a genuine trailing SENTENCE
+        # ends in a period (so nothing follows the last period to trim) — this never truncates
+        # real body prose; ``p > start`` keeps the retained body non-empty.
+        if i + 1 < len(headers) and end == raw_end:
+            p = flat.rfind(".", start, end)
+            if p > start:
+                tail = flat[p + 1 : end].strip().strip('"“”')
+                if _looks_like_section_title(tail):
+                    end = p + 1
         key = (sid, label)
         if key not in out:
             body = flat[start:end].strip()

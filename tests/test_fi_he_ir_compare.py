@@ -756,6 +756,98 @@ def test_scattered_signature_date_lets_split_word_rejoin() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# next-section TITLE over-capture — the otsikko before the next "N §" bled in.  #
+# --------------------------------------------------------------------------- #
+
+# A two-section bill: 5 § body, then the NEXT section's TITLE heading (otsikko), then 6 §.
+# In reading order the otsikko precedes "6 §", so a body bounded at the next "N §" NUMBER
+# over-captures that title (HE 224/2010: "…1 luvun 1 §:ssä. Poliisimiehen virka-asemaan
+# liittyvät säännökset" / "…virkamieslaissa. Erinäiset säännökset").
+_TWO_SEC_CLAUSE = (
+    f"Eduskunnan päätöksen mukaisesti muutetaan testilain (123/2020) 5 {_SEC} ja 6 {_SEC} "
+    "seuraavasti:"
+)
+_SEC6_KEY = ("123/2020", "6")
+_BODY6 = "Kuudennen pykälän oma sisältö joka on niin ikään riittävän pitkä vertailua varten."
+
+
+def _two_section_reading(body5: str, title: str, body6: str = _BODY6) -> str:
+    """Lakiehdotus reading text: 5 §'s body, an optional next-section title, then 6 §'s body."""
+    return (
+        "Hallituksen esitys eduskunnalle laiksi testilain muuttamisesta "
+        "YLEISPERUSTELUT jossa säädetään monista asioista. Lakiehdotukset "
+        "1. Laki testilain muuttamisesta " + _TWO_SEC_CLAUSE
+        + f" 5 {_SEC} {body5} {title} 6 {_SEC} {body6}"
+    )
+
+
+def test_body_trimmed_at_next_section_title_heading() -> None:
+    from lawvm.tools.fi_he_ir_compare import _pdf_proposed_bodies
+
+    # The trailing "Erinäiset säännökset" is the NEXT section's otsikko (it precedes "6 §"),
+    # NOT part of 5 §'s body — it must be trimmed off, and 6 §'s own body kept intact.
+    bodies = _pdf_proposed_bodies(_two_section_reading(_PROVISION, "Erinäiset säännökset"))
+    assert bodies[_BODY_KEY] == _PROVISION
+    assert bodies[_SEC6_KEY] == _BODY6
+
+
+def test_body_trimmed_at_multiword_next_section_title() -> None:
+    from lawvm.tools.fi_he_ir_compare import _pdf_proposed_bodies
+
+    # The real HE 224/2010 §2 case: a multi-word jakso heading before the next "N §".
+    title = "Poliisimiehen virka-asemaan liittyvät säännökset"
+    bodies = _pdf_proposed_bodies(_two_section_reading(_PROVISION, title))
+    assert bodies[_BODY_KEY] == _PROVISION
+    assert title not in bodies[_BODY_KEY]
+
+
+def test_body_with_no_next_section_title_is_unchanged() -> None:
+    from lawvm.tools.fi_he_ir_compare import _pdf_proposed_bodies
+
+    # A body abutting the next "N §" with NO intervening title (title == "") is left whole:
+    # nothing follows its final period, so the trim never fires.
+    bodies = _pdf_proposed_bodies(_two_section_reading(_PROVISION, ""))
+    assert bodies[_BODY_KEY] == _PROVISION
+    assert bodies[_SEC6_KEY] == _BODY6
+
+
+def test_genuine_trailing_sentence_is_not_trimmed_as_title() -> None:
+    from lawvm.tools.fi_he_ir_compare import _pdf_proposed_bodies
+
+    # A body whose LAST sentence is short + Capitalized but ends in a period is genuine body
+    # prose, NOT a title — it must never be truncated mid-body. Here "Se on tärkeää." trails
+    # a period, so the last-period boundary leaves nothing title-shaped to trim.
+    body5 = "Ensimmäinen virke pykälän sisällöstä on tässä. Se on tärkeää."
+    bodies = _pdf_proposed_bodies(_two_section_reading(body5, "Voimaantulo"))
+    assert bodies[_BODY_KEY] == body5
+
+
+def test_next_section_title_with_digit_left_under_trimmed_not_cut() -> None:
+    from lawvm.tools.fi_he_ir_compare import _pdf_proposed_bodies
+
+    # Precision-first: a trailing phrase carrying a digit or ":" is NOT treated as a title
+    # (it could be a genuine cross-reference), so it is left under-trimmed — never mis-cut.
+    body5 = _PROVISION
+    bodies = _pdf_proposed_bodies(_two_section_reading(body5, "Otsikko 3 luvusta"))
+    # Body retains its own final sentence (never emptied / truncated mid-sentence).
+    assert bodies[_BODY_KEY].startswith(_PROVISION)
+
+
+def test_looks_like_section_title_discriminator() -> None:
+    from lawvm.tools.fi_he_ir_compare import _looks_like_section_title
+
+    assert _looks_like_section_title("Erinäiset säännökset")
+    assert _looks_like_section_title("Voimaantulo")
+    assert _looks_like_section_title("Poliisimiehen virka-asemaan liittyvät säännökset")
+    # Sentence (period), list-intro (colon), §-reference, digit, lowercase start → not a title.
+    assert not _looks_like_section_title("Tämä on kokonainen virke.")
+    assert not _looks_like_section_title("seuraavat kohdat:")
+    assert not _looks_like_section_title("Katso 5 § tarkemmin")
+    assert not _looks_like_section_title("noudatetaan soveltuvin osin")
+    assert not _looks_like_section_title("")
+
+
+# --------------------------------------------------------------------------- #
 # cross-bill body scoping — an omnibus HE reuses a section number across bills  #
 # --------------------------------------------------------------------------- #
 
