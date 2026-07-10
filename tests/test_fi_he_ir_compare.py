@@ -274,6 +274,79 @@ def test_genuine_muutetaan_bill_extracts_fully() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Design B: bills-heading anchor widens the bound for a mega-johtolause,       #
+# while fencing the perustelut out (no op_extra regression).                  #
+# --------------------------------------------------------------------------- #
+
+
+def _overlong_provision_list(min_chars: int) -> str:
+    """A provision enumeration long enough to push "seuraavasti:" past ``min_chars``."""
+    parts = [f"{i} {_SEC}:n {i % 4 + 1} momentti" for i in range(1, 400)]
+    listing = ", ".join(parts)
+    assert len(listing) > min_chars, len(listing)
+    return listing
+
+
+def test_mega_johtolause_past_narrow_bound_captured_after_bills_heading() -> None:
+    # A STRUCTURAL mega-johtolause enumerates hundreds of provisions, so its "seuraavasti:"
+    # terminator lands WELL past the narrow 2400-char default. Anchored at the genuine
+    # "Lakiehdotukset N. Laki" bills heading (perustelut fenced out), the head→terminator
+    # bound is widened so the whole clause is captured instead of dropped (all-ops-missing).
+    listing = _overlong_provision_list(2400)
+    clause = f"muutetaan testilain (123/2020) {listing} seuraavasti:"
+    assert len(clause) > 2400
+    text = (
+        "YLEISPERUSTELUT jossa käsitellään ehdotusta laajasti. "
+        "Lakiehdotukset 1. Laki testilain muuttamisesta " + clause + f" 5 {_SEC} Uusi teksti."
+    )
+    spans = extract_enacting_clause_spans(text)
+    assert len(spans) == 1
+    assert spans[0].startswith("muutetaan testilain (123/2020)")
+    assert spans[0].rstrip().endswith("seuraavasti:")
+
+
+def test_mega_johtolause_stays_dropped_without_bills_heading() -> None:
+    # The widened bound is GATED on the bills heading. The identical overlong clause with NO
+    # "Lakiehdotukset N. Laki" heading keeps the narrow default bound, so its distant
+    # terminator is (correctly) not reached — a terminator-less / perustelut head can never
+    # grab an arbitrarily distant "seuraavasti:".
+    listing = _overlong_provision_list(2400)
+    clause = f"muutetaan testilain (123/2020) {listing} seuraavasti: Uusi teksti."
+    assert extract_enacting_clause_spans(clause) == []
+
+
+def test_perustelut_false_head_before_bills_heading_not_captured() -> None:
+    # A detailed-perustelut sentence carries the SAME amendment-verb + citation + "§" +
+    # "seuraavasti" signature as an enacting clause. It sits BEFORE the "Lakiehdotukset N.
+    # Laki" bills heading, so anchoring the scan there fences it out — only the genuine
+    # directive after the heading is captured, so it contributes no op_extra.
+    perustelut = (
+        "Yksityiskohtaisissa perusteluissa muutetaan esityksen mukaan viittauslakia "
+        f"(999/1999) sen 3 {_SEC} seuraavasti: kuvaillaan muutosta. "
+    )
+    genuine = f"muutetaan testilain (123/2020) 5 {_SEC} seuraavasti: Uusi 5 §."
+    text = perustelut + "Lakiehdotukset 1. Laki testilain muuttamisesta " + genuine
+    spans = extract_enacting_clause_spans(text)
+    assert len(spans) == 1
+    assert "(123/2020)" in spans[0]
+    assert "(999/1999)" not in spans[0]
+
+
+def test_stray_lakiehdotukset_word_not_anchored_without_numbered_bill() -> None:
+    # A capitalized "Lakiehdotukset" word in prose (no numbered "N. Laki" follow) must NOT
+    # be taken as the bills heading — otherwise it would wrongly advance the scan start past a
+    # genuine directive. Here the only "Lakiehdotukset" is a stray prose word AFTER the
+    # genuine bill, so the scan must still open at the region start and capture the bill.
+    text = (
+        "Lakiehdotukset muutetaan testilain (123/2020) 5 " + _SEC + " seuraavasti: Uusi 5 §. "
+        "Lakiehdotukset ovat valiokunnan mukaan perusteltuja."
+    )
+    spans = extract_enacting_clause_spans(text)
+    assert len(spans) == 1
+    assert "(123/2020)" in spans[0]
+
+
+# --------------------------------------------------------------------------- #
 # flatten + diff                                                             #
 # --------------------------------------------------------------------------- #
 

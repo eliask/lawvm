@@ -177,6 +177,25 @@ _AMEND_VERB_RE = re.compile(
 #: Bounded window back from a "... seuraavasti:" terminator (AGENTS.md §1.11 bound).
 _MAX_CLAUSE_CHARS = 2400
 
+#: Widened head→"seuraavasti:" bound used ONLY once the scan is anchored at the genuine
+#: "Lakiehdotukset" bills-section heading (:func:`_lakiehdotus_scan_start`). A STRUCTURAL
+#: mega-amendment johtolause enumerates hundreds of provisions and runs 3k–13k chars to its
+#: terminator, overflowing the narrow default → the whole clause (and every op it carries) was
+#: silently dropped (the dominant mega-omnibus op_missing cause). The narrow default cannot
+#: simply be raised: a wide window over the FULL region lets detailed-perustelut prose (which
+#: repeats the amendment-verb + citation + "§" + "seuraavasti" signature) be mis-read as
+#: clauses (op_extra explosion). Anchoring at the bills heading FENCES the perustelut out, so
+#: the bound can be widened here without that regression. Set just above the largest real
+#: johtolause (~13.4k over the census) with margin, yet finite so a terminator-less head cannot
+#: grab an arbitrarily distant terminator. Bounded (FW-07).
+_LAKIEHDOTUS_SCAN_BOUND = 16000
+
+#: The genuine bills-section heading token a modern multi-bill HE prints its lakiehdotus
+#: directives under ("Lakiehdotukset 1. Laki …", nominative plural). Matched by ``str.rfind``
+#: (no regex — keeps the semantic-plane regex census flat, the same discipline as
+#: :func:`_resolve_span_end` / :func:`_statute_id_of`).
+_LAKIEHDOTUS_HEADING = "Lakiehdotukset"
+
 #: End-of-lakiehdotus marker: after the bill directives an HE carries the
 #: Rinnakkaistekstit (parallel-texts appendix — a two-column
 #: "Voimassa oleva laki | Ehdotus" reprint of every amended law) and the Liitteet.
@@ -245,6 +264,52 @@ def _lakiehdotus_region(flat: str) -> str:
     return flat[: m.start()] if m else flat
 
 
+def _numbered_bill_follows(flat: str, p: int) -> bool:
+    """True iff a numbered bill token ("<digits>. Laki") begins at/just after ``flat[p:]``.
+
+    The genuine "Lakiehdotukset" section heading is ALWAYS immediately followed by its first
+    numbered bill ("Lakiehdotukset 1. Laki …"); a stray capitalized "Lakiehdotukset" word in
+    prose is not. Confirming the numbered-bill follow lets the heading anchor reject that stray
+    word without a regex (bounded manual scan → the regex census stays flat).
+    """
+    seg = flat[p : p + 16].lstrip(" ")
+    i = 0
+    while i < len(seg) and seg[i].isdigit():
+        i += 1
+    if i == 0:  # no bill ordinal
+        return False
+    rest = seg[i:].lstrip(" ")
+    if not rest.startswith("."):
+        return False
+    return rest[1:].lstrip(" ").startswith("Laki")
+
+
+def _lakiehdotus_scan_start(flat: str) -> int:
+    """Offset of the genuine "Lakiehdotukset" bills-section heading in ``flat``, else 0.
+
+    A modern multi-bill HE prints its bill directives under a "Lakiehdotukset 1. Laki …"
+    (nominative-plural) section heading. The perustelut that PRECEDE it discuss the same
+    provisions with the same amendment-verb + citation + "§" + "seuraavasti" signature, so a
+    widened char bound over the whole region would mis-read them as enacting clauses (op_extra).
+    Anchoring the scan at this heading FENCES the perustelut out, which is what lets
+    :func:`extract_enacting_clause_spans` widen the bound (:data:`_LAKIEHDOTUS_SCAN_BOUND`) to
+    admit a mega-johtolause without that regression. An EARLIER "Lakiehdotukset" is the
+    table-of-contents entry, so the LAST heading is taken (``str.rfind`` back-scan, no regex);
+    each candidate must be followed by a numbered bill ("N. Laki") so a stray capitalized word
+    is skipped. No heading (single-bill / older HEs) → 0: the scan opens at the region start and
+    :func:`extract_enacting_clause_spans` keeps the unchanged narrow default bound.
+    """
+    end = len(flat)
+    probe = len(_LAKIEHDOTUS_HEADING)
+    while True:
+        pos = flat.rfind(_LAKIEHDOTUS_HEADING, 0, end)
+        if pos < 0:
+            return 0
+        if _numbered_bill_follows(flat, pos + probe):
+            return pos
+        end = pos  # skip this stray occurrence, keep back-scanning for the real heading
+
+
 def _next_bill_head_pos(flat: str, lo: int, hi: int) -> int:
     """Start offset of the next amendment-verb head+citation in ``flat[lo:hi]``, else -1.
 
@@ -307,16 +372,30 @@ def extract_enacting_clause_spans(
     duplicate spans (a second head before the same terminator; the rinnakkaistekstit
     repeat) are harmless — the op-set diff de-duplicates by target.  Returns spans in
     reading order.
+
+    When the reading text carries the genuine "Lakiehdotukset N. Laki" bills-section heading
+    (:func:`_lakiehdotus_scan_start`), the scan is ANCHORED there — the detailed-perustelut
+    that precede it (which carry the same amendment-verb + citation + "§" + "seuraavasti"
+    signature) are fenced out — and the head→terminator bound is WIDENED to
+    :data:`_LAKIEHDOTUS_SCAN_BOUND` so a STRUCTURAL mega-johtolause (thousands of chars
+    enumerating hundreds of provisions) is captured whole rather than dropped past the narrow
+    default (the dominant mega-omnibus op_missing cause). With no bills heading (single-bill /
+    older HEs) the scan opens at the region start with the unchanged narrow ``max_clause_chars``
+    default, so those HEs — and the op_extra guard — are untouched.
     """
     flat = _lakiehdotus_region(_flatten_reading_text(reading_text))
+    scan_lo = _lakiehdotus_scan_start(flat)
+    # Anchored at the genuine bills heading the perustelut are fenced out, so the char bound
+    # can be widened to admit a mega-johtolause; otherwise keep the narrow default.
+    bound = _LAKIEHDOTUS_SCAN_BOUND if scan_lo else max_clause_chars
     spans: list[str] = []
-    for head in _HE_HEAD_VERB_RE.finditer(flat):
+    for head in _HE_HEAD_VERB_RE.finditer(flat, scan_lo):
         hstart = head.start()
         # The head must govern a statute citation just after it.
         cite = _CITE_RE.search(flat, head.end(), min(len(flat), head.end() + _HEAD_TO_CITE))
         if cite is None:
             continue
-        term = _TERMINATOR_RE.search(flat, hstart, hstart + max_clause_chars)
+        term = _TERMINATOR_RE.search(flat, hstart, hstart + bound)
         if term is None:
             continue
         # A terminator-less repeal ("kumotaan (id).") owns no "seuraavasti:"; if the nearest
