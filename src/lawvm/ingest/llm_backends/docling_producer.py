@@ -393,3 +393,44 @@ def structural_pages(
             )
         )
     return pages
+
+
+class DoclingUnavailable(RuntimeError):
+    """Raised when Docling page nodes are requested but the ``docling`` extra is absent.
+
+    A typed raise, never a silent empty (AGENTS.md §1.10): "docling not installed"
+    and "docling read this page as blank" are DIFFERENT facts — the former is a
+    capability gap the caller must route around, the latter is a genuine residual.
+    """
+
+
+def docling_page_nodes(
+    manifestation: SourceManifestation,
+    page_num: int,
+    *,
+    producer: DoclingStructuralProducer | None = None,
+) -> Tuple[SourceDocumentNode, ...]:
+    """Thin ``is_available``-gated adapter: one page's Docling structural nodes.
+
+    The reader calls this to obtain Docling's structural proposal for a single
+    page — a ``TABLE`` carries real ``TABLE_ROW``/``TABLE_CELL`` children, the
+    distinctive contribution a dense municipality×tax-class grid needs. It reuses
+    the producer's existing lowering verbatim (no new conversion path); this is
+    only the availability gate + a page slice, so routing stays central (the
+    caller wires it into ``converge_page``, not this function).
+
+    Determinism firewall (AGENTS.md §1.3): if the ``docling`` extra is not
+    importable, this raises ``DoclingUnavailable`` — a typed capability gap, never
+    a silent ``()`` that a caller could mistake for "Docling saw a blank page".
+    Every returned node is ``SINGLE_WITNESS``; corroboration is adjudication's job.
+
+    ``producer`` is injectable so a hermetic test drives the gate and page routing
+    with a pre-populated producer and no docling dependency, network, or PDF.
+    """
+    producer = producer if producer is not None else DoclingStructuralProducer()
+    if not producer.is_available():
+        raise DoclingUnavailable(
+            "docling extra not installed; cannot produce Docling page nodes "
+            "(install `docling` to enable the TableFormer structural witness)"
+        )
+    return producer.propose_page(manifestation, page_num)

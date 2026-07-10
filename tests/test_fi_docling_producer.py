@@ -27,7 +27,9 @@ from lawvm.finland.source_document.docling_producer import (
     DoclingPageView,
     DoclingStructuralProducer,
     DoclingTableView,
+    DoclingUnavailable,
     docling_document_to_nodes,
+    docling_page_nodes,
 )
 
 _DIGEST = "d" * 64
@@ -151,6 +153,55 @@ def test_propose_page_missing_page_returns_empty() -> None:
     assert producer.propose_page(_manifestation(), 2) == ()
     nodes = producer.propose_page(_manifestation(), 1)
     assert nodes and nodes[0].kind is SourceDocumentNodeKind.HEADING
+
+
+# --------------------------------------------------------------------------- #
+# The thin adapter: docling_page_nodes (is_available-gated, injectable).       #
+# Hermetic — a fake-cached producer drives gate + routing with no docling.     #
+# --------------------------------------------------------------------------- #
+
+
+class _PresentProducer(DoclingStructuralProducer):
+    """A producer that reports docling PRESENT without the extra (hermetic)."""
+
+    def is_available(self) -> bool:
+        return True
+
+
+class _AbsentProducer(DoclingStructuralProducer):
+    """A producer that reports docling ABSENT (hermetic gate test)."""
+
+    def is_available(self) -> bool:
+        return False
+
+
+def test_docling_page_nodes_raises_when_unavailable() -> None:
+    # The gate is a typed capability raise, never a silent empty — "not installed"
+    # and "read a blank page" are different facts (determinism firewall).
+    with pytest.raises(DoclingUnavailable):
+        docling_page_nodes(_manifestation(), 1, producer=_AbsentProducer())
+
+
+def test_docling_page_nodes_routes_requested_page_when_available() -> None:
+    producer = _PresentProducer()
+    producer._converted_cache[_DIGEST] = {1: _fake_page()}
+    nodes = docling_page_nodes(_manifestation(), 1, producer=producer)
+    assert nodes and nodes[0].kind is SourceDocumentNodeKind.HEADING
+    # a page docling saw nothing on is an honest empty tuple (residual), not a raise
+    assert docling_page_nodes(_manifestation(), 2, producer=producer) == ()
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("docling") is None, reason="docling extra not installed"
+)
+def test_docling_page_nodes_gate_open_with_default_producer() -> None:
+    # With the extra installed, the DEFAULT producer's gate is open and the
+    # adapter routes a cached page without touching docling/PDF. Skipped when the
+    # extra is absent (the whole point of the availability gate).
+    producer = DoclingStructuralProducer()
+    producer._converted_cache[_DIGEST] = {1: _fake_page()}
+    nodes = docling_page_nodes(_manifestation(), 1, producer=producer)
+    assert nodes[0].kind is SourceDocumentNodeKind.HEADING
 
 
 # --------------------------------------------------------------------------- #
