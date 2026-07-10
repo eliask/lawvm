@@ -197,7 +197,7 @@ def test_compare_statute_returns_typed_status_never_raises(tmp_path) -> None:
         farchive=missing,
         pdf_text_fn=lambda: "VEROTAULUKKO\nTuote Perusvero\nSähkö 1,2\n",
     )
-    assert result.status in {"error", "pdf_annex_only", "xml_frame_only"}
+    assert result.compare_status in {"error", "pdf_annex_only", "xml_frame_only"}
     assert isinstance(result, CompareResult)
 
 
@@ -210,7 +210,7 @@ def test_result_to_json_shape() -> None:
     result = CompareResult("1994/800", "fin", "compared", div, len(div), len(div))
     payload = result_to_json(result)
     assert payload["sid"] == "1994/800"
-    assert payload["status"] == "compared"
+    assert payload["compare_status"] == "compared"
     assert payload["counts"]["matched"] == len(div)
     assert payload["typed_divergence_count"] == 0
     assert payload["exact_equivalent"] is True

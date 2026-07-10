@@ -620,7 +620,7 @@ class CompareResult:
 
     sid: str
     lang: str
-    status: str  # "compared" | "xml_frame_only" | "pdf_annex_only" | "error"
+    compare_status: str  # "compared" | "xml_frame_only" | "pdf_annex_only" | "error"
     divergences: tuple[OpDivergence, ...]
     xml_op_count: int
     pdf_op_count: int
@@ -642,9 +642,9 @@ class CompareResult:
     def exact_equivalent(self) -> bool:
         """True iff the PDF IR is EXACTLY the XML IR (zero typed divergences).
 
-        Only meaningful when ``status == "compared"``.
+        Only meaningful when ``compare_status == "compared"``.
         """
-        return self.status == "compared" and self.typed_divergence_count == 0
+        return self.compare_status == "compared" and self.typed_divergence_count == 0
 
 
 def compare_statute(
@@ -705,7 +705,7 @@ def result_to_json(result: CompareResult) -> dict:
     return {
         "sid": result.sid,
         "lang": result.lang,
-        "status": result.status,
+        "compare_status": result.compare_status,
         "detail": result.detail,
         "xml_op_count": result.xml_op_count,
         "pdf_op_count": result.pdf_op_count,
@@ -736,9 +736,9 @@ _KIND_GLYPH = {
 def _print_result(result: CompareResult) -> None:
     print(f"fi-amendment-ir-compare  {result.sid}/{result.lang}")
     print("=" * 78)
-    if result.status != "compared":
-        benign = result.status in {"xml_frame_only", "pdf_annex_only"}
-        print(f"STATUS: {result.status}  ({'benign terminal' if benign else 'error'})")
+    if result.compare_status != "compared":
+        benign = result.compare_status in {"xml_frame_only", "pdf_annex_only"}
+        print(f"STATUS: {result.compare_status}  ({'benign terminal' if benign else 'error'})")
         print(f"  {result.detail}")
         if result.xml_op_count:
             print(f"  (XML→ops produced {result.xml_op_count} ops)")
