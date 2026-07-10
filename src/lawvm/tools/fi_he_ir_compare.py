@@ -80,6 +80,12 @@ _BENIGN_MATCH = "matched"
 #: Below this the HE main.xml body is a thin wrapper frame (real content is PDF-only).
 _XML_WRAPPER_BODY_MAX_CHARS = 2000
 
+#: A pathological giant HE main.pdf hangs the geom read (dense hundred-page PDFs);
+#: above this byte size we TYPE it ``pdf_oversize`` and skip the read rather than
+#: stall the whole corpus sweep — a logged, honest skip (NOT a silent cap), never a
+#: diff. Normal HEs are a few MB; this only catches the rare outlier.
+_MAX_HE_PDF_BYTES = 30_000_000
+
 #: Non-compared terminal strata (never a genuine PDF defect).
 _NON_COMPARED_STATUSES = (
     "xml_wrapper_only",
@@ -87,6 +93,7 @@ _NON_COMPARED_STATUSES = (
     "new_statute_only",
     "xml_parse_incomplete",
     "pdf_no_clause",
+    "pdf_oversize",
     "error",
 )
 
@@ -782,27 +789,38 @@ def compare_he_from_farchive(
     from farchive import Farchive
 
     base = f"{_AKN_PATH_PREFIX}{he_year}/{he_number}/{lang}@/"
+    hid = he_id or f"HE {he_number}/{he_year} vp"
+    branch_id = f"fi/he/{he_year}/{he_number}"
     fa = Farchive(farchive)
     try:
         xml_bytes = fa.get(base + "main.xml")
+        pdf_bytes = fa.get(base + "main.pdf")
     finally:
         fa.close()
     if not xml_bytes:
         return HECompareResult(
-            he_id or f"HE {he_number}/{he_year} vp",
-            f"fi/he/{he_year}/{he_number}",
-            "error",
+            hid, branch_id, "error", (), 0, 0, f"HE main.xml not found: {base}main.xml"
+        )
+    # Guard the rare pathological giant PDF: skip the read (which would hang the whole
+    # sweep) and TYPE it, so the corpus completes and the skip is visible, not silent.
+    if pdf_bytes and len(pdf_bytes) > _MAX_HE_PDF_BYTES:
+        return HECompareResult(
+            hid,
+            branch_id,
+            "pdf_oversize",
             (),
             0,
             0,
-            f"HE main.xml not found: {base}main.xml",
+            f"HE main.pdf is {len(pdf_bytes) // 1_000_000} MB (> "
+            f"{_MAX_HE_PDF_BYTES // 1_000_000} MB) — geom read skipped to keep the sweep "
+            "live; type-deferred, not diffed",
         )
     try:
         reading_text = he_pdf_reading_text(farchive, base + "main.pdf", max_pages=max_pages)
     except Exception as exc:  # a bad/unreadable PDF is a typed status, never a crash
         return HECompareResult(
-            he_id or f"HE {he_number}/{he_year} vp",
-            f"fi/he/{he_year}/{he_number}",
+            hid,
+            branch_id,
             "error",
             (),
             0,

@@ -83,6 +83,22 @@ def test_comparer_exception_is_typed_error(tmp_path: Path) -> None:
     assert report.n_compared == 0
 
 
+def test_pdf_oversize_is_typed_non_compared_not_a_stall() -> None:
+    # A pathological giant HE PDF must be TYPED (pdf_oversize) and folded as a benign
+    # non-compared stratum — not stall the sweep, not enter the exact-match denominator.
+    from lawvm.tools.fi_he_ir_compare import _NON_COMPARED_STATUSES
+    from lawvm.tools.fi_he_ir_corpus import _row_from_result
+
+    assert "pdf_oversize" in _NON_COMPARED_STATUSES
+    rows = [
+        _row_from_result(_compared("HE 1/2020 vp")),
+        _row_from_result(_typed("HE 2/2020 vp", "pdf_oversize")),
+    ]
+    report = aggregate_rows(rows)
+    assert report.n_compared == 1  # the oversize HE is NOT in the compared denominator
+    assert report.status_counts.get("pdf_oversize") == 1
+
+
 def test_rank_worst_orders_by_typed_count() -> None:
     rows = []
     r1 = _compared("HE 1/2020 vp", (_missing_div("x/1"), _missing_div("x/2")))
