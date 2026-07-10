@@ -535,6 +535,12 @@ def _page_texts(pdf_bytes: bytes) -> List[str]:
             doc.close()
 
 
+#: Points to inset each Docling cell bbox before the pdfium witness read, to drop the
+#: stray edge glyph a touching neighbour cell bleeds in. Small (sub-character) so it
+#: never clips real content.
+_BBOX_INSET = 2.0
+
+
 def _verify_tables_against_pdfium(
     pdf_bytes: bytes, tables: Sequence[StructuredTable]
 ) -> Tuple[TableVerification, ...]:
@@ -563,10 +569,18 @@ def _verify_tables_against_pdfium(
                     if tp is None or h is None:
                         return ""
                     x0, y0, x1, y1 = bbox
+                    lo_x, hi_x = min(x0, x1), max(x0, x1)
+                    lo_y, hi_y = min(y0, y1), max(y0, y1)
+                    # Inset the box by a small margin so the read does not catch a stray
+                    # glyph from the ADJACENT cell (Docling cell bboxes touch/slightly
+                    # overlap their neighbours → edge bleed). Bounded so a thin cell never
+                    # inverts.
+                    mx = min(_BBOX_INSET, (hi_x - lo_x) / 3.0)
+                    my = min(_BBOX_INSET, (hi_y - lo_y) / 3.0)
                     try:  # pdfium wants (left, bottom, right, top) in bottom-left origin
                         return tp.get_text_bounded(
-                            left=min(x0, x1), bottom=h - max(y0, y1),
-                            right=max(x0, x1), top=h - min(y0, y1),
+                            left=lo_x + mx, bottom=h - (hi_y - my),
+                            right=hi_x - mx, top=h - (lo_y + my),
                         )
                     except Exception:
                         return ""

@@ -79,6 +79,14 @@ _WS_RUN = re.compile(r"\s+")
 # Flat quantifiers only (no quantified group → no nested-backtracking risk).
 _SEPARATOR_DASH_RUN_RE = re.compile(r"[‒-―\-]\s{0,3}[‒-―\-][\s‒-―\-]{0,120}")
 
+# A RUN of 2+ dots (a table/TOC LEADER "Käsivarsi....." or an ellipsis), optionally
+# space-separated: a visual leader, never substantive content. Discovered from residuals
+# (appendix fee-table cells differ only by a dotted leader between the row label and its
+# figure). Like the dash run, the ``{2,}``-dot requirement is load-bearing: a SINGLE dot
+# stays substantive (a decimal point "2.46", a numbered "10)" list, a version "3.14"), so
+# only runs fold. Flat quantifiers (no nested-backtracking risk).
+_DOT_LEADER_RE = re.compile(r"\.\s{0,3}\.[\s.]{0,120}")
+
 
 class EncodingFold(StrEnum):
     """The closed set of legally-inert folds this module applies to body text.
@@ -92,6 +100,7 @@ class EncodingFold(StrEnum):
     CF_FORMAT = "cf_format"  # invisible Unicode Cf control chars deleted
     WHITESPACE = "whitespace"  # Zs→space + all whitespace runs collapsed + trimmed
     SEPARATOR_DASH_RUN = "separator_dash_run"  # run of 2+ dashes ("— — —" rule/elision) deleted
+    DOT_LEADER = "dot_leader"  # run of 2+ dots (table/TOC leader "....." / ellipsis) deleted
 
 
 def _canonicalize_text(text: str) -> Tuple[str, frozenset[EncodingFold]]:
@@ -117,7 +126,11 @@ def _canonicalize_text(text: str) -> Tuple[str, frozenset[EncodingFold]]:
     if no_dash != no_cf:
         fired.add(EncodingFold.SEPARATOR_DASH_RUN)
 
-    spaced = no_dash.translate(_ZS_TO_SPACE_TABLE)
+    no_dots = _DOT_LEADER_RE.sub(" ", no_dash)
+    if no_dots != no_dash:
+        fired.add(EncodingFold.DOT_LEADER)
+
+    spaced = no_dots.translate(_ZS_TO_SPACE_TABLE)
     collapsed = _WS_RUN.sub(" ", spaced).strip()
     if collapsed != no_dash:
         fired.add(EncodingFold.WHITESPACE)

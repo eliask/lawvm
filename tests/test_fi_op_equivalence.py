@@ -65,6 +65,16 @@ def test_separator_dash_run_is_folded():
     assert EncodingFold.SEPARATOR_DASH_RUN in v.folds
 
 
+def test_dot_leader_run_is_folded_decimal_preserved():
+    # a run of 2+ dots is a table/TOC leader (inert) → folded; a SINGLE dot is a decimal
+    # point and stays substantive so a genuine number difference is not hidden.
+    v = text_equivalence("Käsivarsi 2,46", "Käsivarsi.................. 2,46")
+    assert v.equal
+    assert EncodingFold.DOT_LEADER in v.folds
+    v2 = text_equivalence("vero 2.46", "vero 2.99")
+    assert not v2.equal and EncodingFold.DOT_LEADER not in v2.folds
+
+
 def test_single_dash_is_still_a_residual_not_a_run():
     # The {2,}-dash requirement is load-bearing: a SINGLE en/em dash stays substantive,
     # so a genuine one-dash difference is NOT hidden by the separator-run fold.
