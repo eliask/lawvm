@@ -218,6 +218,24 @@ def test_annex_gate_passes_when_targets_overlap() -> None:
     assert _pdf_is_annex_by_disjoint_targets(xml_flat, pdf_flat) is False
 
 
+def test_appendix_only_amendment_is_deferred() -> None:
+    # Every XML op targets an appendix -> deferred stratum (phase-3 table territory),
+    # not forced into a spurious op diff against the PDF's stray section tokens.
+    from lawvm.tools.fi_amendment_ir_compare import _is_appendix_only_amendment
+
+    xml_flat = (FlatOp("replace", "appendix:1"), FlatOp("replace", "appendix:2"))
+    assert _is_appendix_only_amendment(xml_flat) is True
+
+
+def test_mixed_section_and_appendix_amendment_still_compares() -> None:
+    # A section target present -> NOT appendix-only; it compares on its section ops.
+    from lawvm.tools.fi_amendment_ir_compare import _is_appendix_only_amendment
+
+    xml_flat = (FlatOp("replace", "section:7"), FlatOp("replace", "appendix:1"))
+    assert _is_appendix_only_amendment(xml_flat) is False
+    assert _is_appendix_only_amendment(()) is False  # no ops -> not appendix-only
+
+
 def test_compare_statute_returns_typed_status_never_raises(tmp_path) -> None:
     # compare_statute must surface a TYPED status, never raise past its boundary.
     # With no real farchive the XML read fails -> status "error" (typed), not an

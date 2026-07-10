@@ -385,9 +385,18 @@ _STRUCT_WIRE_TAG = f"+wire=structbuild.v1+rasterdpi={RASTERIZE_DPI}"
 # grammar PLUS the closed-gate refine loop (Decision 2), text-PATCH fixpoint
 # (Decisions 1/10), max_iters=4. Its records are per-PAGE simulacra
 # (``page_simulacrum_locator``) — a DISTINCT modality from the composed IR lanes.
+# Reader-code fingerprint for the Level-1 converge lane. The scanned-page region
+# reader (``ingest.visual.segment_page_regions`` + ``page_level.converge_page`` no-text-
+# geometry routing) materially changes the reconstructed text but is NOT otherwise
+# captured by the wire/leaf/gate version string — so without this a reader improvement
+# would silently return STALE cached simulacra on a warm store. BUMP this whenever the
+# region-read / scanned converge routing changes (invalidates struct_converge +
+# defacsimile records; struct_span ``leaf=span`` records use a different tag, unaffected).
+_DEFACSIMILE_READER_VERSION = "regionreader.v1"
 _STRUCT_CONVERGE_TAG = (
     "+wire=structbuild.v1"
     "+leaf=patch+converge.v1+gate=hard.v1+iters=4+structpatch=text.v1+node.v1"
+    f"+reader={_DEFACSIMILE_READER_VERSION}"
     f"+rasterdpi={RASTERIZE_DPI}"
 )
 # The converged two-level lane (Track B+C integration): Level-1 patch-to-convergence

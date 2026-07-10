@@ -257,7 +257,7 @@ def _synthetic_row(route: Route, compare_status: str) -> StatuteDiffRow:
 
 
 # The benign / non-compared terminal strata (never a genuine defect).
-_NON_COMPARED_STATUSES = ("xml_frame_only", "pdf_annex_only", "error")
+_NON_COMPARED_STATUSES = ("xml_frame_only", "pdf_annex_only", "appendix_only", "error")
 
 
 @dataclass(frozen=True, slots=True)

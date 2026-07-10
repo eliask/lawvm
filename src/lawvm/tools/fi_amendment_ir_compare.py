@@ -71,6 +71,10 @@ Benign terminal strata (typed status on ``CompareResult``, never a silent empty)
     carries no johtolause → PDF→ops is empty (:class:`OperativeClauseNotFound`).
     The genuine end-to-end case is an OLDER scanned gazette whose media PDF IS the
     full statute page (vision-read).
+  * ``appendix_only`` — every XML enacting op targets an appendix/attachment
+    (``appendix:N``, a liite/table). The real content is a structured table that neither
+    the section-keyed XML body nor the flat-``N §`` PDF segmenter can compare — deferred
+    to the appendix-structuring stage rather than forced into a spurious op diff.
 
 Substrate-adequacy is a cheap DIAGNOSTIC only (did the PDF text even yield an
 extractable operative clause) — it is never the headline; the headline is the
@@ -858,6 +862,19 @@ def _pdf_ast_from_reading_text(reading_text: str, sid: str) -> ClauseAST:
     return ast
 
 
+def _is_appendix_only_amendment(xml_flat: tuple[FlatOp, ...]) -> bool:
+    """True iff EVERY XML enacting op targets an appendix/attachment (``appendix:N``).
+
+    Such an amendment's real content is a structured table/liite that neither the
+    section-keyed XML body inventory nor the flat-``N §`` PDF segmenter can compare, and
+    the PDF extractor tends to latch stray ``N §`` tokens from the appendix table — so an
+    op-structure diff is apples-to-oranges. Typed ``appendix_only`` and deferred to the
+    appendix-structuring stage. A MIXED amendment (some section targets too) is NOT
+    appendix-only and still compares on its section ops.
+    """
+    return bool(xml_flat) and all(op.target_ref.startswith("appendix:") for op in xml_flat)
+
+
 def _pdf_is_annex_by_disjoint_targets(
     xml_flat: tuple[FlatOp, ...], pdf_flat: tuple[FlatOp, ...]
 ) -> bool:
@@ -890,7 +907,7 @@ class CompareResult:
 
     sid: str
     lang: str
-    compare_status: str  # "compared" | "xml_frame_only" | "pdf_annex_only" | "error"
+    compare_status: str  # "compared" | "xml_frame_only" | "pdf_annex_only" | "appendix_only" | "error"
     divergences: tuple[OpDivergence, ...]
     xml_op_count: int
     pdf_op_count: int
@@ -968,6 +985,28 @@ def compare_statute(
         return CompareResult(loc.sid, loc.lang, "error", (), 0, 0, str(exc))
 
     xml_flat = flatten_clause_ast(xml_ast)
+
+    # Appendix-only amendment stratum (phase-3 territory, typed-deferred). When EVERY
+    # XML enacting op targets an appendix/attachment (``appendix:N``, a liite/table),
+    # the amendment's real content is a structured table that neither the section-keyed
+    # XML body inventory nor the flat-``N §`` PDF segmenter can compare — and the PDF
+    # extractor tends to latch stray ``N §`` tokens FROM the appendix table (F-corpus:
+    # 2016/1422 XML→appendix:1 vs geom PDF→178§/179§). Forcing an op-structure diff here
+    # is apples-to-oranges; type it appendix_only and defer to the appendix-structuring
+    # stage rather than emitting spurious op_missing/op_extra. Mixed amendments (some
+    # section targets too) still compare normally on their section ops.
+    if _is_appendix_only_amendment(xml_flat):
+        return CompareResult(
+            loc.sid,
+            loc.lang,
+            "appendix_only",
+            (),
+            len(xml_flat),
+            0,
+            "XML enacting clause targets only appendix/attachment units "
+            f"({sorted({op.target_ref for op in xml_flat})}); table content is not "
+            "section-comparable — deferred to appendix structuring",
+        )
 
     # --- PDF witness: read the reading text ONCE; derive ops + body payloads. ---
     try:
@@ -1061,7 +1100,7 @@ def _print_result(result: CompareResult) -> None:
     print(f"fi-amendment-ir-compare  {result.sid}/{result.lang}")
     print("=" * 78)
     if result.compare_status != "compared":
-        benign = result.compare_status in {"xml_frame_only", "pdf_annex_only"}
+        benign = result.compare_status in {"xml_frame_only", "pdf_annex_only", "appendix_only"}
         print(f"STATUS: {result.compare_status}  ({'benign terminal' if benign else 'error'})")
         print(f"  {result.detail}")
         if result.xml_op_count:
