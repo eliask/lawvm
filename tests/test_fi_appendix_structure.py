@@ -15,12 +15,62 @@ from lawvm.core.source_document.ir import (
     SourceDocumentNodeKind,
 )
 from lawvm.tools.fi_appendix_structure import (
+    StructuredCell,
+    StructuredTable,
     cross_witness,
     number_tokens,
     numeric_recall,
     structural_sanity,
     structured_table_from_node,
+    verify_table_exact,
 )
+
+
+def _grid_table(cells: list[StructuredCell]) -> StructuredTable:
+    return StructuredTable(
+        locator="finlex://sd/2003/917/fin/media/x.pdf",
+        page_num=1,
+        table_index=0,
+        n_rows=2,
+        n_cols=1,
+        caption="",
+        cells=tuple(cells),
+    )
+
+
+def test_verify_table_exact_all_cells_reproduced_is_exact() -> None:
+    # each cell's Docling text is reproduced EXACTLY by the independent bbox witness
+    # (modulo the inert quotient: a "— — —" run and whitespace fold to equal).
+    cells = [
+        StructuredCell(0, 0, "Sähkö 1,2", is_header=False, bbox=(0.0, 0.0, 1.0, 1.0)),
+        StructuredCell(1, 0, "Kaasu 3,4", is_header=False, bbox=(0.0, 1.0, 1.0, 2.0)),
+    ]
+    witness = {
+        (0.0, 0.0, 1.0, 1.0): "Sähkö  1,2 — — —",  # inert-equal (dash run + spacing)
+        (0.0, 1.0, 1.0, 2.0): "Kaasu 3,4",
+    }
+    v = verify_table_exact(_grid_table(cells), lambda _pn, bb: witness[bb])
+    assert v.exact
+    assert v.n_exact == 2 and not v.divergences
+
+
+def test_verify_table_exact_flags_a_divergent_cell() -> None:
+    cells = [
+        StructuredCell(0, 0, "Sähkö 1,2", is_header=False, bbox=(0.0, 0.0, 1.0, 1.0)),
+        StructuredCell(1, 0, "Kaasu 3,4", is_header=False, bbox=(0.0, 1.0, 1.0, 2.0)),
+    ]
+    witness = {(0.0, 0.0, 1.0, 1.0): "Sähkö 1,2", (0.0, 1.0, 1.0, 2.0): "Kaasu 9,9"}
+    v = verify_table_exact(_grid_table(cells), lambda _pn, bb: witness[bb])
+    assert not v.exact
+    assert v.n_exact == 1 and len(v.divergences) == 1
+    d = v.divergences[0]
+    assert d.row == 1 and d.docling_text == "Kaasu 3,4" and d.witness_text == "Kaasu 9,9"
+
+
+def test_verify_table_exact_bboxless_cell_is_deferred_not_forced() -> None:
+    cells = [StructuredCell(0, 0, "x", is_header=False, bbox=None)]
+    v = verify_table_exact(_grid_table(cells), lambda _pn, _bb: "")
+    assert v.n_no_witness == 1 and v.exact and not v.divergences
 
 _DIGEST = "a" * 64
 

@@ -54,9 +54,10 @@ import re
 import threading
 from collections import Counter
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from lawvm.core.source_document.ir import SourceDocumentNode, SourceDocumentNodeKind
+from lawvm.finland.op_equivalence import text_equivalence
 
 _FINLEX_DEFAULT = "data/finlex.farchive"
 
@@ -230,6 +231,105 @@ class StructuredTable:
                 for c in self.cells
             ],
         }
+
+
+# --------------------------------------------------------------------------- #
+# EXACT cell verification (the phase-3 headline — not a coverage/recall score). #
+# --------------------------------------------------------------------------- #
+#
+# The objective forbids fuzzy/coverage scores in the headline. So a structured cell
+# is VERIFIED only when a SECOND, independent witness — the pdfium text layer read
+# WITHIN that cell's own bbox — reproduces the Docling cell text EXACTLY, modulo the
+# SAME legally-inert quotient the op-equivalence stages use
+# (:mod:`lawvm.finland.op_equivalence`). Every cell is then either ``cell_exact`` or a
+# TYPED ``TableCellDivergence`` (the exact cells to escalate to a vision re-read); a
+# cell with no bbox is ``cell_no_witness`` (deferred, never forced). This is the
+# table analog of phase-1/2 op-equivalence: exactness, not slop.
+
+
+@dataclass(frozen=True, slots=True)
+class TableCellDivergence:
+    """One cell where the independent bbox witness did not reproduce the Docling text."""
+
+    row: int
+    col: int
+    docling_text: str
+    witness_text: str
+
+
+@dataclass(frozen=True, slots=True)
+class TableVerification:
+    """Per-table EXACT cross-witness cell verdict (Docling cells vs pdfium-in-bbox)."""
+
+    locator: str
+    page_num: int
+    table_index: int
+    n_cells: int
+    n_exact: int
+    n_no_witness: int
+    divergences: Tuple[TableCellDivergence, ...]
+
+    @property
+    def exact(self) -> bool:
+        """True iff EVERY witnessable cell reproduced exactly (0 typed divergences)."""
+        return not self.divergences
+
+    def to_jsonable(self) -> Dict[str, object]:
+        return {
+            "locator": self.locator,
+            "page_num": self.page_num,
+            "table_index": self.table_index,
+            "n_cells": self.n_cells,
+            "n_exact": self.n_exact,
+            "n_no_witness": self.n_no_witness,
+            "exact": self.exact,
+            "divergences": [
+                {"row": d.row, "col": d.col, "docling": d.docling_text, "witness": d.witness_text}
+                for d in self.divergences
+            ],
+        }
+
+
+#: A cell whose Docling text and independent bbox witness are BOTH blank after the
+#: inert quotient is vacuously exact (an empty spacer cell); no divergence is emitted.
+def verify_table_exact(
+    table: StructuredTable,
+    bbox_witness: Callable[[int, Tuple[float, float, float, float]], str],
+) -> TableVerification:
+    """Verify each cell EXACTLY against an independent in-bbox text witness.
+
+    ``bbox_witness(page_num, bbox) -> str`` returns the pdfium text-layer content inside
+    the cell's bbox (injected so this is hermetically testable and the pdfium transport
+    stays at the boundary). A cell is exact iff ``text_equivalence`` finds Docling's cell
+    text and the witness text equal modulo the legally-inert quotient; otherwise it is a
+    typed :class:`TableCellDivergence`. Cells without a bbox cannot be cross-verified and
+    are counted ``no_witness`` (deferred, never a forced diff).
+    """
+    n_exact = 0
+    n_no_witness = 0
+    divergences: List[TableCellDivergence] = []
+    for cell in table.cells:
+        if cell.bbox is None:
+            n_no_witness += 1
+            continue
+        witness = bbox_witness(table.page_num, cell.bbox)
+        if text_equivalence(cell.text, witness).equal:
+            n_exact += 1
+        else:
+            divergences.append(
+                TableCellDivergence(
+                    row=cell.row, col=cell.col, docling_text=cell.text, witness_text=witness
+                )
+            )
+    return TableVerification(
+        locator=table.locator,
+        page_num=table.page_num,
+        table_index=table.table_index,
+        n_cells=len(table.cells),
+        n_exact=n_exact,
+        n_no_witness=n_no_witness,
+        divergences=tuple(divergences),
+    )
 
 
 def structured_table_from_node(
