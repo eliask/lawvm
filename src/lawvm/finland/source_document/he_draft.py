@@ -566,12 +566,17 @@ def reading_order_text_from_pdf(pdf_bytes: bytes, *, max_pages: int = 5000) -> s
     """
     import importlib
 
+    from lawvm.ingest.visual import PDFIUM_LOCK
+
     pdfium = importlib.import_module("pypdfium2")
-    doc = pdfium.PdfDocument(pdf_bytes)
-    try:
-        pages = []
-        for i in range(min(len(doc), max_pages)):
-            pages.append(doc[i].get_textpage().get_text_range())
-        return "\n\n".join(pages)
-    finally:
-        doc.close()
+    # pypdfium2 is process-global / thread-unsafe — serialize on the shared lock
+    # (see reading_order_pages_from_pdf) so concurrent draft-HE reads don't race.
+    with PDFIUM_LOCK:
+        doc = pdfium.PdfDocument(pdf_bytes)
+        try:
+            pages = []
+            for i in range(min(len(doc), max_pages)):
+                pages.append(doc[i].get_textpage().get_text_range())
+            return "\n\n".join(pages)
+        finally:
+            doc.close()

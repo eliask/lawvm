@@ -57,16 +57,22 @@ def reading_order_pages_from_pdf(pdf_bytes: bytes, *, max_pages: int = 500) -> L
     import importlib
 
     from lawvm.ingest.page_elements import dehyphenate
+    from lawvm.ingest.visual import PDFIUM_LOCK
 
     pdfium = importlib.import_module("pypdfium2")
-    doc = pdfium.PdfDocument(pdf_bytes)
-    try:
-        return [
-            dehyphenate(doc[i].get_textpage().get_text_range())
-            for i in range(min(len(doc), max_pages))
-        ]
-    finally:
-        doc.close()
+    # pypdfium2 is process-global and thread-unsafe: concurrent document opens
+    # corrupt its global state ("Failed to load document: Data format error").
+    # Serialize the open+read on the SAME shared lock every other pdfium touch-site
+    # uses, so multi-worker corpus pools (fi-sweep --workers N) don't race here.
+    with PDFIUM_LOCK:
+        doc = pdfium.PdfDocument(pdf_bytes)
+        try:
+            return [
+                dehyphenate(doc[i].get_textpage().get_text_range())
+                for i in range(min(len(doc), max_pages))
+            ]
+        finally:
+            doc.close()
 
 
 # The structural build-script lanes (one shared grammar; the suffix selects only

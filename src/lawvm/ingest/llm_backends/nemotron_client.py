@@ -171,20 +171,25 @@ class NemotronParseClient:
                 reason_code="nemotron_render_backend_missing",
                 detail=f"pypdfium2 not importable: {exc}",
             ) from exc
-        doc = pdfium.PdfDocument(pdf_bytes)
-        try:
-            if page_num < 1 or page_num > len(doc):
-                raise NemotronParseFailure(
-                    page_num=page_num,
-                    reason_code="nemotron_page_out_of_range",
-                    detail=f"page {page_num} out of range (1..{len(doc)})",
-                )
-            pil = doc[page_num - 1].render(scale=self._scale).to_pil()
-            buf = io.BytesIO()
-            pil.save(buf, format="PNG")
-            return buf.getvalue()
-        finally:
-            doc.close()
+        # pypdfium2 is process-global / thread-unsafe — serialize on the shared
+        # lock (see reading_order_pages_from_pdf) so concurrent renders don't race.
+        from lawvm.ingest.visual import PDFIUM_LOCK
+
+        with PDFIUM_LOCK:
+            doc = pdfium.PdfDocument(pdf_bytes)
+            try:
+                if page_num < 1 or page_num > len(doc):
+                    raise NemotronParseFailure(
+                        page_num=page_num,
+                        reason_code="nemotron_page_out_of_range",
+                        detail=f"page {page_num} out of range (1..{len(doc)})",
+                    )
+                pil = doc[page_num - 1].render(scale=self._scale).to_pil()
+                buf = io.BytesIO()
+                pil.save(buf, format="PNG")
+                return buf.getvalue()
+            finally:
+                doc.close()
 
     def propose_page(
         self, manifestation: SourceManifestation, page_num: int
