@@ -15,13 +15,19 @@ from lawvm.core.source_document.ir import (
     SourceDocumentNodeKind,
 )
 from lawvm.tools.fi_appendix_structure import (
+    ROUTE_NO_WITNESS_DEFERRED,
+    ROUTE_SELF_VERIFIED,
+    ROUTE_VISION_ESCALATE,
     StructuredCell,
     StructuredTable,
+    TableCellDivergence,
+    TableVerification,
     cross_witness,
     number_tokens,
     numeric_recall,
     structural_sanity,
     structured_table_from_node,
+    table_escalation_route,
     verify_table_exact,
 )
 
@@ -71,6 +77,38 @@ def test_verify_table_exact_bboxless_cell_is_deferred_not_forced() -> None:
     cells = [StructuredCell(0, 0, "x", is_header=False, bbox=None)]
     v = verify_table_exact(_grid_table(cells), lambda _pn, _bb: "")
     assert v.n_no_witness == 1 and v.exact and not v.divergences
+
+
+def _verification(*, n_exact: int, n_no_witness: int, divergent: int) -> TableVerification:
+    divs = tuple(
+        TableCellDivergence(row=i, col=0, docling_text="ä", witness_text="‰")
+        for i in range(divergent)
+    )
+    return TableVerification(
+        locator="x", page_num=1, table_index=0,
+        n_cells=n_exact + n_no_witness + divergent,
+        n_exact=n_exact, n_no_witness=n_no_witness, divergences=divs,
+    )
+
+
+def test_route_self_verified_when_every_witnessable_cell_is_exact() -> None:
+    # deterministic lane verified all witnessable cells -> no vision spend.
+    v = _verification(n_exact=3, n_no_witness=1, divergent=0)
+    assert v.exact
+    assert table_escalation_route(v) == ROUTE_SELF_VERIFIED
+
+
+def test_route_vision_escalate_on_any_divergence_not_repaired() -> None:
+    # a corrupt-witness cell (ä->‰) is NOT hand-repaired; the table is routed to vision.
+    v = _verification(n_exact=5, n_no_witness=0, divergent=2)
+    assert not v.exact
+    assert table_escalation_route(v) == ROUTE_VISION_ESCALATE
+
+
+def test_route_deferred_when_no_cell_has_a_bbox_witness() -> None:
+    # exact is vacuously True (0 divergences) but nothing was verified -> deferred.
+    v = _verification(n_exact=0, n_no_witness=4, divergent=0)
+    assert v.exact and table_escalation_route(v) == ROUTE_NO_WITNESS_DEFERRED
 
 _DIGEST = "a" * 64
 

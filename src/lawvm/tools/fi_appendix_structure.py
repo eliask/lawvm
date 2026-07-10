@@ -332,6 +332,48 @@ def verify_table_exact(
     )
 
 
+# --------------------------------------------------------------------------- #
+# META-LEVEL escalation routing (NOT a corruption-repair heuristic).            #
+# --------------------------------------------------------------------------- #
+#
+# The empirical lesson from the multi-column appendix stratum (e.g. 2003/917): a
+# table that fails EXACT verification does so overwhelmingly because the FREE
+# deterministic witness — the pdfium text layer — is itself corrupt for that PDF's
+# font (a broken ToUnicode CMap maps ``ä``→``‰``, ``ö``→a C0 control char, ``§``→``ß``
+# and drops the decimal comma), NOT because Docling read the cell wrong. That
+# failure is orthogonal to Docling's side-by-side dual-table merge, and re-indexing
+# the grid (a row/col re-split) cannot change a single per-cell bbox verdict.
+#
+# So the correct move is META, not a hand-written repair (which is doomed on
+# arbitrary broken fonts): when the deterministic lane cannot SELF-VERIFY a table,
+# route that table to a VISION second-witness. This function is that router — it
+# names the routing verdict from the deterministic verdict; it does not attempt to
+# reconstruct any cell. ``VISION_ESCALATE`` is the only verdict that spends tokens.
+
+#: The deterministic lane verified every witnessable cell (0 divergences, ≥1 exact).
+ROUTE_SELF_VERIFIED = "self_verified"
+#: The deterministic witness could not verify ≥1 cell → send the table to vision.
+ROUTE_VISION_ESCALATE = "vision_escalate"
+#: No cell had a bbox witness at all → nothing for the deterministic lane to verify.
+ROUTE_NO_WITNESS_DEFERRED = "no_witness_deferred"
+
+
+def table_escalation_route(verification: TableVerification) -> str:
+    """Meta-level routing verdict for one table's deterministic-witness result.
+
+    Pure. The phase-3 deterministic lane either SELF-VERIFIES a table (every
+    witnessable cell reproduced exactly) or it does not — and when it does not, the
+    honest response is to ESCALATE to a vision second-witness, never to hand-repair
+    the cells (the dominant failure is a corrupt text-layer witness, unrepairable in
+    the general case). A table with no witnessable cell is deferred.
+    """
+    if verification.divergences:
+        return ROUTE_VISION_ESCALATE
+    if verification.n_exact > 0:
+        return ROUTE_SELF_VERIFIED
+    return ROUTE_NO_WITNESS_DEFERRED
+
+
 def structured_table_from_node(
     node: SourceDocumentNode, *, locator: str, table_index: int
 ) -> StructuredTable:
@@ -467,6 +509,16 @@ class StatuteTableReport:
     def n_tables_exact(self) -> int:
         return sum(1 for v in self.verifications if v.exact)
 
+    @property
+    def routes(self) -> Tuple[str, ...]:
+        """Per-table meta-level routing verdict (self-verified / vision / deferred)."""
+        return tuple(table_escalation_route(v) for v in self.verifications)
+
+    @property
+    def n_tables_vision_escalate(self) -> int:
+        """Tables the deterministic lane could not verify → routed to a vision witness."""
+        return sum(1 for r in self.routes if r == ROUTE_VISION_ESCALATE)
+
     def to_jsonable(self) -> Dict[str, object]:
         return {
             "locator": self.locator,
@@ -507,7 +559,11 @@ class StatuteTableReport:
                 "n_tables": len(self.tables),
                 "n_cells_verified": self.n_cells_verified,
                 "n_cells_witnessed": self.n_cells_witnessed,
-                "tables": [v.to_jsonable() for v in self.verifications],
+                "n_tables_vision_escalate": self.n_tables_vision_escalate,
+                "tables": [
+                    {**v.to_jsonable(), "route": route}
+                    for v, route in zip(self.verifications, self.routes, strict=True)
+                ],
             },
             "note": self.note,
         }
@@ -789,6 +845,13 @@ def render_report_text(reports: Sequence[StatuteTableReport]) -> str:
             f"  EXACT: tables_exact={r.n_tables_exact}/{len(r.tables)} "
             f"cells_verified={r.n_cells_verified}/{r.n_cells_witnessed} witnessed "
             f"(cell divergences={r.n_cells_witnessed - r.n_cells_verified})"
+        )
+        # META-LEVEL routing: tables the deterministic lane could not self-verify are
+        # sent to a vision witness (never hand-repaired). Self-verified = free & exact.
+        lines.append(
+            f"  ROUTE: self_verified={r.routes.count(ROUTE_SELF_VERIFIED)} "
+            f"vision_escalate={r.n_tables_vision_escalate} "
+            f"no_witness_deferred={r.routes.count(ROUTE_NO_WITNESS_DEFERRED)}"
         )
         lines.append("")
     return "\n".join(lines) + "\n"
