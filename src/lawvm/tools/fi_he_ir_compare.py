@@ -265,14 +265,22 @@ def _lakiehdotus_region(flat: str) -> str:
 
 
 def _numbered_bill_follows(flat: str, p: int) -> bool:
-    """True iff a numbered bill token ("<digits>. Laki") begins at/just after ``flat[p:]``.
+    """True iff a numbered bill token ("<digits>. <bill-title>") begins at/just after ``flat[p:]``.
 
     The genuine "Lakiehdotukset" section heading is ALWAYS immediately followed by its first
-    numbered bill ("Lakiehdotukset 1. Laki …"); a stray capitalized "Lakiehdotukset" word in
-    prose is not. Confirming the numbered-bill follow lets the heading anchor reject that stray
-    word without a regex (bounded manual scan → the regex census stays flat).
+    numbered bill; a stray capitalized "Lakiehdotukset" word in prose is not. Confirming the
+    numbered-bill follow lets the heading anchor reject that stray word without a regex
+    (bounded manual scan → the regex census stays flat).
+
+    A numbered bill's title is either an AMEND-bill "Laki … / Laiksi … / Laeiksi …" (the
+    common case) or a NEW-law bill whose title is a single capitalized COMPOUND word ENDING
+    in "laki"/"laiksi" ("Lakiehdotukset 1. Yleistukilaki …", "… 1. Ampuma-aselaki …").
+    Requiring only the "Laki …" head DROPPED the anchor for a compound-titled new-law bill,
+    leaving the narrow char bound in force — which then silently drops that HE's long
+    chapter-organized johtolause past the bound (its whole op-set lost as op_missing). The
+    window is widened to 48 chars so the full first title word is seen for the ending test.
     """
-    seg = flat[p : p + 16].lstrip(" ")
+    seg = flat[p : p + 48].lstrip(" ")
     i = 0
     while i < len(seg) and seg[i].isdigit():
         i += 1
@@ -281,7 +289,11 @@ def _numbered_bill_follows(flat: str, p: int) -> bool:
     rest = seg[i:].lstrip(" ")
     if not rest.startswith("."):
         return False
-    return rest[1:].lstrip(" ").startswith("Laki")
+    title = rest[1:].lstrip(" ")
+    if title.startswith(("Laki", "Laiksi", "Laeiksi")):
+        return True
+    first = title.split(" ", 1)[0].rstrip(".,:;").lower()
+    return bool(first) and first.endswith(("laki", "laiksi"))
 
 
 def _lakiehdotus_scan_start(flat: str) -> int:

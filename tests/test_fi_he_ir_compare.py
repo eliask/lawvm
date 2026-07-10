@@ -346,6 +346,49 @@ def test_stray_lakiehdotukset_word_not_anchored_without_numbered_bill() -> None:
     assert "(123/2020)" in spans[0]
 
 
+def test_bills_heading_anchors_on_new_law_compound_title() -> None:
+    # A modern omnibus HE's first bill is often a NEW law with a single-word COMPOUND title
+    # ("Lakiehdotukset 1. Yleistukilaki …"), not an amend-bill "N. Laki …".  The bills-heading
+    # anchor must still fire so the widened bound is applied — otherwise a LATER bill's long
+    # chapter-organized johtolause overflows the narrow default and its whole op-set is dropped
+    # (the HE 112/2025 1290/2002 op_missing pattern).  The overlong amend johtolause here sits
+    # AFTER the "1. Yleistukilaki" new-law bill and is captured because the heading anchors.
+    listing = _overlong_provision_list(2400)
+    clause = f"kumotaan työttömyysturvalain (1290/2002) {listing} seuraavasti:"
+    assert len(clause) > 2400
+    text = (
+        "YLEISPERUSTELUT jossa käsitellään ehdotusta laajasti. "
+        "Lakiehdotukset 1. Yleistukilaki Eduskunnan päätöksen mukaisesti säädetään: "
+        "1 luku Yleiset säännökset 1 § Lain tarkoitus. "
+        "2. Laki työttömyysturvalain muuttamisesta " + clause + f" 5 {_SEC} Uusi teksti."
+    )
+    spans = extract_enacting_clause_spans(text)
+    assert any(s.startswith("kumotaan työttömyysturvalain (1290/2002)") for s in spans)
+
+
+def test_chapter_path_symmetric_across_xml_and_pdf_input_shapes() -> None:
+    # SYMMETRY: a "N luvun M §" chapter-organized clause must lower to the SAME luku_N/M ref
+    # whether it arrives as XML enacting-clause text ("Eduskunnan päätöksen mukaisesti
+    # muutetaan …") or as a bare PDF johtolause span ("muutetaan …").  Both flow through the
+    # shared _parse_one_clause, so the chapter path is built identically — the PDF side does
+    # not lose the "6 luvun" token.
+    from lawvm.finland.he_branch_parser import _parse_one_clause
+
+    xml_style = (
+        "Eduskunnan päätöksen mukaisesti muutetaan työttömyysturvalain (1290/2002) "
+        f"6 luvun 3 {_SEC} seuraavasti:"
+    )
+    pdf_style = (
+        f"muutetaan työttömyysturvalain (1290/2002) 6 luvun 3 {_SEC} seuraavasti:"
+    )
+    xml_ops, _ = _parse_one_clause(xml_style, 0, "HE 1/2025 vp", "fi/he/2025/1")
+    pdf_ops, _ = _parse_one_clause(pdf_style, 0, "HE 1/2025 vp", "fi/he/2025/1")
+    xml_refs = [o.target_provision_ref for o in xml_ops]
+    pdf_refs = [o.target_provision_ref for o in pdf_ops]
+    assert xml_refs == pdf_refs
+    assert "1290/2002/luku_6/3" in xml_refs
+
+
 # --------------------------------------------------------------------------- #
 # flatten + diff                                                             #
 # --------------------------------------------------------------------------- #
