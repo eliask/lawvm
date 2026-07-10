@@ -524,6 +524,52 @@ def test_body_clean_is_unchanged() -> None:
     assert _pdf_proposed_bodies(_body_reading(_PROVISION))["5"] == _PROVISION
 
 
+def test_body_starts_at_lakiehdotus_not_preceding_perustelut_mention() -> None:
+    from lawvm.tools.fi_he_ir_compare import _pdf_proposed_bodies
+
+    # The detailed perustelut discuss "5 §" with justification prose BEFORE the bill; the
+    # genuine provision body follows the johtolause. The section body must START at the
+    # LAKIEHDOTUS occurrence, never at the earlier perustelut mention (a wrong-START
+    # over-capture would prepend the justification prose to the 5 § body).
+    perustelut = (
+        f"YKSITYISKOHTAISET PERUSTELUT 5 {_SEC}. Pykalassa ehdotetaan saadettavaksi "
+        "vaara perusteluprosaa jota ei saa lukea pykalan sisalloksi."
+    )
+    rt = (
+        "Hallituksen esitys eduskunnalle laiksi testilain muuttamisesta "
+        + perustelut
+        + " Lakiehdotukset 1. Laki testilain muuttamisesta "
+        + _BODY_CLAUSE
+        + f" 5 {_SEC} {_PROVISION}"
+    )
+    assert _pdf_proposed_bodies(rt)["5"] == _PROVISION
+
+
+def test_no_enacting_clause_yields_no_body_not_perustelut_prose() -> None:
+    from lawvm.tools.fi_he_ir_compare import _pdf_proposed_bodies
+
+    # A treaty / new-statute HE whose PDF carries NO amendment johtolause: the detailed
+    # perustelut still carry "N §" mentions. With no genuine enacting-clause region the
+    # extractor must emit NO body (the payload stage then defers), never a perustelut-prose
+    # body opened at the wrong start (the HE 59/1997 §1 / HE 100/2003 §3 defect).
+    rt = (
+        "Hallituksen esitys eduskunnalle laiksi sopimuksen hyvaksymisesta "
+        f"YKSITYISKOHTAISET PERUSTELUT 1 {_SEC}. Pykalassa maaritellaan lain "
+        f"soveltamisala ja paljon perusteluprosaa. 3 {_SEC}. Voimaantulo prosaa."
+    )
+    assert _pdf_proposed_bodies(rt) == {}
+
+
+def test_genuine_body_is_never_emptied() -> None:
+    from lawvm.tools.fi_he_ir_compare import _pdf_proposed_bodies
+
+    # A valid single-bill clause + its 5 § body: the body must be present and non-empty
+    # (the wrong-START guard must never defer a body that a genuine enacting clause anchors).
+    bodies = _pdf_proposed_bodies(_body_reading(_PROVISION))
+    assert bodies.get("5")
+    assert bodies["5"] == _PROVISION
+
+
 def test_body_trimmed_at_signature_block() -> None:
     from lawvm.tools.fi_he_ir_compare import _pdf_proposed_bodies
 

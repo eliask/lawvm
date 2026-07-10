@@ -749,9 +749,21 @@ def _pdf_proposed_bodies(reading_text: str) -> dict[str, str]:
     """
     flat = _lakiehdotus_region(_flatten_reading_text(reading_text))
     regions = _enacting_clause_regions(flat)
-    body_start = regions[0][1] if regions else (
-        m.end() if (m := _TERMINATOR_RE.search(flat)) is not None else 0
-    )
+    if not regions:
+        # WRONG-START guard. No GENUINE enacting clause (johtolause) was found, so there is no
+        # lakiehdotus provision region and thus no section body to read. The prior fallback
+        # opened the scan at the first "seuraavasti:" (or, when none, at position 0) — deep in
+        # the PERUSTELUT, whose detailed justifications carry their own "N §." references. That
+        # is a wrong-START over-capture: the first body begins at a perustelut mention and runs
+        # forward across justification prose (HE 59/1997 §1: 13.8k perustelut chars vs a 558-char
+        # XML body; HE 100/2003 §3: ~1084 chars vs 71). Precision-first: emit NO bodies (the
+        # payload stage then DEFERS the op, never a spurious payload_mismatch) rather than a
+        # garbage perustelut body. Whenever a bill genuinely exists a region IS present (the same
+        # head + "(N/YEAR)" + "§" + "seuraavasti:" signature extract_enacting_clause_spans anchors
+        # on), so this drops only the no-real-clause case — it never starts a body at a LATER,
+        # wrong provision (which could silently drop genuine leading body text).
+        return {}
+    body_start = regions[0][1]
 
     def _in_region(pos: int) -> bool:
         return any(a <= pos < b for a, b in regions)
