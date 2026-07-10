@@ -450,6 +450,22 @@ class StatuteTableReport:
     numeric: NumericRecall
     crosswitness: CrossWitness
     note: str = ""
+    #: EXACT per-table cell verdicts (Docling cell ≡ pdfium-in-bbox, modulo op_equivalence).
+    #: This is the HEADLINE — a table is verified only when every witnessable cell is exact.
+    verifications: Tuple[TableVerification, ...] = ()
+
+    @property
+    def n_cells_verified(self) -> int:
+        return sum(v.n_exact for v in self.verifications)
+
+    @property
+    def n_cells_witnessed(self) -> int:
+        """Cells that had a bbox to cross-verify (exact + divergent; excludes no_witness)."""
+        return sum(v.n_exact + len(v.divergences) for v in self.verifications)
+
+    @property
+    def n_tables_exact(self) -> int:
+        return sum(1 for v in self.verifications if v.exact)
 
     def to_jsonable(self) -> Dict[str, object]:
         return {
@@ -486,6 +502,13 @@ class StatuteTableReport:
                 "n_docling_only": self.crosswitness.n_docling_only,
                 "n_layer_only": self.crosswitness.n_layer_only,
             },
+            "exact_verification": {
+                "n_tables_exact": self.n_tables_exact,
+                "n_tables": len(self.tables),
+                "n_cells_verified": self.n_cells_verified,
+                "n_cells_witnessed": self.n_cells_witnessed,
+                "tables": [v.to_jsonable() for v in self.verifications],
+            },
             "note": self.note,
         }
 
@@ -508,6 +531,52 @@ def _page_texts(pdf_bytes: bytes) -> List[str]:
                     if close is not None:
                         close()
             return out
+        finally:
+            doc.close()
+
+
+def _verify_tables_against_pdfium(
+    pdf_bytes: bytes, tables: Sequence[StructuredTable]
+) -> Tuple[TableVerification, ...]:
+    """Exact-verify every table's cells against the pdfium text read WITHIN each cell bbox.
+
+    Opens the PDF ONCE, reads each cell's own bbox via ``get_text_bounded`` (pdfium is
+    bottom-left origin; the StructuredCell bbox is top-left points, so y is flipped against
+    the page height), and defers to :func:`verify_table_exact`. Any pdfium hiccup yields an
+    empty witness for that cell (→ a typed divergence, never a crash).
+    """
+    import importlib
+
+    pdfium = importlib.import_module("pypdfium2")
+    with _PDFIUM_LOCK:
+        doc = pdfium.PdfDocument(pdf_bytes)
+        try:
+            heights = {i: doc[i].get_size()[1] for i in range(len(doc))}
+            textpages = {i: doc[i].get_textpage() for i in range(len(doc))}
+            try:
+
+                def bbox_witness(page_num: int, bbox: Tuple[float, float, float, float]) -> str:
+                    # Docling page_num is 1-indexed; pdfium pages are 0-indexed.
+                    idx = page_num - 1
+                    tp = textpages.get(idx)
+                    h = heights.get(idx)
+                    if tp is None or h is None:
+                        return ""
+                    x0, y0, x1, y1 = bbox
+                    try:  # pdfium wants (left, bottom, right, top) in bottom-left origin
+                        return tp.get_text_bounded(
+                            left=min(x0, x1), bottom=h - max(y0, y1),
+                            right=max(x0, x1), top=h - min(y0, y1),
+                        )
+                    except Exception:
+                        return ""
+
+                return tuple(verify_table_exact(t, bbox_witness) for t in tables)
+            finally:
+                for tp in textpages.values():
+                    close = getattr(tp, "close", None)
+                    if close is not None:
+                        close()
         finally:
             doc.close()
 
@@ -577,6 +646,7 @@ def structure_statute_pdf(
             )
 
     sanities = tuple(structural_sanity(t) for t in tables)
+    verifications = _verify_tables_against_pdfium(pdf_bytes, tables)
     all_cell_texts = tuple(txt for t in tables for txt in t.cell_texts())
     reference_text = "\n".join(page_texts)
     numeric = numeric_recall(reference_text, all_cell_texts)
@@ -599,6 +669,7 @@ def structure_statute_pdf(
         numeric=numeric,
         crosswitness=xwit,
         note=note,
+        verifications=verifications,
     )
 
 
@@ -698,6 +769,12 @@ def render_report_text(reports: Sequence[StatuteTableReport]) -> str:
             f"  cross_witness_agreement={r.crosswitness.agreement:.3f} "
             f"(shared={r.crosswitness.n_shared} docling_only={r.crosswitness.n_docling_only} "
             f"layer_only={r.crosswitness.n_layer_only})"
+        )
+        # THE HEADLINE — exact cell verification (not a coverage score).
+        lines.append(
+            f"  EXACT: tables_exact={r.n_tables_exact}/{len(r.tables)} "
+            f"cells_verified={r.n_cells_verified}/{r.n_cells_witnessed} witnessed "
+            f"(cell divergences={r.n_cells_witnessed - r.n_cells_verified})"
         )
         lines.append("")
     return "\n".join(lines) + "\n"
