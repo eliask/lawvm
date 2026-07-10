@@ -57,7 +57,7 @@ import argparse
 import json
 import re
 from dataclasses import dataclass
-from typing import Optional
+from typing import Callable, Optional
 
 from lawvm.finland.he_branch_parser import (
     HEParseStatus,
@@ -253,6 +253,67 @@ def extract_enacting_clause_spans(
         end = term.end()
         # A genuine amendment directive lists provisions ("§") it touches; a stray
         # perustelut sentence with an amendment verb + citation does not.
+        if _PROVISION_MARK_RE.search(flat, cite.end(), end) is None:
+            continue
+        key = (hstart, end)
+        if key in seen:
+            continue
+        seen.add(key)
+        spans.append(flat[hstart:end])
+    return spans
+
+
+#: The candidate window handed to the LLM johtolause classifier — head + this many chars, enough
+#: to see whether the candidate ENUMERATES provisions toward "seuraavasti:" (genuine) or reads as
+#: explanatory perustelut prose. Must match what the tag cache keys on, so it is a fixed constant.
+_LLM_CLASSIFY_WINDOW = 500
+
+#: Safety cap on the head→"seuraavasti:" search for the LLM lane. The LLM gate (not a char count)
+#: is the precision discriminator, so this is only a runaway guard: it is set well ABOVE the
+#: largest real johtolause (~13.4k over the census) so a genuine mega-amendment is never truncated,
+#: yet finite so a head that genuinely has NO terminator cannot grab an arbitrarily distant one.
+_MAX_LLM_CLAUSE_CHARS = 60000
+
+
+def extract_enacting_clause_spans_llm(
+    reading_text: str,
+    *,
+    classify_fn: "Callable[[str], object]",
+    max_clause_chars: int = _MAX_LLM_CLAUSE_CHARS,
+) -> list[str]:
+    """LLM-gated enacting-clause extraction: mechanical candidates, LLM johtolause gate, UNBOUNDED span.
+
+    The mechanical :func:`extract_enacting_clause_spans` has no clean bound: small drops mega-bill
+    johtolauses (~13k chars → whole-bill op_missing, 82% of op_missing over the 8435-HE census),
+    large turns perustelut prose into false clauses (op_extra explosion). This variant removes the
+    length decision. It enumerates the SAME candidate heads (amendment verb + statute citation +
+    "§" before a "seuraavasti:") but replaces the tight char bound with an LLM CLASSIFICATION:
+    ``classify_fn(window)`` returns a :class:`~lawvm.finland.he_johtolause_tagger.JohtolauseTag`
+    (real use: the cache-through ``classify_candidate_cached`` bound to a store + local-LLM
+    ``chat_fn``); only a genuine ``JOHTOLAUSE`` candidate is kept, and its span runs UNBOUNDED to
+    its own terminator (up to a generous runaway cap). ``classify_fn`` is injected so the whole
+    lane is hermetically testable with a scripted classifier — and the LLM only SEGMENTS here; the
+    spans still flow through the deterministic ``_parse_one_clause`` and the ops are still
+    EXACT-compared against the trusted XML, so the exactness invariant is untouched.
+    """
+    from lawvm.finland.he_johtolause_tagger import JohtolauseTag
+
+    flat = _lakiehdotus_region(_flatten_reading_text(reading_text))
+    spans: list[str] = []
+    seen: set[tuple[int, int]] = set()
+    for head in _HE_HEAD_VERB_RE.finditer(flat):
+        hstart = head.start()
+        cite = _CITE_RE.search(flat, head.end(), min(len(flat), head.end() + _HEAD_TO_CITE))
+        if cite is None:
+            continue
+        # LLM gate FIRST (cheap, cached): reject perustelut prose before locating a terminator.
+        tag = classify_fn(flat[hstart : hstart + _LLM_CLASSIFY_WINDOW])
+        if tag is not JohtolauseTag.JOHTOLAUSE:
+            continue
+        term = _TERMINATOR_RE.search(flat, hstart, hstart + max_clause_chars)
+        if term is None:
+            continue
+        end = term.end()
         if _PROVISION_MARK_RE.search(flat, cite.end(), end) is None:
             continue
         key = (hstart, end)
