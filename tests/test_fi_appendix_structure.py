@@ -8,6 +8,8 @@ PDF); it is measured by the tool's live report, not in CI.
 """
 from __future__ import annotations
 
+from typing import cast
+
 from lawvm.core.source_document.anchors import BBox, SourceAnchor
 from lawvm.core.source_document.ir import (
     AssuranceTier,
@@ -25,7 +27,10 @@ from lawvm.tools.fi_appendix_structure import (
     TableCellGraduation,
     TableVerification,
     TableVisionVerification,
+    TextBlockDivergence,
+    TextBlockGraduation,
     TextBlockVerification,
+    TextBlockVisionVerification,
     TextRun,
     _make_per_bbox_reader,
     cross_witness,
@@ -42,6 +47,7 @@ from lawvm.tools.fi_appendix_structure import (
     verify_table_exact,
     verify_tables_vision,
     verify_text_blocks_exact,
+    verify_text_blocks_vision,
 )
 
 
@@ -774,3 +780,185 @@ def test_text_block_verification_reuses_table_route_shape() -> None:
     )
     assert v.exact and v.n_witnessed == 2
     assert text_block_escalation_route(v) == ROUTE_SELF_VERIFIED
+
+
+# --------------------------------------------------------------------------- #
+# TEXT-BLOCK VISION THIRD-WITNESS TIE-BREAK seam (injected reader — no model).   #
+# --------------------------------------------------------------------------- #
+#
+# The 0-grid text-block lane's escalated blocks are the SAME defect class as the table lane's
+# escalated cells: Docling drops content (e.g. the list-enumerator ``'1)'``) while the pdfium
+# bbox witness reads it right. The tie-break renders each divergent block and reads it with an
+# INDEPENDENT vision witness, GRADUATING the block to exact iff vision ≡ the PDFIUM witness
+# modulo the inert quotient (two witnesses agree, Docling outvoted). These drive the block seam
+# (route -> re-read routed blocks -> tie-break) with a SCRIPTED reader; the pdfium/vision
+# transport is LIVE-only. Byte-identical policy to the table tie-break, block-for-cell.
+
+_TB0 = (0.0, 0.0, 10.0, 1.0)
+_TB1 = (0.0, 1.0, 10.0, 2.0)
+
+
+def _tb_vision_case(
+    specs: list[tuple[str, str, tuple[float, float, float, float]]],
+) -> tuple[list[StructuredTextBlock], TextBlockVerification]:
+    """Build an all-divergent block set + its deterministic verdict (every block routed).
+
+    Each spec is ``(docling_text, pdfium_witness, bbox)``: the block carries the Docling text;
+    the matching deterministic divergence carries the pdfium witness_text.
+    """
+    blocks = [
+        StructuredTextBlock(
+            locator=_LOC, page_num=1, block_index=i, kind="paragraph", text=doc, bbox=bb
+        )
+        for i, (doc, _p, bb) in enumerate(specs)
+    ]
+    divs = tuple(
+        TextBlockDivergence(
+            block_index=i, page_num=1, kind="paragraph", docling_text=doc, witness_text=pdf
+        )
+        for i, (doc, pdf, _bb) in enumerate(specs)
+    )
+    v = TextBlockVerification(
+        locator=_LOC, n_blocks=len(specs), n_exact=0, n_no_witness=0, divergences=divs
+    )
+    return blocks, v
+
+
+def test_tb_vision_tiebreak_graduates_block_when_vision_corroborates_pdfium() -> None:
+    # Docling dropped the list-enumerator ('1) ...'); pdfium read it right, and an INDEPENDENT
+    # vision read reproduces the pdfium text → GRADUATE the block to exact (Docling outvoted).
+    blocks, v = _tb_vision_case([("kohde, kun", "1) kohde, kun", _TB0)])
+    reader_map = {_TB0: "1)  kohde, kun"}  # inert-equal to pdfium (spacing quotient)
+    bvv = verify_text_blocks_vision(blocks, v, lambda _pn, bb: reader_map[bb])
+    assert isinstance(bvv, TextBlockVisionVerification)
+    assert bvv.n_routed == 1 and bvv.n_graduated == 1 and bvv.all_graduated
+    g = bvv.graduated[0]
+    assert isinstance(g, TextBlockGraduation)
+    assert (g.block_index, g.page_num, g.kind) == (0, 1, "paragraph")
+    assert g.corroborated_text == "1) kohde, kun"  # pdfium reading, NOT Docling's dropped text
+    assert not bvv.witness_disagreement and not bvv.open_divergences
+
+
+def test_tb_vision_tiebreak_witness_disagreement_when_vision_sides_with_docling() -> None:
+    # Corrupt-font sub-case: the pdfium witness is garbled (ä->‰), Docling read it right, and
+    # vision reproduces DOCLING → NOT a graduation; a typed witness_disagreement.
+    blocks, v = _tb_vision_case([("Sähköä 1,2", "S‰hk‰‰ 1,2", _TB0)])
+    reader_map = {_TB0: "Sähköä  1,2"}  # inert-equal to Docling, differs from corrupt pdfium
+    bvv = verify_text_blocks_vision(blocks, v, lambda _pn, bb: reader_map[bb])
+    assert bvv is not None
+    assert bvv.n_graduated == 0 and not bvv.all_graduated
+    assert len(bvv.witness_disagreement) == 1 and not bvv.open_divergences
+    d = bvv.witness_disagreement[0]
+    assert d.block_index == 0 and d.docling_text == "Sähköä 1,2" and d.witness_text == "Sähköä  1,2"
+
+
+def test_tb_vision_tiebreak_all_three_disagree_stays_open() -> None:
+    # Vision corroborates neither pdfium nor Docling → a genuinely-open typed divergence.
+    blocks, v = _tb_vision_case([("kerroin 3,4", "kerroin 5,6", _TB0)])
+    reader_map = {_TB0: "kerroin 9,9"}
+    bvv = verify_text_blocks_vision(blocks, v, lambda _pn, bb: reader_map[bb])
+    assert bvv is not None
+    assert bvv.n_graduated == 0 and not bvv.witness_disagreement
+    assert len(bvv.open_divergences) == 1
+    d = bvv.open_divergences[0]
+    assert d.docling_text == "kerroin 3,4" and d.witness_text == "kerroin 9,9"
+
+
+def test_tb_vision_tiebreak_sparse_scanned_never_graduates_even_if_vision_matches() -> None:
+    # SPARSE/SCANNED guard: with born_digital=False a block NEVER graduates even when the (fake)
+    # vision read equals the pdfium witness EXACTLY. It falls to open, not to exact.
+    blocks, v = _tb_vision_case([("UN-ltja", "1) kohde", _TB0)])
+    reader_map = {_TB0: "1) kohde"}  # equals pdfium exactly — would graduate if born-digital
+    bvv = verify_text_blocks_vision(
+        blocks, v, lambda _pn, bb: reader_map[bb], born_digital=False
+    )
+    assert bvv is not None
+    assert bvv.n_graduated == 0 and not bvv.graduated
+    assert len(bvv.open_divergences) == 1  # not graduated; vision != Docling -> open
+
+    # Sanity: the SAME reads DO graduate when born-digital — the gate is the only difference.
+    bvv_bd = verify_text_blocks_vision(blocks, v, lambda _pn, bb: reader_map[bb])
+    assert bvv_bd is not None and bvv_bd.n_graduated == 1
+
+
+def test_tb_vision_tiebreak_requires_full_text_not_substring_or_numeric() -> None:
+    # Graduation demands FULL-TEXT quotient equivalence, not a substring/numeric match: a vision
+    # read whose NUMBER matches the pdfium witness but whose letters differ does NOT graduate.
+    blocks, v = _tb_vision_case([("k 2 500 mg", "1) k 2 500 mg/kg", _TB0)])
+    reader_map = {_TB0: "1) k 2 500 g/l"}  # same number 2500, different unit letters
+    bvv = verify_text_blocks_vision(blocks, v, lambda _pn, bb: reader_map[bb])
+    assert bvv is not None
+    assert bvv.n_graduated == 0
+    assert len(bvv.open_divergences) == 1
+
+
+def test_tb_vision_tiebreak_returns_none_for_self_verified_appendix() -> None:
+    # A self-verified appendix (no divergences) is NOT routed to vision → None (no spend).
+    blocks = _blocks([("Liite 1", _TB0)])
+    v = TextBlockVerification(
+        locator=_LOC, n_blocks=1, n_exact=1, n_no_witness=0, divergences=()
+    )
+    seen: list[object] = []
+    bvv = verify_text_blocks_vision(blocks, v, lambda _pn, bb: seen.append(bb) or "x")
+    assert bvv is None and seen == []  # no reader calls; nothing to spend on
+
+
+def test_tb_vision_tiebreak_only_reads_routed_blocks() -> None:
+    # A witnessed-exact block is NOT re-read; only the routed (divergent) block is.
+    blocks = _blocks([("Liite 1", _TB0), ("kohde, kun", _TB1)])
+    v = TextBlockVerification(
+        locator=_LOC,
+        n_blocks=2,
+        n_exact=1,
+        n_no_witness=0,
+        divergences=(
+            TextBlockDivergence(
+                block_index=1, page_num=1, kind="paragraph",
+                docling_text="kohde, kun", witness_text="1) kohde, kun",
+            ),
+        ),
+    )
+    seen: list[tuple[float, float, float, float]] = []
+
+    def reader(_pn: int, bb: tuple[float, float, float, float]) -> str:
+        seen.append(bb)
+        return "1) kohde, kun"
+
+    bvv = verify_text_blocks_vision(blocks, v, reader)
+    assert bvv is not None and bvv.n_routed == 1 and bvv.n_graduated == 1
+    assert seen == [_TB1]  # ONLY the routed block was re-read; the exact block untouched
+
+
+def test_tb_vision_tiebreak_max_cells_caps_the_render_spend() -> None:
+    # Two routed blocks, a budget of 1 re-reads only the first; n_routed still reflects the
+    # true escalation-set size, n_read the sampled base.
+    blocks, v = _tb_vision_case(
+        [("kohde a", "1) kohde a", _TB0), ("kohde b", "2) kohde b", _TB1)]
+    )
+    calls: list[tuple[float, float, float, float]] = []
+
+    def reader(_pn: int, bb: tuple[float, float, float, float]) -> str:
+        calls.append(bb)
+        return "1) kohde a"  # graduates block 0; differs from block 1's pdfium "2) kohde b"
+
+    bvv = verify_text_blocks_vision(blocks, v, reader, max_cells=1)
+    assert len(calls) == 1  # budget honoured: exactly one render/read
+    assert bvv is not None
+    assert bvv.n_routed == 2 and bvv.n_read == 1 and bvv.n_graduated == 1
+
+
+def test_tb_vision_verification_jsonable_shape_surfaces_graduation() -> None:
+    # Nothing graduates silently: the tie-break verdict serialises route + per-block outcomes.
+    blocks, v = _tb_vision_case([("kohde, kun", "1) kohde, kun", _TB0)])
+    reader_map = {_TB0: "1) kohde, kun"}
+    bvv = verify_text_blocks_vision(blocks, v, lambda _pn, bb: reader_map[bb])
+    assert bvv is not None
+    js = bvv.to_jsonable()
+    assert js["n_routed"] == 1 and js["n_read"] == 1 and js["n_graduated"] == 1
+    grad = js["graduated"]
+    assert isinstance(grad, list) and len(grad) == 1
+    # the graduated entry surfaces the corroborated (pdfium) content + the tie-break status,
+    # so nothing graduates silently in the emitted JSON.
+    entry = cast("dict[str, object]", grad[0])
+    assert entry["corroborated_text"] == "1) kohde, kun"
+    assert entry["tiebreak_status"] == "vision_corroborated_exact"

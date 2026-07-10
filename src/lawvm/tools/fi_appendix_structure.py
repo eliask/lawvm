@@ -1054,6 +1054,234 @@ def _verify_text_blocks_against_pdfium(
             doc.close()
 
 
+# --------------------------------------------------------------------------- #
+# TEXT-BLOCK VISION THIRD-WITNESS TIE-BREAK (mirror of the table tie-break).     #
+# --------------------------------------------------------------------------- #
+#
+# The 0-grid text-block lane's ``vision_escalate`` stratum is the SAME defect class as the
+# table lane's: on the born-digital appendix stratum the pdfium-in-bbox witness is the
+# RELIABLE reader and Docling's block ``.text`` is the one that ERRS — it drops content (e.g.
+# the list-enumerator ``'1)'``) or mis-segments a wrapped line. So a divergent block is NOT
+# evidence Docling is right; it is a two-witness disagreement to adjudicate by a THIRD,
+# independent witness. This is the byte-identical tie-break ``verify_tables_vision`` runs,
+# block-for-cell: RENDER each escalated block's own bbox region (region-isolation crop, never
+# a whole-page downscale), read that pixel region back with the vision model, and GRADUATE the
+# block to EXACT iff the vision read reproduces the PDFIUM WITNESS modulo the inert
+# op-equivalence quotient — two INDEPENDENT witnesses (pdfium + vision) agree and Docling is
+# outvoted, the pdfium text becoming the trusted content. Three outcomes (as tables):
+#
+#   - GRADUATED         vision ≡ pdfium witness → Docling outvoted, block exact.
+#   - WITNESS_DISAGREE  vision ≡ Docling instead → corrupt-text-layer sub-case; NOT graduated.
+#   - OPEN              vision corroborates neither → a genuinely-open typed divergence.
+#
+# SPARSE/SCANNED GUARD (identical): a near-empty / image-baked text layer must NEVER graduate
+# (there the pdfium witness is empty/garbled and vision HALLUCINATES) — graduation requires
+# ``born_digital`` AND a non-empty pdfium witness. Only the ROUTED (deterministically-divergent)
+# blocks are re-read, so vision spend stays bounded to exactly the escalation set; the
+# ``max_cells`` budget cap mirrors the table lane's (and — since the table and text-block lanes
+# are mutually exclusive per PDF — draws from the same ``vision_max_cells`` allowance).
+
+
+@dataclass(frozen=True, slots=True)
+class TextBlockGraduation:
+    """A divergent text block the vision THIRD-WITNESS tie-break GRADUATED to exact.
+
+    The text-block analog of :class:`TableCellGraduation`. The deterministic pdfium-in-bbox
+    witness (``corroborated_text``) disagreed with Docling — but an INDEPENDENT render-based
+    vision read (``vision_text``) reproduces that SAME pdfium reading modulo the inert
+    op-equivalence quotient. Two independent witnesses (pdfium + vision) agree and Docling is
+    outvoted, so the block is EXACT and its trusted content is ``corroborated_text`` (the pdfium
+    reading), NOT Docling's text.
+    """
+
+    block_index: int
+    page_num: int
+    kind: str
+    corroborated_text: str
+    vision_text: str
+
+
+@dataclass(frozen=True, slots=True)
+class TextBlockVisionVerification:
+    """Vision THIRD-WITNESS tie-break verdict for ONE deterministically-escalated appendix.
+
+    The text-block analog of :class:`TableVisionVerification`. ``n_routed`` is the deterministic
+    escalation set (the blocks the pdfium witness could not reconcile with Docling). Each is
+    re-read by the render-based vision witness and adjudicated into exactly one of three buckets:
+
+    - ``graduated`` — vision ≡ the pdfium witness (modulo quotient): Docling is outvoted by two
+      independent witnesses, so the block is EXACT with the pdfium text as content.
+    - ``witness_disagreement`` — vision ≡ Docling instead: the pdfium text-layer witness is the
+      odd one out (corrupt font); the block is NOT graduated (each carries the vision read).
+    - ``open_divergences`` — vision corroborates neither: a genuinely-open typed divergence
+      (each carrying the vision read) for the adjudication tail.
+    """
+
+    locator: str
+    n_routed: int
+    graduated: Tuple[TextBlockGraduation, ...]
+    witness_disagreement: Tuple[TextBlockDivergence, ...]
+    open_divergences: Tuple[TextBlockDivergence, ...]
+
+    @property
+    def n_graduated(self) -> int:
+        """Routed blocks graduated to exact (vision corroborated the pdfium witness)."""
+        return len(self.graduated)
+
+    @property
+    def n_read(self) -> int:
+        """Routed blocks the vision witness actually re-read (all three buckets).
+
+        Equals ``n_routed`` when unbudgeted; less when a ``max_cells`` cap curtailed the render
+        spend (the un-read routed blocks fall in none of the three buckets)."""
+        return (
+            len(self.graduated)
+            + len(self.witness_disagreement)
+            + len(self.open_divergences)
+        )
+
+    @property
+    def all_graduated(self) -> bool:
+        """True iff every routed block the witness READ graduated (0 un-graduated reads)."""
+        return not self.witness_disagreement and not self.open_divergences
+
+    def to_jsonable(self) -> Dict[str, object]:
+        return {
+            "locator": self.locator,
+            "n_routed": self.n_routed,
+            "n_read": self.n_read,
+            "n_graduated": self.n_graduated,
+            "graduated": [
+                {
+                    "block_index": g.block_index,
+                    "page_num": g.page_num,
+                    "kind": g.kind,
+                    "corroborated_text": g.corroborated_text,
+                    "vision": g.vision_text,
+                    "tiebreak_status": "vision_corroborated_exact",
+                }
+                for g in self.graduated
+            ],
+            "witness_disagreement": [
+                {
+                    "block_index": d.block_index,
+                    "page_num": d.page_num,
+                    "kind": d.kind,
+                    "docling": d.docling_text,
+                    "vision": d.witness_text,
+                }
+                for d in self.witness_disagreement
+            ],
+            "open_divergences": [
+                {
+                    "block_index": d.block_index,
+                    "page_num": d.page_num,
+                    "kind": d.kind,
+                    "docling": d.docling_text,
+                    "vision": d.witness_text,
+                }
+                for d in self.open_divergences
+            ],
+        }
+
+
+def verify_text_blocks_vision(
+    blocks: Sequence[StructuredTextBlock],
+    verification: TextBlockVerification,
+    region_reader: Callable[[int, Tuple[float, float, float, float]], str],
+    *,
+    born_digital: bool = True,
+    max_cells: Optional[int] = None,
+) -> Optional[TextBlockVisionVerification]:
+    """Vision THIRD-WITNESS tie-break over a 0-grid appendix's ``vision_escalate`` blocks.
+
+    The block-for-cell mirror of :func:`verify_tables_vision`. When the deterministic lane
+    routed this appendix ``vision_escalate`` (≥1 typed block divergence), re-read ONLY its
+    divergent blocks' bbox regions through ``region_reader`` (the render-based witness; injected
+    so this is hermetically testable) and adjudicate each with the identical exactness check
+    :func:`verify_text_blocks_exact` uses (``text_equivalence`` modulo the inert op-equivalence
+    quotient):
+
+    - the block GRADUATES to exact iff the vision read reproduces the PDFIUM WITNESS
+      (``d.witness_text``) — two independent witnesses agree, Docling is outvoted, and the
+      pdfium text is the trusted content;
+    - else if the vision read reproduces DOCLING it is a ``witness_disagreement`` (the pdfium
+      text-layer witness is the corrupt odd one out) — NOT graduated;
+    - else it is an ``open_divergence`` (all three disagree / vision incoherent).
+
+    SPARSE/SCANNED GUARD (identical to the table lane): graduation requires ``born_digital`` AND
+    a non-empty pdfium witness — a near-empty / image-baked text layer never graduates. An
+    appendix NOT routed to vision (self-verified / deferred) returns ``None`` (nothing to spend
+    on). ``max_cells`` caps the routed blocks re-read (``None`` unbounded); under a cap the
+    un-read routed blocks stay in ``n_routed`` but appear in no bucket, so ``n_read`` (<
+    ``n_routed``) is the sampled base. Pure apart from the injected reader.
+    """
+    if text_block_escalation_route(verification) != ROUTE_VISION_ESCALATE:
+        return None
+    blocks_by_index = {b.block_index: b for b in blocks}
+    graduated: List[TextBlockGraduation] = []
+    witness_disagreement: List[TextBlockDivergence] = []
+    open_divergences: List[TextBlockDivergence] = []
+    budget = max_cells
+    for d in verification.divergences:
+        if budget is not None and budget <= 0:
+            break  # vision-spend budget exhausted; leave the rest un-read
+        block = blocks_by_index.get(d.block_index)
+        if block is None or block.bbox is None:  # divergent ⇒ had a bbox; defensive
+            continue
+        vision_text = region_reader(d.page_num, block.bbox)
+        if budget is not None:
+            budget -= 1
+        pdfium_witness = d.witness_text
+        if (
+            born_digital
+            and pdfium_witness.strip()
+            and text_equivalence(pdfium_witness, vision_text).equal
+        ):
+            # GRADUATE: pdfium + vision (two independent witnesses) agree; Docling — which by
+            # construction differs (this block diverged) — is outvoted. The pdfium reading
+            # becomes the block's trusted content.
+            graduated.append(
+                TextBlockGraduation(
+                    block_index=d.block_index,
+                    page_num=d.page_num,
+                    kind=d.kind,
+                    corroborated_text=pdfium_witness,
+                    vision_text=vision_text,
+                )
+            )
+        elif text_equivalence(d.docling_text, vision_text).equal:
+            # vision sided with Docling: the pdfium text-layer witness is the odd one out
+            # (corrupt font) — a witness disagreement, NOT a graduation to exact.
+            witness_disagreement.append(
+                TextBlockDivergence(
+                    block_index=d.block_index,
+                    page_num=d.page_num,
+                    kind=d.kind,
+                    docling_text=d.docling_text,
+                    witness_text=vision_text,
+                )
+            )
+        else:
+            # all three readers disagree (or vision is incoherent): genuinely open.
+            open_divergences.append(
+                TextBlockDivergence(
+                    block_index=d.block_index,
+                    page_num=d.page_num,
+                    kind=d.kind,
+                    docling_text=d.docling_text,
+                    witness_text=vision_text,
+                )
+            )
+    return TextBlockVisionVerification(
+        locator=verification.locator,
+        n_routed=len(verification.divergences),
+        graduated=tuple(graduated),
+        witness_disagreement=tuple(witness_disagreement),
+        open_divergences=tuple(open_divergences),
+    )
+
+
 def structured_table_from_node(
     node: SourceDocumentNode, *, locator: str, table_index: int
 ) -> StructuredTable:
@@ -1186,6 +1414,10 @@ class StatuteTableReport:
     #: The single EXACT cross-witness verdict over ``text_blocks`` (None when the lane did
     #: not run): the 0-grid appendix as one verified-or-typed unit.
     text_block_verification: Optional[TextBlockVerification] = None
+    #: VISION third-witness tie-break over the text-block ``vision_escalate`` stratum (None when
+    #: the vision witness was not run or the appendix self-verified): render-based graduation of
+    #: routed blocks whose independent vision read reproduces the pdfium witness (Docling outvoted).
+    text_block_vision_verification: Optional[TextBlockVisionVerification] = None
 
     @property
     def text_block_route(self) -> Optional[str]:
@@ -1203,6 +1435,23 @@ class StatuteTableReport:
     def n_text_blocks_witnessed(self) -> int:
         v = self.text_block_verification
         return v.n_witnessed if v is not None else 0
+
+    @property
+    def n_text_blocks_routed_to_vision(self) -> int:
+        """Deterministically-divergent text blocks handed to the vision second-witness."""
+        v = self.text_block_vision_verification
+        return v.n_routed if v is not None else 0
+
+    @property
+    def n_text_blocks_vision_graduated(self) -> int:
+        """Routed text blocks the vision third-witness GRADUATED to exact (vision ≡ pdfium)."""
+        v = self.text_block_vision_verification
+        return v.n_graduated if v is not None else 0
+
+    @property
+    def n_text_blocks_exact_after_vision(self) -> int:
+        """Block-exact count after the vision tie-break: deterministic exact + graduated."""
+        return self.n_text_blocks_exact + self.n_text_blocks_vision_graduated
 
     @property
     def n_cells_verified(self) -> int:
@@ -1306,6 +1555,17 @@ class StatuteTableReport:
                     if self.text_block_verification is not None
                     else None
                 ),
+                "vision_third_witness_tiebreak": {
+                    "ran": self.text_block_vision_verification is not None,
+                    "n_blocks_routed": self.n_text_blocks_routed_to_vision,
+                    "n_blocks_graduated": self.n_text_blocks_vision_graduated,
+                    "n_blocks_exact_after_vision": self.n_text_blocks_exact_after_vision,
+                    "verification": (
+                        self.text_block_vision_verification.to_jsonable()
+                        if self.text_block_vision_verification is not None
+                        else None
+                    ),
+                },
             },
             "note": self.note,
         }
@@ -1651,12 +1911,25 @@ def structure_statute_pdf(
     # scanned PDFs keep their existing text_layer_sparse typed status (they need vision/OCR).
     text_blocks: Tuple[StructuredTextBlock, ...] = ()
     text_block_verification: Optional[TextBlockVerification] = None
+    text_block_vision_verification: Optional[TextBlockVisionVerification] = None
     if should_run_text_block_lane(n_tables=len(tables), mean_text_chars=mean_chars):
         text_blocks = tuple(
             structured_text_block_from_node(node, locator=locator, block_index=i)
             for i, node in enumerate(block_nodes)
         )
         text_block_verification = _verify_text_blocks_against_pdfium(pdf_bytes, text_blocks)
+        # TEXT-BLOCK VISION third-witness tie-break: the SAME graduation the table lane runs,
+        # over the escalated blocks — opt-in (only when a vision reader is injected), so the
+        # default path stays firewall-deterministic. Shares the ``vision_max_cells`` budget
+        # (the table and text-block lanes never both spend on one PDF).
+        if vision_region_reader is not None:
+            text_block_vision_verification = verify_text_blocks_vision(
+                text_blocks,
+                text_block_verification,
+                vision_region_reader,
+                born_digital=mean_chars >= _MIN_TEXT_LAYER_CHARS,
+                max_cells=vision_max_cells,
+            )
 
     sanities = tuple(structural_sanity(t) for t in tables)
     verifications = _verify_tables_against_pdfium(pdf_bytes, tables)
@@ -1695,6 +1968,7 @@ def structure_statute_pdf(
         vision_verifications=vision_verifications,
         text_blocks=text_blocks,
         text_block_verification=text_block_verification,
+        text_block_vision_verification=text_block_vision_verification,
     )
 
 
@@ -1851,6 +2125,18 @@ def render_report_text(reports: Sequence[StatuteTableReport]) -> str:
                 f"exact={tv.n_exact}/{tv.n_witnessed} witnessed "
                 f"(divergences={len(tv.divergences)}, no_witness={tv.n_no_witness}) "
                 f"route={r.text_block_route}"
+            )
+        # TEXT-BLOCK VISION third-witness tie-break: blocks GRADUATED to exact because an
+        # independent render read reproduced the pdfium witness (Docling outvoted). Only when ran.
+        if r.text_block_vision_verification is not None:
+            bvv = r.text_block_vision_verification
+            lines.append(
+                f"  TEXT-BLOCK-VISION-TIEBREAK: "
+                f"graduated={bvv.n_graduated}/{bvv.n_read} read "
+                f"(routed={bvv.n_routed}, "
+                f"witness_disagreement={len(bvv.witness_disagreement)}, "
+                f"open={len(bvv.open_divergences)}); "
+                f"blocks_exact {r.n_text_blocks_exact}→{r.n_text_blocks_exact_after_vision}"
             )
         lines.append("")
     return "\n".join(lines) + "\n"
