@@ -189,10 +189,21 @@ _MAX_CLAUSE_CHARS = 2400
 #: Flat quantifiers only (FW-07).
 _LAKIEHDOTUS_END_RE = re.compile(r"\b(?:Rinnakkaisteksti[a-zä]{0,4}|Liitteet)\b")
 
+#: The per-page running header "HE <n>/<year> vp" (with its adjacent page number) that the
+#: text layer emits at every page top/bottom. It lands MID-body when a provision spans a
+#: page break ("…joka 4 HE 84/1998 vp omistajan…"), breaking payload equality. It is never
+#: part of a proposed body, so deleting it (and the immediately-adjacent page digits) is
+#: safe. Bounded/flat quantifiers (FW-07). "HE n/year vp" ≠ a "(n/year)" statute citation,
+#: so this does not touch the enacting-clause citation anchor.
+_PAGE_FURNITURE_RE = re.compile(
+    r"\d{0,4}\s{0,3}HE\s{1,3}\d{1,4}/\d{4}\s{1,3}vp\s{0,3}\d{0,4}", re.IGNORECASE
+)
+
 
 def _flatten_reading_text(reading_text: str) -> str:
-    """De-hyphenate and whitespace-flatten PDF reading text for clause segmentation."""
+    """De-hyphenate, strip per-page running headers, and whitespace-flatten reading text."""
     text = dehyphenate(reading_text or "")
+    text = _PAGE_FURNITURE_RE.sub(" ", text)
     return re.sub(r"[ \t\r\n­]+", " ", text).strip()
 
 
