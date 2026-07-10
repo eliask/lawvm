@@ -295,6 +295,25 @@ class _TolerantVision:
                 build=StructBuildResult(roots=()), raw_content="", images=page_elements.images
             )
 
+    def appraise_page(
+        self, manifestation: SourceManifestation, page_num: int, page_elements: Any
+    ) -> Any:
+        """Forward the cheap image-first appraisal; a truncated/failed appraisal
+        degrades to "read the page, treat the lines as partial" (fail toward reading,
+        never toward silently dropping a page)."""
+        from lawvm.ingest.llm_backends.vision_producer import (
+            PageAppraisal,
+            VisionProducerFailure,
+            VisionProducerTruncated,
+        )
+
+        try:
+            return self._inner.appraise_page(  # ty: ignore[unresolved-attribute]
+                manifestation, page_num, page_elements
+            )
+        except (VisionProducerTruncated, VisionProducerFailure):
+            return PageAppraisal(has_content=True, kind="mixed", lines="partial", raw="")
+
     def propose_page_patch_delta(
         self, manifestation: SourceManifestation, page_num: int, numbered_lines: str
     ) -> str:
