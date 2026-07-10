@@ -9873,6 +9873,10 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
     calib_p.add_argument("--json", action="store_true", help="emit JSON instead of the CSV report")
     calib_p.add_argument("--json-out", default=None, metavar="PATH", dest="json_out",
                          help="also write the JSON payload to this path")
+    calib_p.add_argument("--born-digital-ab", action="store_true", dest="born_digital_ab",
+                         help="A/B the deterministic vision-free born-digital geom lane vs "
+                              "the vision lane on the sampled pages (token-lever proof; "
+                              "requires --live for the vision side)")
 
     # --- fi-sweep ---
     sweep_p = sub.add_parser(

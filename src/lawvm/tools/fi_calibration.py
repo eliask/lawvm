@@ -906,6 +906,229 @@ def validate_proxies(scores: Sequence[ConfigScore]) -> ProxyValidation:
 
 
 # --------------------------------------------------------------------------- #
+# Born-digital geom lane A/B — the deterministic vision-free lane vs vision.     #
+# --------------------------------------------------------------------------- #
+#
+# The proof the born-digital STRUCTURE lane (``ingest.born_digital``) is not a
+# regression before it is ever made default (§ RULES: "A/B-PROVEN not-worse"). Both
+# lanes are scored end-to-end POST-STITCH against the SAME tight per-region pdfium
+# text-layer gold; the geom lane sends ZERO image tokens (it reads the text layer +
+# geometry deterministically), the vision lane spends the page-image tokens. The A/B
+# gate: geom NUMERIC-exact failures and WER must be <= vision's (never worse), and
+# the token saving is the whole point.
+
+# Whole-page vision image-token cost (the token census: ~8.7k image tokens/page at
+# the cold-read DPI). Used to project the token saving the geom lane buys; a
+# per-page constant so the projection is a physical estimate, not a live-only number.
+_IMAGE_TOKENS_PER_PAGE = 8700
+
+_STUB_DIGEST = "0" * 64
+
+
+@dataclass(frozen=True, slots=True)
+class _StubManifestation:
+    """A minimal manifestation stand-in — the geom lane only reads ``artifact_digest``."""
+
+    artifact_digest: str = _STUB_DIGEST
+
+
+def _flatten_source_node_text(node: object) -> str:
+    """Depth-first reading text of a ``SourceDocumentNode`` tree (geom reconstruction)."""
+    parts: List[str] = []
+
+    def _walk(n: object) -> None:
+        t = getattr(n, "text", "")
+        if t:
+            parts.append(str(t))
+        for c in getattr(n, "children", ()):  # geom lane is flat, but be general
+            _walk(c)
+
+    _walk(node)
+    return "\n".join(parts)
+
+
+@dataclass(frozen=True, slots=True)
+class BornDigitalABRow:
+    """One page's geom-lane-vs-vision-lane A/B (both scored on the pdfium gold)."""
+
+    page_num: int
+    born_digital: bool
+    geom_numeric_failures: int
+    vision_numeric_failures: int
+    geom_wer: float
+    vision_wer: float
+    geom_boundary_f1: float
+    vision_boundary_f1: float
+    geom_nodes: int
+    geom_headings: int
+    geom_tables_flagged: int
+    geom_fallbacks: int
+    geom_image_tokens: int  # 0 by construction (no image sent)
+    vision_image_tokens: int  # the image tokens the vision lane would spend
+
+
+@dataclass(frozen=True, slots=True)
+class BornDigitalABReport:
+    """The geom-lane A/B over a page set + the projected token saving."""
+
+    rows: Tuple[BornDigitalABRow, ...]
+    n_pages: int
+    n_born_digital: int
+    total_geom_image_tokens: int
+    total_vision_image_tokens: int
+    regressions: Tuple[str, ...]  # pages where geom is worse on a GATE metric
+
+
+def _geom_page_text_and_counts(
+    page: PageElements, *, manifestation: Optional[object] = None
+) -> Tuple[str, int, int, int, int]:
+    """Deterministic geom reconstruction of one page → (text, nodes, headings, tables, fallbacks)."""
+    from lawvm.core.source_document.ir import SourceDocumentNodeKind
+    from lawvm.ingest.born_digital import born_digital_page
+
+    man = manifestation if manifestation is not None else _StubManifestation()
+    result = born_digital_page(man, page.page_num, page)
+    nodes = result.simulacrum.nodes
+    text = "\n".join(_flatten_source_node_text(n) for n in nodes)
+    headings = sum(1 for n in nodes if n.kind is SourceDocumentNodeKind.HEADING)
+    tables = sum(1 for fb in result.fallbacks if fb.reason == "table_grid")
+    return text, len(nodes), headings, tables, len(result.fallbacks)
+
+
+def born_digital_ab(
+    pages: Sequence[PageElements],
+    vision_reader: RegionReader,
+    *,
+    manifestation: Optional[object] = None,
+    image_tokens_per_page: int = _IMAGE_TOKENS_PER_PAGE,
+) -> BornDigitalABReport:
+    """A/B the deterministic geom lane against the vision lane on born-digital pages.
+
+    For each page the vision lane is scored with a whole-page read (the existing
+    ``score_config`` path over ``vision_reader``); the geom lane reconstructs the page
+    DETERMINISTICALLY (``ingest.born_digital``). Both are scored against the SAME
+    tight pdfium text-layer gold (NUMERIC-exact + WER + boundary-F1). A page is a
+    REGRESSION iff the geom lane is worse on a GATE metric (numeric failures up, or
+    WER materially up) — the guard that keeps the token lever from trading accuracy.
+    The geom lane's image-token cost is ZERO; the vision lane's is the page-image
+    cost — the projected saving.
+    """
+    from lawvm.ingest.born_digital import page_is_born_digital
+
+    rows: List[BornDigitalABRow] = []
+    regressions: List[str] = []
+    total_geom_tokens = 0
+    total_vision_tokens = 0
+    n_born = 0
+    for page in pages:
+        is_bd = page_is_born_digital(page)
+        gold = "\n".join(ln for ln in page.lines if ln.strip())
+        # Vision lane: whole-page read scored on the same gold.
+        vcfg = SweepConfig("whole_page", DPI_LEVELS[0], 0)
+        vscore = score_config(page, vcfg, vision_reader)
+        # Geom lane: deterministic reconstruction.
+        geom_text, n_nodes, n_head, n_tab, n_fb = _geom_page_text_and_counts(
+            page, manifestation=manifestation
+        )
+        g_numeric = numeric_exact_failures(gold, geom_text)
+        g_wer = word_error_rate(gold, geom_text)
+        g_f1 = structural_boundary_f1(gold, geom_text)
+        vision_tokens = image_tokens_per_page if is_bd else 0
+        geom_tokens = 0
+        if is_bd:
+            n_born += 1
+            total_geom_tokens += geom_tokens
+            total_vision_tokens += vision_tokens
+            # GATE: geom must not be worse than vision on the protected metrics.
+            if g_numeric > vscore.numeric_failures:
+                regressions.append(
+                    f"page {page.page_num}: NUMERIC geom={g_numeric} > vision={vscore.numeric_failures}"
+                )
+            if g_wer > vscore.wer + _WER_NOISE_BAND:
+                regressions.append(
+                    f"page {page.page_num}: WER geom={g_wer:.4f} > vision={vscore.wer:.4f}"
+                )
+        rows.append(
+            BornDigitalABRow(
+                page_num=page.page_num,
+                born_digital=is_bd,
+                geom_numeric_failures=g_numeric,
+                vision_numeric_failures=vscore.numeric_failures,
+                geom_wer=g_wer,
+                vision_wer=vscore.wer,
+                geom_boundary_f1=g_f1,
+                vision_boundary_f1=vscore.boundary_f1,
+                geom_nodes=n_nodes,
+                geom_headings=n_head,
+                geom_tables_flagged=n_tab,
+                geom_fallbacks=n_fb,
+                geom_image_tokens=geom_tokens,
+                vision_image_tokens=vision_tokens,
+            )
+        )
+    return BornDigitalABReport(
+        rows=tuple(rows),
+        n_pages=len(pages),
+        n_born_digital=n_born,
+        total_geom_image_tokens=total_geom_tokens,
+        total_vision_image_tokens=total_vision_tokens,
+        regressions=tuple(regressions),
+    )
+
+
+_AB_HEADER = (
+    "page,born_digital,geom_numeric,vision_numeric,geom_wer,vision_wer,"
+    "geom_f1,vision_f1,geom_nodes,geom_headings,geom_tables,geom_fallbacks,"
+    "geom_img_tokens,vision_img_tokens"
+)
+
+
+def render_born_digital_ab(report: BornDigitalABReport) -> str:
+    """Deterministic line-based render of the geom-lane A/B (two runs diff empty)."""
+    lines: List[str] = []
+    lines.append(
+        "# fi-calibration born-digital A/B — deterministic geom lane vs vision "
+        "(both scored on the pdfium text-layer gold)"
+    )
+    saved = report.total_vision_image_tokens - report.total_geom_image_tokens
+    lines.append(
+        f"# pages={report.n_pages}  born_digital={report.n_born_digital}  "
+        f"image_tokens_saved={saved}  regressions={len(report.regressions)}"
+    )
+    lines.append("")
+    lines.append(_AB_HEADER)
+    for r in sorted(report.rows, key=lambda x: x.page_num):
+        lines.append(
+            ",".join(
+                str(v)
+                for v in (
+                    r.page_num,
+                    int(r.born_digital),
+                    r.geom_numeric_failures,
+                    r.vision_numeric_failures,
+                    f"{r.geom_wer:.4f}",
+                    f"{r.vision_wer:.4f}",
+                    f"{r.geom_boundary_f1:.4f}",
+                    f"{r.vision_boundary_f1:.4f}",
+                    r.geom_nodes,
+                    r.geom_headings,
+                    r.geom_tables_flagged,
+                    r.geom_fallbacks,
+                    r.geom_image_tokens,
+                    r.vision_image_tokens,
+                )
+            )
+        )
+    lines.append("")
+    lines.append("## REGRESSIONS (geom worse than vision on a GATE metric — must be empty to flip default)")
+    if report.regressions:
+        lines.extend(report.regressions)
+    else:
+        lines.append("NONE")
+    return "\n".join(lines)
+
+
+# --------------------------------------------------------------------------- #
 # The calibration run (over a set of pages) + report.                           #
 # --------------------------------------------------------------------------- #
 
@@ -1237,6 +1460,15 @@ def main(args: argparse.Namespace) -> None:
 
     # The live reader crops each region's SELF-CARRIED absolute bbox — no side table.
     reader = live_region_reader(manifestation, base_url=args.base_url)
+
+    # Born-digital geom-lane A/B (token lever): score the deterministic vision-free
+    # lane against the live vision lane on the sampled pages, then STOP (this is a
+    # distinct experiment from the U-curve sweep, sharing only the page load).
+    if getattr(args, "born_digital_ab", False):
+        ab = born_digital_ab(pages, reader, manifestation=manifestation)
+        print(render_born_digital_ab(ab))
+        return
+
     cfgs = default_sweep()
 
     # Document-level XML cross-check for scanned pages (best-effort).

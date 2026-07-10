@@ -1192,8 +1192,17 @@ def build_page_simulacra(
     max_iters: int = MAX_CONVERGE_ITERS,
     max_pages: int = 5000,
     max_workers: Optional[int] = None,
+    struct_geom: bool = False,
 ) -> Tuple[PageSimulacrum, ...]:
     """Produce the ``Sequence[PageSimulacrum]`` for a manifestation (§1 interface out).
+
+    **Born-digital fast path (``struct_geom=True``, default OFF).** When enabled,
+    every page whose pdfium text layer is dense enough (``born_digital.page_is_born_digital``)
+    is read DETERMINISTICALLY from geometry + the text layer — NO image sent to the
+    vision model (``ingest.born_digital``). Text-poor pages fall back to the vision
+    ``converge_page`` lane unchanged. This is an OPT-IN token lever (~8.7k image
+    tokens/page saved per born-digital page); it must be A/B-proven not-worse before
+    it is ever made default and NEVER silently replaces the vision lane.
 
     Runs the recurrence pre-pass over ALL pages first (whole-doc furniture
     affordance, §4), then processes the pages through ``converge_page`` (gate +
@@ -1240,6 +1249,20 @@ def build_page_simulacra(
         # ThreadPool worker body — because the meter's unit stack is thread-local and
         # a worker thread does not inherit the submitting thread's context. This is a
         # transparent observability wrapper: it changes no result (determinism firewall).
+        # Born-digital fast path (opt-in): a dense-text-layer page is read
+        # deterministically from geometry — NO vision call (the token lever). A
+        # text-poor page falls through to the vision converge lane unchanged.
+        if struct_geom:
+            from lawvm.ingest.born_digital import born_digital_page, page_is_born_digital
+
+            if page_is_born_digital(pe):
+                return born_digital_page(
+                    manifestation,
+                    page_num,
+                    pe,
+                    recurrence=recurrence,
+                    page_count=page_count,
+                ).simulacrum
         with meter_unit(pdf=manifestation.locator, page=page_num):
             converged = converge_page(
                 vision,
