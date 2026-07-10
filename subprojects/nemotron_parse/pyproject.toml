@@ -32,6 +32,14 @@ dependencies = [
   "timm>=1.0",
   "einops>=0.8",
   "accelerate>=1.0",
+  # The shipped remote-code image processor (hf_nemotron_parse_processor.py,
+  # loaded via trust_remote_code) hard-imports these for its resize+pad path
+  # (cv2.resize / A.PadIfNeeded). Headless opencv: no GUI/X11 in a service.
+  "albumentations>=1.4",
+  "opencv-python-headless>=4.9",
+  # The C-RADIOv2-H vision encoder (loaded via trust_remote_code from
+  # nvidia/C-RADIOv2-H) hard-imports open_clip in its dynamic modeling file.
+  "open_clip_torch>=2.24",
 ]
 
 [dependency-groups]
