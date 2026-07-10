@@ -164,11 +164,35 @@ _AMEND_VERB_RE = re.compile(
 #: Bounded window back from a "... seuraavasti:" terminator (AGENTS.md §1.11 bound).
 _MAX_CLAUSE_CHARS = 2400
 
+#: End-of-lakiehdotus marker: after the bill directives an HE carries the
+#: Rinnakkaistekstit (parallel-texts appendix — a two-column
+#: "Voimassa oleva laki | Ehdotus" reprint of every amended law) and the Liitteet.
+#: Those appendices reprint amendment-verb + citation + "§ ... seuraavasti"
+#: signatures that flatten into SPURIOUS enacting-clause spans resolving to extra
+#: (often foreign-statute) targets — the dominant op_extra source. We bound the
+#: clause scan to the text BEFORE the first such heading. Only the UNAMBIGUOUS
+#: section headings match — "Rinnakkaisteksti(t)" and the PLURAL "Liitteet" — never
+#: bare "Liite", which occurs in genuine bill text ("muutetaan liite 1 ...").
+#: Flat quantifiers only (FW-07).
+_LAKIEHDOTUS_END_RE = re.compile(r"\b(?:Rinnakkaisteksti[a-zä]{0,4}|Liitteet)\b")
+
 
 def _flatten_reading_text(reading_text: str) -> str:
     """De-hyphenate and whitespace-flatten PDF reading text for clause segmentation."""
     text = dehyphenate(reading_text or "")
     return re.sub(r"[ \t\r\n­]+", " ", text).strip()
+
+
+def _lakiehdotus_region(flat: str) -> str:
+    """Truncate flattened reading text at the first Rinnakkaistekstit/Liitteet heading.
+
+    The bill directives (lakiehdotus) always precede the parallel-texts appendix, so
+    cutting at the first appendix heading drops the spurious enacting-clause spans the
+    two-column reprint would otherwise yield — without touching a genuine directive.
+    No heading present (the common case: HEs with no rinnakkaistekstit) → unchanged.
+    """
+    m = _LAKIEHDOTUS_END_RE.search(flat)
+    return flat[: m.start()] if m else flat
 
 
 def extract_enacting_clause_spans(
@@ -190,7 +214,7 @@ def extract_enacting_clause_spans(
     repeat) are harmless — the op-set diff de-duplicates by target.  Returns spans in
     reading order.
     """
-    flat = _flatten_reading_text(reading_text)
+    flat = _lakiehdotus_region(_flatten_reading_text(reading_text))
     spans: list[str] = []
     seen: set[tuple[int, int]] = set()
     for head in _HE_HEAD_VERB_RE.finditer(flat):

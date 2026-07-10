@@ -116,6 +116,36 @@ def test_extract_rejects_body_prose_saadetaan() -> None:
     assert extract_enacting_clause_spans(prose) == []
 
 
+def test_extract_stops_at_rinnakkaistekstit_appendix() -> None:
+    # The parallel-texts appendix reprints amendment-verb + citation + "§ ...
+    # seuraavasti" for every amended law — a spurious extra-op source. The scan is
+    # bounded to the lakiehdotus region BEFORE the "Rinnakkaistekstit" heading, so
+    # only the genuine directive survives.
+    genuine = "muutetaan testilain (123/2020) 5 " + _SEC + " seuraavasti: Uusi 5 §."
+    appendix = (
+        " Rinnakkaistekstit Voimassa oleva laki Ehdotus "
+        "muutetaan toisenlain (999/1999) 3 " + _SEC + " seuraavasti: reprint."
+    )
+    spans = extract_enacting_clause_spans("Lakiehdotukset " + genuine + appendix)
+    assert len(spans) == 1
+    assert "(123/2020)" in spans[0]
+    assert "(999/1999)" not in spans[0]
+
+
+def test_extract_keeps_bare_liite_reference_in_bill() -> None:
+    # Bare "liite" in a genuine directive ("muutetaan ... liite ...") must NOT be
+    # mistaken for the Liitteet appendix boundary — only the plural section heading
+    # "Liitteet" / "Rinnakkaisteksti(t)" truncates.
+    text = (
+        "Lakiehdotukset muutetaan testilain (123/2020) liite 1 ja 5 "
+        + _SEC
+        + " seuraavasti: Uusi 5 §."
+    )
+    spans = extract_enacting_clause_spans(text)
+    assert len(spans) == 1
+    assert "(123/2020)" in spans[0]
+
+
 def test_extract_tolerates_reordered_formula() -> None:
     # Geom can place the "... päätöksen mukaisesti" formula AFTER the terminator; the
     # head-verb + citation signature still anchors the span.
