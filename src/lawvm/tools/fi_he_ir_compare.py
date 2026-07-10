@@ -240,7 +240,6 @@ def extract_enacting_clause_spans(
     """
     flat = _lakiehdotus_region(_flatten_reading_text(reading_text))
     spans: list[str] = []
-    seen: set[tuple[int, int]] = set()
     for head in _HE_HEAD_VERB_RE.finditer(flat):
         hstart = head.start()
         # The head must govern a statute citation just after it.
@@ -255,10 +254,9 @@ def extract_enacting_clause_spans(
         # perustelut sentence with an amendment verb + citation does not.
         if _PROVISION_MARK_RE.search(flat, cite.end(), end) is None:
             continue
-        key = (hstart, end)
-        if key in seen:
-            continue
-        seen.add(key)
+        # No (hstart, end) dedup needed: finditer yields non-overlapping heads, so each span's
+        # start is strictly increasing and unique (any two heads sharing a terminator still get
+        # distinct starts; harmless same-target repeats de-dup downstream in the op-set diff).
         spans.append(flat[hstart:end])
     return spans
 
@@ -300,7 +298,6 @@ def extract_enacting_clause_spans_llm(
 
     flat = _lakiehdotus_region(_flatten_reading_text(reading_text))
     spans: list[str] = []
-    seen: set[tuple[int, int]] = set()
     for head in _HE_HEAD_VERB_RE.finditer(flat):
         hstart = head.start()
         cite = _CITE_RE.search(flat, head.end(), min(len(flat), head.end() + _HEAD_TO_CITE))
@@ -316,10 +313,8 @@ def extract_enacting_clause_spans_llm(
         end = term.end()
         if _PROVISION_MARK_RE.search(flat, cite.end(), end) is None:
             continue
-        key = (hstart, end)
-        if key in seen:
-            continue
-        seen.add(key)
+        # No (hstart, end) dedup set needed: finditer yields non-overlapping heads, so hstart —
+        # and thus each span's start — is strictly increasing and unique.
         spans.append(flat[hstart:end])
     return spans
 
