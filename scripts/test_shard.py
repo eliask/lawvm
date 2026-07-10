@@ -1317,6 +1317,45 @@ SHARD_GROUPS: dict[str, tuple[str, ...]] = {
     ),
     "new_zealand": ("new_zealand_sources", "new_zealand_effects", "new_zealand_reports"),
     "sweden": ("sweden_fetch", "sweden_misc"),
+    # FAST VALIDATION PATH for ingest-local edits (src/lawvm/ingest/**, its
+    # finland/source_document shim, and the fi_parse_*/fi_calibration drivers).
+    #
+    # WHY THIS EXISTS: ``--affected src/lawvm/ingest/...`` maps (below, in
+    # SOURCE_SHARD_PREFIXES) to the whole ``finland`` + ``core`` GROUPS plus
+    # ``tools_runtime_io`` — 15 shards / ~580 test files — because the ingest
+    # modules are transitively
+    # imported by the full Finland-replay + core closure (facades / CLIs /
+    # registries pull ``source_document`` which pulls ``ingest`` at import time).
+    # That map is deliberately conservative and STAYS conservative (a real
+    # cross-cutting edit must keep pulling the broad set), so the closure cannot
+    # be safely narrowed by import analysis alone — every replay/core shard has
+    # at least one test that transitively imports the ingest cone.
+    #
+    # This ``ingest`` group is the AGENT CONVENTION to use INSTEAD of
+    # ``--affected`` while iterating on an ingest-LOCAL change:
+    #
+    #     ./scripts/ci.sh --shards ingest        # or scripts/validate_ingest.sh
+    #
+    # It is the BOUNDED, SUFFICIENT set: every test that DIRECTLY exercises
+    # ingest behaviour (all ``test_ingest_*`` + ``source_document_*`` in
+    # ``core_ir_contracts``; the FI PDF-parse tests in ``finland_sources`` /
+    # ``finland_parse_payload``; ``fi_calibration`` / ``fi_parse_*`` in
+    # ``tools_runtime_io``) PLUS the whole-graph ratchets an ingest edit can trip
+    # (module-role / naming-hygiene / regex in ``core_ir_contracts``;
+    # determinism-firewall / discipline gates in ``core_discipline_gates``).
+    # ~248 files / 5 shards vs. 580 / 15. It drops only the heavy full-corpus
+    # REPLAY shards (finland_replay_*, core_tree_apply / _replay_timeline /
+    # _surface_semantic) that load the Finland corpus but never run ingest.
+    #
+    # This is a convenience gate, NOT a coverage reduction: the full
+    # ``./scripts/ci.sh`` remains the pre-push authority.
+    "ingest": (
+        "finland_sources",
+        "finland_parse_payload",
+        "core_ir_contracts",
+        "core_discipline_gates",
+        "tools_runtime_io",
+    ),
 }
 
 SOURCE_SHARD_PREFIXES: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -1346,7 +1385,18 @@ SOURCE_SHARD_PREFIXES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # shard-group (``finland_sources``: struct-build/parsed-store) and the core
     # shard-group (``core_ir_contracts``: llm-adjudicator/nemotron/docling +
     # ``core_discipline_gates``: determinism-firewall).
-    ("src/lawvm/ingest/", ("finland", "core")),
+    #
+    # This map stays deliberately CONSERVATIVE (whole finland + core groups plus
+    # ``tools_runtime_io``): ingest modules are transitively imported across the
+    # full replay/core closure, so ``--affected src/lawvm/ingest/...`` runs 15
+    # shards / ~580 files (~13 min). ``tools_runtime_io`` is included because
+    # ``fi_calibration`` / ``fi_parse_compare`` / ``fi_parse_corpus`` DIRECTLY
+    # import ``lawvm.ingest`` yet live outside the finland/core groups (a former
+    # coverage gap). For fast local iteration on an ingest-LOCAL edit, use the
+    # bounded ``ingest`` shard GROUP instead (``./scripts/ci.sh --shards ingest``
+    # or ``scripts/validate_ingest.sh``); see the ``ingest`` entry in
+    # SHARD_GROUPS. Full ``./scripts/ci.sh`` remains the pre-push authority.
+    ("src/lawvm/ingest/", ("finland", "core", "tools_runtime_io")),
     ("src/lawvm/new_zealand/", ("new_zealand",)),
     ("src/lawvm/norway/", ("norway",)),
     ("src/lawvm/open_law/", ("starter",)),

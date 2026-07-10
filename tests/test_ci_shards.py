@@ -304,6 +304,85 @@ def test_test_shard_evidence_group_expands_to_subshards() -> None:
     assert module.affected_shards(["tests/test_fi_explain_facade.py"]) == ["evidence_reports"]
 
 
+def test_test_shard_ingest_fast_path_group_is_bounded_and_sufficient() -> None:
+    """The ``ingest`` fast-path group (agent convention for ingest-local edits,
+    used instead of the ~580-file ``--affected src/lawvm/ingest/...`` closure) is
+    pinned to the BOUNDED, SUFFICIENT shard set.
+
+    Coverage-safety of this convenience gate rests on two invariants locked here:
+
+    * it contains every shard that OWNS a test directly exercising ingest
+      behaviour (``test_ingest_*`` / ``source_document_*`` -> core_ir_contracts;
+      the FI PDF-parse tests -> finland_sources / finland_parse_payload;
+      ``fi_calibration`` / ``fi_parse_*`` -> tools_runtime_io), and the
+      whole-graph ratchet homes (core_ir_contracts + core_discipline_gates);
+    * it stays a STRICT SUBSET of the conservative ``--affected`` closure
+      (``finland`` + ``core`` + ``tools_runtime_io``), i.e. it only ever prunes
+      the heavy full-corpus replay shards, never adds an unrelated one.
+
+    ``--affected`` itself is intentionally UNCHANGED (a real cross-cutting edit
+    must still pull the broad set); this group is the explicit opt-in fast lane.
+    """
+    module = _load_test_shard_module()
+
+    assert module.expand_shard_names(["ingest"]) == [
+        "finland_sources",
+        "finland_parse_payload",
+        "core_ir_contracts",
+        "core_discipline_gates",
+        "tools_runtime_io",
+    ]
+
+    ingest_shards = set(module.expand_shard_names(["ingest"]))
+    assignments = module.shard_assignments()
+    file_to_shard = {
+        filename: shard
+        for shard, filenames in assignments.items()
+        for filename in filenames
+    }
+
+    # Every direct-behaviour ingest test's owning shard is in the group.
+    for behavioural_test in (
+        "test_ingest_page_level.py",
+        "test_ingest_typography.py",
+        "test_ingest_defacsimile.py",
+        "test_source_document_coverage.py",
+        "test_fi_docling_producer.py",
+        "test_fi_nemotron_client.py",
+        "test_fi_source_document_pdf.py",
+        "test_fi_struct_build_wire.py",
+        "test_fi_scan_stratum.py",
+        "test_fi_parse_attachments_concurrency.py",
+        "test_fi_sdoc_invariants.py",
+        "test_fi_calibration.py",
+    ):
+        owner = file_to_shard[behavioural_test]
+        assert owner in ingest_shards, f"{behavioural_test} ({owner}) not in ingest group"
+
+    # Whole-graph ratchets an ingest edit can trip are covered.
+    for ratchet_test in (
+        "test_module_role_consistency.py",
+        "test_naming_hygiene_ratchet.py",
+        "test_determinism_firewall.py",
+    ):
+        assert file_to_shard[ratchet_test] in ingest_shards
+
+    # The fast path only prunes the conservative --affected closure, never widens
+    # it: it is a strict subset of what ``src/lawvm/ingest/`` maps to today.
+    affected_closure = set(
+        module.affected_shards(["src/lawvm/ingest/page_level.py"])
+    )
+    assert ingest_shards < affected_closure
+
+    # And --affected stays conservative: the ingest-local closure is the whole
+    # finland + core groups PLUS tools_runtime_io (the fi_calibration/fi_parse_*
+    # ingest drivers that live outside finland/core), strictly larger than the
+    # fast path.
+    assert affected_closure == set(
+        module.expand_shard_names(["finland", "core", "tools_runtime_io"])
+    )
+
+
 def test_test_shard_group_plan_is_jsonable() -> None:
     module = _load_test_shard_module()
 

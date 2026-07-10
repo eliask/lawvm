@@ -45,6 +45,7 @@ def test_release_scripts_have_valid_shell_syntax() -> None:
     subprocess.run(("bash", "-n", "scripts/release_hygiene.sh"), check=True)
     subprocess.run(("bash", "-n", "scripts/build_release_archive.sh"), check=True)
     subprocess.run(("bash", "-n", "scripts/verify_release_archive.sh"), check=True)
+    subprocess.run(("bash", "-n", "scripts/validate_ingest.sh"), check=True)
 
 
 def test_canonical_ci_validates_pytest_shard_ownership() -> None:
