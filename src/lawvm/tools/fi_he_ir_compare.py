@@ -462,52 +462,69 @@ def _xml_proposed_bodies(xml_bytes: bytes) -> dict[str, str]:
     return out
 
 
-def _lakiehdotus_body_start(flat: str) -> int:
-    """Index after the FIRST GENUINE enacting-clause terminator (skips perustelut prose).
+def _enacting_clause_regions(flat: str) -> list[tuple[int, int]]:
+    """Absolute [head-start, terminator-end] spans of every GENUINE enacting clause.
 
-    A detailed-perustelut sentence may contain "... seuraavasti:" AND discuss provisions
-    ("Voimassa oleva 13 § korvattaisiin uudella 13 §:llä"), but only a real enacting clause
-    carries the amendment-verb head + statute citation "(N/YEAR)" + "§" before its
-    terminator. Bill-body extraction must start after the first such GENUINE terminator, so
-    the perustelut's "N §" discussions are not first-wins-captured as bill sections (which
-    truncated e.g. HE 2020/210 §13 to a 58-char perustelut fragment). Falls back to the
-    first terminator when no genuine clause is found (single born-digital bill).
+    A genuine clause carries the amendment-verb head + statute citation "(N/YEAR)" + "§"
+    before its "... seuraavasti:" terminator (the same anchors extract_enacting_clause_spans
+    uses); a detailed-perustelut "... seuraavasti:" that merely discusses a provision does
+    not qualify. These regions are the bills' provision LISTS ("muutetaan … 35 §, 36 §:n 3
+    momentti seuraavasti:") — the "N §" refs INSIDE them must NOT be read as section-body
+    headers, or the first bill's §35 body is stolen by a LATER bill's clause list.
     """
+    regions: list[tuple[int, int]] = []
     for term in _TERMINATOR_RE.finditer(flat):
         w0 = max(0, term.start() - _MAX_CLAUSE_CHARS)
         window = flat[w0:term.start()]
         for h in _HE_HEAD_VERB_RE.finditer(window):
             cite = _CITE_RE.search(window, h.end(), min(len(window), h.end() + _HEAD_TO_CITE))
             if cite is not None and _PROVISION_MARK_RE.search(window, cite.end()) is not None:
-                return term.end()
-    first = _TERMINATOR_RE.search(flat)
-    return first.end() if first is not None else 0
+                regions.append((w0 + h.start(), term.end()))
+                break
+    return regions
 
 
 def _pdf_proposed_bodies(reading_text: str) -> dict[str, str]:
-    """Segment the bill body after "... seuraavasti:" into section label → body text.
+    """Segment the bill body into section label → body text, clause-region aware.
 
-    Starts after the first GENUINE enacting-clause terminator (:func:`_lakiehdotus_body_start`
-    — skips detailed-perustelut prose) and ends before the rinnakkaistekstit appendix, so
-    only true bill sections are indexed.  First-wins on a duplicate label; a label seen twice
-    (rinnakkaistekstit repeats the bill) keeps the first and drops later colliding bodies to
-    the deferral path.
+    Section-body headers are searched only OUTSIDE the enacting-clause regions
+    (:func:`_enacting_clause_regions`) and after the first such clause (skipping
+    detailed-perustelut prose), bounded before the rinnakkaistekstit appendix. This keeps
+    a later bill's provision-list "N §" refs from being first-wins-captured as the earlier
+    bill's section body.  A section body also STOPS at the next clause region (it must not
+    run into the next bill's enacting clause).  First-wins on a duplicate label.
     """
     flat = _lakiehdotus_region(_flatten_reading_text(reading_text))
-    body = flat[_lakiehdotus_body_start(flat):]
-    headers = list(_PDF_SECTION_HEADER_RE.finditer(body))
+    regions = _enacting_clause_regions(flat)
+    body_start = regions[0][1] if regions else (
+        m.end() if (m := _TERMINATOR_RE.search(flat)) is not None else 0
+    )
+
+    def _in_region(pos: int) -> bool:
+        return any(a <= pos < b for a, b in regions)
+
+    def _next_region_start(pos: int) -> int:
+        after = [a for a, _ in regions if a >= pos]
+        return min(after) if after else len(flat)
+
+    headers = [
+        hm
+        for hm in _PDF_SECTION_HEADER_RE.finditer(flat, body_start)
+        if not _in_region(hm.start())
+    ]
     out: dict[str, str] = {}
     for i, hm in enumerate(headers):
         label = _normalize_section_label(hm.group(1))
         if not label:
             continue
         start = hm.end()
-        end = headers[i + 1].start() if i + 1 < len(headers) else len(body)
-        trailer = _PDF_BODY_TRAILER_RE.search(body, start, end)
+        end = headers[i + 1].start() if i + 1 < len(headers) else len(flat)
+        end = min(end, _next_region_start(start))  # do not spill into the next bill's clause
+        trailer = _PDF_BODY_TRAILER_RE.search(flat, start, end)
         if trailer is not None:
             end = trailer.start()
         if label not in out:
-            out[label] = body[start:end].strip()
+            out[label] = flat[start:end].strip()
     return out
 
 
