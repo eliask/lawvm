@@ -703,6 +703,15 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # genuinely held around every pdfium call (a concurrent thread cannot acquire
         # it mid-render) and is the SAME object across page_elements / calibration.
         "test_ingest_cold_region_reader.py",
+        # Thread-safe token + throughput ledger (observability): the vision choke
+        # point ``_post_chat`` records one tagged row per model call (input/output
+        # tokens from ``usage``, prompt/decode tok/s from llama.cpp ``timings``, wall
+        # time around the round-trip); concurrent N×M calls accumulate with no lost
+        # updates; thread-local ``meter_unit`` pdf/page tags survive a real
+        # ThreadPool and roll up; missing usage/timings degrades to a typed partial
+        # row; ``summary()`` computes wall-vs-compute tok/s + the GPU-utilization
+        # ratio; the meter never perturbs the parse result (determinism firewall).
+        "test_ingest_token_meter.py",
         # meta.v2 typography lane: pdfplumber char-span → pypdfium2 PageLine
         # geometry alignment (fake spans), font-name → family/bold/italic parse,
         # document-adaptive size_class (relative to page median), char-grouping

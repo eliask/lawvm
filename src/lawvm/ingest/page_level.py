@@ -41,6 +41,7 @@ from lawvm.core.source_document.ir import (
     SourceDocumentNode,
     SourceDocumentNodeKind,
 )
+from lawvm.ingest.llm_backends.token_meter import meter_unit
 from lawvm.ingest.metadata import NodeMetadata, encode_metadata
 from lawvm.ingest.page_elements import (
     PageElements,
@@ -1234,25 +1235,31 @@ def build_page_simulacra(
         page_num = idx + 1
         pe = all_elements[idx]
         ro_text = reading_order_pages[idx]
-        converged = converge_page(
-            vision,
-            manifestation,
-            page_num,
-            pe,
-            reading_order_text=ro_text,
-            adjudicator=adjudicator,
-            leaf_mode=leaf_mode,
-            max_iters=max_iters,
-        )
-        return build_page_simulacrum(
-            converged,
-            manifestation,
-            page_num,
-            pe,
-            reading_order_text=ro_text,
-            recurrence=recurrence,
-            page_count=page_count,
-        )
+        # Attribute every vision model call this worker issues to its (pdf, page)
+        # unit for the token/throughput ledger. The tag MUST be set here — inside the
+        # ThreadPool worker body — because the meter's unit stack is thread-local and
+        # a worker thread does not inherit the submitting thread's context. This is a
+        # transparent observability wrapper: it changes no result (determinism firewall).
+        with meter_unit(pdf=manifestation.locator, page=page_num):
+            converged = converge_page(
+                vision,
+                manifestation,
+                page_num,
+                pe,
+                reading_order_text=ro_text,
+                adjudicator=adjudicator,
+                leaf_mode=leaf_mode,
+                max_iters=max_iters,
+            )
+            return build_page_simulacrum(
+                converged,
+                manifestation,
+                page_num,
+                pe,
+                reading_order_text=ro_text,
+                recurrence=recurrence,
+                page_count=page_count,
+            )
 
     workers = max_workers if max_workers is not None else _DEFAULT_PAGE_CONCURRENCY
     workers = max(1, min(workers, page_count))

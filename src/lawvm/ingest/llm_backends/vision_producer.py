@@ -38,6 +38,7 @@ import io
 import json
 import os
 import threading
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -46,6 +47,7 @@ from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
 from lawvm.core.source_document.extraction import (
     SourceManifestation,
 )
+from lawvm.ingest.llm_backends import token_meter
 
 if TYPE_CHECKING:
     from lawvm.core.source_document.anchors import BBox
@@ -427,6 +429,16 @@ class VisionPageProducer:
         # (payload build + response parse stay outside), so total concurrent requests
         # against :8080 never exceed VISION_MAX_INFLIGHT no matter how the per-page /
         # per-PDF pools nest. The gate shapes timing only — never the result.
+        #
+        # OBSERVABILITY (token_meter). This is the single model-call choke point, so
+        # the token + throughput ledger is instrumented HERE and nowhere else. Wall
+        # time is measured around the whole gated round-trip (queue wait + transport,
+        # the idle the wall-vs-compute ratio exposes); the response ``usage`` +
+        # llama.cpp ``timings`` are read on the success path. The ledger is a pure
+        # side channel: it records into the process-wide meter, tags the row from the
+        # calling thread's ``meter_unit`` stack, and NEVER touches ``content`` — the
+        # parse result is byte-identical with or without it (determinism firewall).
+        wall_start = time.monotonic()
         try:
             with VISION_INFLIGHT_GATE:
                 with urllib.request.urlopen(req, timeout=self._timeout) as resp:
@@ -443,6 +455,14 @@ class VisionPageProducer:
                 reason_code="vision_unreachable",
                 detail=f"{type(exc).__name__}: {exc}",
             ) from exc
+        wall_ms = (time.monotonic() - wall_start) * 1000.0
+        # Record ONE tagged token/throughput row. ``observe`` is defensive (a
+        # malformed ``out`` degrades to a typed partial row), and this extra guard
+        # makes the firewall total: no meter fault can perturb the returned content.
+        try:
+            token_meter.METER.observe(out, wall_ms)
+        except Exception:
+            pass
         try:
             choice = out["choices"][0]
             content = str(choice["message"]["content"])
