@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import re
 from dataclasses import dataclass, field
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple, cast
 
@@ -198,6 +199,33 @@ def _PdfiumError() -> type[BaseException]:
 # break, joining across it) and a bare ``<hyphen>`` (extractor emitted it inline).
 _DISCRETIONARY_HYPHENS = ("￾", "­")
 
+# The soft/discretionary glyph pypdfium2 emits at a line break for THIS corpus. It
+# is AMBIGUOUS: the SAME glyph stands for a genuine soft break (``kriisinrat<FFFE>
+# kaisusta`` → ``kriisinratkaisusta``) AND for a REAL compound hyphen that merely
+# fell at the line break (``ETA<FFFE>sopimus`` for ``ETA-sopimus``; ``Avio<FFFE>tai``
+# for ``Avio- tai``). ``dehyphenate`` discriminates the two below.
+_DISCRETIONARY_GLYPH = "￾"  # U+FFFE
+_SOFT_HYPHEN = "­"  # U+00AD
+
+# Vowels (Finnish + ASCII). A long vowel / diphthong is NEVER split for hyphenation,
+# so a REPEATED vowel across a line break is a compound seam, not a soft break.
+_HYPHEN_VOWELS = frozenset("aeiouyäöAEIOUYÄÖ")
+
+# Conjunctions that follow an ELLIPTICAL compound hyphen ("sosiaali- ja terveys-
+# ministeriö", "tulo- tai", "kunta- sekä"): the shared head is elided and the two
+# left-members are coordinated by a bare conjunction. A hyphen before one of these
+# is a REAL compound hyphen to PRESERVE (with its space). Whole-word match only
+# (lookahead), so "-ja" partitive/agent endings ("kirja", "puheenjohtaja") do not
+# match here — and are further guarded by the corroboration check below. Flat
+# alternation of literals + a lookahead: no nested quantifier (perf gate FW-07).
+_ELLIPTIC_CONJ_RE = re.compile(r"(?:ja|tai|sekä|eikä|että)(?=\s|$)")
+
+# Any word immediately before a REAL hyphen-minus anywhere in the text. Used to
+# CORROBORATE an elliptical left-member: "sosiaali-" recurs with a real hyphen in a
+# document that writes "sosiaali- ja terveys...", whereas an agent-noun fragment
+# ("puheenjohta" of "puheenjohtaja") never does. Single ``\w+`` quantifier — flat.
+_REAL_HYPHEN_LEFT_RE = re.compile(r"(\w+)-")
+
 #: Degenerate bbox returned by ``_object_bbox`` when an image XObject has no readable
 #: geometry (missing/broken ``get_pos``). It carries NO positional meaning, so it must
 #: never drive a whole-page rasterization (that is the O(N_images) encode hang: a page
@@ -208,15 +236,103 @@ _DISCRETIONARY_HYPHENS = ("￾", "­")
 _ZERO_BBOX: Tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
 
 
-def dehyphenate(text: str) -> str:
-    """Join words split by a discretionary/soft hyphen at a line break.
+def _trailing_word(out: List[str]) -> str:
+    """The trailing alphanumeric run already emitted (the hyphen's left-member)."""
+    chars: List[str] = []
+    for ch in reversed(out):
+        if len(ch) == 1 and ch.isalnum():
+            chars.append(ch)
+        else:
+            break
+    chars.reverse()
+    return "".join(chars)
 
-    ``kriisinrat\\ufffekaisusta`` → ``kriisinratkaisusta``. A real hyphen
-    (U+002D) is left untouched — only the invisible discretionary points go.
+
+def _hyphen_break_repl(preword: str, prechar: str, post: str, lefts: set[str]) -> str:
+    """Decide what a line-break hyphen becomes: fuse ("") / keep ("-") / elliptical ("- ").
+
+    Given the word ``preword`` (and its last char ``prechar``) BEFORE the hyphen and the
+    text ``post`` immediately AFTER (the consumed line break already stripped), return the
+    replacement text for the hyphen glyph itself. Precision-first (a genuine soft break is
+    the default fuse; a real compound hyphen is preserved only on a defensible signal):
+
+      (a) ELLIPTICAL compound — hyphen + a bare conjunction whose left-member is
+          corroborated by a REAL hyphen elsewhere in the document. Keep the hyphen AND a
+          space ("- "), unless ``post`` already opens with whitespace (avoid a double gap).
+      (b) LEXICAL compound, IDENTICAL-VOWEL seam ("laina-aika", "kauppa-alus"): a long
+          vowel is never split for hyphenation, so a repeated vowel across the break is a
+          compound seam. Keep the hyphen ("-").
+      (c) PROPER-noun / ACRONYM / NUMERIC seam ("ETA-sopimus", "Saudi-Arabia",
+          "40-vuotias"): an uppercase/digit at the seam, or an all-caps / digit-tailed
+          left-member. Keep the hyphen ("-").
+
+    Otherwise a genuine soft/discretionary break → fuse ("").
     """
-    for h in _DISCRETIONARY_HYPHENS:
-        text = text.replace(h + "\n", "").replace(h, "")
-    return text
+    postchar = post[:1]
+    # (a) elliptical compound, corroborated left-member (guards "-ja" partitive/agent endings).
+    if len(preword) >= 3 and preword.lower() in lefts and _ELLIPTIC_CONJ_RE.match(post.lstrip()):
+        return "-" if postchar.isspace() else "- "
+    # (b) identical-vowel compound seam.
+    if prechar in _HYPHEN_VOWELS and postchar in _HYPHEN_VOWELS and prechar.lower() == postchar.lower():
+        return "-"
+    # (c) proper-noun / acronym / numeric seam.
+    if (
+        postchar.isupper()
+        or postchar.isdigit()
+        or (len(preword) >= 2 and preword.isupper())
+        or preword[-1:].isdigit()
+    ):
+        return "-"
+    return ""
+
+
+def dehyphenate(text: str) -> str:
+    """Join words split by a discretionary/soft hyphen at a line break — preserving REAL ones.
+
+    ``kriisinrat\\ufffekaisusta`` → ``kriisinratkaisusta`` (genuine soft break, fused). The
+    U+FFFE glyph pypdfium2 emits at a line break is AMBIGUOUS, though: it also stands for a
+    real compound hyphen that fell at the break, so an unconditional fuse corrupts content
+    (``ETA-sopimus`` → ``ETAsopimus``, ``sosiaali- ja`` → ``sosiaalija``). We therefore
+    fuse only a genuine soft break and PRESERVE a real compound hyphen — elliptical
+    (``sosiaali- ja``), identical-vowel (``kauppa-alusluettelo``), and proper/acronym
+    (``ETA-sopimus``) seams — via :func:`_hyphen_break_repl`. U+00AD SOFT HYPHEN is
+    definitionally discretionary → always fused. A real hyphen NOT at a line break
+    (mid-line ``EU-jäsenvaltio``, a range ``5-10``) is legal content, never touched.
+    """
+    if not text:
+        return text
+    # U+00AD is discretionary by definition → fuse (drop it and any line break it opens).
+    if _SOFT_HYPHEN in text:
+        text = (
+            text.replace(_SOFT_HYPHEN + "\r\n", "")
+            .replace(_SOFT_HYPHEN + "\n", "")
+            .replace(_SOFT_HYPHEN, "")
+        )
+    # Nothing ambiguous to resolve (no discretionary glyph and no real hyphen-at-break).
+    if _DISCRETIONARY_GLYPH not in text and "-\n" not in text and "-\r\n" not in text:
+        return text
+    # Corroboration alphabet: left-members that appear before a REAL hyphen anywhere.
+    lefts = {m.group(1).lower() for m in _REAL_HYPHEN_LEFT_RE.finditer(text)}
+    out: List[str] = []
+    i, n = 0, len(text)
+    while i < n:
+        ch = text[i]
+        is_glyph = ch == _DISCRETIONARY_GLYPH
+        is_real_break = ch == "-" and (text[i + 1 : i + 2] == "\n" or text[i + 1 : i + 3] == "\r\n")
+        if not (is_glyph or is_real_break):
+            out.append(ch)
+            i += 1
+            continue
+        # Advance past the hyphen glyph and the line break it consumed (\r\n / \n).
+        j = i + 1
+        if text[j : j + 2] == "\r\n":
+            j += 2
+        elif text[j : j + 1] == "\n":
+            j += 1
+        prechar = out[-1] if out else ""
+        out.append(_hyphen_break_repl(_trailing_word(out), prechar, text[j : j + 24], lefts))
+        i = j
+    return "".join(out)
 
 
 # --------------------------------------------------------------------------- #

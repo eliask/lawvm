@@ -232,6 +232,41 @@ def test_dehyphenate_joins_discretionary_hyphens_not_real_ones() -> None:
     assert dehyphenate("EU-jäsenvaltio") == "EU-jäsenvaltio"
 
 
+def test_dehyphenate_preserves_real_compound_hyphens_at_a_line_break() -> None:
+    """U+FFFE (and a real hyphen+newline) is AMBIGUOUS — a real compound hyphen that fell
+    at the line break must be PRESERVED, not fused into a corrupted word."""
+    from lawvm.finland.source_document.page_elements import dehyphenate
+
+    # (a) ELLIPTICAL compound: hyphen + a bare conjunction whose left-member is
+    # corroborated by a real hyphen elsewhere → keep the hyphen AND the space.
+    assert (
+        dehyphenate("sosiaali-ala sekä sosiaali￾ja terveys")
+        == "sosiaali-ala sekä sosiaali- ja terveys"
+    )
+    # A REAL hyphen mid-line before a conjunction is already legal content, untouched.
+    assert dehyphenate("sosiaali- ja terveys") == "sosiaali- ja terveys"
+    # But an UN-corroborated "-ja" is a partitive/agent-noun ending, NOT elliptical → fuse.
+    assert dehyphenate("puheenjohta￾ja valittiin") == "puheenjohtaja valittiin"
+    assert dehyphenate("asiakir￾ja") == "asiakirja"
+
+    # (b) LEXICAL compound, identical-vowel seam — kept, both glyph forms.
+    assert dehyphenate("kauppa￾alusluettelo") == "kauppa-alusluettelo"
+    assert dehyphenate("kauppa-\nalusluettelo") == "kauppa-alusluettelo"
+    assert dehyphenate("laina￾aikaan") == "laina-aikaan"
+    # A DIFFERENT-vowel seam is a closed compound (no hyphen) → still fuses.
+    assert dehyphenate("työ￾elämä") == "työelämä"
+
+    # (c) proper-noun / acronym seam — kept.
+    assert dehyphenate("ETA￾sopimus") == "ETA-sopimus"
+    assert dehyphenate("Saudi￾Arabian") == "Saudi-Arabian"
+
+    # A GENUINE soft break (a bare mid-morpheme fragment) still fuses — both glyph forms
+    # and the soft-hyphen U+00AD — so the SOFT_HYPHEN_JOIN fold keeps firing.
+    assert dehyphenate("kriisinrat￾kaisusta") == "kriisinratkaisusta"
+    assert dehyphenate("kriisinrat-\nkaisusta") == "kriisinratkaisusta"
+    assert dehyphenate("kriisinrat­\nkaisusta") == "kriisinratkaisusta"
+
+
 # --------------------------------------------------------------------------- #
 # Wire parse: inline (full) leaves + images (same grammar)                    #
 # --------------------------------------------------------------------------- #
