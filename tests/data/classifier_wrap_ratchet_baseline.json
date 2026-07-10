@@ -57,7 +57,7 @@
     "src/lawvm/finland/merge.py": 4,
     "src/lawvm/finland/metadata.py": 62,
     "src/lawvm/finland/normalize.py": 21,
-    "src/lawvm/finland/op_equivalence.py": 1,
+    "src/lawvm/finland/op_equivalence.py": 2,
     "src/lawvm/finland/oracle_versioned_children.py": 1,
     "src/lawvm/finland/payload_normalize.py": 1,
     "src/lawvm/finland/pool_mention_extractor.py": 5,
@@ -204,5 +204,5 @@
     "src/lawvm/us_federal/table3.py": 4,
     "src/lawvm/us_federal/usc_witness.py": 4
   },
-  "total_raw_re_compile": 1295
+  "total_raw_re_compile": 1296
 }

@@ -54,6 +54,25 @@ def test_visible_dash_is_not_folded_conservatively():
     assert EncodingFold.WHITESPACE not in v.folds  # nothing inert fired to hide it
 
 
+def test_separator_dash_run_is_folded():
+    # A run of 2+ dashes ("— — —") is an inert statute rule / elision marker the text
+    # layer captures but the clean XML body omits — folded so the bodies compare equal.
+    v = text_equivalence(
+        "Uskotun miehen palkkio maksetaan.",
+        "Uskotun miehen palkkio maksetaan. — — — — — —",
+    )
+    assert v.equal
+    assert EncodingFold.SEPARATOR_DASH_RUN in v.folds
+
+
+def test_single_dash_is_still_a_residual_not_a_run():
+    # The {2,}-dash requirement is load-bearing: a SINGLE en/em dash stays substantive,
+    # so a genuine one-dash difference is NOT hidden by the separator-run fold.
+    v = text_equivalence("veroluokka 5—10", "veroluokka 5–10")
+    assert not v.equal and v.residual
+    assert EncodingFold.SEPARATOR_DASH_RUN not in v.folds
+
+
 def test_folds_are_deterministic_and_sorted():
     v = text_equivalence("a​ b­\nc", "a bc")
     assert v.equal

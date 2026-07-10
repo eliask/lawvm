@@ -28,9 +28,19 @@ Why NOT fold visible glyphs (dashes, quotes) here
 docstring is explicit that it MUST NOT be applied to body text compared against oracle
 content — those folds are for *parse-text* (extracting section numbers), where a dash
 is a range separator, not for *payload text*, where a dash may be substantive. So the
-payload quotient here stays strictly inside the invisible/whitespace layer. Visible-
-glyph equivalence, if it turns out to be needed, is discovered from residuals and added
-consciously — with the same auditability the Unicode-fold sets already carry.
+payload quotient here stays strictly inside the invisible/whitespace layer, with ONE
+consciously-graduated visible-glyph exception below. Visible-glyph equivalence, if it
+turns out to be needed, is discovered from residuals and added consciously — with the
+same auditability the Unicode-fold sets already carry.
+
+The one graduated visible-glyph fold: SEPARATOR_DASH_RUN
+-------------------------------------------------------
+A RUN of 2+ dashes ("— — —") is a visual rule / statute elision marker, never
+substantive content — discovered from residuals (52 HE payload bodies differed ONLY by a
+trailing "— — —" the text layer captured but the clean XML omits) and adjudicated inert.
+It is folded, but a SINGLE dash is deliberately preserved (an en-dash range "5—10", an
+em-dash aside, a compound hyphen remain substantive) — the ``{2,}``-dash requirement is
+what keeps this inside the "unarguably inert" boundary.
 
 Auditability
 ------------
@@ -60,6 +70,15 @@ _ZS_TO_SPACE_TABLE = {cp: 0x20 for cp in ZS_NON_ASCII_SPACE_CPS}
 
 _WS_RUN = re.compile(r"\s+")
 
+# A RUN of 2+ dashes (figure/en/em/horizontal-bar U+2012–2015 or hyphen), optionally
+# space-separated: a visual RULE / statute elision marker ("— — —"), never substantive
+# body content. Discovered from residuals (52 HE payload bodies differed ONLY by a trailing
+# "— — —" the text layer captured but the clean XML body omits) and adjudicated inert. The
+# ``{2,}``-dash requirement is load-bearing: a SINGLE dash stays substantive (an en-dash
+# range "5—10", an em-dash aside, a compound hyphen "sotilas- ja"), so only runs fold.
+# Flat quantifiers only (no quantified group → no nested-backtracking risk).
+_SEPARATOR_DASH_RUN_RE = re.compile(r"[‒-―\-]\s{0,3}[‒-―\-][\s‒-―\-]{0,120}")
+
 
 class EncodingFold(StrEnum):
     """The closed set of legally-inert folds this module applies to body text.
@@ -72,6 +91,7 @@ class EncodingFold(StrEnum):
     SOFT_HYPHEN_JOIN = "soft_hyphen_join"  # dehyphenate: soft-hyphen line break → fused word
     CF_FORMAT = "cf_format"  # invisible Unicode Cf control chars deleted
     WHITESPACE = "whitespace"  # Zs→space + all whitespace runs collapsed + trimmed
+    SEPARATOR_DASH_RUN = "separator_dash_run"  # run of 2+ dashes ("— — —" rule/elision) deleted
 
 
 def _canonicalize_text(text: str) -> Tuple[str, frozenset[EncodingFold]]:
@@ -93,9 +113,13 @@ def _canonicalize_text(text: str) -> Tuple[str, frozenset[EncodingFold]]:
     if no_cf != dehyph:
         fired.add(EncodingFold.CF_FORMAT)
 
-    spaced = no_cf.translate(_ZS_TO_SPACE_TABLE)
+    no_dash = _SEPARATOR_DASH_RUN_RE.sub(" ", no_cf)
+    if no_dash != no_cf:
+        fired.add(EncodingFold.SEPARATOR_DASH_RUN)
+
+    spaced = no_dash.translate(_ZS_TO_SPACE_TABLE)
     collapsed = _WS_RUN.sub(" ", spaced).strip()
-    if collapsed != no_cf:
+    if collapsed != no_dash:
         fired.add(EncodingFold.WHITESPACE)
 
     return collapsed, frozenset(fired)
