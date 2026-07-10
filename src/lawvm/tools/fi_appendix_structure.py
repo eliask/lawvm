@@ -75,7 +75,11 @@ _DUAL_MERGE_COL_THRESHOLD = 9
 
 # A number token: an integer or a decimal, Finnish decimal-comma OR dot. Grouped
 # runs (``6,5`` / ``1.234``) are one token; a bare ``§`` or letters never match.
-_NUMBER_RE = re.compile(r"\d+(?:[.,]\d+)*")
+# FLAT quantifiers only (FW-07 / AGENTS.md §1.11): a single digit then a bounded
+# digit/separator run — no quantified group (which would flag as nested-
+# backtracking even when bounded). A run may capture a TRAILING separator
+# (``12.`` from ``12.``) which ``number_tokens`` strips.
+_NUMBER_RE = re.compile(r"\d[\d.,]{0,40}")
 
 
 def number_tokens(text: str) -> Tuple[str, ...]:
@@ -85,8 +89,13 @@ def number_tokens(text: str) -> Tuple[str, ...]:
     thousands separator as a space, so ``,``→``.`` makes ``6,5`` and ``6.5``
     compare equal without conflating a thousands group. Order-preserving; a
     multiset (repeats kept) so completeness is a true count, not a set cover.
+    A trailing ``.``/``,`` (sentence punctuation after the figure) is stripped so
+    ``12.`` and ``12`` count identically.
     """
-    return tuple(m.group(0).replace(",", ".") for m in _NUMBER_RE.finditer(text or ""))
+    return tuple(
+        m.group(0).rstrip(".,").replace(",", ".")
+        for m in _NUMBER_RE.finditer(text or "")
+    )
 
 
 @dataclass(frozen=True, slots=True)

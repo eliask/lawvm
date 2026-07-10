@@ -116,6 +116,7 @@ from lawvm.core.clause_ast import (
     RefAmend,
     ScopedBlock,
 )
+from lawvm.core.regex_safety import compile_classifier_regex
 from lawvm.core.source_document.extraction import SourceManifestation
 from lawvm.finland.op_equivalence import text_equivalence
 
@@ -155,17 +156,26 @@ _PDF_READ_EMPTY_MIN_CHARS = 120
 #: Distinctive Northern-Sámi markers. The modern finlex ``fin/media/*.pdf`` is
 #: SOMETIMES the Sámi-language manifestation of the act filed under the fin path
 #: — a pairing artifact (benign for FI-vs-FI op exactness), NOT an annex.
-_SAMI_MARKER_RE = re.compile(
-    r"\b(l[áa]hka|addojuvvon|rievdad\w*|mielde|birra|beaivve|riikkabeiv\w*)\b",
+#: These three are prose classifiers over PDF reading text emitting the
+#: language/annex gate feature, so they go through the FW-07 safe primitive
+#: (``compile_classifier_regex``: backtracking-bounded + required-literal
+#: prefilter), not raw ``re.compile``.
+_SAMI_MARKER_RE = compile_classifier_regex(
+    r"\b(l[áa]hka|addojuvvon|rievdad\w{0,20}|mielde|birra|beaivve|riikkabeiv\w{0,20})\b",
     re.IGNORECASE,
+    classifier_id="fi_amendment_ir.pdf_language_sami",
 )
 #: Distinctive Swedish markers (the parallel Swedish manifestation).
-_SWEDISH_MARKER_RE = re.compile(
-    r"\b(och|ändring\w*|enligt|följande|stadgas|förordning)\b", re.IGNORECASE
+_SWEDISH_MARKER_RE = compile_classifier_regex(
+    r"\b(och|ändring\w{0,20}|enligt|följande|stadgas|förordning)\b",
+    re.IGNORECASE,
+    classifier_id="fi_amendment_ir.pdf_language_swedish",
 )
 #: An explicit annex/table heading — genuine attachment content, benign.
-_ANNEX_HEADING_RE = re.compile(
-    r"\b(liit(?:e|te\w*)|sisällysluettelo|taulukko)\b", re.IGNORECASE
+_ANNEX_HEADING_RE = compile_classifier_regex(
+    r"\b(liit(?:e|te\w{0,20})|sisällysluettelo|taulukko)\b",
+    re.IGNORECASE,
+    classifier_id="fi_amendment_ir.pdf_annex_heading",
 )
 
 
@@ -488,7 +498,11 @@ _PDF_BODY_SECTION_RE = re.compile(r"(\d{1,4}\s{0,3}[a-zä]?)\s{0,3}§(?!\s{0,2}:
 #: heading. It is deliberately conservative — a bare appendix-heading line only, never
 #: inflected in-prose "liitteen"/"liitteessä" (those carry trailing text on the line) —
 #: so genuine body prose is never clipped.
-_APPENDIX_BOUNDARY_RE = re.compile(r"(?m)^\s{0,4}(?:LIITE|Liite)\b(?:\s*\d{1,3}\s{0,3}[a-zä]?)?\s*$")
+# Flat quantifiers only (FW-07 / AGENTS.md §1.11): the number/letter suffix is
+# inlined rather than a quantified group, to avoid a nested-quantifier flag.
+_APPENDIX_BOUNDARY_RE = re.compile(
+    r"(?m)^\s{0,4}(?:LIITE|Liite)\b\s{0,3}\d{0,3}\s{0,3}[a-zä]?\s{0,4}$"
+)
 
 #: Detail-string trim width for the residual left/right canon carried to adjudication.
 _PAYLOAD_CANON_TRIM = 80
