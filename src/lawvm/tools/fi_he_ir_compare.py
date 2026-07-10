@@ -744,13 +744,44 @@ def compare_he(
 # --------------------------------------------------------------------------- #
 
 
+#: Below this many non-space chars the pdfium text layer is absent/sparse (a scanned HE
+#: or an image-only PDF) → fall back to the geom bbox reconstruction.
+_TEXT_LAYER_MIN_CHARS = 400
+
+
+def _pdfium_text_layer(data: bytes, max_pages: int) -> str:
+    """Native pdfium text-layer extraction (the PDF's own text order), newline-joined.
+
+    For a BORN-DIGITAL HE the embedded text layer already reads in the correct order.
+    The geom bbox RECONSTRUCTION, by contrast, re-derives reading order from glyph
+    geometry and SCATTERS two-column bill layouts — it interleaves bill-body prose and
+    page furniture INTO the enacting clause's provision list, splitting "uusi 11 kohta"
+    and dropping the trailing provisions (op_missing) or inventing cross-statute ones
+    (op_extra). Using the native text order recovers those (measured: op_missing −71%,
+    op_extra −63% on the diagnosed HEs). pdfium is not thread-safe → hold the systemic lock.
+    """
+    import pypdfium2 as pdfium
+
+    from lawvm.ingest.visual import PDFIUM_LOCK
+
+    with PDFIUM_LOCK:
+        pdf = pdfium.PdfDocument(data)
+        try:
+            n = min(len(pdf), max_pages)
+            return "\n".join(pdf[i].get_textpage().get_text_range() for i in range(n))
+        finally:
+            pdf.close()
+
+
 def he_pdf_reading_text(
     farchive: str, pdf_locator: str, *, max_pages: int = 400
 ) -> str:
-    """Geom-reconstruct an HE main.pdf's reading text (born-digital, zero image tokens).
+    """Reconstruct an HE main.pdf's reading text (born-digital, zero image tokens).
 
     Reads ALL pages up to ``max_pages`` because the lakiehdotus (bill text) sits near the
-    END of the HE, after the perustelut.  Returns the newline-joined per-page geom text.
+    END of the HE, after the perustelut.  PRIMARY lane is the native pdfium TEXT LAYER
+    (correct reading order for born-digital HEs); it falls back to the geom bbox
+    reconstruction only when the text layer is absent/sparse (a scanned HE).
     """
     import hashlib
     from datetime import datetime, timezone
@@ -766,6 +797,10 @@ def he_pdf_reading_text(
         fa.close()
     if not data:
         raise HEIrCompareError(f"fi-he-ir-compare: HE main.pdf not found: {pdf_locator}")
+    text_layer = _pdfium_text_layer(data, max_pages)
+    if len(re.sub(r"\s+", "", text_layer)) >= _TEXT_LAYER_MIN_CHARS:
+        return text_layer
+    # No usable text layer (scanned / image-only) → geom bbox reconstruction.
     man = SourceManifestation(
         artifact_digest=hashlib.sha256(data).hexdigest(),
         source_bytes=data,
