@@ -9874,6 +9874,64 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
     calib_p.add_argument("--json-out", default=None, metavar="PATH", dest="json_out",
                          help="also write the JSON payload to this path")
 
+    # --- fi-sweep ---
+    sweep_p = sub.add_parser(
+        "fi-sweep",
+        help="VoI-staged corpus reliability sweep: escalate small->full, gating each tranche",
+        description=(
+            "Value-of-Information STAGED sweep driver over the finlex PDFs (spec "
+            "§10 dec. 4 / §10.2). Escalate in tranches (default 10 -> 50 -> 200 -> "
+            "1000 -> full), each a STRATIFIED (proportional born_digital/mixed/"
+            "scanned via fi-scan-stratum), SUPERSET-NESTED sample of the prior. "
+            "After each stage's de-facsimile-vs-struct_span A/B (reusing "
+            "fi-parse-corpus + the fi-calibration NUMERIC-exact discipline), a VoI "
+            "GATE decides whether to spend the next, larger GPU tranche: PROCEED "
+            "only if NUMERIC-exact regressions are within tolerance, the acceptance "
+            "rate has not regressed vs the prior stage beyond a threshold, and there "
+            "were no run errors; else STOP and print WHY + what was DROPPED. "
+            "Resumable (per-stage JSON checkpoint; nested stages re-use completed "
+            "PDFs) and deterministic (content-keyed stratified order — two runs diff "
+            "empty). Reports per-stage + cumulative acceptance / NUMERIC failures / "
+            "EXTRA-STRUCTURE-MISSING deltas + a ranked residual-defect-class table. "
+            "ADDITIVE tooling — never edits the ingest pipeline. The full run needs "
+            "the GPU and is OPERATOR-invoked; --dry-run plans the samples (cheap "
+            "pdfium census only) with no vision; CI drives it hermetically."
+        ),
+    )
+    sweep_p.add_argument("--finlex", default=None, metavar="PATH",
+                         help="source farchive (default: data/finlex.farchive)")
+    sweep_p.add_argument("--store", default=None, metavar="PATH",
+                         help="derived-IR farchive (default: data/fi_parsed_ir.farchive)")
+    sweep_p.add_argument("--stages", default=None, metavar="SPEC",
+                         help="comma escalation ladder, 'full' = whole pool "
+                              "(default: 10,50,200,1000,full)")
+    sweep_p.add_argument("--only-with-xml", action="store_true", dest="only_with_xml",
+                         help="restrict to PDFs with a sibling main.xml gold (full A/B only)")
+    sweep_p.add_argument("--stratum", default=None,
+                         choices=["born_digital", "mixed", "scanned", "unreadable"],
+                         help="restrict the pool to one stratum (e.g. scanned = vision hard case)")
+    sweep_p.add_argument("--numeric-tolerance", type=int, default=0, dest="numeric_tolerance",
+                         metavar="N",
+                         help="max NEW numeric-exact regressions a stage may have and still "
+                              "PROCEED (default: 0 = none)")
+    sweep_p.add_argument("--accept-regression-tolerance", type=float, default=0.05,
+                         dest="accept_regression_tolerance", metavar="F",
+                         help="max acceptance-rate drop vs the prior stage before the gate "
+                              "STOPS (default: 0.05)")
+    sweep_p.add_argument("--checkpoint", default=None, metavar="PATH",
+                         help="per-stage JSON checkpoint file (enables --resume)")
+    sweep_p.add_argument("--resume", action="store_true",
+                         help="resume from --checkpoint, re-using completed PDFs (nested stages)")
+    sweep_p.add_argument("--workers", type=int, default=None, metavar="N",
+                         help="whole-PDF concurrency (default: 6; pages stay sequential per PDF)")
+    sweep_p.add_argument("--max-pages", type=int, default=5000, dest="max_pages",
+                         help="pages to parse per PDF (default: 5000 = whole doc)")
+    sweep_p.add_argument("--dry-run", action="store_true", dest="dry_run",
+                         help="plan the stratified stages (cheap pdfium census only) — no vision")
+    sweep_p.add_argument("--json", action="store_true", help="emit JSON instead of the text report")
+    sweep_p.add_argument("--json-out", default=None, metavar="PATH", dest="json_out",
+                         help="also write the JSON payload to this path")
+
     # --- structural-review ---
     sr_p = sub.add_parser(
         "structural-review",
@@ -14579,6 +14637,11 @@ def _main_impl() -> None:
         from lawvm.tools.fi_calibration import main as fi_calibration_main
 
         fi_calibration_main(args)
+
+    elif args.command == "fi-sweep":
+        from lawvm.tools.fi_sweep import main as fi_sweep_main
+
+        fi_sweep_main(args)
 
     elif args.command == "structural-review":
         from lawvm.tools.structural_review import (

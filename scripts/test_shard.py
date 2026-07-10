@@ -1222,6 +1222,13 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # fold, and proxy validation (fake reader, hermetic — the live GPU sweep
         # is operator-invoked, not CI).
         "test_fi_calibration.py",
+        # VoI-staged corpus reliability sweep driver (fi-sweep): escalating
+        # superset-nested stratified stages, the per-stage NUMERIC-exact + accept-
+        # regression gate (PROCEED clean / STOP on regression, dropping the next
+        # tranche), deterministic dry-run plan, resume skipping completed PDFs, and
+        # the ranked residual-defect-class report (fake processor, hermetic — the
+        # full GPU run is operator-invoked, not CI).
+        "test_fi_sweep.py",
     ),
     "tools_audit_restructure": (
         "test_fi_restructure_plan.py",
@@ -1493,6 +1500,7 @@ TOOL_SOURCE_SHARD_GROUPS: dict[tuple[str, ...], tuple[str, ...]] = {
         "src/lawvm/tools/fi_parse_compare.py",
         "src/lawvm/tools/fi_parse_corpus.py",
         "src/lawvm/tools/fi_calibration.py",
+        "src/lawvm/tools/fi_sweep.py",
         "src/lawvm/tools/export_fi_he_branch_ops.py",
         "src/lawvm/tools/export_fi_he_corpus.py",
         "src/lawvm/tools/export_fi_inline_citations.py",
