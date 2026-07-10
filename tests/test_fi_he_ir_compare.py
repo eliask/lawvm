@@ -690,6 +690,26 @@ def test_genuine_body_is_never_emptied() -> None:
     assert bodies[_BODY_KEY] == _PROVISION
 
 
+def test_body_trimmed_at_spaced_emdash_divider() -> None:
+    from lawvm.tools.fi_he_ir_compare import _pdf_proposed_bodies
+
+    # A SPACED em-dash divider run ("— — — —", a Finnish statute section-divider / omission
+    # marker) after the provision's last sentence is trailing furniture, NOT body text. The
+    # contiguous "———" trailer guard misses the spaced form, so it used to bleed into the body;
+    # the spaced-dash-run alternative now trims it (the body's own text is kept intact).
+    rt = _body_reading(_PROVISION, tail="— — — — Tämä laki tulee voimaan päivänä kuuta 20 .")
+    assert _pdf_proposed_bodies(rt)[_BODY_KEY] == _PROVISION
+
+
+def test_body_with_single_in_sentence_dash_is_not_trimmed() -> None:
+    from lawvm.tools.fi_he_ir_compare import _pdf_proposed_bodies
+
+    # Conservative guard: a lone in-sentence em-dash ("kansalaiselle — myös ulkomaalaiselle —")
+    # is NOT a divider run (needs 3+ spaced dashes) and must never truncate the body.
+    body = "Etuus myönnetään kansalaiselle — myös ulkomaalaiselle — yhtäläisin perustein."
+    assert _pdf_proposed_bodies(_body_reading(body))[_BODY_KEY] == body
+
+
 def test_body_trimmed_at_signature_block() -> None:
     from lawvm.tools.fi_he_ir_compare import _pdf_proposed_bodies
 
@@ -997,3 +1017,62 @@ def test_compare_result_is_frozen() -> None:
     r = HECompareResult("HE 1/2020 vp", "fi/he/2020/1", "not_applicable", (), 0, 0, "")
     with pytest.raises(dataclasses.FrozenInstanceError):
         r.__setattr__("compare_status", "compared")
+
+
+# --------------------------------------------------------------------------- #
+# PDF backend unavailability must never masquerade as a clean/empty result.    #
+# --------------------------------------------------------------------------- #
+
+
+def test_pdfium_text_layer_raises_when_backend_missing() -> None:
+    # A missing pypdfium2 must surface as the distinct HEReaderUnavailableError — NOT an empty
+    # "" text layer (which would read downstream as "0 residual / clean") and NOT a bare
+    # uncaught ModuleNotFoundError. Simulate absence by nulling the module in sys.modules.
+    import sys
+
+    import pytest
+
+    from lawvm.tools.fi_he_ir_compare import HEReaderUnavailableError, _pdfium_text_layer
+
+    orig = sys.modules.get("pypdfium2", None)
+    sys.modules["pypdfium2"] = None  # type: ignore[assignment]
+    try:
+        with pytest.raises(HEReaderUnavailableError):
+            _pdfium_text_layer(b"%PDF-1.4 fake bytes", 5)
+    finally:
+        if orig is None:
+            sys.modules.pop("pypdfium2", None)
+        else:
+            sys.modules["pypdfium2"] = orig
+
+
+def test_missing_backend_propagates_not_typed_as_clean_error(monkeypatch) -> None:
+    # End to end: on a backend-less machine compare_he_from_farchive must PROPAGATE the
+    # unavailability (raise HEReaderUnavailableError) rather than return a HECompareResult with
+    # a benign non-compared status ("error" / "pdf_no_clause") that an aggregate sweep would
+    # read as clean. Absence of a witness must never read as absence of divergence.
+    import sys
+
+    import farchive
+    import pytest
+
+    from lawvm.tools.fi_he_ir_compare import HEReaderUnavailableError, compare_he_from_farchive
+
+    class _FakeFarchive:
+        def __init__(self, *_a, **_k) -> None:
+            pass
+
+        def get(self, key: str) -> bytes:
+            if key.endswith("main.xml"):
+                return _he_xml(_CLAUSE)  # a real amendment HE with ops to compare
+            if key.endswith("main.pdf"):
+                return b"%PDF-1.4 small born-digital fake"
+            return b""
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(farchive, "Farchive", _FakeFarchive)
+    monkeypatch.setitem(sys.modules, "pypdfium2", None)  # backend unavailable
+    with pytest.raises(HEReaderUnavailableError):
+        compare_he_from_farchive("ignored.farchive", 2020, 99)

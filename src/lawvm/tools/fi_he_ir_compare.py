@@ -107,6 +107,20 @@ class HEIrCompareError(Exception):
     """Base for all typed failures of the HE proposed-effect IR comparison."""
 
 
+class HEReaderUnavailableError(HEIrCompareError):
+    """The PDF text backend (``pypdfium2``) is not installed — the PDF witness cannot be
+    read AT ALL on this machine.
+
+    This is an ENVIRONMENT/configuration failure, categorically NOT a per-HE "no
+    divergence" result: a missing backend yields NO witness, and absence of a witness must
+    never be reported as absence of divergence. It is therefore surfaced DISTINCTLY (and
+    propagated past the per-HE ``error`` typing in :func:`compare_he_from_farchive`) so a
+    corpus sweep on a backend-less machine fails LOUDLY instead of typing every HE a benign
+    read failure — which an aggregate would silently read as a clean/empty ("0 residual")
+    pass, masking real divergences. Install the backend with ``uv sync --extra pdf``.
+    """
+
+
 # --------------------------------------------------------------------------- #
 # Enacting-clause span extraction from PDF reading text (named recognizer).    #
 # --------------------------------------------------------------------------- #
@@ -718,8 +732,18 @@ _LEADING_SECTION_HEADER_RE = re.compile(r"^\s{0,4}\d{1,4}\s{0,3}[a-zä]?\s{0,3}�
 #: cross-reference is untouched).  The commencement clause is handled separately by
 #: :data:`_PDF_BODY_VOIMAANTULO_RE` because a genuine voimaantulo §-body STARTS with it.
 #: Flat/bounded quantifiers; case scoped with ``(?-i:…)`` (FW-07).
+#: The two dash-divider alternatives below bound the body at an entry-into-force / omission
+#: divider run. The first matches a CONTIGUOUS run ("———"/"—————"); the second matches the
+#: SPACED run ("— — — —") the text layer emits when a centered divider's glyphs are laid out
+#: with intervening spaces — a common Finnish statute section-divider / omission marker that
+#: the contiguous class misses, letting it bleed into the body. After :func:`_flatten_reading_text`
+#: every whitespace run is a single space, so the spaced form is exactly dash-space-dash…; the
+#: single-space separator ``\s`` (no inner quantifier) keeps this flat/bounded (FW-07). Requiring
+#: at least THREE dashes (``[dash](?:\s[dash]){2,}``) is conservative: a single in-sentence
+#: em-dash ("sana — toinen") or a two-dash pair never triggers — only a genuine divider run does.
 _PDF_BODY_TRAILER_RE = re.compile(
     r"(?:[—–\-]{3,}"
+    r"|[—–\-](?:\s[—–\-]){2,40}"
     r"|\bRinnakkaistekstit\b"
     r"|\bLiitteet?\b"
     r"|\bVoimassa\s+oleva\s+laki\b"
@@ -1359,7 +1383,18 @@ def _pdfium_text_layer(data: bytes, max_pages: int) -> str:
     (op_extra). Using the native text order recovers those (measured: op_missing −71%,
     op_extra −63% on the diagnosed HEs). pdfium is not thread-safe → hold the systemic lock.
     """
-    import pypdfium2 as pdfium
+    # A missing backend must NOT be swallowed as an empty/clean read: catch the specific
+    # import failure (ModuleNotFoundError, and the None-in-sys.modules ImportError) and
+    # re-raise it as the distinct HEReaderUnavailableError so it propagates past the per-HE
+    # ``error`` typing rather than masquerading as "0 residual". Narrow catch, never bare.
+    try:
+        import pypdfium2 as pdfium
+    except ImportError as exc:
+        raise HEReaderUnavailableError(
+            "fi-he-ir-compare: PDF text backend pypdfium2 is unavailable — the PDF witness "
+            "cannot be read; a missing backend must never be reported as a clean empty "
+            "result (install with `uv sync --extra pdf`)"
+        ) from exc
 
     from lawvm.ingest.visual import PDFIUM_LOCK
 
@@ -1468,6 +1503,12 @@ def compare_he_from_farchive(
         )
     try:
         reading_text = he_pdf_reading_text(farchive, base + "main.pdf", max_pages=max_pages)
+    except HEReaderUnavailableError:
+        # A missing PDF backend is an environment failure, never a benign per-HE skip: let
+        # it propagate so a backend-less sweep fails LOUDLY, instead of typing every HE
+        # ``error`` (a non-compared status an aggregate would read as clean). Absence of a
+        # witness must never read as absence of divergence.
+        raise
     except Exception as exc:  # a bad/unreadable PDF is a typed status, never a crash
         return HECompareResult(
             hid,
