@@ -97,6 +97,37 @@ vision second-witness (``fi_appendix_structure.table_escalation_route`` →
 ``vision_escalate``), never folded away. Only the *invisible* control-char noise (CONTROL_STRIP)
 graduates; the *visible* corruption stays a residual for adjudication.
 
+Graduated fold #5: WHITESPACE_MIDWORD (pdfium errant mid-word space, letter-letter only)
+----------------------------------------------------------------------------------------
+The pdfium text layer of an HE bill mis-emits a stray SPACE inside a single word — a
+kerning artifact where the glyph-advance between two letters is read as a word break, so
+``alueeseen`` extracts as ``alue eseen`` and (the dominant form) a leading capital detaches
+as ``Verotuksen`` → ``V erotuksen``. The inverse also occurs: an under-space MERGES two words
+(``tai siihen`` → ``taisiihen``). Both are the SAME artifact — the reader mis-placed a
+word boundary between two letters — and both change no letter, digit, or citation, only where
+the space sits. Convicted inert by the T1 adjudicator guard: over 582 labelled residual
+snippet pairs, applying this fold flips ZERO of the 137 ``GENUINE_DIFFERENCE``, ZERO of the
+148 ``ORACLE_ARTIFACT`` and ZERO of the 213 ``SEGMENTATION_NOISE`` pairs to equal; the single
+``READER_DEFECT`` it folds is itself a pure spacing merge (``tai siihen`` ≡ ``taisiihen``),
+i.e. a spacing artifact the adjudicator bucketed conservatively, not a garbled word.
+
+The rule is the NARROWEST capture of the artifact: two texts are equal if they are equal after
+deleting a space that sits STRICTLY BETWEEN TWO UNICODE LETTERS (a word-char that is neither a
+digit nor an underscore — ``[^\\W\\d_]`` — on both flanks),
+applied SYMMETRICALLY to both sides. It is deliberately NOT a blanket "remove all spaces":
+- a DIGIT flank is untouched, so a thousands separator ``2 500`` never folds to ``2500`` (the
+  seam is digit-space-digit) and a ``§``/section number ``5 §`` / ``4 a`` is never disturbed;
+- a PUNCTUATION flank is untouched, so ``markkaa .`` / ``( / )`` spacing is left to WHITESPACE_PUNCT.
+Because it deletes ONLY a letter-letter space, it can never hide a numeric, citation, or glyph
+difference — those all survive into the residual ("5—10" vs "5—11", "(768/2005)" vs "(768/2006)"
+stay divergent). The ONE class it CAN in principle collapse is a genuine word-boundary difference
+among letters (``työn antaja`` vs ``työnantaja``): this is an accepted, DOCUMENTED trade — such a
+pair means the SAME letters in the SAME order and the adjudicator guard finds none in the genuine-
+difference corpus, so in practice it masks no real amendment. Applied output-sparsely: the fold is
+attempted ONLY when the two texts still differ after every other fold, and recorded ONLY when it
+actually rescues equality, so a clean or otherwise-decided pair carries no WHITESPACE_MIDWORD tag
+(preserving the output-sparse audit trail — the same discipline that keeps ``§`` out of the punct set).
+
 ``§`` is DELIBERATELY EXCLUDED from the before-set. Unlike ``: ; , . )`` — whose standard
 typographic form carries NO leading space, so a leading space is the anomaly to fold — the
 standard Finnish section reference ``"N §"`` legitimately CARRIES a space. Folding it would be
@@ -190,6 +221,17 @@ _DASH_GLYPH_TABLE = {cp: 0x2D for cp in (0x2010, 0x2011, 0x2012, 0x2013, 0x2014,
 # after-"(" and the before-")" spaces of "( / )", collapsing it to "(/)".
 _WS_ADJACENT_PUNCT_RE = re.compile(r" +(?=[:;,.)])|(?<=\() +")
 
+# A single SPACE sitting strictly between two Unicode LETTERS — the pdfium errant mid-word
+# space (kerning artifact): "alue eseen" ← "alueeseen", "V erotuksen" ← "Verotuksen", and the
+# inverse merge "taisiihen" ← "tai siihen". ``[^\W\d_]`` matches a word char that is NOT a digit
+# and NOT underscore, i.e. a letter (Unicode-aware for str). The zero-width lookbehind/lookahead
+# mean ONLY the space is deleted and ONLY when BOTH flanks are letters: a digit flank (thousands
+# separator "2 500", section "5 §" / "4 a") or a punctuation flank is never touched. Runs of
+# single spaces are each matched independently in one left-to-right pass ("a b c" → "abc"). Flat
+# zero-width guards → no nested-backtracking risk. Applied as an output-sparse fallback (see
+# ``text_equivalence``), so it is recorded only when it actually rescues an equality.
+_MIDWORD_SPACE_RE = re.compile(r"(?<=[^\W\d_]) (?=[^\W\d_])")
+
 
 class EncodingFold(StrEnum):
     """The closed set of legally-inert folds this module applies to body text.
@@ -207,6 +249,7 @@ class EncodingFold(StrEnum):
     SEPARATOR_DASH_RUN = "separator_dash_run"  # run of 2+ dashes ("— — —" rule/elision) deleted
     DOT_LEADER = "dot_leader"  # run of 2+ dots (table/TOC leader "....." / ellipsis) deleted
     WHITESPACE_PUNCT = "whitespace_punct"  # space adjacent to punctuation (before ":;,.)" / after "(") removed
+    WHITESPACE_MIDWORD = "whitespace_midword"  # pdfium errant space strictly between two letters removed
 
 
 def _canonicalize_text(text: str) -> Tuple[str, frozenset[EncodingFold]]:
@@ -293,9 +336,23 @@ def text_equivalence(left: str, right: str) -> TextEquivalence:
     """
     left_canon, lf = _canonicalize_text(left or "")
     right_canon, rf = _canonicalize_text(right or "")
+    fired = lf | rf
+
+    # Output-sparse WHITESPACE_MIDWORD fallback: only when the two texts still DIFFER after
+    # every other inert fold do we try deleting letter-letter spaces (the pdfium mid-word-space
+    # artifact), and we adopt it ONLY if it makes them equal. A pair already decided (equal, or
+    # differing by something the fold cannot touch) is untouched, so the fold is never recorded
+    # spuriously and the residual handed to adjudication keeps its word boundaries.
+    if left_canon != right_canon:
+        left_ms = _MIDWORD_SPACE_RE.sub("", left_canon)
+        right_ms = _MIDWORD_SPACE_RE.sub("", right_canon)
+        if left_ms == right_ms and (left_ms != left_canon or right_ms != right_canon):
+            fired = fired | {EncodingFold.WHITESPACE_MIDWORD}
+            left_canon, right_canon = left_ms, right_ms
+
     return TextEquivalence(
         equal=left_canon == right_canon,
-        folds=tuple(sorted(lf | rf)),
+        folds=tuple(sorted(fired)),
         left_canon=left_canon,
         right_canon=right_canon,
     )

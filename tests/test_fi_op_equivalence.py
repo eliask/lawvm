@@ -228,3 +228,66 @@ def test_terminal_period_presence_stays_a_residual():
     v = text_equivalence("maksetaan markkaa.", "maksetaan markkaa")
     assert not v.equal and v.residual
     assert EncodingFold.WHITESPACE_PUNCT not in v.folds
+
+
+def test_midword_space_split_folds():
+    # pdfium kerning artifact: a stray space splits one word ("alueeseen" → "alue eseen").
+    # Deleting the letter-letter space recovers the equality.
+    v = text_equivalence("yhteiseen alueeseen olevan", "yhteiseen alue eseen olevan")
+    assert v.equal
+    assert EncodingFold.WHITESPACE_MIDWORD in v.folds
+
+
+def test_midword_space_leading_capital_split_folds():
+    # the dominant form: a leading capital detaches ("Verotuksen" → "V erotuksen").
+    v = text_equivalence("Verotuksen oikaisulautakunta", "V erotuksen oikaisulautakunta")
+    assert v.equal
+    assert EncodingFold.WHITESPACE_MIDWORD in v.folds
+
+
+def test_midword_space_merge_folds_symmetrically():
+    # the inverse under-space merges two words ("tai siihen" → "taisiihen"); the fold is
+    # applied to BOTH sides so a merge and a split of the same letters both reach equality.
+    v = text_equivalence("koskevien tai siihen liittyvien", "koskevien taisiihen liittyvien")
+    assert v.equal
+    assert EncodingFold.WHITESPACE_MIDWORD in v.folds
+
+
+def test_midword_space_recorded_only_when_it_rescues_equality():
+    # output-sparse: a clean payload with ordinary inter-word spaces does NOT record the fold
+    # (the fold is attempted only when the texts still differ after every other fold).
+    v = text_equivalence("laki tulee voimaan", "laki tulee voimaan")
+    assert v.equal
+    assert EncodingFold.WHITESPACE_MIDWORD not in v.folds
+
+
+def test_midword_space_does_not_fold_thousands_separator():
+    # a digit-flanked space is a thousands separator, NOT a mid-word artifact: "2 500" must
+    # stay a residual against "2500" (the seam is digit-space-digit, never touched).
+    v = text_equivalence("enintään 2 500 euroa", "enintään 2500 euroa")
+    assert not v.equal and v.residual
+    assert EncodingFold.WHITESPACE_MIDWORD not in v.folds
+
+
+def test_midword_space_does_not_fold_section_number_boundary():
+    # "4 a" (section 4 a) is digit-space-letter — not letter-letter — so the space stays; a
+    # genuine "5 §" reference is likewise untouched.
+    v = text_equivalence("4 a §:n nojalla", "4a §:n nojalla")
+    assert not v.equal and v.residual
+    assert EncodingFold.WHITESPACE_MIDWORD not in v.folds
+
+
+def test_midword_space_does_not_hide_glyph_or_letter_difference():
+    # deleting ONLY the space can never hide a differing letter: "alue eseen" vs "alue asten"
+    # despace to "alueeseen" vs "alueasten" — still divergent.
+    v = text_equivalence("yhteiseen alue eseen", "yhteiseen alue asten")
+    assert not v.equal and v.residual
+
+
+def test_midword_space_genuine_word_boundary_is_the_documented_tradeoff():
+    # DOCUMENTED accepted trade: a genuine word-boundary difference among the SAME letters
+    # ("työn antaja" vs "työnantaja") DOES fold — same letters, same order. The adjudicator
+    # guard finds no such pair in the genuine-difference corpus, so it masks no real amendment.
+    v = text_equivalence("työn antaja maksaa", "työnantaja maksaa")
+    assert v.equal
+    assert EncodingFold.WHITESPACE_MIDWORD in v.folds
