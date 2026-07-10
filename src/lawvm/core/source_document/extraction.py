@@ -45,7 +45,11 @@ class SourceManifestation:
     locator: str
     """Where it was fetched from / its stable id (Finlex AKN id, CELEX, file path)."""
     source_role: str
-    """'statute' | 'attachment' | 'corrigendum' | 'he_draft' | 'committee_report' | ..."""
+    """Jurisdiction-neutral role of the fetched artifact:
+    'statute' | 'attachment' | 'corrigendum' | 'government_proposal_draft' |
+    'committee_report' | ... . A frontend maps its own document taxonomy onto
+    these neutral roles (a Finnish HE luonnos / a draft SI / a COM proposal all
+    map to 'government_proposal_draft')."""
     fetched_at: datetime
     media_type: str = ""
     """'application/pdf' | 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' | ..."""

@@ -130,8 +130,9 @@ def fetch_he_draft(url: str, *, cache_dir: str = "") -> SourceManifestation:
 
     Downloads the bytes with stdlib ``urllib`` (no new dependency), SHA-256
     digests them, and returns
-    ``SourceManifestation(source_role="he_draft", locator=url,
-    media_type="application/pdf")``.
+    ``SourceManifestation(source_role="government_proposal_draft", locator=url,
+    media_type="application/pdf")`` (the neutral core role; a Finnish HE luonnos
+    is one instance of a government-proposal draft).
 
     The bytes are content-addressed into the cache directory (``cache_dir`` arg,
     else ``$LAWVM_HE_CACHE_DIR``, else ``.tmp/he_cache``), keyed by their SHA-256
@@ -171,7 +172,7 @@ def fetch_he_draft(url: str, *, cache_dir: str = "") -> SourceManifestation:
         artifact_digest=digest,
         source_bytes=body,
         locator=url,
-        source_role="he_draft",
+        source_role="government_proposal_draft",
         fetched_at=datetime.now(tz=timezone.utc),
         media_type="application/pdf",
     )

@@ -38,7 +38,7 @@ def _man() -> SourceManifestation:
         artifact_digest="a" * 64,
         source_bytes=b"%PDF-1.4",
         locator="doc.pdf",
-        source_role="he_draft",
+        source_role="government_proposal_draft",
         fetched_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
         media_type="application/pdf",
     )

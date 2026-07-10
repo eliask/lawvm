@@ -123,3 +123,52 @@ reconciliation is deliberately landing first. Canonical vocabulary owner is
 
 (The guard-liveness gate and the regex→recognizer ratchet already exist as
 Gate 1 / Gate 2 above; the lints here are the not-yet-built additions.)
+
+## §33 — `core/` jurisdiction-neutrality audit (`he_draft` exemplar), 2026-07-10
+
+Full audit of `src/lawvm/core/` for jurisdiction-specific terms baked in as
+machine identifiers (enum/Literal values, `source_role`/status strings, rule-ids,
+error codes, field names, single-language structural-ontology regexes), per the
+§2.3 firewall. The user-flagged exemplar `source_role="he_draft"` (HE = Finnish
+*hallituksen esitys*) is neutralized end-to-end; the clear-cut small leaks are
+fixed; the larger relocations / persisted-contract renames are ledgered below.
+
+**Counts.** REAL LEAK fixed: **3 core sites** (2 = the `he_draft` exemplar, 1 =
+a stray `fi_`-prefixed rule-id). REAL LEAK ledgered (larger churn / persisted
+contract): **3 clusters**. BENIGN (properly namespaced identifier, or an
+illustrative FI gloss in a comment/message framing a neutral concept — left as-is
+per policy): **7 categories**.
+
+The neutral role chosen for the exemplar: **`he_draft` → `government_proposal_draft`**
+(a Finnish HE luonnos, a draft SI, and a COM proposal all map onto it). Callers
+updated: **12** (`core` ×2, `finland/source_document/lausuntopalvelu.py`,
+`tools/fi_he_branch.py`, `tools/fi_parse_compare.py`, `scripts/he_corpus_sweep.py`,
+`scripts/he_draft_materialize_report.py`, and 6 test modules — all `source_role`
+value sites; the FI-frontend module `finland/source_document/he_draft.py` and its
+`fetch_he_draft`/`extract_he_draft_proposal`/`HeDraftProposal` names stay, being
+legitimately jurisdiction-specific and outside `core/`). No persisted parquet /
+baseline carried the `he_draft` *value* (the three ratchet baselines reference
+only the FI *module path* `.../he_draft.py`, which is unchanged). Regression guard
+added: `tests/test_core_firewall_no_he_draft_source_role.py` (AST zero-floor +
+liveness fire-drill), mirroring `test_core_firewall_no_fi_definition_phrases.py`.
+
+| # | site (core) | term | class | decision | status |
+|---|---|---|---|---|---|
+| 33.1 | `source_document/extraction.py:48` (`SourceManifestation.source_role` role docstring) | `he_draft` | REAL LEAK (source_role value in the neutral vocab) | neutralize → `government_proposal_draft` | FIXED |
+| 33.2 | `source_document/coverage.py:62` (`ResidualFamily`) | `HE_DRAFT_OP_SET_UNEXTRACTED = "he_draft.op_set_unextracted"` | REAL LEAK (enum member name + value; the "prefix names a format" docstring was untrue — HE is a role, not a format) | rename member+value → `GOVERNMENT_PROPOSAL_DRAFT_OP_SET_UNEXTRACTED = "government_proposal_draft.op_set_unextracted"`; not referenced elsewhere | FIXED |
+| 33.3 | `statute_validity.py:57` | `FIXED_TERM_WHOLE_STATUTE_RULE_ID = "fi_fixed_term_whole_statute_expiry"` | REAL LEAK (rule-id value with `fi_` prefix on a jurisdiction-neutral concept — sunset/fixed-term whole-statute expiry exists in every jurisdiction) | drop prefix → `"fixed_term_whole_statute_expiry"`; constant is unused (never imported; FI producers use their own `finland/`-local rule-ids), one test literal updated | FIXED |
+| 33.4 | `ctsf.py:85` `classifier_id="ctsf.momentti_ordinal_prefix"` + `_MOMENTTI_ORDINAL_PREFIX_RE`; `ctsf_rules.py:279` `rule_id="ctsf.text.momentti_ordinal_elision"` (+ momentti/kohta witness data); `ctsf_gate.py:229` `sid="ctsf_gate/momentti_ordinal"` | `momentti`/`kohta` structural-ontology regex + classifier/rule/gate ids | REAL LEAK (FI single-language structural-ontology *logic* in core: a label-redundant-ordinal text rule keyed to the Finnish *momentti* unit) | **LEDGERED — relocate.** The momentti-ordinal elision is FI-specific text logic misplaced in core. Plan: move the `_MOMENTTI_ORDINAL_PREFIX_RE` recognizer + the `ctsf.text.momentti_ordinal_elision` rule body into `lawvm/finland/` (a `finland/ctsf_fi_rules.py`), and have `core/ctsf_rules.py` expose a neutral registration hook (a frontend supplies label-redundant-ordinal recognizers; core stays ontology-blind, mirroring the `definition_introducer_predicate` precedent). Blast radius: `core/ctsf.py`, `core/ctsf_rules.py`, `core/ctsf_gate.py`, `semantic/diff.py`, `tools/spec_ledger_glue.py` (the rule-id is a spec-ledger catalog row → needs a conscious catalog + baseline update), `tests/test_ctsf*.py`. Deferred as a giant risky refactor; at minimum the ids should be re-namespaced `fi:ctsf.momentti_*` when relocated. | LEDGERED |
+| 33.5 | `manual_claims/primitive.py:49-50` (`SourceWitnessType`) | `FINLEX_AKN = "finlex_akn"`, `FINLEX_CORRIGENDUM = "finlex_corrigendum"` | REAL LEAK (enum member+value; Finlex = the Finnish national legal database) | **LEDGERED — persisted contract.** The value is a **public parquet column** (`tools/export_fi_refs.py:249` writes `source_witness_type=finlex_akn`) and drives cross-witness precedence ordering (`manual_claims/precedence.py`, `composer.py`, `source_provider.py`). Neutralize to a role like `NATIONAL_AUTHENTICATED_SOURCE` / `NATIONAL_CORRIGENDUM` (a national gazette / authenticated-source witness), OR jurisdiction-namespace as `fi:finlex-akn`. Requires a serialization migration of the `source_witness_type` column + precedence table + the `export_fi_refs` schema. Deferred pending a migration plan (mirrors the deferred `*Certificate`→`*Coverage` serialization-migration rule above). | LEDGERED |
+| 33.6 | `compile_result.py:246` | `if code in {"EMPTY_OPERATIVE_BODY", "fi_amendment_selection_source_artifact_missing"}` | REAL LEAK (the neutral kernel *branches on* a FI-specific frontend code literal to pick the neutral-target construction path) | **LEDGERED — architectural.** The `fi_`-prefixed code is itself the accepted jurisdiction-namespaced form (produced by `finland/amendment_selection.py`); the leak is core *enumerating* a frontend code. Plan: replace the hardcoded set with a typed signal on `SourcePathology` (e.g. a `structural_target_optional: bool` the emitter sets) so core routes on a neutral flag, not a frontend-code allowlist. Blast radius: `core/compile_result.py`, `finland/amendment_selection.py`, 3 tests. Deferred (design change to `SourcePathology.from_internal_detail`); bounded, low-severity (already namespaced). | LEDGERED |
+| 33.7 | `claim_assumption_binding.py:865`, `claim_surface_manifest.py:625` | `ee_consolidation_candidate_is_flag_not_confirmed_error` (+ siblings) | BENIGN | Properly `ee_`-namespaced binding-ids for a genuinely EE-unique v0 claim (Estonia consolidation-error candidates) — the accepted per-jurisdiction claim-register namespacing (like `fi.frontend.<concept>`). No change. | NOTED |
+| 33.8 | `totalization.py:118,125` | `eu_replay_unknown_action`, `eu_replay_parent_not_found` | BENIGN | Docstring illustration of the neutral totalization/θ-table model; the codes are *emitted by the EU frontend*, not core, and the passage frames SE/NO/EE/UK/EU together. No change. | NOTED |
+| 33.9 | `cross_act_same_moment.py:105,1006` | `ee_replay_payload_after_eid` | BENIGN | Comment/docstring illustration of "EE Pattern A" over the neutral generic same-moment detector. No change. | NOTED |
+| 33.10 | `observation_registry.py` (~15 finding messages) | `(fi: johtolause)`, `voimaantulosäännös`, `(fi: säädöskokoelma)` | BENIGN | The FI terms appear only in finding **message** strings as explicit `fi:`-prefixed glosses framing a neutral concept; every finding **code** key was verified neutral (no momentti/johtolause/etc. in any code). The correct neutral pattern. No change. | NOTED |
+| 33.11 | `preparatory_reference.py:48,54,65-72` | "Hallituksen esitys"/"lausunto" docstrings; `EU_REGULATION/EU_DIRECTIVE/EU_DECISION` values | BENIGN | Docstring glosses; the EU instrument-type enum values are genuine EU-legal-order concepts and appropriately `EU_`-namespaced. No change. | NOTED |
+| 33.12 | `reference_mention.py`, `semantic_types.py` (docstrings) | momentti/kohta/alakohta/luku/pykälä | BENIGN | Docstring glosses explaining the neutral provision-path serialization; the serialized path tokens (`ch`/`k`/`s`) are neutral. No change. | NOTED |
+| 33.13 | `claim_assumption_binding.py:221,643,649` | momentti/kohta/alakohta/pykälä in `scope`/`public_message` prose | BORDERLINE→BENIGN | Illustrative FI-granularity examples in claim-register human text (not identifiers). Left per policy (prefer adding other-jurisdiction examples over renaming code for prose); a follow-up could add EE/UK granularity examples. No code change. | NOTED |
+
+> Cross-ref: the `lawvm.finland.<module>` owner=/checker_ref= literals in
+> `core/invariant_spec.py` are already governed by the M13 §2.3 ratchet
+> (`tests/test_core_firewall_no_finland_module_paths.py`) and are out of scope
+> here.

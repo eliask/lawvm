@@ -33,7 +33,7 @@ def _manifestation(bytes_: bytes = b"%PDF-1.4") -> SourceManifestation:
         artifact_digest="b" * 64,
         source_bytes=bytes_,
         locator="doc.pdf",
-        source_role="he_draft",
+        source_role="government_proposal_draft",
         fetched_at=datetime(2026, 1, 1),
         media_type="application/pdf",
     )
@@ -217,7 +217,7 @@ def test_live_nemotron_parses_the_bill_page() -> None:
         artifact_digest=hashlib.sha256(b).hexdigest(),
         source_bytes=b,
         locator="vm045/he_luonnos.pdf",
-        source_role="he_draft",
+        source_role="government_proposal_draft",
         fetched_at=datetime(2026, 5, 20),
         media_type="application/pdf",
     )

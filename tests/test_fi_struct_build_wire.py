@@ -54,7 +54,7 @@ def _manifestation() -> SourceManifestation:
         artifact_digest="a" * 64,
         source_bytes=b"%PDF-1.4",
         locator="doc.pdf",
-        source_role="he_draft",
+        source_role="government_proposal_draft",
         fetched_at=datetime(2026, 1, 1),
         media_type="application/pdf",
     )
@@ -578,7 +578,7 @@ def test_struct_ingest_stores_image_blobs_and_stitches_the_ir_locator(tmp_path) 
         artifact_digest=hashlib.sha256(pdf).hexdigest(),
         source_bytes=pdf,
         locator="syn.pdf",
-        source_role="he_draft",
+        source_role="government_proposal_draft",
         fetched_at=_dt(2026, 1, 1, tzinfo=timezone.utc),
         media_type="application/pdf",
     )

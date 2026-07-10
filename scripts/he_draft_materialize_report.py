@@ -271,7 +271,7 @@ def _lower_bill(pdf_path: Path, corpus_dir: Path) -> Tuple[Optional[ProposalPack
             artifact_digest=digest,
             source_bytes=pdf_bytes,
             locator=rel,
-            source_role="he_draft",
+            source_role="government_proposal_draft",
             fetched_at=datetime.now(tz=timezone.utc),
             media_type="application/pdf",
         )

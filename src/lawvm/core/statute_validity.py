@@ -54,7 +54,7 @@ EpistemicStatus = Literal[
     "grammar_fact", "computed_under_pinned_authority", "high_confidence_inference"
 ]
 
-FIXED_TERM_WHOLE_STATUTE_RULE_ID = "fi_fixed_term_whole_statute_expiry"
+FIXED_TERM_WHOLE_STATUTE_RULE_ID = "fixed_term_whole_statute_expiry"
 
 
 def expires_on_from_valid_until(valid_until: dt.date) -> dt.date:

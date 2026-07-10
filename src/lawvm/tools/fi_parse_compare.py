@@ -687,7 +687,7 @@ def _defacsimile_reconstructed_text(manifestation: SourceManifestation, max_page
 
 
 def _load_manifestation(
-    farchive: str, locator: str, *, source_role: str = "he_draft"
+    farchive: str, locator: str, *, source_role: str = "government_proposal_draft"
 ) -> SourceManifestation:
     from farchive import Farchive
 

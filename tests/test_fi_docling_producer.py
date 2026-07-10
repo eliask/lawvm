@@ -43,7 +43,7 @@ def _manifestation(bytes_: bytes = b"%PDF-1.4") -> SourceManifestation:
         artifact_digest=_DIGEST,
         source_bytes=bytes_,
         locator="doc.pdf",
-        source_role="he_draft",
+        source_role="government_proposal_draft",
         fetched_at=datetime(2026, 1, 1),
         media_type="application/pdf",
     )
@@ -222,7 +222,7 @@ def test_live_docling_reads_a_real_pdf() -> None:
         artifact_digest=hashlib.sha256(b).hexdigest(),
         source_bytes=b,
         locator="he_luonnos.pdf",
-        source_role="he_draft",
+        source_role="government_proposal_draft",
         fetched_at=datetime(2026, 5, 20),
         media_type="application/pdf",
     )

@@ -40,7 +40,7 @@ def test_fetch_he_draft_builds_content_addressed_manifestation(monkeypatch, tmp_
     man = lp.fetch_he_draft(_SAMPLE_URL, cache_dir=str(tmp_path))
 
     assert isinstance(man, SourceManifestation)
-    assert man.source_role == "he_draft"
+    assert man.source_role == "government_proposal_draft"
     assert man.locator == _SAMPLE_URL
     assert man.media_type == "application/pdf"
     assert man.source_bytes == _SAMPLE_PDF

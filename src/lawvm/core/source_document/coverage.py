@@ -44,9 +44,11 @@ class RegionOwnership(Enum):
 class ResidualFamily(Enum):
     """Closed taxonomy of deterministic-extraction residuals.
 
-    Values are jurisdiction-neutral: the ``PDF.`` / ``DOCX.`` / ``HE_DRAFT.``
-    prefix names the SOURCE FORMAT, not a jurisdiction. Jurisdiction-specific
-    residuals are carried as frontend-local strings at the boundary, mirroring
+    Values are jurisdiction-neutral: the ``PDF.`` / ``DOCX.`` prefix names the
+    SOURCE FORMAT and ``GOVERNMENT_PROPOSAL_DRAFT.`` names a neutral SOURCE ROLE
+    (see ``lawvm.core.source_document.extraction.SourceManifestation.source_role``),
+    not a jurisdiction. Jurisdiction-specific residuals are carried as
+    frontend-local strings at the boundary, mirroring
     ``lawvm.core.semantic_types.SourceNormalizationKind`` (shared host +
     frontend-local escape hatch). D3 wires concrete detectors onto these
     families; D1's coverage metric counts them.
@@ -59,7 +61,7 @@ class ResidualFamily(Enum):
     PDF_FOOTNOTE_UNCOLLATED = "pdf.footnote_uncollated"
     PDF_READING_ORDER_AMBIGUOUS = "pdf.reading_order_ambiguous"
     DOCX_STRUCTURE_UNTRUSTED = "docx.structure_untrusted"
-    HE_DRAFT_OP_SET_UNEXTRACTED = "he_draft.op_set_unextracted"
+    GOVERNMENT_PROPOSAL_DRAFT_OP_SET_UNEXTRACTED = "government_proposal_draft.op_set_unextracted"
 
     @override
     def __str__(self) -> str:

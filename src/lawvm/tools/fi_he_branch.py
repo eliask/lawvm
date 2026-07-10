@@ -63,7 +63,7 @@ def load_he_manifestation(
     locator = he_locator(year, number, lang, "main.pdf")
     try:
         return load_manifestation_from_farchive(
-            locator, farchive_path=farchive_path, source_role="he_draft"
+            locator, farchive_path=farchive_path, source_role="government_proposal_draft"
         )
     except Exception:
         return None

@@ -129,7 +129,7 @@ def _bound(effective: str, valid_until: str, *, enacted: str | None = None, seq:
         source_version_id="2099/1",
         source_hash="h",
         source_span=None,
-        rule_id="fi_fixed_term_whole_statute_expiry",
+        rule_id="fixed_term_whole_statute_expiry",
         source_text="Tämä laki ... on voimassa",
         source_sequence=seq,
     )

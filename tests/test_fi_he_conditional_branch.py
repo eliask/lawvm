@@ -343,7 +343,7 @@ def test_live_vm045_pdf_to_conditional_branch() -> None:
         artifact_digest=hashlib.sha256(b).hexdigest(),
         source_bytes=b,
         locator="vm045/he_luonnos.pdf",
-        source_role="he_draft",
+        source_role="government_proposal_draft",
         fetched_at=datetime(2026, 5, 20),
         media_type="application/pdf",
     )
@@ -389,7 +389,7 @@ def test_live_vm045_adjudicated_op_reaches_multi_witness() -> None:
         artifact_digest=hashlib.sha256(b).hexdigest(),
         source_bytes=b,
         locator="vm045/he_luonnos.pdf",
-        source_role="he_draft",
+        source_role="government_proposal_draft",
         fetched_at=datetime(2026, 5, 20),
         media_type="application/pdf",
     )
