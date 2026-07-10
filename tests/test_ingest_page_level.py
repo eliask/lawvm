@@ -1166,3 +1166,106 @@ def test_regions_read_round_trips_through_the_json_codec() -> None:
     restored = page_simulacrum_from_json(page_simulacrum_to_json(sim))
     assert restored.convergence.regions_read == cp.convergence.regions_read == 4
     assert "subdivided" in restored.convergence.gate_reasons
+
+
+# --------------------------------------------------------------------------- #
+# §9 batched "thumbnail + tiles" scanned-page read: the SCANNED default routes  #
+# through ONE batched request per page, per-region reader is the fallback.       #
+# --------------------------------------------------------------------------- #
+
+
+def _scanned_page_elements() -> PageElements:
+    """A genuinely SCANNED page: NO per-line bbox geometry (image-only page)."""
+    return PageElements(
+        page_num=1,
+        lines=(),
+        page_lines=(),
+        page_width=595.0,
+        page_height=842.0,
+    )
+
+
+class _TiledScanVision(_FakeConvergeVision):
+    """Fake scanned-page reader: appraise sees content, exposes the BATCHED
+    ``read_page_tiled`` (and the per-region ``read_region_cold`` as the fallback)."""
+
+    def __init__(self, appraisal, *, tiled_truncates=False):
+        super().__init__("", deltas=("",))
+        self._appraisal = appraisal
+        self._tiled_truncates = tiled_truncates
+        self.tiled_calls: list = []
+        self.cold_calls: list = []
+
+    def appraise_page(self, man, page_num, page_elements):
+        return self._appraisal
+
+    def read_page_tiled(self, man, page_num, regions, *, thumbnail_scale=0.5, crop_dpi=300):
+        from lawvm.ingest.llm_backends.vision_producer import VisionProducerTruncated
+
+        self.tiled_calls.append((page_num, tuple(regions), thumbnail_scale, crop_dpi))
+        if self._tiled_truncates:
+            raise VisionProducerTruncated(page_num=page_num, detail="batch too dense")
+        # One transcription per region, in reading order (label = read order).
+        return tuple(f"tiled-{i}" for i in range(len(regions)))
+
+    def read_region_cold(self, man, page_num, bbox, *, dpi=300, expected_lines=0):
+        idx = len(self.cold_calls)
+        self.cold_calls.append((page_num, bbox, dpi))
+        return f"cold-{idx}"
+
+
+def _fake_regions(monkeypatch, n=3):
+    """Segment a scanned page into ``n`` deterministic image regions."""
+    import lawvm.ingest.visual as visual
+
+    regions = tuple(
+        (BBox(72.0, 800.0 - 40 * i, 500.0, 820.0 - 40 * i), 1) for i in range(n)
+    )
+    monkeypatch.setattr(visual, "segment_page_regions", lambda *a, **k: regions)
+    return regions
+
+
+def test_scanned_page_routes_through_the_batched_tiled_read(monkeypatch) -> None:
+    _fake_regions(monkeypatch, n=3)
+    v = _TiledScanVision(_appraisal(has_content=True))
+    cp = converge_page(v, _manifestation(), 1, _scanned_page_elements(), reading_order_text="x")
+    # ONE batched request carried all 3 tiles (not 3 separate per-region reads).
+    assert len(v.tiled_calls) == 1
+    assert len(v.tiled_calls[0][1]) == 3
+    assert v.cold_calls == []  # the per-region reader was NOT used (batched preferred)
+    # Stitched flat in reading order, subdivided rung recorded.
+    assert "subdivided" in cp.convergence.gate_reasons
+    assert cp.convergence.regions_read == 3
+    assert [n.text for n in cp.nodes] == ["tiled-0", "tiled-1", "tiled-2"]
+
+
+def test_batched_truncation_falls_back_to_per_region_reader(monkeypatch) -> None:
+    _fake_regions(monkeypatch, n=2)
+    v = _TiledScanVision(_appraisal(has_content=True), tiled_truncates=True)
+    cp = converge_page(v, _manifestation(), 1, _scanned_page_elements(), reading_order_text="x")
+    # The batch truncated → fell back to the per-region cold reader (never a drop).
+    assert len(v.tiled_calls) == 1
+    assert len(v.cold_calls) == 2
+    assert cp.convergence.regions_read == 2
+    assert [n.text for n in cp.nodes] == ["cold-0", "cold-1"]
+
+
+def test_tiled_read_disabled_by_env_uses_per_region_reader(monkeypatch) -> None:
+    import importlib
+
+    import lawvm.ingest.page_level as pl
+
+    monkeypatch.setenv("LAWVM_INGEST_TILED_READ", "0")
+    reloaded = importlib.reload(pl)
+    try:
+        _fake_regions(monkeypatch, n=2)
+        v = _TiledScanVision(_appraisal(has_content=True))
+        cp = reloaded.converge_page(
+            v, _manifestation(), 1, _scanned_page_elements(), reading_order_text="x"
+        )
+        assert v.tiled_calls == []       # batching disabled → not called
+        assert len(v.cold_calls) == 2    # per-region reader used instead
+        assert [n.text for n in cp.nodes] == ["cold-0", "cold-1"]
+    finally:
+        monkeypatch.delenv("LAWVM_INGEST_TILED_READ", raising=False)
+        importlib.reload(pl)

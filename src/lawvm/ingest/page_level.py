@@ -737,6 +737,33 @@ _MAX_SUBDIVIDE_REGIONS = 8
 # (isolation), so its text is transcribed faithfully; the DPI just sets crop sharpness.
 _SUBDIVIDE_DPI = _REREAD_DPI
 
+# --------------------------------------------------------------------------- #
+# Batched "thumbnail + tiles" scanned-page read (§9, SOTA high-res-VLM path).   #
+# --------------------------------------------------------------------------- #
+#
+# The per-region subdivide reads each region on its OWN request — correct, but it
+# re-sends the system prompt + an image N times (input tokens ≈ N× a single read).
+# The batched path sends ONE request carrying a low-res whole-page THUMBNAIL (global
+# context + reading order, cheap) plus the high-res region TILES (each isolated so
+# its glyphs command the encoder grid), and parses the per-region transcriptions
+# back by their ``I{N}`` label. ONE system-prompt overhead + one round-trip + one
+# failure roll on the flaky backend, at a fraction of the input tokens — while
+# KEEPING the isolation that recovers small glyphs. Gated to the scanned residual;
+# the per-region path stays the fallback (a producer without ``read_page_tiled``, a
+# truncated batch, or ``LAWVM_INGEST_TILED_READ=0`` all route to it).
+_TILED_READ_ENABLED = (os.environ.get("LAWVM_INGEST_TILED_READ", "1") or "1") != "0"
+# Whole-page thumbnail render scale (≈0.5 ⇒ ~36 DPI on an A4 gazette) — smallest
+# that still conveys reading order / layout; the crops carry the readable pixels.
+_TILED_THUMBNAIL_SCALE = float(
+    os.environ.get("LAWVM_INGEST_TILED_THUMB_SCALE", "0.5") or "0.5"
+)
+# Per-tile crop DPI (isolation, not DPI, is the fidelity lever — see _SUBDIVIDE_DPI).
+_TILED_CROP_DPI = _REREAD_DPI
+# Chunk threshold: at most this many tiles per batched request. Beyond it the crops
+# are split across several batched requests (each still one shared prompt) so one
+# request never exceeds the backend's context / pixel budget.
+_TILED_MAX_TILES = _MAX_SUBDIVIDE_REGIONS
+
 
 def _union_bbox(lines: Sequence[PageLine]) -> Optional[BBox]:
     """The union bbox of a group of page lines (None when none carry geometry)."""
@@ -812,6 +839,30 @@ def _propose_regions(
     return tuple((bbox, n) for _key, bbox, n in regions)
 
 
+def _read_regions_for(
+    manifestation,
+    page_num: int,
+    page_elements: PageElements,
+    max_regions: int,
+) -> Tuple[Tuple[BBox, int], ...]:
+    """The read regions for a page (§9), shared by the per-region + batched readers.
+
+    Prefers the pdfium text-layer GEOMETRY (``_propose_regions`` — column → band); a
+    genuinely SCANNED page has none, so it falls back to the page-IMAGE segmentation
+    (``visual.segment_page_regions`` — recursive XY-cut over the ink projection).
+    Empty when the page has no usable geometry AND cannot be image-segmented."""
+    regions = _propose_regions(page_elements, max_regions)
+    if not regions:
+        # No pdfium text-layer geometry (a genuinely SCANNED page) — derive the read
+        # regions from the page IMAGE instead (recursive XY-cut over the ink
+        # projection), so the scanned residual can subdivide too. Empty when the
+        # image cannot be segmented, and the caller then types the page truncated.
+        from lawvm.ingest.visual import segment_page_regions
+
+        regions = segment_page_regions(manifestation, page_num)
+    return regions
+
+
 def _subdivide_page_read(
     vision,
     manifestation,
@@ -838,15 +889,7 @@ def _subdivide_page_read(
     KEEPING whatever was read (never a silent drop)."""
     if not hasattr(vision, "read_region_cold"):
         return (), 0, False
-    regions = _propose_regions(page_elements, max_regions)
-    if not regions:
-        # No pdfium text-layer geometry (a genuinely SCANNED page) — derive the read
-        # regions from the page IMAGE instead (recursive XY-cut over the ink
-        # projection), so the scanned residual can subdivide too. Empty when the
-        # image cannot be segmented, and the caller then types the page truncated.
-        from lawvm.ingest.visual import segment_page_regions
-
-        regions = segment_page_regions(manifestation, page_num)
+    regions = _read_regions_for(manifestation, page_num, page_elements, max_regions)
     if not regions:
         return (), 0, False
     from lawvm.ingest.llm_backends.vision_producer import (
@@ -879,6 +922,110 @@ def _subdivide_page_read(
                     )
                 )
     return tuple(nodes), regions_read, complete
+
+
+def _stitch_region_texts(
+    texts: Sequence[str],
+) -> Tuple[Tuple[StructBuildNode, ...], int]:
+    """Flatten per-region transcriptions → a flat PARAGRAPH forest + non-empty count.
+
+    Shared by the batched reader: one PARAGRAPH node per non-blank physical line, in
+    the regions' reading order (the tiled reply is parsed back into region order by
+    ``I{N}`` label), NEVER completion order (determinism firewall)."""
+    nodes: List[StructBuildNode] = []
+    regions_read = 0
+    for text in texts:
+        if not text.strip():
+            continue
+        regions_read += 1
+        for physical_line in text.split("\n"):
+            s = physical_line.strip()
+            if s:
+                nodes.append(
+                    StructBuildNode(kind=SourceDocumentNodeKind.PARAGRAPH, text=s)
+                )
+    return tuple(nodes), regions_read
+
+
+def _subdivide_page_read_tiled(
+    vision,
+    manifestation,
+    page_num: int,
+    page_elements: PageElements,
+    *,
+    max_regions: int = _MAX_SUBDIVIDE_REGIONS,
+    crop_dpi: int = _TILED_CROP_DPI,
+    thumbnail_scale: float = _TILED_THUMBNAIL_SCALE,
+    max_tiles: int = _TILED_MAX_TILES,
+) -> Tuple[Tuple[StructBuildNode, ...], int, bool]:
+    """Batched "thumbnail + tiles" region read → (nodes, regions_read, complete).
+
+    §9 SOTA path: ONE request per tile-chunk carrying the low-res whole-page
+    thumbnail + the chunk's high-res region crops (``vision.read_page_tiled``), whose
+    per-region transcriptions are parsed back by ``I{N}`` label and stitched flat in
+    reading order. When the region count exceeds ``max_tiles`` the crops are split
+    across several batched requests (each still ONE shared system prompt) so a single
+    request never blows the backend's context / pixel budget. A producer WITHOUT
+    ``read_page_tiled`` cannot batch → ``((), 0, False)`` (the caller falls back to
+    the per-region reader). ``complete`` is False when ANY chunk truncated / failed —
+    the caller then falls back / types the page truncated while KEEPING what was read
+    (never a silent drop)."""
+    if not hasattr(vision, "read_page_tiled"):
+        return (), 0, False
+    regions = _read_regions_for(manifestation, page_num, page_elements, max_regions)
+    if not regions:
+        return (), 0, False
+    from lawvm.ingest.llm_backends.vision_producer import (
+        VisionProducerFailure,
+        VisionProducerTruncated,
+    )
+
+    nodes: List[StructBuildNode] = []
+    regions_read = 0
+    complete = True
+    for start in range(0, len(regions), max_tiles):
+        chunk = regions[start : start + max_tiles]
+        try:
+            texts = vision.read_page_tiled(
+                manifestation,
+                page_num,
+                chunk,
+                thumbnail_scale=thumbnail_scale,
+                crop_dpi=crop_dpi,
+            )
+        except (VisionProducerTruncated, VisionProducerFailure):
+            # A truncated / malformed chunk → not fully read. Keep the other chunks;
+            # the caller falls back to the per-region reader or types it truncated.
+            complete = False
+            continue
+        chunk_nodes, chunk_read = _stitch_region_texts(texts)
+        nodes.extend(chunk_nodes)
+        regions_read += chunk_read
+    return tuple(nodes), regions_read, complete
+
+
+def _scanned_region_read(
+    vision,
+    manifestation,
+    page_num: int,
+    page_elements: PageElements,
+) -> Tuple[Tuple[StructBuildNode, ...], int, bool]:
+    """Scanned-stratum region read: batched thumbnail+tiles FIRST, per-region fallback.
+
+    The batched path (``_subdivide_page_read_tiled``) is the default (§9 SOTA) — ONE
+    shared prompt + one round-trip per tile-chunk instead of N separate region reads.
+    It applies ONLY here (the scanned / no-text-geometry residual); born-digital pages
+    never reach this. Falls back to the per-region reader (``_subdivide_page_read``)
+    when batching is disabled (``LAWVM_INGEST_TILED_READ=0``), the producer lacks
+    ``read_page_tiled``, or a batch came back incomplete/empty — so the correct,
+    higher-cost path always backstops the cheap one (never a silent drop)."""
+    if _TILED_READ_ENABLED and hasattr(vision, "read_page_tiled"):
+        nodes, regions_read, complete = _subdivide_page_read_tiled(
+            vision, manifestation, page_num, page_elements
+        )
+        if nodes and complete:
+            return nodes, regions_read, complete
+    return _subdivide_page_read(vision, manifestation, page_num, page_elements)
 
 
 def _synthetic_subdivide_build(
@@ -988,18 +1135,19 @@ def converge_page(
     # §9 SCANNED-page default: a page with no pdfium text geometry is read whole ONLY
     # by the vision model, whose encoder under-samples small text (a 6-8 pt italic
     # heading misreads at ANY whole-page render scale — the grid, not the DPI). Read
-    # it region-by-region FROM THE PAGE IMAGE up front (``segment_page_regions`` via
-    # ``_subdivide_page_read``) so each region's text commands enough of the encoder
-    # grid to transcribe faithfully — the same fidelity lever the §8 re-read uses,
-    # applied by DEFAULT to the scanned residual rather than only on a suspect flag.
-    # Only when the image cannot be segmented (or a region truncates) does the
-    # whole-page ladder below run (no regression to the current behaviour).
+    # it region-by-region FROM THE PAGE IMAGE up front (``segment_page_regions``) so
+    # each region's text commands enough of the encoder grid to transcribe faithfully
+    # — the same fidelity lever the §8 re-read uses, applied by DEFAULT to the scanned
+    # residual rather than only on a suspect flag. ``_scanned_region_read`` prefers the
+    # BATCHED thumbnail+tiles path (one shared prompt + one round-trip per tile-chunk),
+    # falling back to the per-region reader. Only when the image cannot be segmented
+    # (or a batch/region truncates all the way) does the whole-page ladder below run.
     if (
         appraisal is not None
         and _page_lacks_text_geometry(page_elements)
-        and hasattr(vision, "read_region_cold")
+        and (hasattr(vision, "read_region_cold") or hasattr(vision, "read_page_tiled"))
     ):
-        sub_nodes, regions_read, complete = _subdivide_page_read(
+        sub_nodes, regions_read, complete = _scanned_region_read(
             vision, manifestation, page_num, page_elements
         )
         if sub_nodes and complete:

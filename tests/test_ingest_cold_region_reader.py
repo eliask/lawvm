@@ -96,6 +96,109 @@ def test_read_region_cold_empty_on_unreadable(monkeypatch) -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Batched "thumbnail + tiles" region read — ONE request carries the low-res     #
+# thumbnail + N labelled crops; the reply parses back per I{N} label in order.   #
+# --------------------------------------------------------------------------- #
+
+
+def test_read_page_tiled_builds_one_request_thumbnail_plus_labelled_crops(monkeypatch) -> None:
+    from lawvm.ingest.llm_backends.vision_producer import VisionPageProducer
+    import lawvm.ingest.visual as visual
+
+    # Fake the region-crop render (distinct bytes per bbox) and the thumbnail render.
+    def _fake_crop(man, page_num, bbox, dpi=300):
+        return f"CROP@{bbox.y0}".encode("ascii")
+
+    monkeypatch.setattr(visual, "render_region_crop", _fake_crop)
+    producer = VisionPageProducer(base_url="http://unused")
+    monkeypatch.setattr(producer, "_render_page_png", lambda *a, **k: b"THUMB")
+
+    posted: dict = {}
+
+    def _fake_post(payload, *, page_num):
+        posted["payload"] = payload
+        # Model returns one labelled block per region, in order, multi-line region 1.
+        return "I1\nHeading one\nBody one line two\nI2\nSecond region text"
+
+    monkeypatch.setattr(producer, "_post_chat", _fake_post)
+
+    regions = (
+        (BBox(72, 600, 500, 780), 2),
+        (BBox(72, 400, 500, 580), 1),
+    )
+    out = producer.read_page_tiled(
+        _manifestation(), 5, regions, thumbnail_scale=0.4, crop_dpi=250
+    )
+    # Parsed back per region, in reading order (region 1 keeps its two lines).
+    assert out == ("Heading one\nBody one line two", "Second region text")
+
+    # ONE request; its user content carries the thumbnail FIRST then N labelled crops.
+    content = posted["payload"]["messages"][1]["content"]
+    image_urls = [c for c in content if c.get("type") == "image_url"]
+    assert len(image_urls) == 3  # 1 thumbnail + 2 region crops
+    assert "THUMB" in image_urls[0]["image_url"]["url"] or image_urls[0]["image_url"]["url"]
+    # A text marker precedes each crop, labelling it I1 / I2 in order.
+    marker_texts = [c["text"] for c in content if c.get("type") == "text"]
+    assert any(t.startswith("I1") for t in marker_texts)
+    assert any(t.startswith("I2") for t in marker_texts)
+    # The system prompt is the tiled prompt (thumbnail context + per-region crops).
+    system = posted["payload"]["messages"][0]["content"]
+    assert "thumbnail" in system.lower() and "crop" in system.lower()
+
+
+def test_read_page_tiled_marks_unreadable_region_empty(monkeypatch) -> None:
+    from lawvm.ingest.llm_backends.vision_producer import VisionPageProducer
+    import lawvm.ingest.visual as visual
+
+    monkeypatch.setattr(visual, "render_region_crop", lambda *a, **k: b"CROP")
+    producer = VisionPageProducer(base_url="http://unused")
+    monkeypatch.setattr(producer, "_render_page_png", lambda *a, **k: b"THUMB")
+    monkeypatch.setattr(
+        producer, "_post_chat", lambda payload, *, page_num: "I1\nReal text\nI2\nUNREADABLE"
+    )
+    out = producer.read_page_tiled(
+        _manifestation(), 1, ((BBox(0, 10, 10, 20), 1), (BBox(0, 0, 10, 9), 1))
+    )
+    assert out == ("Real text", "")  # UNREADABLE region → honest empty, not a crash
+
+
+def test_read_page_tiled_missing_label_is_typed_failure(monkeypatch) -> None:
+    # A malformed multi-image reply missing a region label RAISES (never a silent
+    # mis-alignment that would attribute one region's text to another).
+    from lawvm.ingest.llm_backends.vision_producer import (
+        VisionPageProducer,
+        VisionProducerFailure,
+    )
+    import lawvm.ingest.visual as visual
+
+    monkeypatch.setattr(visual, "render_region_crop", lambda *a, **k: b"CROP")
+    producer = VisionPageProducer(base_url="http://unused")
+    monkeypatch.setattr(producer, "_render_page_png", lambda *a, **k: b"THUMB")
+    monkeypatch.setattr(
+        producer, "_post_chat", lambda payload, *, page_num: "I1\nonly the first region"
+    )
+    with pytest.raises(VisionProducerFailure) as exc:
+        producer.read_page_tiled(
+            _manifestation(), 1, ((BBox(0, 10, 10, 20), 1), (BBox(0, 0, 10, 9), 1))
+        )
+    assert exc.value.reason_code == "vision_tiled_label_missing"
+
+
+def test_parse_tiled_regions_enforces_marker_order() -> None:
+    from lawvm.ingest.llm_backends.vision_producer import _parse_tiled_regions
+
+    # Markers I1..I3, each block sliced to the NEXT marker; a stray in-body "I2"
+    # after I3 does not re-split (labels are searched strictly in ascending order).
+    content = "I1\nalpha\nI2\nbeta\nI3\ngamma line mentioning I2 inline"
+    assert _parse_tiled_regions(content, 3, page_num=1) == (
+        "alpha",
+        "beta",
+        "gamma line mentioning I2 inline",
+    )
+    assert _parse_tiled_regions("anything", 0, page_num=1) == ()
+
+
+# --------------------------------------------------------------------------- #
 # (3) calibration live_region_reader hook binds the COLD reader → multi-line.   #
 # --------------------------------------------------------------------------- #
 
