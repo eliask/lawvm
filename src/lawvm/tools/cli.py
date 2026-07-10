@@ -9906,6 +9906,71 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
     amend_ir_corpus_p.add_argument("--verbose", action="store_true",
                                    help="print per-statute progress as the sweep runs")
 
+    # --- fi-he-ir-compare ---
+    he_ir_p = sub.add_parser(
+        "fi-he-ir-compare",
+        help="HE proposed-effect IR-EQUIVALENCE: HE PDF→proposed-ops vs trusted HE XML→proposed-ops",
+        description=(
+            "PHASE 2 of the structured-law goal (phase 1 = fi-amendment-ir-compare). An HE "
+            "(Finnish government proposal) is itself the SOURCE document; its 'effects on "
+            "laws' are the PROPOSED amendment operations carried in its bill text "
+            "(lakiehdotus). This eval asks the same EXACTNESS question inverted: does the HE "
+            "PDF→proposed-ops path reproduce the trusted HE XML→proposed-ops path EXACTLY? "
+            "Both witnesses flow through the IDENTICAL HE clause parser "
+            "(he_branch_parser._parse_one_clause): parse_he_branch over the authoritative "
+            "main.xml on one side, the born-digital main.pdf's geom reading text segmented "
+            "into enacting-clause spans on the other. HEs are BORN-DIGITAL prose so the geom "
+            "lane reads the PDF for FREE (no vision). Every proposed op is MATCHED or a TYPED "
+            "divergence (op_missing_in_pdf / op_extra_in_pdf / kind_mismatch, matched by "
+            "statute/provision target), then a PAYLOAD stage compares each matched op's "
+            "proposed body text modulo the inert-encoding quotient. Wrapper-XML HEs "
+            "(PDF-only content), new-statute-only HEs, treaty/budget HEs and XML parse gaps "
+            "are TYPED benign/deferred, never diffed against an untrustworthy reference."
+        ),
+    )
+    he_ir_p.add_argument("he", nargs="?", default=None,
+                         help="HE id YEAR/NUM (e.g. 2024/1)")
+    he_ir_p.add_argument("--farchive", default=None, metavar="PATH",
+                         help="source farchive (default: data/fi_government_proposal.farchive)")
+    he_ir_p.add_argument("--lang", default="fin", help="HE language variant (default: fin)")
+    he_ir_p.add_argument("--max-pages", type=int, default=400, dest="max_pages",
+                         help="pages to geom-read from the HE main.pdf (default: 400; lakiehdotus is near the end)")
+    he_ir_p.add_argument("--json", action="store_true", help="emit JSON instead of the text report")
+    he_ir_p.add_argument("--json-out", default=None, metavar="PATH", dest="json_out",
+                         help="also write the JSON payload to this path")
+
+    # --- fi-he-ir-corpus ---
+    he_ir_corpus_p = sub.add_parser(
+        "fi-he-ir-corpus",
+        help="corpus driver for the HE proposed-effect IR op-diff (born-digital geom lane, free)",
+        description=(
+            "Drive fi-he-ir-compare over a sample of HE XML/PDF pairs from "
+            "data/fi_government_proposal.farchive to produce the first corpus-wide HE "
+            "proposed-effect divergence distribution. HEs are born-digital prose so the FREE "
+            "geom lane reads every PDF (no vision, no cap). Only HEs whose trusted XML carries "
+            "real proposed amendment ops enter the exact-equivalence comparison; wrapper-XML, "
+            "new-statute-only, treaty/budget, and XML parse gaps are TYPED and counted, never "
+            "diffed. Every HE's result is persisted as a JSONL row (the residual queue), and "
+            "the run folds the EXACT-MATCH rate, the typed-bucket totals and the ranked worst HEs."
+        ),
+    )
+    he_ir_corpus_p.add_argument("--farchive", default=None, metavar="PATH",
+                                help="source farchive (default: data/fi_government_proposal.farchive)")
+    he_ir_corpus_p.add_argument("--sample", type=int, default=100, metavar="N",
+                                help="random sample of N paired HEs (deterministic via --seed; default: 100)")
+    he_ir_corpus_p.add_argument("--seed", type=int, default=0,
+                                help="random seed for the sample (default: 0)")
+    he_ir_corpus_p.add_argument("--limit", type=int, default=None,
+                                help="cap the number of HEs attempted (first N of the sampled list)")
+    he_ir_corpus_p.add_argument("--max-pages", type=int, default=400, dest="max_pages",
+                                help="pages to geom-read from each HE main.pdf (default: 400)")
+    he_ir_corpus_p.add_argument("--out", default=None, metavar="PATH",
+                                help="JSONL residual-queue output path (one row per HE)")
+    he_ir_corpus_p.add_argument("--json", action="store_true",
+                                help="emit the aggregate report as JSON instead of text")
+    he_ir_corpus_p.add_argument("--verbose", action="store_true",
+                                help="print per-HE progress as the sweep runs")
+
     # --- fi-parse-corpus ---
     parse_corpus_p = sub.add_parser(
         "fi-parse-corpus",
@@ -14799,6 +14864,16 @@ def _main_impl() -> None:
         from lawvm.tools.fi_amendment_ir_corpus import main as fi_amendment_ir_corpus_main
 
         fi_amendment_ir_corpus_main(args)
+
+    elif args.command == "fi-he-ir-compare":
+        from lawvm.tools.fi_he_ir_compare import main as fi_he_ir_compare_main
+
+        fi_he_ir_compare_main(args)
+
+    elif args.command == "fi-he-ir-corpus":
+        from lawvm.tools.fi_he_ir_corpus import main as fi_he_ir_corpus_main
+
+        fi_he_ir_corpus_main(args)
 
     elif args.command == "fi-parse-corpus":
         from lawvm.tools.fi_parse_corpus import main as fi_parse_corpus_main
