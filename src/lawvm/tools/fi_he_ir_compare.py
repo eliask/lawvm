@@ -120,11 +120,6 @@ class HEIrCompareError(Exception):
 
 _TERMINATOR_RE = re.compile(r"seuraavasti\s*:", re.IGNORECASE)
 
-#: The invariant enactment formula ("<organ> päätöksen mukaisesti").  Its presence in a
-#: "... seuraavasti:" window is what distinguishes a genuine enacting clause from
-#: perustelut prose that happens to contain an operative verb + "seuraavasti".
-_ENACTMENT_FORMULA_RE = re.compile(r"p[äa]{1,2}t[öo]ksen\s+mukaisesti", re.IGNORECASE)
-
 #: STRONG amendment-directive head verbs used to locate a clause span's START anchor.
 #: Deliberately EXCLUDES bare "säädetään" / "siirretään" / "poistetaan": those are
 #: ubiquitous in body prose ("tarkemmin säädetään valtioneuvoston asetuksella",
@@ -151,10 +146,14 @@ _CITE_RE = re.compile(r"\(\d{1,5}/\d{4}\)")
 #: Max distance from an amendment-verb head to the statute citation it governs.
 _HEAD_TO_CITE = 160
 
-#: Max distance from a clause's terminator within which the enactment formula must appear
-#: (geom reordering can place the "... päätöksen mukaisesti" formula just AFTER the
-#: "seuraavasti:" terminator instead of before the head).
-_FORMULA_NEAR = 160
+#: A provision marker ("§") — a genuine amendment directive lists the provisions it
+#: touches (7 §, 9 §:n 2 momentti, ...) between its statute citation and "seuraavasti:".
+#: Requiring one INSIDE the candidate span is the structural discriminator that separates
+#: an enacting clause from a stray perustelut sentence ("muutetaan lakia X merkittävästi
+#: ... seuraavasti:") — and, unlike the enactment formula, it is ALWAYS co-located with
+#: the clause, so geom scattering the centered "... päätöksen mukaisesti" formula far from
+#: its clause does not cause the (genuine) clause to be dropped.
+_PROVISION_MARK_RE = re.compile(r"§")
 
 #: Any amendment verb (vs the new-law-only "säädetään"): tells a proposed-AMENDMENT HE
 #: apart from a pure new-statute enactment when the XML lowers to zero ops.
@@ -179,15 +178,17 @@ def extract_enacting_clause_spans(
 
     An enacting clause has a reliable SIGNATURE that survives geom line-reordering: a
     strong amendment-verb head ("muutetaan"/"lisätään"/"kumotaan"/"korvataan")
-    immediately followed by a statute citation "(NUM/YEAR)", running forward to a
-    "... seuraavasti:" terminator, with the enactment formula ("... päätöksen
-    mukaisesti") somewhere nearby.  We anchor on that signature rather than on the
-    formula's position (which geom may scatter before the head OR after the terminator),
-    and rather than on a bare verb (a body-prose "säädetään" has no adjacent citation and
-    is rejected).  Each qualifying span runs from the head to its nearest following
-    terminator (bounded by ``max_clause_chars``).  Overlapping / duplicate spans
-    (a second head before the same terminator; the rinnakkaistekstit repeat) are harmless
-    — the op-set diff de-duplicates by target.  Returns spans in reading order.
+    immediately followed by a statute citation "(NUM/YEAR)", then at least one provision
+    marker ("§"), running forward to a "... seuraavasti:" terminator.  We anchor on that
+    signature rather than on the enactment formula's position — geom can scatter the
+    centered "... päätöksen mukaisesti" formula arbitrarily far from its clause, so gating
+    on it drops genuine clauses; the co-located "§" provision marker is the robust
+    discriminator against a stray perustelut sentence.  A bare body-prose "säädetään" has
+    no adjacent citation and is rejected.  Each qualifying span runs from the head to its
+    nearest following terminator (bounded by ``max_clause_chars``).  Overlapping /
+    duplicate spans (a second head before the same terminator; the rinnakkaistekstit
+    repeat) are harmless — the op-set diff de-duplicates by target.  Returns spans in
+    reading order.
     """
     flat = _flatten_reading_text(reading_text)
     spans: list[str] = []
@@ -202,12 +203,9 @@ def extract_enacting_clause_spans(
         if term is None:
             continue
         end = term.end()
-        # Confirm this is a genuine enacting clause: the enactment formula must appear
-        # within the clause or just around its boundaries (geom may place it after the
-        # terminator). This rejects a stray amendment-verb-plus-citation in perustelut prose.
-        ctx_lo = max(0, hstart - _FORMULA_NEAR)
-        ctx_hi = min(len(flat), end + _FORMULA_NEAR)
-        if not _ENACTMENT_FORMULA_RE.search(flat, ctx_lo, ctx_hi):
+        # A genuine amendment directive lists provisions ("§") it touches; a stray
+        # perustelut sentence with an amendment verb + citation does not.
+        if _PROVISION_MARK_RE.search(flat, cite.end(), end) is None:
             continue
         key = (hstart, end)
         if key in seen:
