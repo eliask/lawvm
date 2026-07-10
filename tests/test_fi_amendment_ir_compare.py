@@ -236,6 +236,57 @@ def test_mixed_section_and_appendix_amendment_still_compares() -> None:
     assert _is_appendix_only_amendment(()) is False  # no ops -> not appendix-only
 
 
+def test_classify_no_johtolause_empty_is_read_defect_not_annex() -> None:
+    # A near-empty reading text is a reader/source DEFECT, never a benign annex.
+    from lawvm.tools.fi_amendment_ir_compare import classify_no_operative_johtolause
+
+    status, detail = classify_no_operative_johtolause("   \n  \n")
+    assert status == "pdf_read_empty"
+    assert "near-empty" in detail
+
+
+def test_classify_no_johtolause_sami_is_language_mismatch() -> None:
+    # The fin/media PDF is sometimes the Northern Sámi manifestation — a pairing
+    # artifact, typed distinct from a genuine annex (benign for FI-vs-FI).
+    from lawvm.tools.fi_amendment_ir_compare import classify_no_operative_johtolause
+
+    sami = (
+        "Nr 1725 Láhka sámedikki birra addojuvvon lága rievdadeamis Addojuvvon "
+        "Helssegis juovlamánu 22. beaivve 1995 Riikkabeivviid mearrádusa mielde "
+        "nuppástuhtto sámedikki birra suoingii lága"
+    ) * 3
+    status, _ = classify_no_operative_johtolause(sami)
+    assert status == "pdf_language_mismatch"
+
+
+def test_classify_no_johtolause_verb_without_annex_is_suspect_defect() -> None:
+    # Finnish amendment verb present, no annex heading, but no johtolause closed:
+    # a SUSPECT reader/segmentation defect — surfaced, not absolved as an annex.
+    from lawvm.tools.fi_amendment_ir_compare import classify_no_operative_johtolause
+
+    text = (
+        "Eduskunnan paatoksen mukaisesti muutetaan jonkin lain useita pykalia "
+        "ja niiden nojalla annettuja saannoksia koskien monenlaisia asioita "
+    ) * 4
+    status, detail = classify_no_operative_johtolause(text)
+    assert status == "pdf_johtolause_unparsed"
+    assert "suspect" in detail
+
+
+def test_classify_no_johtolause_annex_heading_is_benign_annex() -> None:
+    # An explicit liite/table heading with no enacting clause is the genuine
+    # benign annex — even if annex body prose contains an operative verb.
+    from lawvm.tools.fi_amendment_ir_compare import classify_no_operative_johtolause
+
+    annex = (
+        "LIITE A SISÄLLYSLUETTELO VAARALLISIA AINEITA JA ESINEITÄ KOSKEVAT "
+        "MÄÄRÄYKSET Osa I Määritelmiä ja yleistä reunanumerot taulukko "
+        "Aineiden luokitus lisätään havainto seuraavasti kohtaan"
+    ) * 2
+    status, _ = classify_no_operative_johtolause(annex)
+    assert status == "pdf_annex_only"
+
+
 def test_compare_statute_returns_typed_status_never_raises(tmp_path) -> None:
     # compare_statute must surface a TYPED status, never raise past its boundary.
     # With no real farchive the XML read fails -> status "error" (typed), not an

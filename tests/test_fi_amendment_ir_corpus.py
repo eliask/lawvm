@@ -158,6 +158,49 @@ def test_vision_cap_is_honored_and_logged(tmp_path: Path) -> None:
     assert skipped[0]["compare_status"] == LANE_CAP_SKIPPED
 
 
+def _noncompared(sid: str, status: str) -> CompareResult:
+    return CompareResult(
+        sid=sid,
+        lang="fin",
+        compare_status=status,
+        divergences=(),
+        xml_op_count=3,
+        pdf_op_count=0,
+        detail=status,
+    )
+
+
+def test_pathology_surface_separated_from_benign_noncompared() -> None:
+    """A zero-op PDF must split into benign vs non-benign; pathologies surface."""
+    from lawvm.tools.fi_amendment_ir_corpus import _row_from_result
+
+    rows = []
+    specs = [
+        ("2003/1", "pdf_annex_only"),        # benign
+        ("2003/2", "pdf_language_mismatch"), # benign
+        ("2003/3", "pdf_read_empty"),        # PATHOLOGY
+        ("2003/4", "pdf_johtolause_unparsed"),  # PATHOLOGY
+        ("2003/5", "error"),                 # PATHOLOGY
+    ]
+    for sid, status in specs:
+        route = Route(sid, LANE_GEOM, None, 1.0, 1)
+        rows.append(_row_from_result(_noncompared(sid, status), route))
+
+    report = aggregate_rows(rows)
+    # None are "compared" -> a naive rate would read 0/0 as clean; the pathology
+    # surface is what keeps the 3 potential defects VISIBLE.
+    assert report.n_compared == 0
+    assert report.n_pathology == 3
+    assert report.pathology_counts == {
+        "pdf_read_empty": 1,
+        "pdf_johtolause_unparsed": 1,
+        "error": 1,
+    }
+    # Benign strata are NOT counted as pathology.
+    assert "pdf_annex_only" not in report.pathology_counts
+    assert "pdf_language_mismatch" not in report.pathology_counts
+
+
 def test_aggregate_rows_worst_limit() -> None:
     """The worst ranking honors its limit and is deterministic worst-first."""
     from lawvm.tools.fi_amendment_ir_corpus import _row_from_result

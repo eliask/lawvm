@@ -70,11 +70,27 @@ Benign terminal strata (typed status on ``CompareResult``, never a silent empty)
     is the ANNEX attachment (liite), NOT the operative gazette; its reading text
     carries no johtolause → PDF→ops is empty (:class:`OperativeClauseNotFound`).
     The genuine end-to-end case is an OLDER scanned gazette whose media PDF IS the
-    full statute page (vision-read).
+    full statute page (vision-read).  A zero-op PDF is NOT blanket-benign, though:
+    :func:`classify_no_operative_johtolause` splits it so a reader defect is not
+    absolved as an annex — see the three NON-benign pathology strata below.
+  * ``pdf_language_mismatch`` — the media PDF is a DIFFERENT-LANGUAGE manifestation
+    (Sámi / Swedish) filed under the fin/ path: a pairing artifact, benign for
+    FI-vs-FI op exactness but typed distinct so it is not miscounted as an annex.
   * ``appendix_only`` — every XML enacting op targets an appendix/attachment
     (``appendix:N``, a liite/table). The real content is a structured table that neither
     the section-keyed XML body nor the flat-``N §`` PDF segmenter can compare — deferred
     to the appendix-structuring stage rather than forced into a spurious op diff.
+
+Non-benign PATHOLOGY strata (typed status too, but NOT clean — surfaced for
+adjudication, never folded into the "all matched" count):
+
+  * ``pdf_read_empty`` — the reader recovered (almost) nothing from the media PDF.
+    On the vision lane this is a reader/source DEFECT (or missing media), not a
+    readable annex.
+  * ``pdf_johtolause_unparsed`` — a Finnish amendment verb is present yet no
+    johtolause closed and the page is not annex-headed: a SUSPECT reader/
+    segmentation defect that must be looked at, not absolved as an annex.
+  * ``error`` — the XML or media could not be read at all (missing source).
 
 Substrate-adequacy is a cheap DIAGNOSTIC only (did the PDF text even yield an
 extractable operative clause) — it is never the headline; the headline is the
@@ -127,6 +143,95 @@ _OPERATIVE_VERB_RE = re.compile(
     re.IGNORECASE,
 )
 _SEURAAVASTI_RE = re.compile(r"seuraavasti", re.IGNORECASE)
+
+# --- Discriminators for WHY a PDF yielded no operative johtolause. ----------- #
+# A blanket ``pdf_annex_only`` for every zero-op PDF would ABSOLVE genuine
+# reader defects and wrong-language pairing artifacts as "benign annex". These
+# split the no-johtolause outcome by the reading-text evidence (see
+# :func:`classify_no_operative_johtolause`).
+#: Below this many chars the reader recovered (almost) nothing — a read defect
+#: (or missing media), never a benign annex whose prose we could read.
+_PDF_READ_EMPTY_MIN_CHARS = 120
+#: Distinctive Northern-Sámi markers. The modern finlex ``fin/media/*.pdf`` is
+#: SOMETIMES the Sámi-language manifestation of the act filed under the fin path
+#: — a pairing artifact (benign for FI-vs-FI op exactness), NOT an annex.
+_SAMI_MARKER_RE = re.compile(
+    r"\b(l[áa]hka|addojuvvon|rievdad\w*|mielde|birra|beaivve|riikkabeiv\w*)\b",
+    re.IGNORECASE,
+)
+#: Distinctive Swedish markers (the parallel Swedish manifestation).
+_SWEDISH_MARKER_RE = re.compile(
+    r"\b(och|ändring\w*|enligt|följande|stadgas|förordning)\b", re.IGNORECASE
+)
+#: An explicit annex/table heading — genuine attachment content, benign.
+_ANNEX_HEADING_RE = re.compile(
+    r"\b(liit(?:e|te\w*)|sisällysluettelo|taulukko)\b", re.IGNORECASE
+)
+
+
+def classify_no_operative_johtolause(reading_text: str) -> "tuple[str, str]":
+    """Discriminate the CAUSE of a PDF that yielded no operative johtolause.
+
+    Returns ``(compare_status, detail)``.  A blanket ``pdf_annex_only`` would
+    absolve every zero-op PDF as a benign annex — hiding genuine reader defects
+    and language/pairing artifacts in the same bucket, which is exactly what let
+    a "0 divergences" corpus certification read as all-clean over 316 statutes.
+    The reading text tells us which of four causes it is:
+
+      ``pdf_read_empty``        near-empty reading text — the reader recovered
+                                (almost) nothing; on the vision lane this is a
+                                reader/source DEFECT (or missing media), NOT
+                                benign.  Surfaced as a pathology.
+      ``pdf_language_mismatch`` substantial text in a DIFFERENT LANGUAGE (Sámi /
+                                Swedish manifestation under the fin/ path) — a
+                                pairing artifact; benign for FI-vs-FI, typed
+                                distinct so it is not miscounted as an annex.
+      ``pdf_johtolause_unparsed`` a Finnish amendment VERB is present yet no
+                                johtolause closed and it is not annex-headed —
+                                SUSPECT reader/segmentation defect; surfaced for
+                                adjudication, never silently absolved.
+      ``pdf_annex_only``        substantial Finnish non-amendment prose (annex /
+                                table / body), no enacting johtolause — the
+                                genuine benign annex case.
+    """
+    flat = re.sub(r"\s+", " ", reading_text or "").strip()
+    n = len(flat)
+    if n < _PDF_READ_EMPTY_MIN_CHARS:
+        return (
+            "pdf_read_empty",
+            f"PDF reading text near-empty ({n} chars) — reader recovered nothing "
+            "(read defect or missing media), not a readable annex",
+        )
+    head = flat[:400]
+    if _SAMI_MARKER_RE.search(head):
+        return (
+            "pdf_language_mismatch",
+            "media PDF is a Northern Sámi manifestation (wrong-language pairing "
+            "under the fin/ path), not the Finnish gazette — no FI johtolause",
+        )
+    # A Finnish amendment verb present but NO annex heading ⇒ the page looks like
+    # an enacting gazette whose johtolause we failed to close: a suspect defect.
+    if _OPERATIVE_VERB_RE.search(flat) and not _ANNEX_HEADING_RE.search(flat[:200]):
+        return (
+            "pdf_johtolause_unparsed",
+            f"Finnish amendment verb present but no johtolause closed ({n} chars) "
+            "— suspect reader/segmentation defect, adjudicate",
+        )
+    if _ANNEX_HEADING_RE.search(flat[:300]):
+        return (
+            "pdf_annex_only",
+            "reading text is annex/table content (liite/sisällysluettelo/taulukko), "
+            "no enacting johtolause",
+        )
+    if _SWEDISH_MARKER_RE.search(head):
+        return (
+            "pdf_language_mismatch",
+            "media PDF appears to be a Swedish manifestation, not the Finnish gazette",
+        )
+    return (
+        "pdf_annex_only",
+        "substantial non-amendment prose, no enacting johtolause — annex/body",
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -907,7 +1012,10 @@ class CompareResult:
 
     sid: str
     lang: str
-    compare_status: str  # "compared" | "xml_frame_only" | "pdf_annex_only" | "appendix_only" | "error"
+    compare_status: str  # "compared" | "xml_frame_only" | "pdf_annex_only" |
+    # "pdf_language_mismatch" | "appendix_only" | "pdf_read_empty" |
+    # "pdf_johtolause_unparsed" | "error"  (last two + read_empty are non-benign
+    # pathologies surfaced for adjudication, NOT clean benign strata)
     divergences: tuple[OpDivergence, ...]
     xml_op_count: int
     pdf_op_count: int
@@ -1009,14 +1117,19 @@ def compare_statute(
         )
 
     # --- PDF witness: read the reading text ONCE; derive ops + body payloads. ---
+    reading_text = ""  # bound before the read so the classifier is sound if it raises
     try:
         _pdf_loc, reading_text = _resolve_pdf_reading_text(
             pdf_spec, farchive, lang=lang, lane=lane, max_pages=max_pages, text_fn=pdf_text_fn
         )
         pdf_ast = _pdf_ast_from_reading_text(reading_text, loc.sid)
     except OperativeClauseNotFound as exc:
+        # A zero-op PDF is NOT blanket-benign: discriminate read defect vs
+        # wrong-language pairing vs suspect-unparsed vs genuine annex, so the
+        # "no ops" outcome cannot silently absolve a reader defect.
+        pdf_status, pdf_detail = classify_no_operative_johtolause(reading_text)
         return CompareResult(
-            loc.sid, loc.lang, "pdf_annex_only", (), len(xml_flat), 0, str(exc)
+            loc.sid, loc.lang, pdf_status, (), len(xml_flat), 0, f"{pdf_detail} [{exc}]"
         )
     except AmendmentIrCompareError as exc:
         return CompareResult(

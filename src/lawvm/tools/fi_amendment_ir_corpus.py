@@ -256,8 +256,23 @@ def _synthetic_row(route: Route, compare_status: str) -> StatuteDiffRow:
     )
 
 
-# The benign / non-compared terminal strata (never a genuine defect).
-_NON_COMPARED_STATUSES = ("xml_frame_only", "pdf_annex_only", "appendix_only", "error")
+# The BENIGN non-compared terminal strata (never a genuine defect): a thin XML
+# frame, a genuine annex/attachment PDF, a wrong-language pairing, or a deferred
+# appendix table.
+_BENIGN_NONCOMPARED_STATUSES = (
+    "xml_frame_only",
+    "pdf_annex_only",
+    "pdf_language_mismatch",
+    "appendix_only",
+)
+# The NON-benign non-compared strata: a zero-op PDF is not blanket-benign. These
+# are potential reader/source DEFECTS surfaced for adjudication — NEVER folded
+# into the clean count. Keeping them visible is what stops a "0 divergences"
+# certification from silently absolving a broken read (see
+# ``fi_amendment_ir_compare.classify_no_operative_johtolause``).
+_PATHOLOGY_STATUSES = ("pdf_read_empty", "pdf_johtolause_unparsed", "error")
+# Back-compat alias (the full non-compared set).
+_NON_COMPARED_STATUSES = _BENIGN_NONCOMPARED_STATUSES + _PATHOLOGY_STATUSES
 
 
 @dataclass(frozen=True, slots=True)
@@ -280,6 +295,12 @@ class CorpusDiffReport:
     payload_compared: int = 0
     payload_deferred: int = 0
     payload_skipped: int = 0
+    #: Non-benign non-compared strata surfaced for adjudication (potential reader/
+    #: source defects), keyed by status; ``n_pathology`` is their total.  NEVER
+    #: part of the benign count — a "0 divergences" pass with a nonzero pathology
+    #: surface is NOT a clean certification.
+    pathology_counts: Dict[str, int] = field(default_factory=dict)
+    n_pathology: int = 0
 
     @property
     def exact_match_rate(self) -> float:
@@ -311,9 +332,14 @@ def aggregate_rows(
     n_geom = n_vision = n_cap_skipped = n_load_error = 0
     n_compared = n_exact = total_typed = 0
     payload_compared = payload_deferred = payload_skipped = 0
+    pathology_counts: Dict[str, int] = {}
 
     for r in rows:
         status_counts[r.compare_status] = status_counts.get(r.compare_status, 0) + 1
+        if r.compare_status in _PATHOLOGY_STATUSES:
+            pathology_counts[r.compare_status] = (
+                pathology_counts.get(r.compare_status, 0) + 1
+            )
         if r.lane_used == LANE_GEOM:
             n_geom += 1
         elif r.lane_used == LANE_VISION:
@@ -349,6 +375,8 @@ def aggregate_rows(
         payload_compared=payload_compared,
         payload_deferred=payload_deferred,
         payload_skipped=payload_skipped,
+        pathology_counts=pathology_counts,
+        n_pathology=sum(pathology_counts.values()),
     )
 
 
@@ -459,6 +487,18 @@ def render_report(report: CorpusDiffReport) -> str:
         f"deferred={report.payload_deferred}  repeal_skipped={report.payload_skipped}"
     )
     lines.append("")
+    lines.append(
+        "## PATHOLOGY SURFACE (non-benign non-compared — potential reader/source "
+        "defects, adjudicate)"
+    )
+    lines.append(
+        f"  n_pathology={report.n_pathology}  "
+        "(NOT part of the benign strata; a nonzero surface means the 'exact' "
+        "rate is over an INCOMPLETE compared set)"
+    )
+    for status in _PATHOLOGY_STATUSES:
+        lines.append(f"  {status:<24} {report.pathology_counts.get(status, 0)}")
+    lines.append("")
     lines.append("## RANKED WORST (compared, by typed_divergence_count)")
     lines.append("rank,sid,lane,typed,xml_ops,pdf_ops,kinds")
     for rank, r in enumerate(report.worst, start=1):
@@ -488,6 +528,8 @@ def report_to_json(report: CorpusDiffReport) -> Dict[str, object]:
         "payload_compared": report.payload_compared,
         "payload_deferred": report.payload_deferred,
         "payload_skipped": report.payload_skipped,
+        "pathology_counts": report.pathology_counts,
+        "n_pathology": report.n_pathology,
         "worst": [
             {
                 "sid": r.sid,
