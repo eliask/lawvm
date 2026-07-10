@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import pytest
 
+import lawvm.tools.fi_amendment_ir_compare as air
 from lawvm.tools.fi_amendment_ir_compare import (
     CompareResult,
     FlatOp,
@@ -25,6 +26,8 @@ from lawvm.tools.fi_amendment_ir_compare import (
     OpDivergence,
     StatuteLocator,
     _pdf_is_annex_by_disjoint_targets,
+    _text_layer_is_dense,
+    _TEXT_LAYER_MIN_CHARS,
     amendment_ops_from_clause_text,
     amendment_ops_from_pdf,
     compare_statute,
@@ -32,7 +35,9 @@ from lawvm.tools.fi_amendment_ir_compare import (
     extract_operative_johtolause,
     flatten_clause_ast,
     parse_statute_locator,
+    pdf_reading_text,
     result_to_json,
+    text_layer_reading_text,
 )
 
 # A compact but real Finnish amendment johtolause: three section REPLACEs and one
@@ -355,3 +360,64 @@ def test_statute_locator_derived_locators() -> None:
     loc = StatuteLocator("1994/800", "fin")
     assert loc.xml_locator == "finlex://sd/1994/800/fin/main.xml"
     assert loc.media_glob() == "finlex://sd/1994/800/fin/media/%.pdf"
+
+
+# --------------------------------------------------------------------------- #
+# native text-layer lane preference (born-digital reading order) + fallback   #
+# --------------------------------------------------------------------------- #
+
+
+def test_text_layer_density_predicate() -> None:
+    # >= _TEXT_LAYER_MIN_CHARS non-space chars = a real (born-digital) text layer;
+    # whitespace does not count toward the threshold.
+    dense = "a" * _TEXT_LAYER_MIN_CHARS
+    assert _text_layer_is_dense(dense) is True
+    assert _text_layer_is_dense("a" * (_TEXT_LAYER_MIN_CHARS - 1)) is False
+    # A page of pure whitespace (image-only scan) is NOT dense however long.
+    assert _text_layer_is_dense(" \n\t" * 10_000) is False
+    assert _text_layer_is_dense("") is False
+    assert _text_layer_is_dense(None) is False  # type: ignore[arg-type]
+
+
+def test_text_layer_reading_text_prefers_dense_else_none(monkeypatch) -> None:
+    # Dense text layer → returned verbatim (native reading order).
+    monkeypatch.setattr(air, "_pdfium_text_layer", lambda data, mp: "x" * 500)
+    assert text_layer_reading_text(b"PDF", 20) == "x" * 500
+    # Sparse text layer (scanned) → None so the caller falls back to a lane.
+    monkeypatch.setattr(air, "_pdfium_text_layer", lambda data, mp: "  ")
+    assert text_layer_reading_text(b"PDF", 20) is None
+
+
+def test_pdf_reading_text_prefers_native_layer_over_lane(monkeypatch) -> None:
+    """When the text layer is dense, pdf_reading_text returns it and NEVER touches the
+    (cache-backed) geom/vision reconstruction lanes."""
+    monkeypatch.setattr(air, "_read_farchive", lambda fa, loc: b"PDFBYTES")
+    monkeypatch.setattr(air, "_pdfium_text_layer", lambda data, mp: "N" * 800)
+
+    def _boom(*a, **k):  # the fallback lanes must not run for a born-digital PDF
+        raise AssertionError("reconstruction lane must not be called when text layer is dense")
+
+    monkeypatch.setattr(
+        "lawvm.tools.fi_parse_compare._lane_reconstructed_text", _boom
+    )
+    monkeypatch.setattr(
+        "lawvm.tools.fi_parse_compare._defacsimile_reconstructed_text", _boom
+    )
+    assert pdf_reading_text("finlex://x", "fa", lane="struct_span") == "N" * 800
+    assert pdf_reading_text("finlex://x", "fa", lane="defacsimile") == "N" * 800
+
+
+def test_pdf_reading_text_falls_back_when_layer_sparse(monkeypatch) -> None:
+    """A scanned PDF (sparse text layer) falls through to the requested lane."""
+    monkeypatch.setattr(air, "_read_farchive", lambda fa, loc: b"PDFBYTES")
+    monkeypatch.setattr(air, "_pdfium_text_layer", lambda data, mp: "   ")  # sparse
+    monkeypatch.setattr(
+        "lawvm.tools.fi_parse_compare._lane_reconstructed_text",
+        lambda man, mp: "GEOM-RECON",
+    )
+    monkeypatch.setattr(
+        "lawvm.tools.fi_parse_compare._defacsimile_reconstructed_text",
+        lambda man, mp: "VISION-RECON",
+    )
+    assert pdf_reading_text("finlex://x", "fa", lane="struct_span") == "GEOM-RECON"
+    assert pdf_reading_text("finlex://x", "fa", lane="defacsimile") == "VISION-RECON"

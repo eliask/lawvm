@@ -105,6 +105,7 @@ def make_router(
         _manifestation,
         _read_farchive,
         resolve_media_locator,
+        text_layer_reading_text,
     )
     from lawvm.tools.fi_producer_compare import GeomProducer, _load_pages
 
@@ -128,8 +129,18 @@ def make_router(
         if frac >= born_digital_fraction:
             captured_man = man
             captured_pages = pages
+            captured_data = data
 
             def text_fn() -> str:
+                # PRIMARY: the native pdfium TEXT LAYER (correct born-digital reading
+                # order). The geom bbox reconstruction scatters two-column säädös-
+                # kokoelma layouts; the text layer reads them in order — same switch
+                # the HE (phase-2) reader made. Fall back to geom only if the text
+                # layer is unexpectedly sparse (a born-digital census can still clear
+                # the fraction on a mostly-image page).
+                native = text_layer_reading_text(captured_data, max_pages)
+                if native is not None:
+                    return native
                 texts = GeomProducer().reconstruct_pages(captured_man, captured_pages)
                 return "\n".join(texts)
 

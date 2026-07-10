@@ -899,6 +899,62 @@ def _manifestation(pdf_bytes: bytes, locator: str) -> SourceManifestation:
     )
 
 
+#: Below this many non-space chars the pdfium text layer is absent/sparse (a scanned
+#: gazette or an image-only PDF) → fall back to the geom/vision reconstruction lane.
+_TEXT_LAYER_MIN_CHARS = 400
+
+
+def _pdfium_text_layer(data: bytes, max_pages: int) -> str:
+    """Native pdfium text-layer extraction (the PDF's own text order), newline-joined.
+
+    For a BORN-DIGITAL gazette the embedded text layer already reads in the correct
+    order.  The geom bbox RECONSTRUCTION (``struct_span``/``GeomProducer``), by
+    contrast, re-derives reading order from glyph geometry and SCATTERS two-column
+    säädöskokoelma layouts, interleaving page furniture and body prose INTO the
+    enacting clause's provision list — which splits/drops provisions (op_missing) or
+    fails to close the johtolause segmentation (``pdf_johtolause_unparsed``).  Using
+    the native text order recovers those.  This mirrors the HE (phase-2) reader
+    (:func:`lawvm.tools.fi_he_ir_compare._pdfium_text_layer`).  pdfium is not
+    thread-safe → hold the systemic lock.
+    """
+    import pypdfium2 as pdfium
+
+    from lawvm.ingest.visual import PDFIUM_LOCK
+
+    with PDFIUM_LOCK:
+        pdf = pdfium.PdfDocument(data)
+        try:
+            n = min(len(pdf), max_pages)
+            return "\n".join(pdf[i].get_textpage().get_text_range() for i in range(n))
+        finally:
+            pdf.close()
+
+
+def _text_layer_is_dense(text: str) -> bool:
+    """True iff the pdfium text layer carries enough non-space chars to be trusted as
+    the born-digital reading order; below :data:`_TEXT_LAYER_MIN_CHARS` non-space
+    chars the PDF is scanned/image-only and we must fall back to a reconstruction lane.
+    """
+    return len(re.sub(r"\s+", "", text or "")) >= _TEXT_LAYER_MIN_CHARS
+
+
+def text_layer_reading_text(data: bytes, max_pages: int) -> Optional[str]:
+    """The PDF's NATIVE pdfium text-layer reading order, or ``None`` when sparse.
+
+    ``None`` signals a scanned/image-only PDF whose text layer is absent — the caller
+    then falls back to the geom (born-digital) or vision (scanned) reconstruction lane.
+
+    This read is deterministic + cheap and BYPASSES the ``ParsedIrStore`` cache (there
+    is nothing model-derived to cache; pdfium is pure).  Because it never returns a
+    *cached* value, the ``parsed_store`` reader-fingerprint (``_DEFACSIMILE_READER_
+    VERSION``) does NOT need a bump: dense PDFs return fresh text-layer bytes (cache not
+    consulted), sparse PDFs return the UNCHANGED geom/vision cached read.  So the
+    "no stale reads" invariant holds without invalidating the warm store.
+    """
+    text = _pdfium_text_layer(data, max_pages)
+    return text if _text_layer_is_dense(text) else None
+
+
 def pdf_reading_text(
     pdf_locator: str,
     farchive: str = _FINLEX_FARCHIVE,
@@ -906,11 +962,13 @@ def pdf_reading_text(
     lane: str = "defacsimile",
     max_pages: int = 20,
 ) -> str:
-    """Reconstruct a media PDF's reading text through the cached parse lane.
+    """Reconstruct a media PDF's reading text, native text layer FIRST.
 
-    ``lane="defacsimile"`` uses the Level-2 vision converge lane (recovers scanned
-    gazette text); ``lane="struct_span"`` uses the vision-free born-digital geom
-    lane.  Both are cached in the FI ParsedIrStore, so re-runs are cheap.
+    PRIMARY lane is the native pdfium TEXT LAYER (correct born-digital reading order,
+    ~free, cache-bypassing).  It falls back to a reconstruction lane ONLY when the text
+    layer is absent/sparse (scanned): ``lane="defacsimile"`` uses the Level-2 vision
+    converge lane (recovers scanned gazette text); ``lane="struct_span"`` uses the
+    vision-free geom lane.  Both fallbacks are cached in the FI ParsedIrStore.
     """
     from lawvm.tools.fi_parse_compare import (
         _defacsimile_reconstructed_text,
@@ -922,6 +980,9 @@ def pdf_reading_text(
         raise AmendmentIrCompareError(
             f"fi-amendment-ir-compare: media PDF not found in {farchive}: {pdf_locator}"
         )
+    native = text_layer_reading_text(data, max_pages)
+    if native is not None:
+        return native
     man = _manifestation(data, pdf_locator)
     if lane == "defacsimile":
         return _defacsimile_reconstructed_text(man, max_pages)
