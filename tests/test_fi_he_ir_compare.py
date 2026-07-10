@@ -428,6 +428,98 @@ def test_word_overlap() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# proposed-body boundary: strip enacting furniture, do not bleed into the next  #
+# section / law (the payload analog of the op-level span-overreach guard).      #
+# --------------------------------------------------------------------------- #
+
+# A single-bill clause targeting only 5 §, followed by that §'s body + optional furniture.
+_BODY_CLAUSE = (
+    f"Eduskunnan päätöksen mukaisesti muutetaan testilain (123/2020) 5 {_SEC} seuraavasti:"
+)
+_PROVISION = "Uusi viidennen pykälän sisältö joka on riittävän pitkä vertailua varten."
+
+
+def _body_reading(body: str, *, tail: str = "") -> str:
+    """Lakiehdotus reading text carrying one clause and 5 §'s body (+ trailing furniture)."""
+    return (
+        "Hallituksen esitys eduskunnalle laiksi testilain muuttamisesta "
+        "YLEISPERUSTELUT jossa säädetään monista asioista. Lakiehdotukset "
+        "1. Laki testilain muuttamisesta " + _BODY_CLAUSE + f" 5 {_SEC} {body} {tail}"
+    )
+
+
+def test_body_clean_is_unchanged() -> None:
+    from lawvm.tools.fi_he_ir_compare import _pdf_proposed_bodies
+
+    assert _pdf_proposed_bodies(_body_reading(_PROVISION))["5"] == _PROVISION
+
+
+def test_body_trimmed_at_signature_block() -> None:
+    from lawvm.tools.fi_he_ir_compare import _pdf_proposed_bodies
+
+    rt = _body_reading(_PROVISION, tail="Tasavallan Presidentti MATTI MEIKÄLÄINEN Ministeri Aku Ankka")
+    assert _pdf_proposed_bodies(rt)["5"] == _PROVISION
+
+
+def test_body_trimmed_at_dash_running_header() -> None:
+    from lawvm.tools.fi_he_ir_compare import _pdf_proposed_bodies
+
+    # The "<YEAR> vp - HE <NUM> <page>" running header the lakiehdotus reprint carries.
+    rt = _body_reading(_PROVISION, tail="1992 vp - HE 231 3")
+    assert _pdf_proposed_bodies(rt)["5"] == _PROVISION
+
+
+def test_body_trimmed_at_trailing_page_number() -> None:
+    from lawvm.tools.fi_he_ir_compare import _pdf_proposed_bodies
+
+    # A lone page number appended after the provision's own sentence-ending period.
+    rt = _body_reading(_PROVISION, tail="40")
+    assert _pdf_proposed_bodies(rt)["5"] == _PROVISION
+
+
+def test_body_does_not_bleed_into_next_law_heading() -> None:
+    from lawvm.tools.fi_he_ir_compare import _pdf_proposed_bodies
+
+    rt = _body_reading(_PROVISION, tail="2. Laki toisen lain muuttamisesta ja tarkennuksista")
+    assert _pdf_proposed_bodies(rt)["5"] == _PROVISION
+
+
+def test_body_trimmed_at_appended_voimaantulo() -> None:
+    from lawvm.tools.fi_he_ir_compare import _pdf_proposed_bodies
+
+    rt = _body_reading(_PROVISION + " Tämä laki tulee voimaan päivänä kuuta 20 .")
+    assert _pdf_proposed_bodies(rt)["5"] == _PROVISION
+
+
+def test_genuine_voimaantulo_section_is_not_over_trimmed() -> None:
+    from lawvm.tools.fi_he_ir_compare import _pdf_proposed_bodies
+
+    # A §-body that IS a commencement provision starts with the phrase (no preceding in-body
+    # period) — it must be kept whole, never truncated to empty.
+    voim = "Tämä laki tulee voimaan 1 päivänä tammikuuta 2020 ja on voimassa toistaiseksi."
+    assert _pdf_proposed_bodies(_body_reading(voim))["5"] == voim
+
+
+def test_genuine_presidentin_reference_is_not_trimmed() -> None:
+    from lawvm.tools.fi_he_ir_compare import _pdf_proposed_bodies
+
+    # A body's own lowercase "tasavallan presidentin asetuksella" is not the signature block.
+    body = "Tarkempia säännöksiä annetaan tasavallan presidentin asetuksella tarvittaessa."
+    assert _pdf_proposed_bodies(_body_reading(body))["5"] == body
+
+
+def test_scattered_signature_date_lets_split_word_rejoin() -> None:
+    from lawvm.tools.fi_he_ir_compare import _flatten_reading_text
+
+    # The centered signature date scattered INTO an end-of-line hyphenation ("työnan-¬<date>¬
+    # tajanaan") must be stripped before de-hyphenation so the word fuses to "työnantajanaan".
+    raw = "hänen työnan￾Helsingissä 9 päivänä lokakuuta 1992 \r\ntajanaan oleva laivanvarustaja"
+    flat = _flatten_reading_text(raw)
+    assert "työnantajanaan" in flat
+    assert "Helsingissä" not in flat
+
+
+# --------------------------------------------------------------------------- #
 # typed benign / deferred strata                                             #
 # --------------------------------------------------------------------------- #
 

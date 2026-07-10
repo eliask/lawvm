@@ -194,15 +194,41 @@ _LAKIEHDOTUS_END_RE = re.compile(r"\b(?:Rinnakkaisteksti[a-zä]{0,4}|Liitteet)\b
 #: page break ("…joka 4 HE 84/1998 vp omistajan…"), breaking payload equality. It is never
 #: part of a proposed body, so deleting it (and the immediately-adjacent page digits) is
 #: safe. Bounded/flat quantifiers (FW-07). "HE n/year vp" ≠ a "(n/year)" statute citation,
-#: so this does not touch the enacting-clause citation anchor.
+#: so this does not touch the enacting-clause citation anchor. The SECOND alternative is the
+#: DASH form the lakiehdotus reprint carries at each page top — "<YEAR> vp - HE <NUM> <page>"
+#: ("1992 vp - HE 231 3", "1993 vp - HE 285 7") — same running-header furniture, opposite
+#: token order and no "/year"; its trailing digits are the liite / page number.
 _PAGE_FURNITURE_RE = re.compile(
-    r"\d{0,4}\s{0,3}HE\s{1,3}\d{1,4}/\d{4}\s{1,3}vp\s{0,3}\d{0,4}", re.IGNORECASE
+    r"(?:\d{0,4}\s{0,3}HE\s{1,3}\d{1,4}/\d{4}\s{1,3}vp\s{0,3}\d{0,4}"
+    r"|\d{4}\s{1,3}vp\s{0,3}-?\s{0,3}HE\s{1,3}\d{1,4}\s{0,3}\d{0,4})",
+    re.IGNORECASE,
+)
+
+#: The Helsinki signature-DATE line ("Helsingissä 9 päivänä lokakuuta 1992") the centered
+#: enacting furniture carries between the President's name and the bill body. On a two-column
+#: lakiehdotus reprint the text layer SCATTERS this centered line INTO a mid-column word,
+#: splitting an end-of-line hyphenation ("työnan-<Helsingissä 9 päivänä lokakuuta 1992>tajanaan
+#: …") so de-hyphenation can no longer rejoin "työnantajanaan". It is pure enacting furniture,
+#: never provision text, so it is deleted BEFORE de-hyphenation (letting the split word rejoin).
+#: The day digit + "…kuuta" month + 4-digit year make it specific enough to never hit body
+#: prose. Flat/bounded quantifiers (FW-07). The trailing ``\s{0,4}`` swallows the line break
+#: that followed the scattered furniture so the split hyphen glyph ("työnan¬<date>¬tajanaan")
+#: abuts its continuation ("työnan¬tajanaan") and de-hyphenation can fuse "työnantajanaan";
+#: the phrase is replaced by "" (not a space) for the same reason.
+_SIGNATURE_DATE_RE = re.compile(
+    r"Helsingiss[aä]\s{0,3}\d{1,2}\s{0,3}p[aä]iv[aä]n[aä]\s{0,3}[a-zäö]{3,12}kuuta\s{0,3}\d{4}\s{0,4}",
+    re.IGNORECASE,
 )
 
 
 def _flatten_reading_text(reading_text: str) -> str:
-    """De-hyphenate, strip per-page running headers, and whitespace-flatten reading text."""
-    text = dehyphenate(reading_text or "")
+    """De-hyphenate, strip per-page running headers, and whitespace-flatten reading text.
+
+    The signature-date furniture is stripped BEFORE de-hyphenation so a word it scattered
+    across (see :data:`_SIGNATURE_DATE_RE`) can rejoin; the running header afterwards.
+    """
+    text = _SIGNATURE_DATE_RE.sub("", reading_text or "")
+    text = dehyphenate(text)
     text = _PAGE_FURNITURE_RE.sub(" ", text)
     return re.sub(r"[ \t\r\n­]+", " ", text).strip()
 
@@ -504,10 +530,45 @@ _LEADING_SECTION_HEADER_RE = re.compile(r"^\s{0,4}\d{1,4}\s{0,3}[a-zä]?\s{0,3}�
 #: a bill otherwise runs to the next "N §" (or EOF) and swallows the voimaantulo clause /
 #: parallel-texts / appendix that the trusted XML section body never carries — a spurious
 #: payload_mismatch.  We bound each PDF section body at the FIRST such marker.
+#:
+#: The added alternatives bound the body against the ENACTING FURNITURE that follows a bill's
+#: last provision and precedes the next bill's reprint, which the XML section body never
+#: carries: the signature block ("Tasavallan Presidentti <NAME>", case-sensitive "Presidentti"
+#: so a body's own "…tasavallan presidentin asetuksella" is untouched), the next-law title
+#: heading ("2. Laki …", case-sensitive "Laki" so a mid-sentence "…2. laki…" is untouched),
+#: and a chapter heading ("10 luku …", nominative "luku" only so an inflected "…5 luvun…"
+#: cross-reference is untouched).  The commencement clause is handled separately by
+#: :data:`_PDF_BODY_VOIMAANTULO_RE` because a genuine voimaantulo §-body STARTS with it.
+#: Flat/bounded quantifiers; case scoped with ``(?-i:…)`` (FW-07).
 _PDF_BODY_TRAILER_RE = re.compile(
-    r"(?:[—–\-—–]{3,}|\bRinnakkaistekstit\b|\bLiitteet?\b|\bVoimassa\s+oleva\s+laki\b|\bEhdotus\b)",
+    r"(?:[—–\-]{3,}"
+    r"|\bRinnakkaistekstit\b"
+    r"|\bLiitteet?\b"
+    r"|\bVoimassa\s+oleva\s+laki\b"
+    r"|\bEhdotus\b"
+    r"|(?-i:Tasavallan\s+Presidentti)"
+    r"|(?-i:\b\d{1,2}\.\s{0,3}Laki\b)"
+    r"|\b\d{1,3}\s{0,3}luku\b)",
     re.IGNORECASE,
 )
+
+#: The commencement clause "Tämä laki tulee voimaan …" appended after a bill's last
+#: substantive provision (the XML keeps it as a SEPARATE unnumbered section, so the PDF's last
+#: numbered §-body over-captures it → a spurious payload_mismatch).  It is trimmed ONLY when
+#: it follows a sentence-ending period (the substantive provision's own final "."), via the
+#: fixed-width look-behind: a genuine voimaantulo §-body (XML §5 = "Tämä laki tulee voimaan
+#: …") is NOT preceded by an in-body period and is left whole, so this never truncates a real
+#: commencement provision.  Flat/bounded quantifiers (FW-07).
+_PDF_BODY_VOIMAANTULO_RE = re.compile(
+    r"(?<=\.)\s{0,3}Tämä\s+laki\s+tulee\s+voimaan", re.IGNORECASE
+)
+
+#: A lone page number the text layer appends at the very END of a body ("…tulosta. 40"). It is
+#: stripped only when it is BOTH end-anchored AND preceded by the provision's own sentence-
+#: ending period — a genuine provision does not end "<sentence>. <bare integer>", whereas a
+#: real trailing figure sits BEFORE its period ("…enintään 40."), so the period+end anchoring
+#: leaves genuine content untouched.  Fixed-width look-behind, flat quantifiers (FW-07).
+_PDF_BODY_TRAILING_PAGENUM_RE = re.compile(r"(?<=\.)\s{1,3}\d{1,3}\s{0,3}$")
 
 #: Payload-body containers whose <section> children are proposed statute text.
 _PAYLOAD_WRAPPER_NAME = "statuteProvisionsWrapper"
@@ -629,8 +690,16 @@ def _pdf_proposed_bodies(reading_text: str) -> dict[str, str]:
         trailer = _PDF_BODY_TRAILER_RE.search(flat, start, end)
         if trailer is not None:
             end = trailer.start()
+        # The commencement clause is trimmed only when it follows the substantive body's own
+        # sentence-ending period (see _PDF_BODY_VOIMAANTULO_RE); a genuine voimaantulo §-body
+        # (which STARTS with it, no preceding in-body period) is left whole.
+        voim = _PDF_BODY_VOIMAANTULO_RE.search(flat, start, end)
+        if voim is not None:
+            end = voim.start()
         if label not in out:
-            out[label] = flat[start:end].strip()
+            body = flat[start:end].strip()
+            body = _PDF_BODY_TRAILING_PAGENUM_RE.sub("", body)
+            out[label] = body
     return out
 
 
