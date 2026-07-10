@@ -569,59 +569,111 @@ def table_escalation_route(verification: TableVerification) -> str:
 
 
 # --------------------------------------------------------------------------- #
-# VISION SECOND-WITNESS (the escalation target — an INDEPENDENT render read).    #
+# VISION THIRD-WITNESS TIE-BREAK (the escalation target — an INDEPENDENT render). #
 # --------------------------------------------------------------------------- #
 #
-# When the deterministic (pdfium text-layer) witness cannot self-verify a table it
-# is routed ``vision_escalate`` — overwhelmingly because the text layer itself is
-# corrupt for that PDF's font (broken ToUnicode CMap), NOT because Docling read the
-# cell wrong. The honest resolution is a SECOND, independent witness that does not
-# depend on the corrupt text layer: RENDER each escalated cell's own bbox region
-# (region-isolation crop, never a whole-page downscale) and read that pixel region
-# back to text, then apply the SAME EXACT contract as ``verify_table_exact`` —
-# ``text_equivalence`` modulo the legally-inert op-equivalence quotient.
+# When the deterministic (pdfium text-layer) witness cannot self-verify a table it is
+# routed ``vision_escalate``. On the BORN-DIGITAL appendix-table stratum the dominant
+# cause is the OPPOSITE of the original corrupt-font hypothesis: the pdfium-in-bbox
+# witness is the RELIABLE cell-text reader and Docling's TableFormer ``.text`` is the
+# one that ERRS — it mis-segments a wrapped line-tail (e.g. Docling cell text
+# ``'raikasta- 2 500 mg/kg'`` where the pdfium witness correctly reads ``'2 500 mg/kg'``)
+# or drops a middle line. So a divergent cell is NOT evidence Docling is right; it is a
+# two-witness disagreement to adjudicate by a THIRD, independent witness.
+#
+# THE TIE-BREAK. RENDER each divergent cell's own bbox region (region-isolation crop,
+# never a whole-page downscale), read that pixel region back to text with the vision
+# model, and GRADUATE the cell to EXACT iff the vision read reproduces the PDFIUM
+# WITNESS modulo the inert op-equivalence quotient — i.e. two INDEPENDENT witnesses
+# (pdfium + vision) agree and Docling is outvoted. This stays strictly within the
+# exactness invariant (two independent witnesses agreeing modulo a legally-inert
+# quotient); it is NOT a numeric-recall / coverage score — full-text quotient
+# equivalence is required, never numeric-only agreement. The three outcomes:
+#
+#   - GRADUATED         vision ≡ pdfium witness → Docling outvoted, cell exact, the
+#                       pdfium text becomes the trusted content.
+#   - WITNESS_DISAGREE  vision ≡ Docling instead → the corrupt-text-layer sub-case (the
+#                       pdfium witness is the odd one out); NOT graduated.
+#   - OPEN              vision corroborates neither (all three disagree / vision
+#                       incoherent) → a genuinely-open typed divergence (adjudication tail).
+#
+# SPARSE/SCANNED GUARD. A near-empty / image-baked text layer must NEVER graduate: there
+# the pdfium witness is empty or garbled and the vision model HALLUCINATES (``'UN-ltja'``
+# → invented ``'UNAUTHORIZED USE'``). Graduation therefore requires the PDF to be
+# born-digital AND the pdfium witness to be a real (non-empty) reading.
 #
 # The witness is INJECTABLE (``region_reader(page_num, bbox) -> str``), exactly like
-# ``verify_table_exact``'s ``bbox_witness``, so the seam (render → read → exact
-# compare) is hermetically testable with a scripted reader — no model / PDF in CI.
+# ``verify_table_exact``'s ``bbox_witness``, so the seam (render → read → exact compare)
+# is hermetically testable with a scripted reader — no model / PDF in CI.
 # ``make_vision_region_reader`` is the production wiring (crop via
 # ``ingest.visual.render_region_crop`` + read via the :8080 vision producer's
-# ``read_region_cold``). Only the ROUTED (deterministically-divergent) cells are
-# re-read: the deterministic lane already verified the rest, so vision spend is
-# bounded to exactly the cells the free lane could not adjudicate.
+# ``read_region_cold``). Only the ROUTED (deterministically-divergent) cells are re-read:
+# the deterministic lane already verified the rest, so vision spend is bounded to exactly
+# the cells the free lane could not adjudicate.
+
+
+@dataclass(frozen=True, slots=True)
+class TableCellGraduation:
+    """A divergent cell the vision THIRD-WITNESS tie-break GRADUATED to exact.
+
+    The deterministic pdfium-in-bbox witness (``corroborated_text``) disagreed with
+    Docling — but an INDEPENDENT render-based vision read (``vision_text``) reproduces
+    that SAME pdfium reading modulo the inert op-equivalence quotient. Two independent
+    witnesses (pdfium + vision) agree and Docling is outvoted, so the cell is EXACT and
+    its trusted content is ``corroborated_text`` (the pdfium reading), NOT Docling's text.
+    """
+
+    row: int
+    col: int
+    corroborated_text: str
+    vision_text: str
 
 
 @dataclass(frozen=True, slots=True)
 class TableVisionVerification:
-    """Vision second-witness verdict for ONE deterministically-escalated table.
+    """Vision THIRD-WITNESS tie-break verdict for ONE deterministically-escalated table.
 
-    ``n_routed`` is the deterministic escalation set (the cells the pdfium witness
-    could not verify); ``n_corroborated`` is how many of those the render-based
-    vision witness reproduces EXACTLY (agreeing with Docling where the corrupt text
-    layer could not), and ``uncorroborated`` are the routed cells vision ALSO could
-    not confirm — the genuinely-open divergences (each carrying the vision read).
+    ``n_routed`` is the deterministic escalation set (the cells the pdfium witness could
+    not reconcile with Docling). Each is re-read by the render-based vision witness and
+    adjudicated into exactly one of three buckets:
+
+    - ``graduated`` — vision ≡ the pdfium witness (modulo quotient): Docling is outvoted by
+      two independent witnesses, so the cell is EXACT with the pdfium text as content.
+    - ``witness_disagreement`` — vision ≡ Docling instead: the pdfium text-layer witness is
+      the odd one out (corrupt font); the cell is NOT graduated (each carries the vision read).
+    - ``open_divergences`` — vision corroborates neither: a genuinely-open typed divergence
+      (each carrying the vision read) for the adjudication tail.
     """
 
     locator: str
     page_num: int
     table_index: int
     n_routed: int
-    n_corroborated: int
-    corroborated: Tuple[Tuple[int, int], ...]
-    uncorroborated: Tuple[TableCellDivergence, ...]
+    graduated: Tuple[TableCellGraduation, ...]
+    witness_disagreement: Tuple[TableCellDivergence, ...]
+    open_divergences: Tuple[TableCellDivergence, ...]
+
+    @property
+    def n_graduated(self) -> int:
+        """Routed cells graduated to exact (vision corroborated the pdfium witness)."""
+        return len(self.graduated)
 
     @property
     def n_read(self) -> int:
-        """Routed cells the vision witness actually re-read (corroborated + open).
+        """Routed cells the vision witness actually re-read (all three buckets).
 
-        Equals ``n_routed`` when unbudgeted; less when a ``max_cells`` cap curtailed
-        the render spend (the un-read routed cells are neither confirmed nor open)."""
-        return self.n_corroborated + len(self.uncorroborated)
+        Equals ``n_routed`` when unbudgeted; less when a ``max_cells`` cap curtailed the
+        render spend (the un-read routed cells fall in none of the three buckets)."""
+        return (
+            len(self.graduated)
+            + len(self.witness_disagreement)
+            + len(self.open_divergences)
+        )
 
     @property
-    def all_corroborated(self) -> bool:
-        """True iff every routed cell the witness READ was confirmed (0 open reads)."""
-        return not self.uncorroborated
+    def all_graduated(self) -> bool:
+        """True iff every routed cell the witness READ graduated (0 un-graduated reads)."""
+        return not self.witness_disagreement and not self.open_divergences
 
     def to_jsonable(self) -> Dict[str, object]:
         return {
@@ -630,11 +682,24 @@ class TableVisionVerification:
             "table_index": self.table_index,
             "n_routed": self.n_routed,
             "n_read": self.n_read,
-            "n_corroborated": self.n_corroborated,
-            "corroborated": [list(rc) for rc in self.corroborated],
-            "uncorroborated": [
+            "n_graduated": self.n_graduated,
+            "graduated": [
+                {
+                    "row": g.row,
+                    "col": g.col,
+                    "corroborated_text": g.corroborated_text,
+                    "vision": g.vision_text,
+                    "tiebreak_status": "vision_corroborated_exact",
+                }
+                for g in self.graduated
+            ],
+            "witness_disagreement": [
                 {"row": d.row, "col": d.col, "docling": d.docling_text, "vision": d.witness_text}
-                for d in self.uncorroborated
+                for d in self.witness_disagreement
+            ],
+            "open_divergences": [
+                {"row": d.row, "col": d.col, "docling": d.docling_text, "vision": d.witness_text}
+                for d in self.open_divergences
             ],
         }
 
@@ -644,23 +709,34 @@ def verify_tables_vision(
     det_verifications: Sequence[TableVerification],
     region_reader: Callable[[int, Tuple[float, float, float, float]], str],
     *,
+    born_digital: bool = True,
     max_cells: Optional[int] = None,
 ) -> Tuple[TableVisionVerification, ...]:
-    """Vision second-witness over the ``vision_escalate`` stratum (injectable reader).
+    """Vision THIRD-WITNESS tie-break over the ``vision_escalate`` stratum (injectable reader).
 
-    For every table the deterministic lane routed ``vision_escalate``, re-read ONLY
-    its divergent cells' bbox regions through ``region_reader`` (the render-based
-    witness; injected so this is hermetically testable) and re-apply the identical
-    exactness check ``verify_table_exact`` uses (``text_equivalence`` modulo the
-    inert op-equivalence quotient). A routed cell whose vision read reproduces the
-    Docling text is CORROBORATED; one that still differs is a genuinely-open
-    divergence. Tables not routed to vision are skipped (nothing to spend on).
+    For every table the deterministic lane routed ``vision_escalate``, re-read ONLY its
+    divergent cells' bbox regions through ``region_reader`` (the render-based witness;
+    injected so this is hermetically testable) and adjudicate each with the identical
+    exactness check ``verify_table_exact`` uses (``text_equivalence`` modulo the inert
+    op-equivalence quotient):
+
+    - the cell GRADUATES to exact iff the vision read reproduces the PDFIUM WITNESS
+      (``d.witness_text``) — two independent witnesses agree, Docling is outvoted, and the
+      pdfium text is the trusted content;
+    - else if the vision read reproduces DOCLING it is a ``witness_disagreement`` (the
+      pdfium text-layer witness is the corrupt odd one out) — NOT graduated;
+    - else it is an ``open_divergence`` (all three disagree / vision incoherent).
+
+    SPARSE/SCANNED GUARD: graduation requires ``born_digital`` AND a non-empty pdfium
+    witness — a near-empty / image-baked text layer never graduates (the pdfium witness is
+    empty/garbled and vision hallucinates there); such cells fall to witness_disagreement or
+    open, never to exact. Tables not routed to vision are skipped (nothing to spend on).
 
     ``max_cells`` caps the TOTAL number of routed cells re-read across the run (a
     vision-spend budget, mirroring the corpus lane's ``--vision-cap``); ``None`` is
     unbounded. Under a cap the un-read routed cells stay in ``n_routed`` (the honest
-    escalation-set size) but are absent from ``corroborated``/``uncorroborated`` — so
-    ``n_read`` (< ``n_routed``) is the sampled base. Pure apart from the injected reader.
+    escalation-set size) but appear in none of the three buckets — so ``n_read``
+    (< ``n_routed``) is the sampled base. Pure apart from the injected reader.
     """
     out: List[TableVisionVerification] = []
     budget = max_cells
@@ -668,8 +744,9 @@ def verify_tables_vision(
         if table_escalation_route(det) != ROUTE_VISION_ESCALATE:
             continue
         cells_by_pos = {(c.row, c.col): c for c in table.cells}
-        corroborated: List[Tuple[int, int]] = []
-        uncorroborated: List[TableCellDivergence] = []
+        graduated: List[TableCellGraduation] = []
+        witness_disagreement: List[TableCellDivergence] = []
+        open_divergences: List[TableCellDivergence] = []
         for d in det.divergences:
             if budget is not None and budget <= 0:
                 break  # vision-spend budget exhausted; leave the rest un-read
@@ -679,10 +756,34 @@ def verify_tables_vision(
             vision_text = region_reader(table.page_num, cell.bbox)
             if budget is not None:
                 budget -= 1
-            if text_equivalence(cell.text, vision_text).equal:
-                corroborated.append((d.row, d.col))
+            pdfium_witness = d.witness_text
+            if (
+                born_digital
+                and pdfium_witness.strip()
+                and text_equivalence(pdfium_witness, vision_text).equal
+            ):
+                # GRADUATE: pdfium + vision (two independent witnesses) agree; Docling —
+                # which by construction differs (this cell diverged) — is outvoted. The
+                # pdfium reading becomes the cell's trusted content.
+                graduated.append(
+                    TableCellGraduation(
+                        row=d.row,
+                        col=d.col,
+                        corroborated_text=pdfium_witness,
+                        vision_text=vision_text,
+                    )
+                )
+            elif text_equivalence(cell.text, vision_text).equal:
+                # vision sided with Docling: the pdfium text-layer witness is the odd one
+                # out (corrupt font) — a witness disagreement, NOT a graduation to exact.
+                witness_disagreement.append(
+                    TableCellDivergence(
+                        row=d.row, col=d.col, docling_text=cell.text, witness_text=vision_text
+                    )
+                )
             else:
-                uncorroborated.append(
+                # all three readers disagree (or vision is incoherent): genuinely open.
+                open_divergences.append(
                     TableCellDivergence(
                         row=d.row, col=d.col, docling_text=cell.text, witness_text=vision_text
                     )
@@ -693,9 +794,9 @@ def verify_tables_vision(
                 page_num=table.page_num,
                 table_index=table.table_index,
                 n_routed=len(det.divergences),
-                n_corroborated=len(corroborated),
-                corroborated=tuple(corroborated),
-                uncorroborated=tuple(uncorroborated),
+                graduated=tuple(graduated),
+                witness_disagreement=tuple(witness_disagreement),
+                open_divergences=tuple(open_divergences),
             )
         )
     return tuple(out)
@@ -1074,8 +1175,9 @@ class StatuteTableReport:
     #: EXACT per-table cell verdicts (Docling cell ≡ pdfium-in-bbox, modulo op_equivalence).
     #: This is the HEADLINE — a table is verified only when every witnessable cell is exact.
     verifications: Tuple[TableVerification, ...] = ()
-    #: VISION second-witness verdicts over the ``vision_escalate`` stratum (empty when the
-    #: vision witness was not run): render-based corroboration of the routed cells.
+    #: VISION third-witness tie-break verdicts over the ``vision_escalate`` stratum (empty
+    #: when the vision witness was not run): render-based graduation of routed cells whose
+    #: independent vision read reproduces the pdfium witness (Docling outvoted).
     vision_verifications: Tuple[TableVisionVerification, ...] = ()
     #: TEXT-BLOCK LANE: for a 0-grid appendix with a text layer, the ordered verbatim text
     #: blocks (paragraphs / labelled formula lines) this PDF was structured into. Empty when
@@ -1112,9 +1214,14 @@ class StatuteTableReport:
         return sum(v.n_routed for v in self.vision_verifications)
 
     @property
-    def n_cells_vision_corroborated(self) -> int:
-        """Routed cells the render-based vision witness reproduced EXACTLY (≡ Docling)."""
-        return sum(v.n_corroborated for v in self.vision_verifications)
+    def n_cells_vision_graduated(self) -> int:
+        """Routed cells the vision third-witness GRADUATED to exact (vision ≡ pdfium witness)."""
+        return sum(v.n_graduated for v in self.vision_verifications)
+
+    @property
+    def n_cells_exact_after_vision(self) -> int:
+        """Cell-exact count after the vision tie-break: deterministic exact + graduated."""
+        return self.n_cells_verified + self.n_cells_vision_graduated
 
     @property
     def n_cells_witnessed(self) -> int:
@@ -1181,10 +1288,11 @@ class StatuteTableReport:
                     for v, route in zip(self.verifications, self.routes, strict=True)
                 ],
             },
-            "vision_second_witness": {
+            "vision_third_witness_tiebreak": {
                 "ran": bool(self.vision_verifications),
                 "n_cells_routed": self.n_cells_routed_to_vision,
-                "n_cells_corroborated": self.n_cells_vision_corroborated,
+                "n_cells_graduated": self.n_cells_vision_graduated,
+                "n_cells_exact_after_vision": self.n_cells_exact_after_vision,
                 "tables": [vv.to_jsonable() for vv in self.vision_verifications],
             },
             "text_block_lane": {
@@ -1405,7 +1513,7 @@ def make_vision_region_reader(
     the :8080 vision producer — an INDEPENDENT witness that never touches the corrupt
     text layer. The cell bbox is top-left points; ``render_region_crop`` is bottom-left,
     so y is flipped against the page height (read once up front). A render/read failure
-    or a degenerate box yields an empty read → a typed uncorroborated divergence, never
+    or a degenerate box yields an empty read → a non-graduating typed divergence, never
     a crash. Vision imports stay lazy here (determinism firewall)."""
     from datetime import datetime, timezone
 
@@ -1503,9 +1611,10 @@ def structure_statute_pdf(
 
     When ``vision_region_reader`` is supplied (the injectable render-based witness),
     the ``vision_escalate`` stratum — tables the deterministic pdfium witness could
-    not self-verify — is additionally adjudicated by re-reading each routed cell's
-    isolated bbox region and re-applying the exactness contract, corroborating
-    Docling where the corrupt text layer could not.
+    not reconcile with Docling — is additionally adjudicated by the vision THIRD-WITNESS
+    tie-break: each routed cell's isolated bbox region is re-read and GRADUATED to exact
+    iff the vision read reproduces the pdfium witness (Docling outvoted by two independent
+    witnesses), guarded out on sparse/scanned PDFs where vision hallucinates.
     """
     from lawvm.ingest.llm_backends.docling_producer import (
         _docling_document_to_page_views,
@@ -1554,7 +1663,11 @@ def structure_statute_pdf(
     vision_verifications: Tuple[TableVisionVerification, ...] = ()
     if vision_region_reader is not None:
         vision_verifications = verify_tables_vision(
-            tables, verifications, vision_region_reader, max_cells=vision_max_cells
+            tables,
+            verifications,
+            vision_region_reader,
+            born_digital=mean_chars >= _MIN_TEXT_LAYER_CHARS,
+            max_cells=vision_max_cells,
         )
     all_cell_texts = tuple(txt for t in tables for txt in t.cell_texts())
     reference_text = "\n".join(page_texts)
@@ -1594,8 +1707,8 @@ def _measure_one(
 ) -> StatuteTableReport:
     """Resolve + structure ONE media PDF locator; a bad PDF is a typed record.
 
-    When ``vision_producer`` is supplied, the render-based vision second-witness is
-    built for this PDF and the ``vision_escalate`` stratum is corroborated by it
+    When ``vision_producer`` is supplied, the render-based vision third-witness is
+    built for this PDF and the ``vision_escalate`` stratum is tie-broken by it
     (bounded to ``vision_max_cells`` routed-cell re-reads).
     """
     from farchive import Farchive
@@ -1717,14 +1830,17 @@ def render_report_text(reports: Sequence[StatuteTableReport]) -> str:
             f"vision_escalate={r.n_tables_vision_escalate} "
             f"no_witness_deferred={r.routes.count(ROUTE_NO_WITNESS_DEFERRED)}"
         )
-        # VISION second-witness: render-based corroboration of the routed cells (the
-        # cells the corrupt text layer could not verify). Only emitted when it ran.
+        # VISION third-witness tie-break: cells GRADUATED to exact because an independent
+        # render read reproduced the pdfium witness (Docling outvoted). Only emitted when ran.
         if r.vision_verifications:
             n_read = sum(vv.n_read for vv in r.vision_verifications)
+            n_wd = sum(len(vv.witness_disagreement) for vv in r.vision_verifications)
+            n_open = sum(len(vv.open_divergences) for vv in r.vision_verifications)
             lines.append(
-                f"  VISION: corroborated={r.n_cells_vision_corroborated}/{n_read} read "
+                f"  VISION-TIEBREAK: graduated={r.n_cells_vision_graduated}/{n_read} read "
                 f"(routed={r.n_cells_routed_to_vision}, "
-                f"open={n_read - r.n_cells_vision_corroborated})"
+                f"witness_disagreement={n_wd}, open={n_open}); "
+                f"cells_exact {r.n_cells_verified}→{r.n_cells_exact_after_vision}"
             )
         # TEXT-BLOCK LANE (0-grid appendix): the born-digital text annex structured into
         # verbatim blocks and exact-verified — one verified-or-typed unit, never dropped.
@@ -1765,7 +1881,7 @@ def main(args: argparse.Namespace) -> None:
             print(f"# no media PDF for {statute} (lang={args.lang})")
         locators.extend(found)
 
-    # Optional VISION second-witness over the vision_escalate stratum. Requested via
+    # Optional VISION third-witness tie-break over the vision_escalate stratum. Requested via
     # ``--vision`` (read forward-compatibly; the argparse flag lives in the CLI module,
     # owned elsewhere). The :8080 vision server is probed once; if absent we fall back
     # to the deterministic-only report rather than fail.

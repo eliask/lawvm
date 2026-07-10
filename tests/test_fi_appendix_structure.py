@@ -22,6 +22,7 @@ from lawvm.tools.fi_appendix_structure import (
     StructuredTable,
     StructuredTextBlock,
     TableCellDivergence,
+    TableCellGraduation,
     TableVerification,
     TableVisionVerification,
     TextBlockVerification,
@@ -400,126 +401,195 @@ def test_per_bbox_reader_inset_does_not_clip_trailing_glyph() -> None:
 
 
 # --------------------------------------------------------------------------- #
-# VISION second-witness seam (injected reader — no model / PDF).                #
+# VISION THIRD-WITNESS TIE-BREAK seam (injected reader — no model / PDF).        #
 # --------------------------------------------------------------------------- #
 #
-# The 2003/917 pathology: the deterministic pdfium witness is CORRUPT for the PDF's
-# font (ä->‰ etc.), so it diverges on cells Docling in fact read correctly. The
-# injected render-based vision reader reproduces the Docling text on those routed
-# cells → corroboration. These drive the seam (route -> re-read routed cells ->
-# exact-compare) with a scripted reader; the pdfium/vision transport is LIVE-only.
+# On the born-digital appendix-table stratum the pdfium-in-bbox witness is the RELIABLE
+# reader and Docling's cell ``.text`` is the one that ERRS (mis-segmenting a wrapped
+# line-tail: Docling ``'raikasta- 2 500 mg/kg'`` where pdfium correctly reads
+# ``'2 500 mg/kg'``). The tie-break renders the divergent cell and reads it with an
+# INDEPENDENT vision witness, GRADUATING the cell to exact iff vision ≡ the PDFIUM
+# witness modulo the inert quotient (two witnesses agree, Docling outvoted). The 2003/917
+# corrupt-font pathology is the OPPOSITE polarity (pdfium ä->‰ garbled, vision ≡ Docling):
+# a witness_disagreement, NOT a graduation. These drive the seam (route -> re-read routed
+# cells -> tie-break) with a scripted reader; the pdfium/vision transport is LIVE-only.
 
-# bbox convention: top-left points; three cells in row 0.
+# bbox convention: top-left points; distinct per cell so the reader map keys are unique.
 _B00 = (0.0, 0.0, 1.0, 1.0)
 _B01 = (1.0, 0.0, 2.0, 1.0)
 _B02 = (2.0, 0.0, 3.0, 1.0)
 
 
-def _escalated_table() -> StructuredTable:
-    return StructuredTable(
-        locator="finlex://sd/2003/917/fin/media/x.pdf",
+def _vision_case(
+    specs: list[tuple[int, int, str, str, tuple[float, float, float, float]]],
+) -> tuple[StructuredTable, TableVerification]:
+    """Build a 1-row all-divergent table + its deterministic verdict.
+
+    Each spec is ``(row, col, docling_text, pdfium_witness, bbox)``: the cell carries the
+    Docling text; the matching deterministic divergence carries the pdfium witness_text
+    (so every cell is routed to the vision tie-break).
+    """
+    cells = tuple(
+        StructuredCell(r, c, doc, is_header=False, bbox=bb) for (r, c, doc, _p, bb) in specs
+    )
+    table = StructuredTable(
+        locator="finlex://sd/1997/1217/fin/media/x.pdf",
         page_num=1,
         table_index=0,
         n_rows=1,
-        n_cols=3,
+        n_cols=len(specs),
         caption="",
-        cells=(
-            StructuredCell(0, 0, "Sähkö 1,2", is_header=False, bbox=_B00),
-            StructuredCell(0, 1, "Kaasu 3,4", is_header=False, bbox=_B01),
-            StructuredCell(0, 2, "9", is_header=False, bbox=_B02),
-        ),
+        cells=cells,
     )
-
-
-def _det_verification(divergent_positions: list[tuple[int, int]]) -> TableVerification:
-    # The deterministic (corrupt-witness) verdict: the given cells diverged; the rest
-    # of the 3-cell table verified exact.
-    text = {(0, 0): "Sähkö 1,2", (0, 1): "Kaasu 3,4", (0, 2): "9"}
     divs = tuple(
-        TableCellDivergence(row=r, col=c, docling_text=text[(r, c)], witness_text="‰")
-        for (r, c) in divergent_positions
+        TableCellDivergence(row=r, col=c, docling_text=doc, witness_text=pdf)
+        for (r, c, doc, pdf, _bb) in specs
     )
-    return TableVerification(
-        locator="finlex://sd/2003/917/fin/media/x.pdf",
+    det = TableVerification(
+        locator=table.locator,
         page_num=1,
         table_index=0,
-        n_cells=3,
-        n_exact=3 - len(divergent_positions),
+        n_cells=len(specs),
+        n_exact=0,
         n_no_witness=0,
         divergences=divs,
     )
+    return table, det
 
 
-def test_vision_witness_corroborates_routed_cells() -> None:
-    # The pdfium witness diverged on the two text cells (corrupt font); the render-based
-    # vision reader reproduces the Docling text EXACTLY → both routed cells corroborated.
-    table = _escalated_table()
-    det = _det_verification([(0, 0), (0, 1)])
-    reader_map = {_B00: "Sähkö  1,2", _B01: "Kaasu 3,4"}  # _B00 inert-equal (spacing)
+def test_vision_tiebreak_graduates_cell_when_vision_corroborates_pdfium() -> None:
+    # Born-digital wrapped-tail defect: Docling mis-segmented the cell, pdfium read it
+    # right, and an INDEPENDENT vision read reproduces the pdfium text → GRADUATE to exact
+    # (Docling outvoted), the pdfium text carried as the trusted corroborated content.
+    table, det = _vision_case([(0, 0, "raikasta- 2 500 mg/kg", "2 500 mg/kg", _B00)])
+    reader_map = {_B00: "2 500  mg/kg"}  # inert-equal to pdfium (spacing quotient)
     vvs = verify_tables_vision([table], [det], lambda _pn, bb: reader_map[bb])
     assert len(vvs) == 1
     vv = vvs[0]
     assert isinstance(vv, TableVisionVerification)
-    assert vv.n_routed == 2
-    assert vv.n_corroborated == 2
-    assert vv.all_corroborated
-    assert set(vv.corroborated) == {(0, 0), (0, 1)}
-    assert not vv.uncorroborated
+    assert vv.n_routed == 1 and vv.n_graduated == 1
+    assert vv.all_graduated
+    g = vv.graduated[0]
+    assert isinstance(g, TableCellGraduation)
+    assert (g.row, g.col) == (0, 0)
+    assert g.corroborated_text == "2 500 mg/kg"  # pdfium reading, NOT Docling's text
+    assert not vv.witness_disagreement and not vv.open_divergences
 
 
-def test_vision_witness_leaves_genuine_divergence_open() -> None:
-    # Vision confirms one routed cell but reads the other differently from Docling →
-    # that cell stays an OPEN divergence carrying the vision read (never forced).
-    table = _escalated_table()
-    det = _det_verification([(0, 0), (0, 1)])
-    reader_map = {_B00: "Sähkö 1,2", _B01: "Kaasu 9,9"}
+def test_vision_tiebreak_witness_disagreement_when_vision_sides_with_docling() -> None:
+    # Corrupt-font sub-case: the pdfium witness is garbled (ä->‰), Docling read the cell
+    # right, and vision reproduces DOCLING (not pdfium) → NOT a graduation; the cell is a
+    # typed witness_disagreement (the pdfium text-layer witness is the odd one out).
+    table, det = _vision_case([(0, 0, "Sähkö 1,2", "S‰hk‰ 1,2", _B00)])
+    reader_map = {_B00: "Sähkö  1,2"}  # inert-equal to Docling, differs from corrupt pdfium
     vvs = verify_tables_vision([table], [det], lambda _pn, bb: reader_map[bb])
     vv = vvs[0]
-    assert vv.n_routed == 2 and vv.n_corroborated == 1
-    assert vv.corroborated == ((0, 0),)
-    assert len(vv.uncorroborated) == 1
-    d = vv.uncorroborated[0]
-    assert (d.row, d.col) == (0, 1)
+    assert vv.n_graduated == 0
+    assert not vv.all_graduated
+    assert len(vv.witness_disagreement) == 1 and not vv.open_divergences
+    d = vv.witness_disagreement[0]
+    assert (d.row, d.col) == (0, 0)
+    assert d.docling_text == "Sähkö 1,2" and d.witness_text == "Sähkö  1,2"
+
+
+def test_vision_tiebreak_all_three_disagree_stays_open() -> None:
+    # Vision corroborates neither pdfium nor Docling → a genuinely-open typed divergence
+    # carrying the vision read (never graduated, never forced onto Docling).
+    table, det = _vision_case([(0, 0, "Kaasu 3,4", "Kaasu 5,6", _B00)])
+    reader_map = {_B00: "Kaasu 9,9"}
+    vvs = verify_tables_vision([table], [det], lambda _pn, bb: reader_map[bb])
+    vv = vvs[0]
+    assert vv.n_graduated == 0 and not vv.witness_disagreement
+    assert len(vv.open_divergences) == 1
+    d = vv.open_divergences[0]
     assert d.docling_text == "Kaasu 3,4" and d.witness_text == "Kaasu 9,9"
-    assert not vv.all_corroborated
 
 
-def test_vision_witness_only_reads_routed_cells_and_skips_self_verified() -> None:
+def test_vision_tiebreak_sparse_scanned_never_graduates_even_if_vision_matches() -> None:
+    # SPARSE/SCANNED guard: with born_digital=False the pdfium witness is untrustworthy and
+    # vision hallucinates, so a cell NEVER graduates even when the (fake) vision read equals
+    # the pdfium witness EXACTLY. It falls through to an open divergence, not to exact.
+    table, det = _vision_case([(0, 0, "UN-ltja", "2 500 mg/kg", _B00)])
+    reader_map = {_B00: "2 500 mg/kg"}  # equals pdfium exactly — would graduate if born-digital
+    vvs = verify_tables_vision(
+        [table], [det], lambda _pn, bb: reader_map[bb], born_digital=False
+    )
+    vv = vvs[0]
+    assert vv.n_graduated == 0 and not vv.graduated
+    assert len(vv.open_divergences) == 1  # not graduated; vision != Docling -> open
+
+    # Sanity: the SAME reads DO graduate when the PDF is born-digital (the gate is the only
+    # difference), proving the guard — not the data — is what blocks graduation.
+    vvs_bd = verify_tables_vision([table], [det], lambda _pn, bb: reader_map[bb])
+    assert vvs_bd[0].n_graduated == 1
+
+
+def test_vision_tiebreak_requires_full_text_not_numeric_only() -> None:
+    # Graduation demands FULL-TEXT quotient equivalence, not numeric-only agreement: a
+    # vision read whose NUMBERS match the pdfium witness but whose letters differ does NOT
+    # graduate (it would silently discard the legally-significant unit/label text).
+    table, det = _vision_case([(0, 0, "raikasta- 2 500 mg/kg", "2 500 mg/kg", _B00)])
+    reader_map = {_B00: "2 500 g/l"}  # same number 2500, different unit letters
+    vvs = verify_tables_vision([table], [det], lambda _pn, bb: reader_map[bb])
+    vv = vvs[0]
+    assert vv.n_graduated == 0  # numeric-only agreement must NOT graduate
+    assert len(vv.open_divergences) == 1
+
+
+def test_vision_tiebreak_only_reads_routed_cells_and_skips_self_verified() -> None:
     # A self-verified table (no divergences) spends NO vision reads and is not emitted;
-    # for the escalated table, the reader is called on ONLY the routed cell (not (0,2)).
-    escalated = _escalated_table()
-    det_escalated = _det_verification([(0, 0)])
-    clean = _escalated_table()
-    det_clean = _det_verification([])  # 0 divergences -> self_verified, skipped
+    # for the escalated table, the reader is called on ONLY its routed cells.
+    escalated, det_escalated = _vision_case(
+        [(0, 0, "raikasta- 2 500 mg/kg", "2 500 mg/kg", _B00)]
+    )
+    clean = StructuredTable(
+        locator="finlex://sd/1997/1217/fin/media/x.pdf",
+        page_num=1,
+        table_index=1,
+        n_rows=1,
+        n_cols=1,
+        caption="",
+        cells=(StructuredCell(0, 0, "ok", is_header=False, bbox=_B02),),
+    )
+    det_clean = TableVerification(
+        locator=clean.locator,
+        page_num=1,
+        table_index=1,
+        n_cells=1,
+        n_exact=1,
+        n_no_witness=0,
+        divergences=(),
+    )  # 0 divergences -> self_verified, skipped
 
     seen: list[tuple[float, float, float, float]] = []
 
     def reader(_pn: int, bb: tuple[float, float, float, float]) -> str:
         seen.append(bb)
-        return "Sähkö 1,2"
+        return "2 500 mg/kg"
 
     vvs = verify_tables_vision([escalated, clean], [det_escalated, det_clean], reader)
     assert len(vvs) == 1  # only the escalated table
     assert vvs[0].table_index == 0
-    assert seen == [_B00]  # only the routed cell was re-read; (0,1)/(0,2) untouched
+    assert seen == [_B00]  # only the routed cell was re-read; the clean table untouched
 
 
-def test_vision_witness_max_cells_caps_the_render_spend() -> None:
+def test_vision_tiebreak_max_cells_caps_the_render_spend() -> None:
     # Two escalated tables, one routed cell each; a budget of 1 re-reads only the first
     # (n_read=1) while n_routed still reflects the true escalation-set size.
-    t0, t1 = _escalated_table(), _escalated_table()
-    d0, d1 = _det_verification([(0, 0)]), _det_verification([(0, 1)])
+    t0, d0 = _vision_case([(0, 0, "raikasta- 2 500 mg/kg", "2 500 mg/kg", _B00)])
+    t1, d1 = _vision_case([(0, 1, "ja - 2 000 mg/kg", "2 000 mg/kg", _B01)])
     calls: list[tuple[float, float, float, float]] = []
 
     def reader(_pn: int, bb: tuple[float, float, float, float]) -> str:
         calls.append(bb)
-        return "Sähkö 1,2"  # corroborates cell (0,0); differs from (0,1)'s "Kaasu 3,4"
+        return "2 500 mg/kg"  # graduates cell (0,0); differs from (0,1)'s pdfium "2 000 mg/kg"
 
     vvs = verify_tables_vision([t0, t1], [d0, d1], reader, max_cells=1)
     assert len(calls) == 1  # budget honoured: exactly one render/read
     total_read = sum(vv.n_read for vv in vvs)
     assert total_read == 1
-    assert vvs[0].n_routed == 1 and vvs[0].n_read == 1  # first table read
+    assert vvs[0].n_routed == 1 and vvs[0].n_read == 1  # first table read (graduated)
+    assert vvs[0].n_graduated == 1
     assert vvs[1].n_read == 0 and vvs[1].n_routed == 1  # second left un-read
 
 
