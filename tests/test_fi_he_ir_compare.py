@@ -18,9 +18,12 @@ Covers:
 from __future__ import annotations
 
 from lawvm.tools.fi_he_ir_compare import (
+    _PDF_OUT_OF_SCOPE_STATUTE,
     HECompareResult,
     HEFlatOp,
+    _reclassify_out_of_scope_second_bills,
     _section_label_of,
+    _statute_id_of,
     _word_overlap,
     compare_he,
     diff_proposed_ops,
@@ -310,6 +313,73 @@ def test_diff_missing_extra_and_kind_mismatch() -> None:
     assert by_ref["123/2020/10"].kind == "op_missing_in_pdf"
     assert by_ref["123/2020/7"].kind == "matched"
     assert by_ref["123/2020/99"].kind == "op_extra_in_pdf"
+
+
+# --------------------------------------------------------------------------- #
+# out-of-scope second-bill reclassification (metric integrity)                #
+# --------------------------------------------------------------------------- #
+
+
+def test_statute_id_of() -> None:
+    assert _statute_id_of("1707/1995/9/2") == "1707/1995"
+    assert _statute_id_of("594/1956") == "594/1956"
+    assert _statute_id_of("123") == ""
+    assert _statute_id_of("") == ""
+
+
+def test_second_bill_block_reclassifies_to_witness_disagreement() -> None:
+    # XML op-set names ONLY statute 123/2020; the PDF read a coherent 3-op block on
+    # 594/1956 (a genuine omnibus second bill the XML omits) — reclassify, do NOT charge
+    # it as an op_extra_in_pdf defect.
+    xml = (HEFlatOp("replace", "123/2020/5"),)
+    pdf = (
+        HEFlatOp("replace", "123/2020/5"),   # matched
+        HEFlatOp("replace", "594/1956/1"),   # \
+        HEFlatOp("insert", "594/1956/2"),    #  } contiguous second-bill block (absent statute)
+        HEFlatOp("repeal", "594/1956/3"),    # /
+    )
+    div = _reclassify_out_of_scope_second_bills(diff_proposed_ops(xml, pdf), xml)
+    by_ref = {d.target_ref: d for d in div}
+    assert by_ref["123/2020/5"].kind == "matched"
+    assert by_ref["594/1956/1"].kind == _PDF_OUT_OF_SCOPE_STATUTE
+    assert by_ref["594/1956/2"].kind == _PDF_OUT_OF_SCOPE_STATUTE
+    assert by_ref["594/1956/3"].kind == _PDF_OUT_OF_SCOPE_STATUTE
+    # No op_extra_in_pdf survives; matched is untouched (pure reclassification).
+    assert not any(d.kind == "op_extra_in_pdf" for d in div)
+    assert "594/1956" in by_ref["594/1956/1"].detail
+
+
+def test_one_or_two_op_absent_statute_stays_op_extra() -> None:
+    # A 1–2-op absent-statute block is phantom-SUSPECT, not a convicted second bill.
+    xml = (HEFlatOp("replace", "123/2020/5"),)
+    pdf = (
+        HEFlatOp("replace", "123/2020/5"),   # matched
+        HEFlatOp("replace", "594/1956/1"),   # singleton absent statute
+        HEFlatOp("insert", "777/1999/1"),    # \ 2-op absent statute
+        HEFlatOp("insert", "777/1999/2"),    # /
+    )
+    div = _reclassify_out_of_scope_second_bills(diff_proposed_ops(xml, pdf), xml)
+    by_ref = {d.target_ref: d for d in div}
+    assert by_ref["594/1956/1"].kind == "op_extra_in_pdf"
+    assert by_ref["777/1999/1"].kind == "op_extra_in_pdf"
+    assert by_ref["777/1999/2"].kind == "op_extra_in_pdf"
+    assert not any(d.kind == _PDF_OUT_OF_SCOPE_STATUTE for d in div)
+
+
+def test_same_statute_granularity_stays_op_extra() -> None:
+    # Even a ≥3-op extra block on a statute the XML op-set DOES name is finer-granularity
+    # PDF ops (same statute), NOT an out-of-scope second bill — it STAYS op_extra_in_pdf.
+    xml = (HEFlatOp("replace", "123/2020/5"),)
+    pdf = (
+        HEFlatOp("replace", "123/2020/5"),   # matched
+        HEFlatOp("insert", "123/2020/7"),    # \
+        HEFlatOp("insert", "123/2020/8"),    #  } 3 extra ops, but statute 123/2020 IS in XML
+        HEFlatOp("insert", "123/2020/9"),    # /
+    )
+    div = _reclassify_out_of_scope_second_bills(diff_proposed_ops(xml, pdf), xml)
+    extra = [d for d in div if d.kind == "op_extra_in_pdf"]
+    assert {d.target_ref for d in extra} == {"123/2020/7", "123/2020/8", "123/2020/9"}
+    assert not any(d.kind == _PDF_OUT_OF_SCOPE_STATUTE for d in div)
 
 
 def test_section_label_of() -> None:

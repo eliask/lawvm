@@ -56,7 +56,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Callable, Optional
 
 from lawvm.finland.he_branch_parser import (
@@ -503,6 +503,92 @@ def diff_proposed_ops(
             )
         )
 
+    return tuple(out)
+
+
+# --------------------------------------------------------------------------- #
+# Out-of-scope second-bill reclassification (metric integrity, NOT a defect).  #
+# --------------------------------------------------------------------------- #
+#
+# An omnibus HE amends MANY statutes (often incl. decrees/asetukset the law-level
+# trusted XML models only a SUBSET of). When the PDF reads a coherent block of proposed
+# ops on a statute the XML op-set never names, the two witnesses GENUINELY DISAGREE — the
+# PDF out-read a narrow oracle — and the reader is NOT defective. Charging that to the PDF
+# as ``op_extra_in_pdf`` is metric HOLLOWNESS (the phase-1 lesson: never penalize the
+# reader for being MORE complete than the oracle). We reclassify the unmistakable
+# genuine-second-bill signature — a CONTIGUOUS block of ``_MIN_SECOND_BILL_BLOCK``+
+# ``op_extra`` ops on ONE statute-id that is ABSENT from the XML op-set — into its own
+# first-class witness-disagreement kind, so it leaves the ``op_extra_in_pdf`` defect
+# bucket. The gate stays CONSERVATIVE: 1–2-op absent-statute cases are phantom-SUSPECT and
+# STAY ``op_extra_in_pdf``; same-statute granularity (statute-id present in the XML op-set,
+# a finer PDF section/moment op) is not a second bill and STAYS ``op_extra_in_pdf``.
+
+#: A first-class witness-disagreement outcome (NOT a PDF defect): the PDF captured a whole
+#: amendment block on a statute the trusted XML op-set omits (omnibus-HE second bill).
+_PDF_OUT_OF_SCOPE_STATUTE = "pdf_out_of_scope_statute"
+
+#: Minimum contiguous ``op_extra`` block on one XML-absent statute to convict it a genuine
+#: second bill (pdf-more-complete). Below this it stays phantom-SUSPECT ``op_extra_in_pdf``.
+_MIN_SECOND_BILL_BLOCK = 3
+
+
+def _statute_id_of(target_ref: str) -> str:
+    """Reduce a ``target_provision_ref`` to its statute id ("1707/1995/9/2" → "1707/1995").
+
+    A bare / malformed ref with fewer than two path parts yields "" (never a statute).
+    Uses ``str.split`` (no regex) so the semantic-plane regex census stays flat.
+    """
+    parts = [p for p in target_ref.split("/") if p]
+    if len(parts) < 2:
+        return ""
+    return f"{parts[0]}/{parts[1]}"
+
+
+def _reclassify_out_of_scope_second_bills(
+    divergences: tuple[OpDivergence, ...], xml_ops: tuple[HEFlatOp, ...]
+) -> tuple[OpDivergence, ...]:
+    """Retype genuine-second-bill ``op_extra`` blocks to ``pdf_out_of_scope_statute``.
+
+    Scans the divergence stream (``op_extra`` divergences are emitted contiguously, in PDF
+    reading order, at the tail of :func:`diff_proposed_ops`). A maximal CONTIGUOUS run of
+    ``op_extra_in_pdf`` divergences sharing ONE statute-id that is ABSENT from the XML op-set
+    and of length ``≥ _MIN_SECOND_BILL_BLOCK`` is the genuine-second-bill signature: it is
+    retyped to :data:`_PDF_OUT_OF_SCOPE_STATUTE` (first-class witness disagreement, PDF more
+    complete). Everything else — 1–2-op absent-statute blocks, and any op on a statute-id the
+    XML op-set DOES name (same-statute granularity) — is left as ``op_extra_in_pdf``. Only the
+    ``kind``/``detail`` of the reclassified rows change; ``matched`` / ``op_missing_in_pdf`` /
+    ``kind_mismatch`` / ``payload_mismatch`` rows are untouched (pure reclassification).
+    """
+    xml_statute_ids = {_statute_id_of(op.target_ref) for op in xml_ops}
+    xml_statute_ids.discard("")
+    out = list(divergences)
+    n = len(out)
+    i = 0
+    while i < n:
+        d = out[i]
+        sid = _statute_id_of(d.target_ref)
+        if d.kind != "op_extra_in_pdf" or not sid or sid in xml_statute_ids:
+            i += 1
+            continue
+        # Extend a contiguous run of op_extra on this same absent statute-id.
+        j = i + 1
+        while (
+            j < n
+            and out[j].kind == "op_extra_in_pdf"
+            and _statute_id_of(out[j].target_ref) == sid
+        ):
+            j += 1
+        block = j - i
+        if block >= _MIN_SECOND_BILL_BLOCK:
+            detail = (
+                f"PDF captured a coherent {block}-op amendment block on statute {sid}, which "
+                "is ABSENT from the trusted XML op-set — the genuine second-bill signature of "
+                "an omnibus HE whose XML models only a subset of amended statutes; first-class "
+                "witness disagreement (PDF more complete), NOT a PDF op_extra defect"
+            )
+            for k in range(i, j):
+                out[k] = replace(out[k], kind=_PDF_OUT_OF_SCOPE_STATUTE, detail=detail)
+        i = j
     return tuple(out)
 
 
@@ -957,6 +1043,9 @@ def compare_he(
         )
 
     divergences = diff_proposed_ops(xml_flat, pdf_flat)
+    # Retype genuine-second-bill op_extra blocks (PDF out-read the narrow XML op-set) out of
+    # the op_extra_in_pdf DEFECT bucket into first-class witness disagreement (metric integrity).
+    divergences = _reclassify_out_of_scope_second_bills(divergences, xml_flat)
 
     matched_refs = {d.target_ref for d in divergences if d.kind == _BENIGN_MATCH}
     matched_ops = tuple(op for op in xml_flat if op.target_ref in matched_refs)
@@ -1154,6 +1243,7 @@ _KIND_GLYPH = {
     "op_extra_in_pdf": "+",
     "kind_mismatch": "~",
     "payload_mismatch": "≠",
+    _PDF_OUT_OF_SCOPE_STATUTE: "≈",
 }
 
 
@@ -1172,7 +1262,8 @@ def _print_result(result: HECompareResult) -> None:
         f"XML ops={result.xml_op_count}  PDF ops={result.pdf_op_count}   "
         f"matched={c['matched']}  op_missing_in_pdf={c['op_missing_in_pdf']}  "
         f"op_extra_in_pdf={c['op_extra_in_pdf']}  kind_mismatch={c['kind_mismatch']}  "
-        f"payload_mismatch={c['payload_mismatch']}"
+        f"payload_mismatch={c['payload_mismatch']}  "
+        f"pdf_out_of_scope_statute={c.get(_PDF_OUT_OF_SCOPE_STATUTE, 0)}"
     )
     print(
         f"  payload stage: compared={result.payload_compared}  "
@@ -1187,6 +1278,8 @@ def _print_result(result: HECompareResult) -> None:
             print(f"  {g} {d.target_ref:<28} XML:{d.xml_op}  (dropped by PDF)")
         elif d.kind == "op_extra_in_pdf":
             print(f"  {g} {d.target_ref:<28} PDF:{d.pdf_op}  (not in XML)")
+        elif d.kind == _PDF_OUT_OF_SCOPE_STATUTE:
+            print(f"  {g} {d.target_ref:<28} PDF:{d.pdf_op}  (out-of-scope 2nd bill; witness disagreement)")
         elif d.kind == "payload_mismatch":
             print(f"  {g} {d.target_ref:<28} {d.detail}")
         else:

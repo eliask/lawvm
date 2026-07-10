@@ -156,6 +156,10 @@ def aggregate_rows(rows: Sequence[HEDiffRow], *, worst_limit: int = 15) -> HECor
         "op_extra_in_pdf": 0,
         "kind_mismatch": 0,
         "payload_mismatch": 0,
+        # First-class WITNESS DISAGREEMENT (PDF out-read a narrow XML op-set on an omnibus
+        # HE's out-of-scope second bill), NOT a PDF op_extra defect — tallied in its OWN
+        # bucket so the op_extra_in_pdf defect count stays honest (metric integrity).
+        "pdf_out_of_scope_statute": 0,
     }
     n_compared = n_exact = total_typed = 0
     payload_compared = payload_deferred = payload_skipped = 0
@@ -379,6 +383,10 @@ def render_report(report: HECorpusReport) -> str:
         f"op_extra_in_pdf={report.bucket_counts['op_extra_in_pdf']}  "
         f"kind_mismatch={report.bucket_counts['kind_mismatch']}  "
         f"payload_mismatch={report.bucket_counts.get('payload_mismatch', 0)}"
+    )
+    lines.append(
+        "  witness_disagreement (NOT a PDF defect): "
+        f"pdf_out_of_scope_statute={report.bucket_counts.get('pdf_out_of_scope_statute', 0)}"
     )
     lines.append(
         f"  payload stage: compared={report.payload_compared}  "
