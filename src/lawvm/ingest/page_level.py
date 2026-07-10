@@ -687,6 +687,39 @@ def _apply_rereads(
     return _rewrite_text_at(nodes, replacements), applied
 
 
+def _cold_read_ladder(appraisal: object, requested_leaf_mode: str) -> Tuple[str, ...]:
+    """The ordered cold-read rungs for a page, routed from its appraisal.
+
+    The static ``patch`` default is dead (it silently empties dense pages — the
+    controller, not a fixed assumption, chooses the mode). With no appraisal (a
+    minimal/fake vision producer) the legacy single read stands. Otherwise: route the
+    first rung from the appraisal — untrustworthy lines ⇒ transcribe from the image
+    (``inline``), else reference the lines (``span``); an explicit ``span``/``inline``
+    request (the A/B-fair modalities) is honoured. Then the ladder the reader climbs
+    ONLY on a degenerate (empty) read: route → retry-identical (the MTP decoder is
+    nondeterministic, so the cheapest rung is the same call again) → switch mode."""
+    if appraisal is None:
+        return (requested_leaf_mode,)
+    if requested_leaf_mode in ("span", "inline"):
+        first = requested_leaf_mode
+    else:
+        first = "span" if getattr(appraisal, "lines_trustworthy", True) else "inline"
+    other = "inline" if first == "span" else "span"
+    return (first, first, other)
+
+
+def _is_degenerate_read(appraisal: object, reconstructed: str) -> bool:
+    """A read the appraisal KNOWS is wrong: it saw content but the model returned no
+    text-bearing structure (the intermittent empty completion). Non-circular because
+    the appraisal is an independent image-first call — this is the signal that makes
+    an empty structural read a retry trigger instead of a silently-cached blank."""
+    return (
+        appraisal is not None
+        and getattr(appraisal, "has_content", False)
+        and not reconstructed.strip()
+    )
+
+
 def converge_page(
     vision,
     manifestation,
@@ -723,14 +756,70 @@ def converge_page(
         locator=f"page={page_num}",
         page_num=page_num,
     )
-    result = vision.propose_page_struct(
-        manifestation, page_num, page_elements, leaf_mode=leaf_mode
-    )
-    build = result.build
-    nodes: Tuple[StructBuildNode, ...] = build.roots
-    raw_digests: List[str] = [hashlib.sha256(result.raw_content.encode("utf-8")).hexdigest()]
+
+    # Appraise-first (§ agentic, image-first): a cheap verdict the ladder routes on.
+    # OPTIONAL — a minimal/fake vision producer without ``appraise_page`` keeps the
+    # legacy single cold read (appraisal is None → ladder is just the requested mode).
+    appraisal = None
+    if hasattr(vision, "appraise_page"):
+        appraisal = vision.appraise_page(manifestation, page_num, page_elements)
+        if not appraisal.has_content:
+            # The MODEL saw a blank page — zero cold reads, and (crucially) this is
+            # never confusable with a degenerate empty read (that needs has_content).
+            return ConvergedPage(
+                nodes=(),
+                convergence=ConvergenceInfo(
+                    rounds=0,
+                    round_hashes=(),
+                    termination="appraised_blank",
+                    gate_reasons=("appraised_blank",),
+                    patches_total=0,
+                    rereads=0,
+                    read_attempts=0,
+                ),
+                freeform=(),
+                assurance=AssuranceTier.SINGLE_WITNESS,
+                raw_wire_digests=(),
+            )
+
+    # Cold-read ladder: climb a rung ONLY on a degenerate read (appraisal saw content
+    # but the model returned no structure). The static ``patch`` default is gone.
+    raw_digests: List[str] = []
+    build = None
+    nodes: Tuple[StructBuildNode, ...] = ()
+    reconstructed = ""
+    read_attempts = 0
+    for attempt_leaf_mode in _cold_read_ladder(appraisal, leaf_mode):
+        result = vision.propose_page_struct(
+            manifestation, page_num, page_elements, leaf_mode=attempt_leaf_mode
+        )
+        read_attempts += 1
+        build = result.build
+        nodes = build.roots
+        raw_digests.append(hashlib.sha256(result.raw_content.encode("utf-8")).hexdigest())
+        reconstructed = "\n".join(_struct_text_of(n) for n in nodes)
+        if not _is_degenerate_read(appraisal, reconstructed):
+            break
+    else:
+        # Every rung came back degenerate → a TYPED unreadable page (fail-loud), NOT a
+        # silently-cached empty read. Later increments subdivide (§9) before giving up.
+        return ConvergedPage(
+            nodes=nodes,
+            convergence=ConvergenceInfo(
+                rounds=1,
+                round_hashes=(_resolved_tree_hash(nodes),),
+                termination="unreadable_page",
+                gate_reasons=("unreadable_page",),
+                patches_total=build.patches_applied if build is not None else 0,
+                rereads=0,
+                read_attempts=read_attempts,
+            ),
+            freeform=(),
+            assurance=AssuranceTier.UNADJUDICATED_PROPOSAL,
+            raw_wire_digests=tuple(raw_digests),
+        )
+
     freeform = _freeform_index(nodes)
-    reconstructed = "\n".join(_struct_text_of(n) for n in nodes)
     assurance = _page_assurance(reconstructed, reading_order_text, adjudicator, region)
 
     # §8: surface deterministic re-read candidates on the cold read. A confidently
@@ -752,6 +841,7 @@ def converge_page(
                 gate_reasons=(),
                 patches_total=patches_total,
                 rereads=0,
+                read_attempts=read_attempts,
             ),
             freeform=freeform,
             assurance=assurance,
@@ -822,6 +912,7 @@ def converge_page(
             gate_reasons=gate_reasons,
             patches_total=patches_total,
             rereads=rereads,
+            read_attempts=read_attempts,
         ),
         freeform=freeform,
         assurance=assurance,

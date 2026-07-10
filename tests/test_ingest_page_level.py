@@ -977,3 +977,92 @@ def test_env_default_concurrency_is_read_and_bounded(monkeypatch) -> None:
     finally:
         monkeypatch.delenv("LAWVM_INGEST_PAGE_CONCURRENCY", raising=False)
         importlib.reload(pl)
+
+
+# --------------------------------------------------------------------------- #
+# Appraise-first cold-read ladder (§ agentic, increment 1).                     #
+# --------------------------------------------------------------------------- #
+
+
+def _appraisal(has_content=True, kind="prose", lines="reliable"):
+    from lawvm.ingest.llm_backends.vision_producer import PageAppraisal
+
+    return PageAppraisal(has_content=has_content, kind=kind, lines=lines, raw="")
+
+
+class _AppraiseLadderVision(_FakeConvergeVision):
+    """Fake with ``appraise_page`` + a scripted per-cold-read wire sequence.
+
+    Records the ``leaf_mode`` of each cold read so routing is assertable; the last
+    wire repeats if the ladder asks for more reads than scripted."""
+
+    def __init__(self, appraisal, wires):
+        super().__init__(wires[0] if wires else "")
+        self._appraisal = appraisal
+        self._wires = list(wires)
+        self._i = 0
+        self.leaf_modes_seen: list[str] = []
+
+    def appraise_page(self, man, page_num, page_elements):
+        return self._appraisal
+
+    def propose_page_struct(self, man, page_num, page_elements, *, leaf_mode="patch"):
+        from lawvm.ingest.llm_backends.vision_producer import StructPageResult
+
+        self.leaf_modes_seen.append(leaf_mode)
+        wire = self._wires[min(self._i, len(self._wires) - 1)] if self._wires else ""
+        self._i += 1
+        build = parse_struct_wire(
+            wire, page_elements.lines, [i.element for i in page_elements.images]
+        )
+        return StructPageResult(build=build, raw_content=wire, images=page_elements.images)
+
+
+def test_appraised_blank_page_short_circuits_without_a_cold_read() -> None:
+    v = _AppraiseLadderVision(_appraisal(has_content=False), wires=[f"1 PARA 0 L1{US}"])
+    cp = converge_page(v, _manifestation(), 1, _page_elements(), reading_order_text="")
+    assert cp.convergence.termination == "appraised_blank"
+    assert cp.convergence.read_attempts == 0
+    assert cp.nodes == ()
+    assert v.leaf_modes_seen == []  # the model saw blank → never issued a cold read
+
+
+def test_degenerate_empty_read_retries_and_recovers() -> None:
+    ro = "\n".join(_LINES)
+    # First cold read is EMPTY (degenerate vs has_content) → retry-identical recovers.
+    v = _AppraiseLadderVision(
+        _appraisal(has_content=True, lines="reliable"),
+        wires=["", f"1 HEADING 0 L1{US}2 PARA 0 L2-3{US}"],
+    )
+    cp = converge_page(
+        v, _manifestation(), 1, _page_elements(),
+        reading_order_text=ro, adjudicator=_CorroboratingAdjudicator(),
+    )
+    assert cp.convergence.read_attempts == 2
+    assert cp.convergence.termination != "unreadable_page"
+    assert len(cp.nodes) >= 1
+
+
+def test_all_rungs_degenerate_is_typed_unreadable_not_silent_empty() -> None:
+    v = _AppraiseLadderVision(_appraisal(has_content=True), wires=[""])  # always empty
+    cp = converge_page(v, _manifestation(), 1, _page_elements(), reading_order_text="x")
+    assert cp.convergence.termination == "unreadable_page"
+    assert "unreadable_page" in cp.convergence.gate_reasons
+    assert cp.convergence.read_attempts == 3  # full ladder climbed (route, retry, switch)
+    assert cp.nodes == ()
+
+
+def test_untrustworthy_lines_route_first_cold_read_to_inline() -> None:
+    v = _AppraiseLadderVision(
+        _appraisal(has_content=True, lines="unreliable"), wires=[f"1 PARA 0 T: hello{US}"]
+    )
+    converge_page(v, _manifestation(), 1, _page_elements(), reading_order_text="hello")
+    assert v.leaf_modes_seen[0] == "inline"
+
+
+def test_trustworthy_lines_route_first_cold_read_to_span() -> None:
+    v = _AppraiseLadderVision(
+        _appraisal(has_content=True, lines="reliable"), wires=[f"1 HEADING 0 L1{US}"]
+    )
+    converge_page(v, _manifestation(), 1, _page_elements(), reading_order_text="\n".join(_LINES))
+    assert v.leaf_modes_seen[0] == "span"

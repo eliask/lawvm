@@ -60,14 +60,23 @@ class ConvergenceInfo:
     through the normal gated PATCH. Zero for a clean page (no suspects → no
     re-reads, output-sparse); a page with a garble also carries the
     ``suspect_region`` gate reason.
+
+    ``read_attempts`` (appraise-first ladder, additive) counts the COLD reads
+    issued for this page: 1 on the happy path, >1 when a degenerate read (the
+    appraisal saw content but the model returned no structure — the intermittent
+    empty completion) forced a ladder rung (retry-identical → other leaf-mode). A
+    page whose whole ladder came back degenerate terminates ``unreadable_page`` (a
+    typed fail-loud, NEVER a silently-cached empty read); an appraisal that saw a
+    blank page terminates ``appraised_blank`` at zero cold reads.
     """
 
     rounds: int
     round_hashes: Tuple[str, ...]
-    termination: str  # empty_patch|fixpoint|oscillation|max_iters|gated_single_pass|truncated
+    termination: str  # empty_patch|fixpoint|oscillation|max_iters|gated_single_pass|truncated|appraised_blank|unreadable_page
     gate_reasons: Tuple[str, ...]  # Decision 2 closed trigger set (+ suspect_region, §8)
     patches_total: int
     rereads: int = 0
+    read_attempts: int = 1
 
 
 @dataclass(frozen=True, slots=True)
