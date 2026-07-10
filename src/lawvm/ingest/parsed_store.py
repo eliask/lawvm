@@ -83,9 +83,23 @@ class ParseBackendUnavailable(RuntimeError):
     """The LLM parse backend is unreachable. Parsing REQUIRES it — fail loud."""
 
 
-def parsed_ir_locator(source_digest: str, pipeline_id: str, version: str) -> str:
-    """Content-addressed derived-store key: source digest × pipeline × version."""
-    return f"parsed/{source_digest}/{pipeline_id}@{version}"
+def parsed_ir_locator(
+    source_digest: str,
+    pipeline_id: str,
+    version: str,
+    max_pages: Optional[int] = None,
+) -> str:
+    """Content-addressed derived-store key: source digest × pipeline × version.
+
+    ``max_pages`` MUST be part of the key: a parse bounded to N pages yields a
+    DIFFERENT reconstruction than one bounded to M, so two callers with different
+    page budgets must not collide on one cache entry (that produced cross-run
+    stale reads — a 6-page census entry served to a 10-page measurement run,
+    flipping the derived stratum). ``None`` keeps the legacy un-suffixed key for
+    callers that do not bound pages.
+    """
+    base = f"parsed/{source_digest}/{pipeline_id}@{version}"
+    return base if max_pages is None else f"{base}#p{max_pages}"
 
 
 # Bump when the A/B predicate or the diff adjudicator's identity changes, so a
@@ -1013,7 +1027,9 @@ def parse_struct_and_cache(
             manifestation, store, spec=spec, force=force, max_pages=max_pages,
             parsed_at=parsed_at,
         )
-    locator = parsed_ir_locator(manifestation.artifact_digest, spec.pipeline_id, spec.version)
+    locator = parsed_ir_locator(
+        manifestation.artifact_digest, spec.pipeline_id, spec.version, max_pages=max_pages
+    )
     if not force:
         cached = store.get(locator)
         if cached is not None:
@@ -1052,7 +1068,9 @@ def parse_defacsimile_and_cache(
             f"parse_defacsimile_and_cache requires the {DEFACSIMILE_MODALITY!r} "
             f"modality; got {spec.transcription_modality!r}"
         )
-    locator = parsed_ir_locator(manifestation.artifact_digest, spec.pipeline_id, spec.version)
+    locator = parsed_ir_locator(
+        manifestation.artifact_digest, spec.pipeline_id, spec.version, max_pages=max_pages
+    )
     if not force:
         cached = store.get(locator)
         if cached is not None:
