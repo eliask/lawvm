@@ -35,7 +35,7 @@ def _residual(*, family: str, rule_id: str) -> AgreementResidual:
         residual_id=f"canary:{family}:{rule_id}",
         jurisdiction="canary",
         agreement_surface="ctsf_family_typing_canary",
-        family=family,  # type: ignore[arg-type]
+        family=family,  # ty: ignore[invalid-argument-type]
         agreement_residual_status="residual",
         owner_phase="audit",
         rule_id=rule_id,

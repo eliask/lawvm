@@ -782,7 +782,7 @@ def test_corpus_only_oracle_promotes_to_manual_frontier_only_on_explicit_evidenc
         assert acct.article_total == sum(
             acct.class_counts[c] for c in CORPUS_DIVERGENCE_CLASSES
         )
-    assert acct.to_dict()["conserved"] is True
+        assert acct.to_dict()["conserved"] is True
 
 
 def test_corpus_oracle_suspect_is_caller_asserted_not_synthesised() -> None:

@@ -311,7 +311,7 @@ class TestSerialization:
         assert js["route"] == ScreenRoute.ADJUDICATOR.value
         assert js["graduated"] is False
         assert "status" not in js  # FW-09 / naming-hygiene: no bare status surface
-        assert js["verdict"]["garble"]["clean"] is False
+        assert js["verdict"]["garble"]["clean"] is False  # ty: ignore[not-subscriptable]
 
     def test_gestalt_reading_jsonable(self) -> None:
         js = GestaltReading(True, True, True, False).to_jsonable()

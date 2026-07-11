@@ -240,7 +240,7 @@ def test_disagreeing_cell_emits_corroboration_receipt() -> None:
     assert receipt.witness_fingerprint  # tied to the determinism firewall
     # surfaced in the JSON (only because a receipt was actually produced)
     js = report.to_jsonable()
-    assert js["corroboration"]["n_receipts"] == 1  # type: ignore[index]
+    assert js["corroboration"]["n_receipts"] == 1  # ty: ignore[not-subscriptable]
 
 
 def test_agreeing_open_read_is_a_graduation_not_a_disagreement_receipt() -> None:
@@ -288,7 +288,7 @@ def test_screen_flags_self_verified_cell_and_rides_corroborate_edge() -> None:
     assert len(report.corroboration_receipts) == 1
     assert report.corroboration_receipts[0].candidate == "6.5"
     js = report.to_jsonable()
-    assert js["recall_screen"]["n_suspects"] == 1  # type: ignore[index]
+    assert js["recall_screen"]["n_suspects"] == 1  # ty: ignore[not-subscriptable]
 
 
 def test_screen_clean_when_no_gestalt_reader() -> None:
