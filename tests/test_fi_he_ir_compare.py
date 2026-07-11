@@ -27,6 +27,7 @@ from lawvm.tools.fi_he_ir_compare import (
     _lakiehdotus_region,
     _pdf_proposed_bodies,
     _reclassify_out_of_scope_second_bills,
+    _repair_slash_as_one_cites,
     _section_label_of,
     _statute_id_of,
     _word_overlap,
@@ -177,6 +178,89 @@ def test_lakiehdotus_region_skips_toc_leader_entry() -> None:
     spans = extract_enacting_clause_spans(toc + body)
     assert len(spans) == 1
     assert "(123/2020)" in spans[0]
+
+
+# --------------------------------------------------------------------------- #
+# pdf_no_clause RECOVERY fallback (reading-fidelity repairs, gated for 0 collateral) #
+# --------------------------------------------------------------------------- #
+
+
+def test_repair_slash_as_one_cites_reconstructs_and_is_safe() -> None:
+    # A text layer that renders the "/" of a statute citation as "1" ("(1505/1992)" →
+    # "(150511992)") defeated the cite anchor and the whole enacting clause was invisible
+    # (HE 69/1997, 82/1997, 108/2000, 73/1996). The repair reconstructs the slash, anchoring
+    # the YEAR to the token's last digits so the split is unambiguous.
+    assert _repair_slash_as_one_cites("(150511992)") == "(1505/1992)"  # 4-digit year
+    assert _repair_slash_as_one_cites("(54311994)") == "(543/1994)"
+    assert _repair_slash_as_one_cites("(704175)") == "(704/75)"  # pre-2000 2-digit year
+    # SAFETY: a clean citation is untouched, and a parenthesised number whose trailing digits
+    # are not a plausible year (no "1" slash-surrogate before a 1600–2099 / 2-digit tail) is left
+    # alone rather than mangled into a phantom citation.
+    assert _repair_slash_as_one_cites("(1471/1994)") == "(1471/1994)"
+    assert _repair_slash_as_one_cites("(123456)") == "(123456)"
+
+
+def test_slash_as_one_cite_repair_gated_to_fallback() -> None:
+    # 0-COLLATERAL discipline: the repair fires ONLY on the aggressive fallback pass, so a
+    # currently-detected HE's flattened text is byte-identical (the mangled token is left as-is
+    # on the normal path). The aggressive pass reconstructs it.
+    text = "muutetaan testilain (150511992) 5 " + _SEC + " seuraavasti: Uusi 5 §."
+    assert "(150511992)" in _flatten_reading_text(text)  # normal: unchanged
+    assert "(150511992)" not in _flatten_reading_text(text, aggressive=True)
+    assert "(1505/1992)" in _flatten_reading_text(text, aggressive=True)
+
+
+def test_slash_as_one_cite_he_recovered_via_fallback_and_matches() -> None:
+    # END TO END: the XML johtolause carries the clean cite "(1505/1992)"; the PDF text layer
+    # mangled it to "(150511992)". The normal path finds NO clause → the fallback repairs the
+    # cite → the recovered op matches the XML op EXACTLY (no op_missing flood).
+    clause = "Eduskunnan päätöksen mukaisesti muutetaan testilain (1505/1992) 5 " + _SEC + " seuraavasti:"
+    xml = _he_xml(clause)
+    pdf_ok = _pdf_page(clause)
+    pdf_mangled = pdf_ok.replace("(1505/1992)", "(150511992)")
+    # sanity: without the mangle it compares; the mangle alone would strand it
+    assert compare_he(xml, pdf_ok, he_year=1997, he_number=69).compare_status == "compared"
+    r = compare_he(xml, pdf_mangled, he_year=1997, he_number=69)
+    assert r.compare_status == "compared"
+    assert r.counts["op_missing_in_pdf"] == 0
+    assert r.exact_equivalent
+
+
+def test_detected_he_not_perturbed_by_slash_fallback() -> None:
+    # 0-COLLATERAL proof: an HE whose real clause is detected NORMALLY must return the normal
+    # result even though a mangled cite sits in its perustelut that the fallback WOULD repair
+    # into a phantom op. Gating the recoveries to the no-clause fallback prevents that.
+    stray = " Perusteluissa muutetaan toisen lain (99911988) 3 " + _SEC + " seuraavasti: x."
+    xml = _he_xml(_CLAUSE)
+    r = compare_he(xml, _pdf_page(_CLAUSE) + stray, he_year=2020, he_number=99)
+    assert r.compare_status == "compared"
+    assert not any("999/1988" in d.target_ref for d in r.divergences)
+
+
+def test_toc_leader_preceding_appendix_entry_kept_only_in_fallback() -> None:
+    # An old-format HE's TOC lists "… muuttamisesta . . . . 37 LIITE Rinnakkaistekstit 1. Laki …"
+    # — the dotted leader trails the bill TITLE, so the appendix marker "Rinnakkaistekstit"
+    # is NOT immediately followed by a leader and the normal after-leader check misses it,
+    # cutting the whole bill body away (HE 47/1999, 73/1996, 82/1997). The PRECEDING leader
+    # convicts it as a TOC entry — but only on the aggressive fallback (0 collateral otherwise).
+    toc = "Sisallys 1. Laki testilain muuttamisesta . . . . . . . . 37 LIITE Rinnakkaistekstit "
+    body = "1. Laki Eduskunnan päätöksen mukaisesti muutetaan testilain (123/2020) 5 " + _SEC + " seuraavasti: Uusi 5 §."
+    flat = _flatten_reading_text(toc + body)
+    assert "muutetaan testilain (123/2020)" not in _lakiehdotus_region(flat)  # normal: cut
+    assert "muutetaan testilain (123/2020)" in _lakiehdotus_region(flat, aggressive=True)
+
+
+def test_annex_and_chapter_target_recovered_only_in_fallback() -> None:
+    # A WHOLE-ANNEX / WHOLE-CHAPTER amendment lists no "§" ("… lain (1471/1994) liite …
+    # seuraavasti:", HE 151/2013; "… uusi 4 a luku seuraavasti:", HE 101/2020), so the §-only
+    # provision guard dropped the whole clause. The nominative liite/luku target is admitted as
+    # an equivalent marker ONLY on the aggressive fallback.
+    annex = "Lakiehdotukset muutetaan testilain (1471/1994) liite, sellaisena kuin se on laissa 1235/2011, seuraavasti:"
+    chapter = "Lakiehdotukset lisätään tartuntatautilakiin (1227/2016) väliaikaisesti uusi 4 a luku seuraavasti:"
+    assert extract_enacting_clause_spans(annex) == []
+    assert extract_enacting_clause_spans(chapter) == []
+    assert len(extract_enacting_clause_spans(annex, aggressive=True)) == 1
+    assert len(extract_enacting_clause_spans(chapter, aggressive=True)) == 1
 
 
 # --------------------------------------------------------------------------- #

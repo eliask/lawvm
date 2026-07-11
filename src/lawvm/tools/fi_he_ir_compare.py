@@ -43,8 +43,14 @@ empty — the same discipline as phase-1's ``xml_frame_only`` / ``pdf_annex_only
     trusted XML parser lowered it to zero ops (an XML-side parse gap, not a PDF defect);
     deferred, never charged to the PDF path.
   * ``pdf_no_clause`` — the PDF reading text yielded no extractable enacting clause
-    (born-digital lakiehdotus beyond the page window, or a scanned HE the geom lane
-    returns nothing for); deferred rather than forced into an all-ops-missing diff.
+    (born-digital lakiehdotus beyond the page window, a scanned HE the geom lane returns
+    nothing for, or a corrupt-font text layer that renders to control codes — the last a
+    VISION re-OCR escalation candidate the ingest suspect-region / cross-reader machinery
+    owns, out of scope for this free-lane tool); deferred rather than forced into an
+    all-ops-missing diff.  A no-clause HE is RETRIED once with reading-fidelity recoveries
+    enabled (a text-layer glyph-substitution cite repair, a preceding-TOC-leader appendix
+    uncut, and an annex/chapter target) before it is deferred — those recoveries are gated
+    to this fallback so a normally-detected HE is byte-identical (0 collateral).
 
 The extraction here (enacting-clause span segmentation + per-section body payloads) is
 deliberately reusable toward the FULL-HE-structure goal (extracting every section — the
@@ -203,6 +209,18 @@ _HISTORY_MARKER_RE = re.compile(r"sellais(?:ena|ina)\s+kuin", re.IGNORECASE)
 #: its clause does not cause the (genuine) clause to be dropped.
 _PROVISION_MARK_RE = re.compile(r"§")
 
+#: A WHOLE-ANNEX / WHOLE-CHAPTER amendment target — the one genuine johtolause shape that lists
+#: NO "§": "muutetaan … lain (N/YEAR) liite … seuraavasti:" (replace an annex, HE 151/2013) and
+#: "lisätään … (N/YEAR) … uusi 4 a luku seuraavasti:" (insert a chapter, HE 101/2020). Both lower
+#: to a clean op ("1471/1994"; "1227/2016/4a"), but the §-only provision guard
+#: (:data:`_PROVISION_MARK_RE`) dropped the whole clause. Accepted ONLY as a FALLBACK when no "§"
+#: is present in the same head→terminator window (a §-listing directive is unaffected), and the
+#: word must be the nominative annex/chapter target ("liite"/"luku"), never an inflected
+#: cross-reference ("5 luvun", "liitteessä"), so a perustelut sentence mentioning a chapter in
+#: passing is not admitted. Flat/bounded quantifiers (FW-07); local to
+#: :func:`extract_enacting_clause_spans` (the body-scoping recognizers stay §-strict).
+_ANNEX_CHAPTER_TARGET_RE = re.compile(r"\bliite\b|\bluku\b", re.IGNORECASE)
+
 #: The enactment FORMULA token ("<Eduskunnan|Valtioneuvoston|…ministeriön> päätöksen
 #: mukaisesti") that introduces every genuine johtolause.  It is NOT required in general (geom
 #: can scatter the centered formula far from its clause — see
@@ -334,6 +352,29 @@ _LAKIEHDOTUS_END_RE = re.compile(r"\b(?:Rinnakkaisteksti[a-zä]{0,4}|Liitteet)\b
 _TOC_LEADER_MIN_DOTS = 4
 
 
+#: A table-of-contents dotted-leader RUN ("muuttamisesta . . . . . . 30"), space-tolerant.
+#: Used to convict an appendix heading that a PREVIOUS TOC line's leader immediately precedes.
+_TOC_LEADER_RUN_RE = re.compile(r"\.(?:\s?\.){%d,}" % (_TOC_LEADER_MIN_DOTS - 1))
+
+#: How far BEFORE an appendix heading a preceding TOC dotted leader may sit and still convict it
+#: as a front-matter entry (the previous line's "<title> . . . . <page> LIITE" furniture).
+_TOC_LEADER_BEFORE_REACH = 60
+
+
+def _toc_leader_precedes(flat: str, pos: int) -> bool:
+    """True iff a table-of-contents dotted-leader run sits just BEFORE ``flat[pos]``.
+
+    The genuine appendix heading is preceded by the last bill's substantive text / signature
+    block (prose, never a dot run); a TABLE-OF-CONTENTS entry is preceded by the PREVIOUS
+    entry's dotted leader and page number ("… muuttamisesta . . . . . . 30 LIITE
+    Rinnakkaisteksti"). This catches the TOC entry whose OWN leader trails the bill TITLE it
+    names ("Rinnakkaistekstit 1. Laki … muuttamisesta . . . 37"), which
+    :func:`_starts_with_toc_leader` (an immediately-after check) misses. Purely PDF-structural.
+    """
+    # lawvm-regex: witness_only PDF-witness structural anchor (TOC dotted-leader run); never reads XML.
+    return _TOC_LEADER_RUN_RE.search(flat[max(0, pos - _TOC_LEADER_BEFORE_REACH):pos]) is not None
+
+
 def _starts_with_toc_leader(flat: str, pos: int) -> bool:
     """True iff ``flat[pos:]`` opens with a table-of-contents dotted-leader run.
 
@@ -358,7 +399,7 @@ def _starts_with_toc_leader(flat: str, pos: int) -> bool:
     return False
 
 
-def _first_appendix_end(flat: str) -> "Optional[re.Match[str]]":
+def _first_appendix_end(flat: str, *, aggressive: bool = False) -> "Optional[re.Match[str]]":
     """First GENUINE appendix-heading match in ``flat``, skipping table-of-contents entries.
 
     :data:`_LAKIEHDOTUS_END_RE` locates the "Rinnakkaistekstit"/"Liitteet" heading that opens
@@ -372,8 +413,17 @@ def _first_appendix_end(flat: str) -> "Optional[re.Match[str]]":
     """
     # lawvm-regex: witness_only PDF-witness structural anchor (appendix heading enumeration); never reads XML.
     for m in _LAKIEHDOTUS_END_RE.finditer(flat):
-        if not _starts_with_toc_leader(flat, m.end()):
-            return m
+        # A TOC entry is convicted by a dotted leader trailing its label (an old-format HE
+        # lists "Rinnakkaistekstit … 41" — the always-on check). The FALLBACK adds the
+        # preceding-leader signal, which catches a TOC entry whose OWN leader trails the bill
+        # TITLE it names ("Rinnakkaistekstit 1. Laki … muuttamisesta . . . 37") — that cut the
+        # whole bill body to the cover page (HE 47/1999, 73/1996, 82/1997). Gated to the fallback
+        # so it can never skip a genuine appendix cut on a currently-detected HE.
+        if _starts_with_toc_leader(flat, m.end()) or (
+            aggressive and _toc_leader_precedes(flat, m.start())
+        ):
+            continue
+        return m
     return None
 
 
@@ -462,6 +512,35 @@ _SIGNATURE_DATE_RE = re.compile(
 #: (FW-07); the zero-width insert leaves an already-spaced "15 luvun" untouched.
 _PDF_GLUED_CHAPTER_RE = re.compile(r"(?<=\d)(?=luku|luvu)", re.IGNORECASE)
 
+#: A statute citation "(NUM/YEAR)" whose SLASH glyph the text layer mis-read as a digit "1".
+#: In a stratum of 1990s HEs the "/" in a parenthesised cite renders as "1" in the embedded
+#: font ("(1505/1992)" → "(150511992)", "(543/1994)" → "(54311994)", "(704/75)" →
+#: "(704175)"), so the cite ANCHOR (:data:`_CITE_RE`) never fires and the whole enacting clause
+#: is dropped (pdf_no_clause) even though the johtolause is fully present. We REPAIR the token
+#: back to "(NUM/YEAR)" so BOTH the anchor AND the shared :func:`_parse_one_clause` resolver see
+#: the correct citation — and, crucially, resolve it IDENTICALLY to the XML witness (whose
+#: johtolause carries the clean "(NUM/YEAR)"): a 4-digit-year cite resolves the same statute id
+#: on both, and a 2-digit-year cite that the shared resolver leaves EMPTY does so on both (the
+#: XML op then also carries an empty statute id — they still match on the provision path). This
+#: is a PDF-reading-faithfulness repair on PDF-STRUCTURAL signal only; it never reads the XML.
+#:
+#: SAFETY: the YEAR is anchored to the token's LAST digits (4-digit form first) and constrained
+#: to a real statute-year band (1600–2099), and the slash surrogate is the single "1" that must
+#: sit immediately before it — so the split is unambiguous and a parenthesised non-citation
+#: number (a monetary figure, a long id) whose trailing digits are not a plausible year is left
+#: untouched. The 4-digit form runs first (tighter); the 2-digit fallback recovers the pre-2000
+#: typographic convention ("(704/75)"). Flat/bounded quantifiers (FW-07).
+_CITE_SLASH_AS_ONE_4_RE = re.compile(r"\((\d{1,4})1((?:1[6-9]|20)\d{2})\)")
+_CITE_SLASH_AS_ONE_2_RE = re.compile(r"\((\d{1,4})1(\d{2})\)")
+
+
+def _repair_slash_as_one_cites(text: str) -> str:
+    """Restore the "/" a text layer rendered as "1" inside a statute citation (see above)."""
+    # lawvm-regex: witness_only PDF-witness glyph-substitution repair (cite slash-as-"1"); never reads XML.
+    text = _CITE_SLASH_AS_ONE_4_RE.sub(r"(\1/\2)", text)
+    # lawvm-regex: witness_only PDF-witness glyph-substitution repair (2-digit-year form); never reads XML.
+    return _CITE_SLASH_AS_ONE_2_RE.sub(r"(\1/\2)", text)
+
 
 #: A private-use sentinel marking where an isolated mid-body page-number line was removed (i.e. a
 #: PAGE BREAK fell inside a section body).  Used ONLY by :func:`_pdf_proposed_bodies`: when a
@@ -505,8 +584,17 @@ def _strip_page_number_lines(reading_text: str) -> str:
     return _PDF_PAGE_NUMBER_LINE_RE.sub(repl, reading_text or "")
 
 
-def _flatten_reading_text(reading_text: str) -> str:
+def _flatten_reading_text(reading_text: str, *, aggressive: bool = False) -> str:
     """De-hyphenate, strip per-page running headers, and whitespace-flatten reading text.
+
+    ``aggressive`` enables the reading-fidelity REPAIRS that recover an otherwise-undetectable
+    enacting clause (a text-layer glyph-substitution fix — the slash-as-"1" citation, see
+    :func:`_repair_slash_as_one_cites`). It is OFF by default and is only ever set on the
+    :func:`compare_he` FALLBACK for an HE the normal path found NO clause in, so a currently-
+    detected HE's text is byte-identical and cannot be perturbed (0 collateral). The repair is a
+    correct read, but it also surfaces additional GENUINE content on already-detected HEs
+    (secondary decree bills, extra cross-references) that shifts their divergence set — gating it
+    to the no-clause fallback keeps the recovery from disturbing the working corpus.
 
     BOTH page furniture classes — the centered signature-date line
     (:data:`_SIGNATURE_DATE_RE`) and the per-page running header (:data:`_PAGE_FURNITURE_RE`)
@@ -527,7 +615,13 @@ def _flatten_reading_text(reading_text: str) -> str:
     # Un-glue a chapter ordinal welded to its "luku"/"luvu" noun ("15lukuun" → "15 lukuun"),
     # a geom text-layer artifact, so the shared lexer resolves the chapter scope on the PDF
     # witness exactly as it does on the XML witness (see :data:`_PDF_GLUED_CHAPTER_RE`).
-    return _PDF_GLUED_CHAPTER_RE.sub(" ", text)
+    text = _PDF_GLUED_CHAPTER_RE.sub(" ", text)
+    # FALLBACK only: repair a statute citation whose "/" the text layer rendered as "1"
+    # ("(150511992)" → "(1505/1992)"), so the cite anchor fires and the shared parser resolves it
+    # exactly as the XML witness does (see :func:`_repair_slash_as_one_cites`).
+    if aggressive:
+        text = _repair_slash_as_one_cites(text)
+    return text
 
 
 def _asetusluonnos_region(flat: str, lo: int) -> str:
@@ -566,7 +660,7 @@ def _asetusluonnos_region(flat: str, lo: int) -> str:
     return flat[enact.start() : end.start()] if end else flat[enact.start() :]
 
 
-def _lakiehdotus_region(flat: str) -> str:
+def _lakiehdotus_region(flat: str, *, aggressive: bool = False) -> str:
     """Flattened reading text with the appendix elided but the draft decrees kept.
 
     The bill directives (lakiehdotus) always precede the parallel-texts appendix, so cutting at
@@ -586,7 +680,7 @@ def _lakiehdotus_region(flat: str) -> str:
     sisällysluettelo; cutting there truncated the whole bill body to the cover page). A HE whose
     only appendix match is a TOC entry is left uncut.
     """
-    m = _first_appendix_end(flat)
+    m = _first_appendix_end(flat, aggressive=aggressive)
     if m is None:
         return flat
     head = flat[: m.start()]
@@ -712,9 +806,16 @@ def _resolve_span_end(flat: str, cite_end: int, term: "re.Match[str]") -> int:
 
 
 def extract_enacting_clause_spans(
-    reading_text: str, *, max_clause_chars: int = _MAX_CLAUSE_CHARS
+    reading_text: str, *, max_clause_chars: int = _MAX_CLAUSE_CHARS, aggressive: bool = False
 ) -> list[str]:
     """Segment PDF reading text into enacting-clause spans (named recognizer).
+
+    ``aggressive`` (OFF by default; set only on the :func:`compare_he` no-clause FALLBACK)
+    enables the reading-fidelity RECOVERIES that rescue an otherwise-undetectable clause without
+    perturbing the working corpus: the slash-as-"1" cite repair + preceding-TOC-leader appendix
+    uncut (both via ``_flatten_reading_text`` / ``_lakiehdotus_region``), and admitting a
+    WHOLE-ANNEX / WHOLE-CHAPTER target (:data:`_ANNEX_CHAPTER_TARGET_RE`) as the provision
+    marker for a "§"-less directive ("… lain (N/YEAR) liite … seuraavasti:").
 
     An enacting clause has a reliable SIGNATURE that survives geom line-reordering: a
     strong amendment-verb head ("muutetaan"/"lisätään"/"kumotaan"/"korvataan")
@@ -740,7 +841,9 @@ def extract_enacting_clause_spans(
     older HEs) the scan opens at the region start with the unchanged narrow ``max_clause_chars``
     default, so those HEs — and the op_extra guard — are untouched.
     """
-    flat = _lakiehdotus_region(_flatten_reading_text(reading_text))
+    flat = _lakiehdotus_region(
+        _flatten_reading_text(reading_text, aggressive=aggressive), aggressive=aggressive
+    )
     scan_lo = _lakiehdotus_scan_start(flat)
     # Anchored at the genuine bills heading the perustelut are fenced out, so the char bound
     # can be widened to admit a mega-johtolause; otherwise keep the narrow default.
@@ -790,8 +893,15 @@ def extract_enacting_clause_spans(
         end = _resolve_span_end(flat, cite.end(), term)
         # A genuine amendment directive lists provisions ("§") it touches; a stray
         # perustelut sentence with an amendment verb + citation does not. (A whole-law repeal
-        # names no "§" and is dropped here; a single-§ repeal keeps its "§".)
-        if _PROVISION_MARK_RE.search(flat, cite.end(), end) is None:
+        # names no "§" and is dropped here; a single-§ repeal keeps its "§".) A WHOLE-ANNEX /
+        # WHOLE-CHAPTER amendment ("… lain (N/YEAR) liite … seuraavasti:", "… uusi 4 a luku
+        # seuraavasti:") lists no "§" yet is a genuine directive, so a nominative liite/luku
+        # target (:data:`_ANNEX_CHAPTER_TARGET_RE`) is accepted as an equivalent marker — but
+        # only on the no-clause FALLBACK (``aggressive``), so a §-listing corpus is untouched.
+        # lawvm-regex: witness_only PDF-witness structural anchor (annex/chapter target); never reads XML.
+        if _PROVISION_MARK_RE.search(flat, cite.end(), end) is None and not (
+            aggressive and _ANNEX_CHAPTER_TARGET_RE.search(flat, cite.end(), end) is not None
+        ):
             continue
         # No (hstart, end) dedup needed: finditer yields non-overlapping heads, so each span's
         # start is strictly increasing and unique (any two heads sharing a terminator still get
@@ -817,6 +927,7 @@ def extract_enacting_clause_spans_llm(
     *,
     classify_fn: "Callable[[str], object]",
     max_clause_chars: int = _MAX_LLM_CLAUSE_CHARS,
+    aggressive: bool = False,
 ) -> list[str]:
     """LLM-gated enacting-clause extraction: mechanical candidates, LLM johtolause gate, UNBOUNDED span.
 
@@ -835,7 +946,9 @@ def extract_enacting_clause_spans_llm(
     """
     from lawvm.finland.he_johtolause_tagger import JohtolauseTag
 
-    flat = _lakiehdotus_region(_flatten_reading_text(reading_text))
+    flat = _lakiehdotus_region(
+        _flatten_reading_text(reading_text, aggressive=aggressive), aggressive=aggressive
+    )
     spans: list[str] = []
     for head in _HE_HEAD_VERB_RE.finditer(flat):
         hstart = head.start()
@@ -858,7 +971,12 @@ def extract_enacting_clause_spans_llm(
         # Terminator-less repeal guard (see extract_enacting_clause_spans): a foreign later
         # bill's terminator is not claimed for this repeal — re-bound to its own sentence.
         end = _resolve_span_end(flat, cite.end(), term)
-        if _PROVISION_MARK_RE.search(flat, cite.end(), end) is None:
+        # A §-less WHOLE-ANNEX / WHOLE-CHAPTER target is admitted only on the fallback, mirroring
+        # the mechanical lane (:func:`extract_enacting_clause_spans`).
+        # lawvm-regex: witness_only PDF-witness structural anchor (annex/chapter target); never reads XML.
+        if _PROVISION_MARK_RE.search(flat, cite.end(), end) is None and not (
+            aggressive and _ANNEX_CHAPTER_TARGET_RE.search(flat, cite.end(), end) is not None
+        ):
             continue
         # No (hstart, end) dedup set needed: finditer yields non-overlapping heads, so hstart —
         # and thus each span's start — is strictly increasing and unique.
@@ -1526,7 +1644,7 @@ def _governing_body_statute_id(scopes: list[tuple[int, str]], pos: int) -> str:
     return best_sid
 
 
-def _pdf_proposed_bodies(reading_text: str) -> dict[tuple[str, str], str]:
+def _pdf_proposed_bodies(reading_text: str, *, aggressive: bool = False) -> dict[tuple[str, str], str]:
     """Segment the bill body into (statute-id, section label) → body text, clause-region aware.
 
     Section-body headers are searched only OUTSIDE the enacting-clause regions
@@ -1544,7 +1662,10 @@ def _pdf_proposed_bodies(reading_text: str) -> dict[tuple[str, str], str]:
     payload_mismatch. Scoping the body to its bill keeps them distinct. First-wins within a
     single ``(statute, label)`` scope (a rinnakkaistekstit dupe of the same bill's section).
     """
-    flat = _lakiehdotus_region(_flatten_reading_text(_strip_page_number_lines(reading_text)))
+    flat = _lakiehdotus_region(
+        _flatten_reading_text(_strip_page_number_lines(reading_text), aggressive=aggressive),
+        aggressive=aggressive,
+    )
     regions = _enacting_clause_regions(flat)
     if not regions:
         # WRONG-START guard. No GENUINE enacting clause (johtolause) was found, so there is no
@@ -1830,7 +1951,6 @@ def _classify_xml_empty(xml_bytes: bytes, branch: HEParsedBranch) -> tuple[str, 
 # Top-level comparison + report.                                              #
 # --------------------------------------------------------------------------- #
 
-
 @dataclass(frozen=True, slots=True)
 class HECompareResult:
     """The full outcome of one HE's XML↔PDF proposed-effect IR comparison."""
@@ -1900,11 +2020,47 @@ def compare_he(
         status, detail = _classify_xml_empty(xml_bytes, branch)
         return HECompareResult(hid, branch_id, status, (), 0, 0, detail)
 
-    # PDF witness: segment enacting clauses and lower them through the SAME parser.
+    # PDF witness. Try the NORMAL path first; only when it finds NO enacting clause at all
+    # (would-be ``pdf_no_clause``) do we RETRY with the reading-fidelity recoveries turned on
+    # (``aggressive``: slash-as-"1" cite repair, preceding-TOC-leader appendix uncut, annex/luku
+    # target). Gating the recoveries to this fallback keeps every already-detected HE's result
+    # byte-identical to the normal path (0 collateral), while rescuing an HE whose johtolause was
+    # invisible only because of a text-layer defect. Both passes lower the SAME spans through the
+    # SAME ``_parse_one_clause`` and EXACT-diff them against the trusted XML.
+    result = _compare_pdf_witness(
+        xml_bytes, reading_text, xml_flat, hid, branch_id, classify_fn, aggressive=False
+    )
+    if result.compare_status == "pdf_no_clause":
+        recovered = _compare_pdf_witness(
+            xml_bytes, reading_text, xml_flat, hid, branch_id, classify_fn, aggressive=True
+        )
+        if recovered.compare_status == "compared":
+            return recovered
+    return result
+
+
+def _compare_pdf_witness(
+    xml_bytes: bytes,
+    reading_text: str,
+    xml_flat: tuple[HEFlatOp, ...],
+    hid: str,
+    branch_id: str,
+    classify_fn: "Optional[Callable[[str], object]]",
+    *,
+    aggressive: bool,
+) -> HECompareResult:
+    """Segment the PDF witness, diff against ``xml_flat``, and run the payload stage.
+
+    ``aggressive`` is threaded through the extraction / body-segmentation so the fallback pass
+    (see :func:`compare_he`) reads with the reading-fidelity recoveries enabled; the normal pass
+    (``aggressive=False``) is byte-identical to the pre-existing behaviour.
+    """
     if classify_fn is None:
-        spans = extract_enacting_clause_spans(reading_text)
+        spans = extract_enacting_clause_spans(reading_text, aggressive=aggressive)
     else:
-        spans = extract_enacting_clause_spans_llm(reading_text, classify_fn=classify_fn)
+        spans = extract_enacting_clause_spans_llm(
+            reading_text, classify_fn=classify_fn, aggressive=aggressive
+        )
     pdf_ops: list = []
     for span in spans:
         new_ops, _findings = _parse_one_clause(span, len(pdf_ops), hid, branch_id)
@@ -1928,13 +2084,15 @@ def compare_he(
     # real bill title (genuine second bill) or a consequential-repeal formula (a real effect
     # the XML omits) → first-class witness disagreement; neither → phantom DEFECT stays
     # op_extra_in_pdf. Label-independent (never reads the XML op-set to decide a type).
-    reclass_flat = _lakiehdotus_region(_flatten_reading_text(reading_text))
+    reclass_flat = _lakiehdotus_region(
+        _flatten_reading_text(reading_text, aggressive=aggressive), aggressive=aggressive
+    )
     divergences = _reclassify_out_of_scope_second_bills(divergences, xml_flat, reclass_flat)
 
     matched_refs = {d.target_ref for d in divergences if d.kind == _BENIGN_MATCH}
     matched_ops = tuple(op for op in xml_flat if op.target_ref in matched_refs)
     xml_bodies = _xml_proposed_bodies(xml_bytes)
-    pdf_bodies = _pdf_proposed_bodies(reading_text)
+    pdf_bodies = _pdf_proposed_bodies(reading_text, aggressive=aggressive)
     payload = diff_proposed_payloads(xml_bodies, pdf_bodies, matched_ops)
 
     return HECompareResult(
