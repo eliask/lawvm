@@ -47,7 +47,6 @@ from lawvm.tools.fi_amendment_ir_compare import (
 )
 
 _FINLEX_FARCHIVE = "data/finlex.farchive"
-_DEFAULT_SIDS = "/home/elias/.claude/jobs/b8ab91c2/tmp/amend_sids.json"
 
 #: A PDF whose born-digital page FRACTION clears this is diffed with the FREE geom
 #: lane; below it we treat the PDF as scanned and route it to the vision lane.
@@ -574,7 +573,11 @@ def report_to_json(report: CorpusDiffReport) -> Dict[str, object]:
 def main(args: argparse.Namespace) -> None:
     """CLI handler for ``lawvm fi-amendment-ir-corpus``."""
     farchive = args.farchive or _FINLEX_FARCHIVE
-    sids = load_corpus_sids(args.sids or _DEFAULT_SIDS)
+    if not args.sids:
+        raise SystemExit(
+            "fi-amendment-ir-corpus: --sids PATH is required (a JSON list of YEAR/NUM sids)"
+        )
+    sids = load_corpus_sids(args.sids)
     if args.limit:
         sids = sids[: args.limit]
     out_path = args.out
