@@ -33,16 +33,20 @@ from __future__ import annotations
 #: Every jurisdiction that ships a bench comparator. Adding a comparator without
 #: adding it here (or vice versa) fails the gate — the single edit that keeps the
 #: dual registration honest.
-_EXPECTED_BENCH_JURISDICTIONS = frozenset({"fi", "us", "uk", "nz", "ee", "se"})
+_EXPECTED_BENCH_JURISDICTIONS = frozenset(
+    {"fi", "us", "uk", "nz", "ee", "se", "eu", "no"}
+)
 
 
 def _import_all_bench_modules() -> None:
     """Trigger each jurisdiction's ``register_bench_comparator`` import side effect."""
+    import lawvm.eu.eu_oracle_divergence  # noqa: F401  (eu)
     import lawvm.tools.bench  # noqa: F401  (fi)
-    import lawvm.tools.uk_bench  # noqa: F401
-    import lawvm.tools.nz_bench  # noqa: F401
     import lawvm.tools.ee_bench  # noqa: F401
+    import lawvm.tools.no_bench  # noqa: F401
+    import lawvm.tools.nz_bench  # noqa: F401
     import lawvm.tools.se_bench  # noqa: F401
+    import lawvm.tools.uk_bench  # noqa: F401
     import lawvm.us_federal.bench  # noqa: F401
 
 
