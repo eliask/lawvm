@@ -7,8 +7,8 @@
   },
   "replay_counts": {
     "exercised": 170,
-    "cold": 279,
-    "in_scope": 449
+    "cold": 280,
+    "in_scope": 450
   },
   "dead": [
     "lawvm.core.claim_assumption_binding",
@@ -441,6 +441,7 @@
     "lawvm.finland.body_pairing": true,
     "lawvm.finland.canonical_actor_registry": false,
     "lawvm.finland.canonical_budget_line_registry": false,
+    "lawvm.finland.canonical_compositor": false,
     "lawvm.finland.chapter_seed": true,
     "lawvm.finland.chapter_seed_targets": true,
     "lawvm.finland.citation_routing": true,
