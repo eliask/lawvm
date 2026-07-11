@@ -18,6 +18,8 @@ Covers:
 from __future__ import annotations
 
 from lawvm.tools.fi_he_ir_compare import (
+    _PDF_BODY_VOIMAANTULO_RE,
+    _PDF_COMMENCEMENT_HEAD_RE,
     _PDF_CONSEQUENTIAL_REPEAL,
     _PDF_OUT_OF_SCOPE_STATUTE,
     HECompareResult,
@@ -25,6 +27,7 @@ from lawvm.tools.fi_he_ir_compare import (
     _asetusluonnos_region,
     _flatten_reading_text,
     _lakiehdotus_region,
+    _looks_like_chapter_heading,
     _pdf_proposed_bodies,
     _reclassify_out_of_scope_second_bills,
     _repair_slash_as_one_cites,
@@ -340,6 +343,116 @@ def test_decree_body_sheds_asetus_commencement_clause() -> None:
     assert key in bodies
     assert "tulee voimaan" not in bodies[key]
     assert "Uusi asetuksen teksti" in bodies[key]
+
+
+# --------------------------------------------------------------------------- #
+# trailing over-capture terminators: chapter heading + deferred commencement   #
+# --------------------------------------------------------------------------- #
+
+
+def test_looks_like_chapter_heading_fires_on_headings() -> None:
+    # "N [a] luku <Title>" chapter headings (with or without a single-letter suffix) are
+    # recognized so a §-body that over-ran onto the next chapter's heading can shed it.
+    assert _looks_like_chapter_heading(
+        "3 a luku Huleveden viemäröinnin järjestäminen ja hoitaminen"
+    )
+    assert _looks_like_chapter_heading(
+        "5 a luku Sähkölaitteiden ja -laitteistojen sähkömagneettinen yhteensopivuus"
+    )
+    assert _looks_like_chapter_heading("13 luku Erinäiset säännökset")
+
+
+def test_looks_like_chapter_heading_preserves_prose_and_crossrefs() -> None:
+    # Precision-first / ASYMMETRIC: only a genuine heading matches. An INFLECTED cross-reference
+    # ("5 luvussa …") or a nominative followed by lowercase prose ("5 luku on …") is body content
+    # and is NOT a heading; a NUMBER-LESS "luku Title" (a dropped chapter number) is left alone
+    # too (deliberately unhandled — requiring the digit keeps the trim precise).
+    assert not _looks_like_chapter_heading("5 luvussa säädetään tarkemmin asiasta")
+    assert not _looks_like_chapter_heading("5 luku on tässä laissa keskeinen käsite")
+    assert not _looks_like_chapter_heading("luku Erinäiset säännökset")
+    # a "title" carrying a digit or clause punctuation is a provision list, not a heading
+    assert not _looks_like_chapter_heading("3 luku 1 §:ssä tarkoitettu")
+
+
+def test_body_sheds_next_chapter_heading_over_capture() -> None:
+    # Section 4's body runs in reading order up to the FOLLOWING "5 §" number, over-capturing the
+    # intervening "5 a luku <Title>" chapter heading (which _looks_like_section_title rejects for
+    # carrying a digit). The chapter head must be trimmed off the body's tail; the body's own
+    # final sentence (through its period) stays intact.
+    chapter_bill = (
+        "Lakiehdotukset 1. Laki testilain muuttamisesta Eduskunnan päätöksen mukaisesti "
+        f"muutetaan testilain (123/2020) 4 {_SEC} ja 5 {_SEC} seuraavasti: "
+        f"4 {_SEC} Ensimmäisen pykälän teksti joka on riittävän pitkä. "
+        "5 a luku Uuden luvun otsikko tähän "
+        f"5 {_SEC} Toisen pykälän teksti riittävän pitkä. "
+        "——— Tämä laki tulee voimaan päivänä kuuta 20 ."
+    )
+    bodies = _pdf_proposed_bodies(chapter_bill)
+    sec4 = bodies[("123/2020", "4")]
+    assert sec4 == "Ensimmäisen pykälän teksti joka on riittävän pitkä."
+    assert "luku" not in sec4
+    assert "otsikko" not in sec4
+
+
+def test_body_sheds_deferred_commencement_after_dash_divider() -> None:
+    # The DEFERRED-commencement form "Tämän lain voimaantulosta säädetään …" printed after a dash
+    # divider (as an older HE does: HE 80/2008) was mis-classified as a mid-body OMISSION and kept
+    # as retained text. It is now recognized as an END-divider commencement head and trimmed.
+    deferred_bill = (
+        "Lakiehdotukset 1. Laki testilain muuttamisesta Eduskunnan päätöksen mukaisesti "
+        f"muutetaan testilain (123/2020) 5 {_SEC} seuraavasti: "
+        f"5 {_SEC} Uusi lain teksti joka on riittävän pitkä vertailua varten. "
+        "——— Tämän lain voimaantulosta säädetään valtioneuvoston asetuksella."
+    )
+    body = _pdf_proposed_bodies(deferred_bill)[("123/2020", "5")]
+    assert body == "Uusi lain teksti joka on riittävän pitkä vertailua varten."
+    assert "voimaantulosta" not in body
+
+
+def test_deferred_commencement_head_recognized_by_divider_classifier() -> None:
+    # Lock-step check: the divider END-classifier head and the body-trim head both recognize the
+    # deferred commencement wording (…valtioneuvoston asetuksella / …erikseen lailla).
+    assert _PDF_COMMENCEMENT_HEAD_RE.match(
+        "Tämän lain voimaantulosta säädetään valtioneuvoston asetuksella."
+    )
+    assert _PDF_COMMENCEMENT_HEAD_RE.match("Tämän lain voimaantulosta säädetään erikseen lailla.")
+    assert _PDF_COMMENCEMENT_HEAD_RE.match("Tämä laki tulee voimaan 1 päivänä tammikuuta.")
+
+
+def test_standalone_deferred_commencement_body_kept_whole() -> None:
+    # NON-MASKING: a §-body that IS the commencement clause (the deferred form as its own op body)
+    # is not preceded by an in-body sentence period, so the fixed-width look-behind never fires and
+    # the body is left whole — the same protection the direct "Tämä laki tulee voimaan …" form has.
+    assert _PDF_BODY_VOIMAANTULO_RE.search(
+        "Tämän lain voimaantulosta säädetään valtioneuvoston asetuksella."
+    ) is None
+    standalone_bill = (
+        "Lakiehdotukset 1. Laki testilain muuttamisesta Eduskunnan päätöksen mukaisesti "
+        f"muutetaan testilain (123/2020) 5 {_SEC} ja 6 {_SEC} seuraavasti: "
+        f"5 {_SEC} Ensimmäinen substantiivinen pykälä joka on pitkä. "
+        f"6 {_SEC} Tämän lain voimaantulosta säädetään valtioneuvoston asetuksella."
+    )
+    bodies = _pdf_proposed_bodies(standalone_bill)
+    assert (
+        bodies[("123/2020", "6")]
+        == "Tämän lain voimaantulosta säädetään valtioneuvoston asetuksella."
+    )
+    assert bodies[("123/2020", "5")] == "Ensimmäinen substantiivinen pykälä joka on pitkä."
+
+
+def test_body_not_trimmed_when_trailing_sentence_resembles_a_heading() -> None:
+    # ADVERSARIAL non-masking: a body whose genuine final sentence merely CROSS-REFERENCES a
+    # chapter in inflected/lowercase form ("… 5 luvussa.") must stay whole — the tail after the
+    # last period is empty (nothing follows), and even the standalone phrase is not a heading.
+    prose_bill = (
+        "Lakiehdotukset 1. Laki testilain muuttamisesta Eduskunnan päätöksen mukaisesti "
+        f"muutetaan testilain (123/2020) 4 {_SEC} ja 5 {_SEC} seuraavasti: "
+        f"4 {_SEC} Tästä asiasta säädetään tarkemmin 5 luvussa. "
+        f"5 {_SEC} Toisen pykälän teksti riittävän pitkä. "
+        "——— Tämä laki tulee voimaan päivänä kuuta 20 ."
+    )
+    sec4 = _pdf_proposed_bodies(prose_bill)[("123/2020", "4")]
+    assert sec4 == "Tästä asiasta säädetään tarkemmin 5 luvussa."
 
 
 def test_extract_keeps_bare_liite_reference_in_bill() -> None:

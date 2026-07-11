@@ -1644,8 +1644,18 @@ _WS_RUN_RE = re.compile(r"\s+")
 #: clause, only page furniture, or nothing.  Flat/bounded quantifiers (FW-07).
 _PDF_DIVIDER_LEAD_RE = re.compile(r"^[—–\-\s]+")
 _PDF_DIVIDER_PAGENUM_RE = re.compile(r"^\d{1,3}(?:\s|$)")
+#: The commencement-clause head that, when it FOLLOWS a divider run, marks the run an END
+#: divider (see :func:`_pdf_divider_is_omission`). Kept in lock-step with the two heads of
+#: :data:`_PDF_BODY_VOIMAANTULO_RE` (the direct "Tämä laki tulee voimaan …" and the deferred
+#: "Tämän lain voimaantulosta säädetään …" forms) — an older HE prints the deferred form after
+#: a dash divider ("… 9 §:ssä. — — — ——— Tämän lain voimaantulosta säädetään valtioneuvoston
+#: asetuksella."), which the direct-form-only head mis-read as retained prose (an OMISSION
+#: divider), so the commencement clause was kept as body text (HE 80/2008). Anchorless (used with
+#: ``.match`` on the post-divider remainder). Flat/bounded quantifiers (FW-07).
 _PDF_COMMENCEMENT_HEAD_RE = re.compile(
-    r"Tämä\s+(?:laki|asetus)\s+tulee\s+voimaan", re.IGNORECASE
+    r"(?:Tämä\s+(?:laki|asetus)\s+tulee\s+voimaan"
+    r"|Tämän\s+(?:lain|asetuksen)\s+voimaantulosta\s+säädetään)",
+    re.IGNORECASE,
 )
 _PDF_KOHTA_MARKER_RE = re.compile(r"\d{1,2}\s{0,2}\)")
 
@@ -1672,18 +1682,27 @@ def _pdf_divider_is_omission(after: str) -> bool:
         return True  # a retained "N)" kohta -> OMISSION divider
     return s[0].isalpha()  # a retained prose sentence -> OMISSION divider
 
-#: The commencement clause "Tämä laki tulee voimaan …" appended after a bill's last
-#: substantive provision (the XML keeps it as a SEPARATE unnumbered section, so the PDF's last
-#: numbered §-body over-captures it → a spurious payload_mismatch).  It is trimmed ONLY when
-#: it follows a sentence-ending period (the substantive provision's own final "."), via the
-#: fixed-width look-behind: a genuine voimaantulo §-body (XML §5 = "Tämä laki tulee voimaan
-#: …") is NOT preceded by an in-body period and is left whole, so this never truncates a real
-#: commencement provision.  The DECREE form ("Tämä asetus tulee voimaan …") is accepted too, so
-#: a recovered draft-decree §-body (see :func:`_asetusluonnos_region`) sheds its commencement
-#: tail exactly as a law body does; the alternative only reaches decree bodies (a law body never
-#: contains "Tämä asetus tulee voimaan").  Flat/bounded quantifiers (FW-07).
+#: The commencement clause appended after a bill's last substantive provision (the XML keeps it
+#: as a SEPARATE unnumbered section, so the PDF's last numbered §-body over-captures it → a
+#: spurious payload_mismatch).  TWO boilerplate heads are recognized, both trimmed ONLY when they
+#: follow a sentence-ending period (the substantive provision's own final "."), via the fixed-
+#: width look-behind — a genuine voimaantulo §-body (a §-body that IS the commencement clause) is
+#: NOT preceded by an in-body period and is left whole, so this never truncates a real
+#: commencement provision:
+#:   (a) the direct form "Tämä laki tulee voimaan …" (and the DECREE form "Tämä asetus tulee
+#:       voimaan …", so a recovered draft-decree §-body — see :func:`_asetusluonnos_region` —
+#:       sheds its tail exactly as a law body does; a law body never contains "Tämä asetus …");
+#:   (b) the DEFERRED-commencement form "Tämän lain voimaantulosta säädetään …" (…valtioneuvoston
+#:       asetuksella / …erikseen lailla), which older/framework HEs use INSTEAD of a dated
+#:       "tulee voimaan" line — the period guard slipped it (HE 80/2008, 88/2008, 19/2014), and
+#:       the decree variant "Tämän asetuksen voimaantulosta säädetään …" is accepted symmetrically.
+#: Both heads are commencement BOILERPLATE (never substantive body prose), so trimming from the
+#: head onward removes the whole over-captured commencement section.  Flat/bounded quantifiers
+#: (FW-07): fixed-width look-behind, an alternation of two fixed-token heads.
 _PDF_BODY_VOIMAANTULO_RE = re.compile(
-    r"(?<=\.)\s{0,3}Tämä\s+(?:laki|asetus)\s+tulee\s+voimaan", re.IGNORECASE
+    r"(?<=\.)\s{0,3}(?:Tämä\s+(?:laki|asetus)\s+tulee\s+voimaan"
+    r"|Tämän\s+(?:lain|asetuksen)\s+voimaantulosta\s+säädetään)",
+    re.IGNORECASE,
 )
 
 #: A lone page number the text layer appends at the very END of a body ("…tulosta. 40"). It is
@@ -1729,6 +1748,54 @@ def _looks_like_section_title(tail: str) -> bool:
         if ch in ".:;§" or ch.isdigit():
             return False
     return len(tail.split()) <= _SECTION_TITLE_MAX_WORDS
+
+
+#: A chapter (luku) heading over-capture. In reading order a "N [a] luku <Title>" chapter head
+#: sits between the previous chapter's last §-body and the new chapter's first "N §" section, so
+#: a body that ran up to that next "N §" header swallows the intervening chapter heading (HE
+#: 118/2007 "…vaatimukset. 5 a luku Sähkölaitteiden … yhteensopivuus"; HE 218/2013 "…tilanteisiin.
+#: 3 a luku Huleveden … hoitaminen"; HE 210/2020 "…soveltaen. 5 a luku Jäsenvaltioiden …"). Unlike
+#: a §-title, a chapter head CARRIES A DIGIT (its chapter number), so :func:`_looks_like_section_
+#: title` rejects it — hence a dedicated recognizer. The XML §-body never carries the next
+#: chapter's heading, so it is a spurious payload_mismatch.
+_CHAPTER_HEADING_MAX_CHARS = 80
+_CHAPTER_HEADING_MAX_TITLE_WORDS = 10
+
+
+def _looks_like_chapter_heading(tail: str) -> bool:
+    """True iff ``tail`` is a "N [a] luku <Title>" chapter heading (precision-first).
+
+    Shape: a 1–3 digit chapter number, an OPTIONAL single lowercase letter suffix ("3 a"), the
+    bare nominative keyword "luku", then a short Capitalized, DIGIT-FREE, punctuation-free title
+    ("Huleveden viemäröinnin järjestäminen ja hoitaminen"). Pure bounded ``str`` scan (no regex),
+    the same discipline as :func:`_looks_like_section_title`. This is asymmetric / precision-first:
+    only a heading matches — a genuine trailing cross-reference uses an INFLECTED, lowercase form
+    ("… säädetään 5 luvussa.") and is left whole, so real body prose is never cut. The nominative
+    "luku" + immediately-following Capitalized title is the heading signature. A tail failing ANY
+    test is NOT trimmed (an under-trim leaves a typed divergence, never a content cut).
+    """
+    if not tail or len(tail) > _CHAPTER_HEADING_MAX_CHARS:
+        return False
+    parts = tail.split()
+    if len(parts) < 3:  # need <number> "luku" <title-word …>
+        return False
+    if not parts[0].isdigit() or len(parts[0]) > 3:
+        return False
+    idx = 1
+    if len(parts[idx]) == 1 and parts[idx].isalpha() and parts[idx].islower():
+        idx += 1  # optional single-letter chapter suffix ("3 a luku")
+    if idx >= len(parts) or parts[idx] != "luku":
+        return False
+    title = parts[idx + 1 :]
+    if not title or not title[0][:1].isupper():
+        return False
+    if len(title) > _CHAPTER_HEADING_MAX_TITLE_WORDS:
+        return False
+    for word in title:  # a genuine chapter title carries no digit / clause punctuation
+        for ch in word:
+            if ch in ".:;§" or ch.isdigit():
+                return False
+    return True
 
 
 #: Payload-body containers whose <section> children are proposed statute text.
@@ -2013,20 +2080,22 @@ def _pdf_proposed_bodies(reading_text: str, *, aggressive: bool = False) -> dict
             if elided and _PDF_PAGE_BREAK_SENTINEL in body:
                 continue
             body = _WS_RUN_RE.sub(" ", body.replace(_PDF_PAGE_BREAK_SENTINEL, " ")).strip()
-            # Next-section TITLE over-capture: a section otsikko sits in reading order just BEFORE
-            # the following "N §" number (see _looks_like_section_title), so a body that ran all
-            # the way up to that next header (no furniture / voimaantulo / END divider fired first,
-            # i.e. end is still the next-header boundary raw_end) swallowed the next section's
-            # title heading. Trim it off the body's tail — the last sentence-ending period splits
-            # the body's own final sentence from the trailing title, so keep everything through
-            # that period and drop only a short Capitalized title after it. Precision-first: a
-            # genuine trailing SENTENCE ends in a period, so nothing follows the last period to
-            # trim — this never truncates real body prose; ``p > 0`` keeps the body non-empty.
+            # Next-heading over-capture: a section otsikko (or a "N [a] luku <Title>" chapter
+            # heading) sits in reading order just BEFORE the following "N §" number (see
+            # _looks_like_section_title / _looks_like_chapter_heading), so a body that ran all the
+            # way up to that next header (no furniture / voimaantulo / END divider fired first, i.e.
+            # end is still the next-header boundary raw_end) swallowed the next section's title or
+            # the intervening chapter heading. Trim it off the body's tail — the last sentence-
+            # ending period splits the body's own final sentence from the trailing heading, so keep
+            # everything through that period and drop only a short Capitalized title / chapter head
+            # after it. Precision-first: a genuine trailing SENTENCE ends in a period, so nothing
+            # follows the last period to trim — this never truncates real body prose; ``p > 0``
+            # keeps the body non-empty.
             if i + 1 < len(headers) and end == raw_end:
                 p = body.rfind(".")
                 if p > 0:
                     tail = body[p + 1 :].strip().strip('"“”')
-                    if _looks_like_section_title(tail):
+                    if _looks_like_section_title(tail) or _looks_like_chapter_heading(tail):
                         body = body[: p + 1]
             body = _PDF_BODY_TRAILING_PAGENUM_RE.sub("", body)
             out[key] = body
