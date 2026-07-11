@@ -740,6 +740,13 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # (parse_defacsimile_and_cache) — Level-1 simulacra persisted, Level-2
         # verified ledger persisted, canonical IR produced, idempotent cache hit.
         "test_ingest_defacsimile_parse_lane.py",
+        # Deterministic born-digital geom lane (ingest.born_digital): span-copy
+        # segmentation + coverage gate + struct_geom fast-path on synthetic
+        # PageElements (hermetic, no PDF lib / model). Ingest-carrier family.
+        "test_ingest_born_digital.py",
+        # Durable model-I/O side-channel log (env-gated append-only JSONL; images
+        # stored as sha256/len metadata, never the blob). Ingest-carrier family.
+        "test_ingest_model_io_log.py",
         # D1 coverage metric + owned-content quality detectors.
         "test_source_document_coverage.py",
         # Producer-neutral adjudication layer: assurance_for + Adjudicator.
@@ -1002,6 +1009,10 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # ``test_core_firewall_no_fi_fiscal_doctrine.py`` precedent (W7 M13 arch
         # review MEDIUM-2 lift of 13 ``lawvm.finland.X.Y`` paths out of core).
         "test_core_firewall_no_finland_module_paths.py",
+        # AST-scan §2.3 firewall test — the FI ``he_draft`` document-role idiom
+        # (source_role="he_draft") must never leak into ``lawvm.core`` as a
+        # machine identifier. Mirrors the sibling firewall no-leak tests above.
+        "test_core_firewall_no_he_draft_source_role.py",
         "test_comparison_normalization.py",
         "test_composite_interaction_reference_model.py",
         "test_fi_abstraction_modules.py",
@@ -1229,6 +1240,35 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # the ranked residual-defect-class report (fake processor, hermetic — the
         # full GPU run is operator-invoked, not CI).
         "test_fi_sweep.py",
+        # PDF→IR amendment EXACTNESS eval harness (fi-amendment-ir-compare):
+        # op IR-equivalence (PDF→ops vs XML→ops) + the payload BODY-text diff,
+        # and the corpus aggregation/JSONL driver. Hermetic siblings of the
+        # fi-parse-compare / fi-parse-corpus A/B harnesses above.
+        "test_fi_amendment_ir_compare.py",
+        "test_fi_amendment_ir_corpus.py",
+        "test_fi_amendment_ir_payload.py",
+        # HE proposed-effect IR EXACTNESS eval harness (fi-he-ir-compare, phase 2):
+        # the scripted-witness op-equivalence diff + the corpus driver.
+        "test_fi_he_ir_compare.py",
+        "test_fi_he_ir_corpus.py",
+        # HE-IR-compare supporting lanes (LLM transport INJECTED, hermetic): the
+        # johtolause span-tagger + its determinism-firewall cache, the payload-
+        # divergence adjudicator, and the payload-verdict content-addressed store.
+        "test_fi_he_johtolause_tagger.py",
+        "test_fi_he_payload_adjudicator.py",
+        "test_fi_he_payload_verdict_store.py",
+        # Legally-inert encoding quotient (finland.op_equivalence) the payload
+        # compare folds over: inert invisible/whitespace collapse, visible-glyph
+        # differences fall through as typed residuals.
+        "test_fi_op_equivalence.py",
+        # Phase-3 appendix-structure prototype (fi-appendix-structure): pure
+        # numeric-completeness / cross-witness metrics + Docling-node → table-IR
+        # lowering on plain data (hermetic; the docling/pdfium seam is not driven).
+        "test_fi_appendix_structure.py",
+        # Level-1 producer usefulness A/B (fi-producer-compare): reused NUMERIC /
+        # WER / word-coverage scorers + per-page union combo, typed-failure
+        # discipline, token attribution (scripted fake producers, hermetic).
+        "test_fi_producer_compare.py",
     ),
     "tools_audit_restructure": (
         "test_fi_restructure_plan.py",
@@ -1501,6 +1541,17 @@ TOOL_SOURCE_SHARD_GROUPS: dict[tuple[str, ...], tuple[str, ...]] = {
         "src/lawvm/tools/fi_parse_corpus.py",
         "src/lawvm/tools/fi_calibration.py",
         "src/lawvm/tools/fi_sweep.py",
+        # PDF→IR EXACTNESS eval harnesses (siblings of fi_parse_compare/corpus):
+        # amendment-IR + HE proposed-effect IR compare/corpus drivers, the HE
+        # payload-divergence adjudicator, the phase-3 appendix-structure tool, and
+        # the Level-1 producer-usefulness A/B.
+        "src/lawvm/tools/fi_amendment_ir_compare.py",
+        "src/lawvm/tools/fi_amendment_ir_corpus.py",
+        "src/lawvm/tools/fi_he_ir_compare.py",
+        "src/lawvm/tools/fi_he_ir_corpus.py",
+        "src/lawvm/tools/fi_he_payload_adjudicate.py",
+        "src/lawvm/tools/fi_appendix_structure.py",
+        "src/lawvm/tools/fi_producer_compare.py",
         "src/lawvm/tools/export_fi_he_branch_ops.py",
         "src/lawvm/tools/export_fi_he_corpus.py",
         "src/lawvm/tools/export_fi_inline_citations.py",
