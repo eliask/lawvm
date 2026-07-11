@@ -1201,6 +1201,11 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_ctsf_gate_se.py",
         "test_ctsf_gate_no.py",
         "test_ctsf_gate_us.py",
+        # CTSF mis-typing canary: a secondary audit re-derives billability from each
+        # residual's raw rule_id (independent of the classifier's family verdict) and
+        # surfaces any billable-rule residual typed into a non-failing family — proving a
+        # mis-typed replay-bug can't ride an 11-family non-failing space to a green gate.
+        "test_ctsf_gate_family_typing_canary.py",
     ),
     "tools_runtime_io": (
         "test_corpus_store_path_validation.py",
