@@ -633,13 +633,28 @@ def _resolve_span_end(flat: str, cite_end: int, term: "re.Match[str]") -> int:
     really a SAME-BILL continuation verb ("kumotaan (id) N §, muutetaan ... seuraavasti:")
     whose provenance clause merely happens to carry a parenthesized citation — so the full
     span to "seuraavasti:" is kept, and the combined bill's ops are preserved.
+
+    A geom text-layer can GARBLE the next bill's amendment-verb head ("muutetaan" → the split
+    "m uutetacm" seen in HE 114/1998), hiding the boundary from :func:`_next_bill_head_pos` so a
+    consequential repeal in a voimaantulo clause ("Tällä lailla kumotaan (264/1961) 17 luvun 10
+    §.") grabbed the NEXT bill's "seuraavasti:" and swept that bill's whole provision list onto
+    the repealed statute (4 phantom ops on 264/1961 mis-cloned from the 547/1994 bill). The
+    enactment FORMULA (:data:`_ENACTMENT_FORMULA`) that introduces EVERY johtolause is a second,
+    garble-independent boundary signal (it survives when the verb does not, and it can never sit
+    between this citation and its OWN terminator — it precedes the head verb), so we take the
+    EARLIER of the verb-head boundary and the formula boundary.
     """
     nxt = _next_bill_head_pos(flat, cite_end, term.start())
-    if nxt < 0:
+    # ``str.find`` (not a regex) locates the enactment formula that opens the next bill's
+    # johtolause — a boundary the verb-head detector misses when geom garbles the verb.
+    formula = flat.find(_ENACTMENT_FORMULA, cite_end, term.start())
+    candidates = [p for p in (nxt, formula) if p >= 0]
+    if not candidates:
         return term.end()
+    boundary = min(candidates)
     # A plain ``str.find`` (not a regex) locates the sentence-ending period between this
-    # citation and the candidate later head — keeping the raw-``re.compile`` census flat.
-    period = flat.find(".", cite_end, nxt)
+    # citation and the boundary — keeping the raw-``re.compile`` census flat.
+    period = flat.find(".", cite_end, boundary)
     return period + 1 if period >= 0 else term.end()
 
 
@@ -889,29 +904,81 @@ def diff_proposed_ops(
 
 
 # --------------------------------------------------------------------------- #
-# Out-of-scope second-bill reclassification (metric integrity, NOT a defect).  #
+# Out-of-scope witness-disagreement reclassification (metric integrity).       #
 # --------------------------------------------------------------------------- #
 #
 # An omnibus HE amends MANY statutes (often incl. decrees/asetukset the law-level
-# trusted XML models only a SUBSET of). When the PDF reads a coherent block of proposed
-# ops on a statute the XML op-set never names, the two witnesses GENUINELY DISAGREE — the
-# PDF out-read a narrow oracle — and the reader is NOT defective. Charging that to the PDF
-# as ``op_extra_in_pdf`` is metric HOLLOWNESS (the phase-1 lesson: never penalize the
-# reader for being MORE complete than the oracle). We reclassify the unmistakable
-# genuine-second-bill signature — a CONTIGUOUS block of ``_MIN_SECOND_BILL_BLOCK``+
-# ``op_extra`` ops on ONE statute-id that is ABSENT from the XML op-set — into its own
-# first-class witness-disagreement kind, so it leaves the ``op_extra_in_pdf`` defect
-# bucket. The gate stays CONSERVATIVE: 1–2-op absent-statute cases are phantom-SUSPECT and
-# STAY ``op_extra_in_pdf``; same-statute granularity (statute-id present in the XML op-set,
-# a finer PDF section/moment op) is not a second bill and STAYS ``op_extra_in_pdf``.
+# trusted XML models only a SUBSET of). When the PDF reads proposed ops on a statute the
+# XML op-set never names, the outcome is one of THREE things, and honest typing must tell
+# them apart — a benign catch-all that force-labels all three "witness disagreement" hides
+# a target-misresolution DEFECT (the phase-1 lesson, in reverse):
+#
+#   (a) a GENUINE SECOND BILL — a real bill TITLE ("Laki <act>:n muuttamisesta") governs
+#       the block; the PDF out-read a narrow oracle and is MORE complete. First-class
+#       witness disagreement → ``pdf_out_of_scope_statute``.
+#   (b) a GENUINE CONSEQUENTIAL REPEAL — a commencement clause of ANOTHER bill repeals a
+#       provision of an outside act ("Tällä lailla kumotaan … vesilain (264/1961) 17 luvun
+#       10 §."); a real proposed effect the law-level XML omits, but NOT a second bill (no
+#       title). First-class witness disagreement → ``pdf_consequential_repeal``.
+#   (c) a PDF DEFECT — target MIS-ATTRIBUTION: the block has NEITHER a governing bill title
+#       NOR a consequential-repeal head; it is phantom (a sibling bill's provisions cloned
+#       onto the wrong statute by a span-boundary slip). Stays ``op_extra_in_pdf`` (defect).
+#
+# The gate is LABEL-INDEPENDENT and PDF-STRUCTURAL: it never reads the XML op-set to decide
+# a type — only whether a title / consequential-repeal formula governs the citation in the
+# lakiehdotus reading text. Statute-id present in the XML op-set (same-statute granularity)
+# is not out-of-scope at all and STAYS ``op_extra_in_pdf``. The prior heuristic — "a
+# CONTIGUOUS ≥3-op block on an XML-absent statute is a second bill" — was UNSOUND: a
+# span-boundary slip (a consequential repeal grabbing a sibling bill's provision list, HE
+# 114/1998) manufactures exactly such a "coherent block", and the size proxy force-benigned
+# the phantom. Block size is no longer a criterion; the GOVERNING HEAD is.
 
 #: A first-class witness-disagreement outcome (NOT a PDF defect): the PDF captured a whole
-#: amendment block on a statute the trusted XML op-set omits (omnibus-HE second bill).
+#: amendment block on a statute the trusted XML op-set omits, governed by a real bill TITLE
+#: (omnibus-HE second bill).
 _PDF_OUT_OF_SCOPE_STATUTE = "pdf_out_of_scope_statute"
 
-#: Minimum contiguous ``op_extra`` block on one XML-absent statute to convict it a genuine
-#: second bill (pdf-more-complete). Below this it stays phantom-SUSPECT ``op_extra_in_pdf``.
-_MIN_SECOND_BILL_BLOCK = 3
+#: A first-class witness-disagreement outcome (NOT a PDF defect): the PDF captured a
+#: CONSEQUENTIAL REPEAL of an outside act's provision, embedded in another bill's
+#: commencement/voimaantulo clause ("Tällä lailla kumotaan … (N/YEAR) … §."), which the
+#: law-level XML op-set omits. A real proposed effect — PDF more complete — but NOT a
+#: titled second bill, so it is typed distinctly rather than folded into either bucket.
+_PDF_CONSEQUENTIAL_REPEAL = "pdf_consequential_repeal"
+
+#: A bill-TITLE head word ("Laki …" / "Laiksi …" / "Laeiksi …"): the case-sensitive
+#: NOMINATIVE heading word that opens every numbered bill. Kept as spaced string literals
+#: (not a regex) — the same flat-census discipline as :data:`_ENACTMENT_FORMULA` /
+#: :data:`_LAKIEHDOTUS_HEADING` (FW-07: no new semantic-plane raw ``re.compile``). Capital
+#: "L" is load-bearing: a mid-sentence inflected "…tätä lakia…" or a compound "…rikoslaki…"
+#: uses a lowercase "l", so it is not a bill title.
+_BILL_TITLE_HEADS = (" Laki ", " Laiksi ", " Laeiksi ")
+
+#: An amend-bill title's TAIL ("Laki <act>:n muuttamisesta" / "… kumoamisesta"). Matched by
+#: ``str.find`` (no regex); the title HEAD word must sit within :data:`_TITLE_HEAD_REACH`
+#: chars before it. This is the GENUINE-second-bill signature the benign
+#: :data:`_PDF_OUT_OF_SCOPE_STATUTE` gate requires — a coherent op block alone (or a
+#: consequential repeal) does NOT qualify.
+_BILL_TITLE_TAILS = ("muuttamisesta", "kumoamisesta", "muutoksesta")
+
+#: Max chars from a bill-title HEAD word to its amend TAIL (the amended act's name spans the
+#: gap; budgeted wide for long EU-implementation act names).
+_TITLE_HEAD_REACH = 240
+
+#: Max distance from a bill TITLE's amend tail to the "(N/YEAR)" citation of the act it
+#: amends (the title is followed by the enactment formula + verb head + long act name +
+#: cite). Mirrors :data:`_HEAD_TO_CITE`'s budget with margin for the intervening formula.
+_TITLE_TO_CITE = 500
+
+#: The consequential-repeal formula that opens a commencement clause's repeal ("Tällä lailla
+#: kumotaan …", lowercased for a case-insensitive ``str.find`` — the same discipline as
+#: :data:`_ENACTMENT_FORMULA`). "By this act is repealed", categorically distinct from a
+#: johtolause repeal head ("kumotaan <act> (N/YEAR) … seuraavasti:").
+_CONSEQUENTIAL_REPEAL_MARK = "lailla kumotaan"
+
+#: How far BEFORE an outside-act "(N/YEAR)" citation the consequential-repeal formula may sit
+#: ("Tällä lailla kumotaan 19 päivänä toukokuuta 1961 annetun vesilain (264/1961) …" ≈ 60
+#: chars). Bounded so an unrelated earlier repeal formula is not swept in.
+_CONSEQUENTIAL_REPEAL_REACH = 160
 
 
 def _statute_id_of(target_ref: str) -> str:
@@ -926,23 +993,92 @@ def _statute_id_of(target_ref: str) -> str:
     return f"{parts[0]}/{parts[1]}"
 
 
+def _titled_bill_statute_ids(flat: str) -> set[str]:
+    """Statute ids GOVERNED BY A REAL BILL TITLE in the lakiehdotus reading text.
+
+    A genuine second bill is introduced by a nominative bill TITLE — a heading word
+    (:data:`_BILL_TITLE_HEADS`) + the amended act's name + an amend TAIL
+    (:data:`_BILL_TITLE_TAILS`), e.g. "Laki … annetun lain muuttamisesta". The amended act's
+    ``(N/YEAR)`` citation sits in the johtolause that FOLLOWS the title (past the enactment
+    formula + verb head); we map each title tail to the FIRST citation within
+    :data:`_TITLE_TO_CITE` chars after it — that bill's own act — and return the resolved
+    statute-id set. A citation that is NOT the first one after a title (a consequential repeal
+    buried in a voimaantulo clause, a body cross-reference) never enters this set, so it
+    cannot be force-benigned as a second bill. All matching is ``str.find`` on the flat
+    reading text (no semantic-plane regex); purely PDF-structural, never reads the XML op-set.
+    """
+    ids: set[str] = set()
+    # Pad so a title head word flush at offset 0 still carries its leading-space form.
+    padded = " " + flat
+    for tail in _BILL_TITLE_TAILS:
+        pos = padded.find(tail)
+        while pos >= 0:
+            window = padded[max(0, pos - _TITLE_HEAD_REACH):pos]
+            # Nearest title HEAD word before the tail, and — the discriminator against
+            # perustelut prose (a stray "Laki …" and a later "…muuttamisesta" in separate
+            # sentences) — NO sentence/clause break ('.'/':' ) between the head and the tail.
+            hi = max(window.rfind(h) for h in _BILL_TITLE_HEADS)
+            if hi >= 0 and "." not in window[hi:] and ":" not in window[hi:]:
+                real = pos - 1  # un-pad back to a ``flat`` offset for the cite search
+                # lawvm-regex: witness_only PDF-witness cite anchor after a bill title; never reads XML.
+                cite = _CITE_RE.search(flat, real, min(len(flat), real + _TITLE_TO_CITE))
+                if cite is not None:
+                    ids.add(_statute_id_of_cite(cite.group()))
+            pos = padded.find(tail, pos + 1)
+    ids.discard("")
+    return ids
+
+
+def _statute_has_consequential_repeal(flat: str, sid: str) -> bool:
+    """True iff ``flat`` repeals a provision of statute ``sid`` via a COMMENCEMENT clause.
+
+    The signature is the consequential-repeal formula (:data:`_CONSEQUENTIAL_REPEAL_MARK`,
+    "Tällä lailla kumotaan …") sitting within :data:`_CONSEQUENTIAL_REPEAL_REACH` chars
+    BEFORE a ``(sid)`` citation — the "by this act is repealed <outside act> (N/YEAR) N §."
+    pattern an omnibus HE uses to retire a provision of an act it does not otherwise amend.
+    This is categorically distinct from a johtolause repeal head ("kumotaan <act> (N/YEAR) …
+    seuraavasti:") — the formula names no ``seuraavasti:`` and sits in a voimaantulo clause.
+    All matching is ``str.find`` (no regex); purely PDF-structural, never reads the XML.
+    """
+    needle = f"({sid})"
+    low = flat.lower()
+    pos = flat.find(needle)
+    while pos >= 0:
+        lo = max(0, pos - _CONSEQUENTIAL_REPEAL_REACH)
+        if _CONSEQUENTIAL_REPEAL_MARK in low[lo:pos]:
+            return True
+        pos = flat.find(needle, pos + 1)
+    return False
+
+
 def _reclassify_out_of_scope_second_bills(
-    divergences: tuple[OpDivergence, ...], xml_ops: tuple[HEFlatOp, ...]
+    divergences: tuple[OpDivergence, ...], xml_ops: tuple[HEFlatOp, ...], flat: str
 ) -> tuple[OpDivergence, ...]:
-    """Retype genuine-second-bill ``op_extra`` blocks to ``pdf_out_of_scope_statute``.
+    """Retype XML-absent ``op_extra`` blocks by their GOVERNING HEAD (metric integrity).
 
     Scans the divergence stream (``op_extra`` divergences are emitted contiguously, in PDF
     reading order, at the tail of :func:`diff_proposed_ops`). A maximal CONTIGUOUS run of
     ``op_extra_in_pdf`` divergences sharing ONE statute-id that is ABSENT from the XML op-set
-    and of length ``≥ _MIN_SECOND_BILL_BLOCK`` is the genuine-second-bill signature: it is
-    retyped to :data:`_PDF_OUT_OF_SCOPE_STATUTE` (first-class witness disagreement, PDF more
-    complete). Everything else — 1–2-op absent-statute blocks, and any op on a statute-id the
-    XML op-set DOES name (same-statute granularity) — is left as ``op_extra_in_pdf``. Only the
-    ``kind``/``detail`` of the reclassified rows change; ``matched`` / ``op_missing_in_pdf`` /
-    ``kind_mismatch`` / ``payload_mismatch`` rows are untouched (pure reclassification).
+    is classified LABEL-INDEPENDENTLY by what governs that statute in ``flat`` (the
+    lakiehdotus reading text):
+
+    * a real bill TITLE (:func:`_titled_bill_statute_ids`) → :data:`_PDF_OUT_OF_SCOPE_STATUTE`
+      (genuine second bill, PDF more complete);
+    * a consequential-repeal formula (:func:`_statute_has_consequential_repeal`) →
+      :data:`_PDF_CONSEQUENTIAL_REPEAL` (a real effect the XML omits, but not a second bill);
+    * NEITHER → left as ``op_extra_in_pdf`` (a phantom target-misresolution DEFECT — a block
+      that "looks coherent" but has no governing head, e.g. a sibling bill's provisions
+      cloned onto the wrong statute).
+
+    Block SIZE is deliberately NOT a criterion (the prior ``≥3`` proxy force-benigned exactly
+    the phantom block a span-boundary slip manufactures). Any op on a statute-id the XML
+    op-set DOES name (same-statute granularity) is not out-of-scope and STAYS
+    ``op_extra_in_pdf``. Only the ``kind``/``detail`` of reclassified rows change; ``matched``
+    / ``op_missing_in_pdf`` / ``kind_mismatch`` / ``payload_mismatch`` rows are untouched.
     """
     xml_statute_ids = {_statute_id_of(op.target_ref) for op in xml_ops}
     xml_statute_ids.discard("")
+    titled_ids = _titled_bill_statute_ids(flat)
     out = list(divergences)
     n = len(out)
     i = 0
@@ -961,15 +1097,28 @@ def _reclassify_out_of_scope_second_bills(
         ):
             j += 1
         block = j - i
-        if block >= _MIN_SECOND_BILL_BLOCK:
+        kind: Optional[str] = None
+        detail = ""
+        if sid in titled_ids:
+            kind = _PDF_OUT_OF_SCOPE_STATUTE
             detail = (
-                f"PDF captured a coherent {block}-op amendment block on statute {sid}, which "
-                "is ABSENT from the trusted XML op-set — the genuine second-bill signature of "
-                "an omnibus HE whose XML models only a subset of amended statutes; first-class "
-                "witness disagreement (PDF more complete), NOT a PDF op_extra defect"
+                f"PDF captured a {block}-op amendment block on statute {sid}, GOVERNED BY A "
+                "REAL BILL TITLE (Laki … muuttamisesta) yet ABSENT from the trusted XML op-set "
+                "— the genuine second-bill signature of an omnibus HE whose XML models only a "
+                "subset of amended statutes; first-class witness disagreement (PDF more "
+                "complete), NOT a PDF op_extra defect"
             )
+        elif _statute_has_consequential_repeal(flat, sid):
+            kind = _PDF_CONSEQUENTIAL_REPEAL
+            detail = (
+                f"PDF captured a {block}-op consequential repeal on statute {sid} via a "
+                "commencement clause (Tällä lailla kumotaan … (N/YEAR) … §.) of another bill "
+                "— a real proposed effect the law-level XML op-set omits; first-class witness "
+                "disagreement (PDF more complete), NOT a titled second bill and NOT a defect"
+            )
+        if kind is not None:
             for k in range(i, j):
-                out[k] = replace(out[k], kind=_PDF_OUT_OF_SCOPE_STATUTE, detail=detail)
+                out[k] = replace(out[k], kind=kind, detail=detail)
         i = j
     return tuple(out)
 
@@ -1701,9 +1850,12 @@ def compare_he(
         )
 
     divergences = diff_proposed_ops(xml_flat, pdf_flat)
-    # Retype genuine-second-bill op_extra blocks (PDF out-read the narrow XML op-set) out of
-    # the op_extra_in_pdf DEFECT bucket into first-class witness disagreement (metric integrity).
-    divergences = _reclassify_out_of_scope_second_bills(divergences, xml_flat)
+    # Retype XML-absent op_extra blocks by their GOVERNING HEAD in the PDF reading text — a
+    # real bill title (genuine second bill) or a consequential-repeal formula (a real effect
+    # the XML omits) → first-class witness disagreement; neither → phantom DEFECT stays
+    # op_extra_in_pdf. Label-independent (never reads the XML op-set to decide a type).
+    reclass_flat = _lakiehdotus_region(_flatten_reading_text(reading_text))
+    divergences = _reclassify_out_of_scope_second_bills(divergences, xml_flat, reclass_flat)
 
     matched_refs = {d.target_ref for d in divergences if d.kind == _BENIGN_MATCH}
     matched_ops = tuple(op for op in xml_flat if op.target_ref in matched_refs)
@@ -1925,6 +2077,7 @@ _KIND_GLYPH = {
     "kind_mismatch": "~",
     "payload_mismatch": "≠",
     _PDF_OUT_OF_SCOPE_STATUTE: "≈",
+    _PDF_CONSEQUENTIAL_REPEAL: "≈",
 }
 
 
@@ -1944,7 +2097,8 @@ def _print_result(result: HECompareResult) -> None:
         f"matched={c['matched']}  op_missing_in_pdf={c['op_missing_in_pdf']}  "
         f"op_extra_in_pdf={c['op_extra_in_pdf']}  kind_mismatch={c['kind_mismatch']}  "
         f"payload_mismatch={c['payload_mismatch']}  "
-        f"pdf_out_of_scope_statute={c.get(_PDF_OUT_OF_SCOPE_STATUTE, 0)}"
+        f"pdf_out_of_scope_statute={c.get(_PDF_OUT_OF_SCOPE_STATUTE, 0)}  "
+        f"pdf_consequential_repeal={c.get(_PDF_CONSEQUENTIAL_REPEAL, 0)}"
     )
     print(
         f"  payload stage: compared={result.payload_compared}  "
@@ -1961,6 +2115,8 @@ def _print_result(result: HECompareResult) -> None:
             print(f"  {g} {d.target_ref:<28} PDF:{d.pdf_op}  (not in XML)")
         elif d.kind == _PDF_OUT_OF_SCOPE_STATUTE:
             print(f"  {g} {d.target_ref:<28} PDF:{d.pdf_op}  (out-of-scope 2nd bill; witness disagreement)")
+        elif d.kind == _PDF_CONSEQUENTIAL_REPEAL:
+            print(f"  {g} {d.target_ref:<28} PDF:{d.pdf_op}  (consequential repeal in commencement clause; witness disagreement)")
         elif d.kind == "payload_mismatch":
             print(f"  {g} {d.target_ref:<28} {d.detail}")
         else:

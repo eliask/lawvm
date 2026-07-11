@@ -18,6 +18,7 @@ Covers:
 from __future__ import annotations
 
 from lawvm.tools.fi_he_ir_compare import (
+    _PDF_CONSEQUENTIAL_REPEAL,
     _PDF_OUT_OF_SCOPE_STATUTE,
     HECompareResult,
     HEFlatOp,
@@ -394,6 +395,42 @@ def test_single_section_repeal_emits_only_its_own_repeal() -> None:
     assert not any(op.target_ref.startswith("13/2003") and op.action != "repeal" for op in flat)
 
 
+def test_consequential_repeal_span_rebinds_when_next_verb_is_garbled() -> None:
+    # HE 114/1998 regression: a consequential repeal in a voimaantulo clause ("Tällä lailla
+    # kumotaan … vesilain (264/1961) 17 luvun 10 §.") sits before the NEXT bill, whose
+    # amendment verb "muutetaan" is GARBLED by the geom text layer ("m uutetacm") so the
+    # verb-head boundary detector cannot see it. The enactment FORMULA ("… päätöksen
+    # mukaisesti") that opens the next johtolause is a garble-independent boundary: the span
+    # must re-bind at the repeal's OWN sentence period, so the next bill's provisions (2/3/4/7
+    # §) are NOT swept onto the repealed statute — only the single §10 repeal survives on it.
+    from lawvm.finland.he_branch_parser import _parse_one_clause
+    from lawvm.tools.fi_he_ir_compare import flatten_branch_ops
+
+    text = (
+        "Lakiehdotukset 1. Laki jostakin muuttamisesta "
+        "muutetaan jonkin lain (999/2000) 1 " + _SEC + " seuraavasti: Uusi 1 §. "
+        "Tämä laki tulee voimaan 1 päivänä marraskuuta 1999. "
+        "Tällä lailla kumotaan 19 päivänä toukokuuta 1961 annetun vesilain (264/1961) 17 "
+        "luvun 10 " + _SEC + ", sellaisena kuin se on laissa 467/1987. "
+        "2. Laki Ahvenanmaan hallintotuomioistuimesta annetun lain muuttamisesta "
+        "Eduskunnan päätöksen mukaisesti m uutetacm Ahvenanmaan hallintotuomioistuimesta "
+        "annetun lain (547/1994) 2 " + _SEC + ":n 1 momentti, 3 " + _SEC + ":n 2 momentti "
+        "sekä 4 ja 7 " + _SEC + " seuraavasti: Uusi 2 §."
+    )
+    spans = extract_enacting_clause_spans(text)
+    flat = flatten_branch_ops(
+        tuple(
+            op
+            for span in spans
+            for op in _parse_one_clause(span, 0, "HE x", "fi/he/x")[0]
+        )
+    )
+    refs = {op.render for op in flat}
+    # Only the genuine §17/10 consequential repeal is attributed to 264/1961 — no phantom
+    # 2/3/4/7 § cloned from the garbled Ahvenanmaa bill.
+    assert {r for r in refs if "264/1961" in r} == {"repeal 264/1961/luku_17/10"}
+
+
 def test_combined_repeal_plus_amend_single_bill_still_extracts_fully() -> None:
     # A single COMBINED bill ("kumotaan (301/2004) 79 §, muutetaan 3 §:n 6 kohta ...
     # sellaisina kuin ... ja (668/2013) ... seuraavasti:") is NOT two bills: the second
@@ -629,18 +666,29 @@ def test_statute_id_of() -> None:
     assert _statute_id_of("") == ""
 
 
+# A lakiehdotus reading text that introduces a genuine second bill on 594/1956 with a REAL
+# bill TITLE ("Laki … muuttamisesta"), whose johtolause cites (594/1956). This is the only
+# thing that convicts an XML-absent op block a benign second bill (label-independent).
+_TITLED_SECOND_BILL_FLAT = (
+    "Lakiehdotukset 1. Laki testilain muuttamisesta Eduskunnan päätöksen mukaisesti "
+    "muutetaan testilain (594/1956) 1 §, 2 § ja 3 § seuraavasti:"
+)
+
+
 def test_second_bill_block_reclassifies_to_witness_disagreement() -> None:
-    # XML op-set names ONLY statute 123/2020; the PDF read a coherent 3-op block on
-    # 594/1956 (a genuine omnibus second bill the XML omits) — reclassify, do NOT charge
-    # it as an op_extra_in_pdf defect.
+    # XML op-set names ONLY statute 123/2020; the PDF read a block on 594/1956 GOVERNED BY A
+    # REAL BILL TITLE (a genuine omnibus second bill the XML omits) — reclassify to the
+    # out-of-scope witness disagreement, do NOT charge it as an op_extra_in_pdf defect.
     xml = (HEFlatOp("replace", "123/2020/5"),)
     pdf = (
         HEFlatOp("replace", "123/2020/5"),   # matched
         HEFlatOp("replace", "594/1956/1"),   # \
-        HEFlatOp("insert", "594/1956/2"),    #  } contiguous second-bill block (absent statute)
+        HEFlatOp("insert", "594/1956/2"),    #  } titled second-bill block (absent statute)
         HEFlatOp("repeal", "594/1956/3"),    # /
     )
-    div = _reclassify_out_of_scope_second_bills(diff_proposed_ops(xml, pdf), xml)
+    div = _reclassify_out_of_scope_second_bills(
+        diff_proposed_ops(xml, pdf), xml, _TITLED_SECOND_BILL_FLAT
+    )
     by_ref = {d.target_ref: d for d in div}
     assert by_ref["123/2020/5"].kind == "matched"
     assert by_ref["594/1956/1"].kind == _PDF_OUT_OF_SCOPE_STATUTE
@@ -651,26 +699,54 @@ def test_second_bill_block_reclassifies_to_witness_disagreement() -> None:
     assert "594/1956" in by_ref["594/1956/1"].detail
 
 
-def test_one_or_two_op_absent_statute_stays_op_extra() -> None:
-    # A 1–2-op absent-statute block is phantom-SUSPECT, not a convicted second bill.
+def test_untitled_absent_statute_block_is_defect_not_benign() -> None:
+    # A coherent 3-op block on an XML-absent statute with NEITHER a governing bill title NOR
+    # a consequential-repeal head is a phantom target-misresolution DEFECT — block SIZE alone
+    # must NOT force-benign it (the HE 114/1998 masked defect). It STAYS op_extra_in_pdf.
     xml = (HEFlatOp("replace", "123/2020/5"),)
     pdf = (
         HEFlatOp("replace", "123/2020/5"),   # matched
-        HEFlatOp("replace", "594/1956/1"),   # singleton absent statute
-        HEFlatOp("insert", "777/1999/1"),    # \ 2-op absent statute
-        HEFlatOp("insert", "777/1999/2"),    # /
+        HEFlatOp("repeal", "594/1956/1"),    # \
+        HEFlatOp("repeal", "594/1956/2"),    #  } 3-op absent-statute block, NO governing head
+        HEFlatOp("repeal", "594/1956/3"),    # /
     )
-    div = _reclassify_out_of_scope_second_bills(diff_proposed_ops(xml, pdf), xml)
+    # Flat mentions the statute only as a cross-reference, never a title or "Tällä lailla".
+    flat = "muutetaan jonkin lain (123/2020) 5 § seuraavasti: viitaten lakiin (594/1956)"
+    div = _reclassify_out_of_scope_second_bills(diff_proposed_ops(xml, pdf), xml, flat)
     by_ref = {d.target_ref: d for d in div}
     assert by_ref["594/1956/1"].kind == "op_extra_in_pdf"
-    assert by_ref["777/1999/1"].kind == "op_extra_in_pdf"
-    assert by_ref["777/1999/2"].kind == "op_extra_in_pdf"
+    assert by_ref["594/1956/2"].kind == "op_extra_in_pdf"
+    assert by_ref["594/1956/3"].kind == "op_extra_in_pdf"
+    assert not any(
+        d.kind in (_PDF_OUT_OF_SCOPE_STATUTE, _PDF_CONSEQUENTIAL_REPEAL) for d in div
+    )
+
+
+def test_consequential_repeal_typed_distinctly_not_second_bill() -> None:
+    # A repeal of an outside act's provision via a commencement clause ("Tällä lailla
+    # kumotaan … (594/1956) …") is a real effect the XML omits — a witness disagreement — but
+    # NOT a titled second bill: it is typed pdf_consequential_repeal, not out_of_scope_statute
+    # and not a defect. (HE 114/1998 §17/10 on vesilaki 264/1961.)
+    xml = (HEFlatOp("replace", "123/2020/5"),)
+    pdf = (
+        HEFlatOp("replace", "123/2020/5"),   # matched
+        HEFlatOp("repeal", "594/1956/luku_17/10"),  # consequential repeal, absent statute
+    )
+    flat = (
+        "muutetaan jonkin lain (123/2020) 5 § seuraavasti: ... Tämä laki tulee voimaan 1 "
+        "päivänä tammikuuta 2020. Tällä lailla kumotaan vanhan lain (594/1956) 17 luvun 10 §."
+    )
+    div = _reclassify_out_of_scope_second_bills(diff_proposed_ops(xml, pdf), xml, flat)
+    by_ref = {d.target_ref: d for d in div}
+    assert by_ref["594/1956/luku_17/10"].kind == _PDF_CONSEQUENTIAL_REPEAL
     assert not any(d.kind == _PDF_OUT_OF_SCOPE_STATUTE for d in div)
+    assert not any(d.kind == "op_extra_in_pdf" for d in div)
 
 
 def test_same_statute_granularity_stays_op_extra() -> None:
     # Even a ≥3-op extra block on a statute the XML op-set DOES name is finer-granularity
-    # PDF ops (same statute), NOT an out-of-scope second bill — it STAYS op_extra_in_pdf.
+    # PDF ops (same statute), NOT an out-of-scope second bill — it STAYS op_extra_in_pdf,
+    # regardless of any title text in the reading region.
     xml = (HEFlatOp("replace", "123/2020/5"),)
     pdf = (
         HEFlatOp("replace", "123/2020/5"),   # matched
@@ -678,7 +754,9 @@ def test_same_statute_granularity_stays_op_extra() -> None:
         HEFlatOp("insert", "123/2020/8"),    #  } 3 extra ops, but statute 123/2020 IS in XML
         HEFlatOp("insert", "123/2020/9"),    # /
     )
-    div = _reclassify_out_of_scope_second_bills(diff_proposed_ops(xml, pdf), xml)
+    div = _reclassify_out_of_scope_second_bills(
+        diff_proposed_ops(xml, pdf), xml, "Laki testilain muuttamisesta (123/2020)"
+    )
     extra = [d for d in div if d.kind == "op_extra_in_pdf"]
     assert {d.target_ref for d in extra} == {"123/2020/7", "123/2020/8", "123/2020/9"}
     assert not any(d.kind == _PDF_OUT_OF_SCOPE_STATUTE for d in div)
