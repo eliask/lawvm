@@ -1135,8 +1135,28 @@ class PayloadDiffResult:
     skipped: int
 
 
-def _trim(text: str) -> str:
+#: DIAGNOSTIC-ONLY display toggle (does NOT touch the equality decision, the fold set,
+#: or any counting). When set, a ``payload_mismatch`` divergence's ``detail`` carries the
+#: FULL canonical XML/PDF payloads instead of the 80-char truncated preview, so the residual
+#: JSONL can be adjudicated into sub-causes off-line. Off by default → text/JSON unchanged.
+_EMIT_FULL_PAYLOADS = False
+
+
+def set_emit_full_payloads(flag: bool) -> None:
+    """Diagnostic switch: emit untrimmed payloads in ``payload_mismatch`` details."""
+    global _EMIT_FULL_PAYLOADS
+    _EMIT_FULL_PAYLOADS = bool(flag)
+
+
+def _payload_preview(text: str) -> str:
+    """Whitespace-flatten a canonical payload for the detail string.
+
+    Truncates to :data:`_PAYLOAD_CANON_TRIM` unless the diagnostic
+    :data:`_EMIT_FULL_PAYLOADS` toggle is set (then the full body is emitted).
+    """
     flat = " ".join(text.split())
+    if _EMIT_FULL_PAYLOADS:
+        return flat
     return flat if len(flat) <= _PAYLOAD_CANON_TRIM else flat[:_PAYLOAD_CANON_TRIM] + "…"
 
 
@@ -1191,7 +1211,7 @@ def diff_proposed_payloads(
                     pdf_op=op.render,
                     detail=(
                         f"proposed body differs beyond inert encoding (folds fired: {folds}); "
-                        f"xml={_trim(eq.left_canon)!r} pdf={_trim(eq.right_canon)!r}"
+                        f"xml={_payload_preview(eq.left_canon)!r} pdf={_payload_preview(eq.right_canon)!r}"
                     ),
                 )
             )
@@ -1640,6 +1660,8 @@ def _print_result(result: HECompareResult) -> None:
 
 def main(args: argparse.Namespace) -> None:
     """CLI handler for ``lawvm fi-he-ir-compare``."""
+    if getattr(args, "full_payloads", False):
+        set_emit_full_payloads(True)
     farchive = args.farchive or _DEFAULT_FARCHIVE
     m = re.match(r"^(\d{4})/(\d{1,5})$", str(args.he or ""))
     if not m:
