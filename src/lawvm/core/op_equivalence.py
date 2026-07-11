@@ -195,6 +195,47 @@ equalised by the WHITESPACE fold, because U+2009/U+202F/U+00A0 are all in
 ``ZS_NON_ASCII_SPACE_CPS`` (Zs→space, then run-collapse); no ``§``-specific handling is needed
 for it.
 
+Graduated fold #7: LINEBREAK_HYPHEN (whitespace-collapsed ASCII line-break hyphen)
+---------------------------------------------------------------------------------
+The single dominant remaining ``payload_mismatch`` sub-cause on the wide HE sweep (49 of 144
+residual bodies on the 300-HE seed-0 sample, all decades) is a body that differs ONLY by a
+line-break hyphen: one witness carries a hyphen at a wrapped-word seam the other joined. It is
+SYMMETRIC — 28 have the extra hyphen on the PDF side (a pdfium wrap the text layer kept) and 21
+on the XML side (a Finlex CONSOLIDATION display hyphen, e.g. "val-tiokonttori", the PDF read
+correctly). ``ingest.page_elements.dehyphenate`` already resolves a ``word-\\n word`` wrap at the
+READING layer — fusing a genuine soft break, PRESERVING a real compound via its ``-\\n``-triggered
+corroboration — but two things route bodies PAST it into this quotient: the PDF residual reaches
+here only after WHITESPACE has collapsed the wrap's newline to a single space ("mukai- sen"), so
+``dehyphenate``'s ``-\\n`` trigger can no longer fire; and the XML consolidation body is never run
+through the reading layer at all. This fold is the collapsed-form analogue, applied SYMMETRICALLY
+to both witnesses at comparison time.
+
+Rather than fork a hyphen policy, the fold REUSES the canonical ``dehyphenate`` decision: each
+LETTER-preceded "hyphen + space" seam is re-presented as a line break and routed through the SAME
+``dehyphenate``, which FUSES a genuine soft break ("järjestel- mät" → "järjestelmät") but PRESERVES
+a real compound — elliptical ("sotilas- ja"), identical-vowel ("kauppa- alus"), proper/acronym/
+numeric ("ETA- sopimus", "18- vuotias"). It is applied output-sparsely (attempted only when the
+pair still differs after every other fold, adopted only when it rescues equality) and is run BEFORE
+the errant mid-word space so a body carrying BOTH artifacts still reaches equality (running it
+after would let a mid-word-space merge glue an elliptical conjunction to its stem and defeat the
+compound corroboration). It is PROVABLY NON-MASKING of a genuine compound-hyphen difference:
+
+- the MANDATORY adjacent SPACE is the guarantee. A Finnish compound hyphen written TIGHT
+  ("osa-alue", "EU-maa", "Internet-tieto") has NO space after the hyphen, so it is never
+  re-presented and never fused; a genuine missing-compound-hyphen difference is therefore always
+  TIGHT-vs-joined ("osa-alue" vs "osaalue", "Internet-tieto" vs "Internettieto" — the latter a
+  REAL case observed on HE 151/2005) and its glyph difference SURVIVES as a residual. This is why
+  a blanket "remove every hyphen that equalises" is deliberately NOT done — it would fold
+  "osa-alue" ≡ "osaalue" and hide content; the space-adjacency is exactly what excludes that.
+- the ELLIPTICAL guard (inherited from ``dehyphenate``): a hyphen-space followed by a bare
+  conjunction ("sotilas- ja siviilihenkilöstö") is a SUSPENDED compound, PRESERVED — so it is not
+  silently equated to a joined "sotilasja …" reading (a live guard pins this divergent).
+- the DIGIT/acronym/identical-vowel guards (also inherited): "18- vuotias", "ETA- sopimus",
+  "kauppa- alus" keep their hyphen and stay residuals.
+
+A single dash's glyph identity and a tight compound hyphen therefore both stay substantive; the
+``FOLD_CONTRACTS`` mutation guard pins "osa-alue" vs "osaalue" divergent.
+
 Auditability
 ------------
 Every fold that materially changed a side is recorded on the verdict
@@ -265,9 +306,36 @@ _DOT_LEADER_RE = re.compile(r"\.\s{0,3}\.[\s.]{0,120}")
 # ``text_equivalence``), so it is recorded only when it actually rescues an equality. Universal.
 _MIDWORD_SPACE_RE = re.compile(r"(?<=[^\W\d_]) (?=[^\W\d_])")
 
+# A LETTER-preceded "hyphen + space" — the whitespace-collapsed form of an ASCII LINE-BREAK
+# hyphen ("mukai- sen" ← wrapped "mukaisen", "järjestel- mät" ← "järjestelmät"). This marker
+# re-presents such a seam as a line break so the CANONICAL ``dehyphenate`` primitive can resolve
+# it (see ``_rejoin_linebreak_hyphens``). The lookbehind ``[^\W\d_]`` is a preceding LETTER, so a
+# spaced-dash punctuation (" - ") and a numeric seam ("18- ") are NOT re-presented here.
+_LINEBREAK_HYPHEN_MARK_RE = re.compile(r"(?<=[^\W\d_])- ")
+
 # The typographic range/citation dashes (U+2012–2015) plus the slash — universal
 # range/citation marks whose adjacent space WHITESPACE_SEP folds regardless of surface.
 _SEP_DASH_SLASH = r"/‒-―"
+
+
+def _rejoin_linebreak_hyphens(text: str) -> str:
+    """Resolve a whitespace-collapsed ASCII line-break hyphen by REUSING ``dehyphenate``.
+
+    ``ingest.page_elements.dehyphenate`` resolves a ``word-\\n word`` wrap at the READING layer —
+    FUSING a genuine soft break but PRESERVING a real compound (elliptical "sotilas- ja",
+    identical-vowel "kauppa- alus", proper/acronym/numeric "ETA- sopimus", "18- vuotias") via its
+    ``-\\n``-triggered corroboration. A residual reaches THIS quotient only AFTER WHITESPACE has
+    collapsed the wrap's newline to a single space ("mukai- sen"), so ``dehyphenate`` can no longer
+    fire, and an XML consolidation display hyphen ("val-tiokonttori" written "val- tio") was never
+    routed through it at all. We re-present each LETTER-preceded "hyphen + space" seam as a line
+    break and route it through the SAME ``dehyphenate`` — no forked hyphen policy — then re-collapse
+    the whitespace. A TIGHT compound hyphen ("osa-alue", "Internet-tieto") has NO adjacent space,
+    is never re-presented, and its glyph difference always survives as a residual (non-masking).
+    """
+    if "- " not in text:
+        return text
+    marked = _LINEBREAK_HYPHEN_MARK_RE.sub("-\n", text)
+    return _WS_RUN.sub(" ", dehyphenate(marked)).strip()
 
 
 @dataclass(frozen=True, slots=True)
@@ -366,6 +434,7 @@ class EncodingFold(StrEnum):
     WHITESPACE_PUNCT = "whitespace_punct"  # space adjacent to punctuation (before ":;,.)" / after "(") removed
     WHITESPACE_MIDWORD = "whitespace_midword"  # pdfium errant space strictly between two letters removed
     WHITESPACE_SEP = "whitespace_sep"  # space adjacent to a range/citation separator (dash "/" enum-comma clitic-colon list-paren) removed
+    LINEBREAK_HYPHEN = "linebreak_hyphen"  # whitespace-collapsed ASCII line-break hyphen ("mukai- sen" → "mukaisen") rejoined; TIGHT compound hyphen untouched
 
 
 def _canonicalize_text(
@@ -475,6 +544,28 @@ def text_equivalence(
         if left_ms == right_ms and (left_ms != left_canon or right_ms != right_canon):
             fired = fired | {EncodingFold.WHITESPACE_MIDWORD}
             left_canon, right_canon = left_ms, right_ms
+        else:
+            # Output-sparse LINEBREAK_HYPHEN fallback. Run the line-break rejoin on the BASE canon
+            # FIRST (word boundaries intact, so the reused ``dehyphenate`` elliptical/compound
+            # corroboration is accurate — "sotilas- ja" stays PRESERVED), THEN the errant mid-word
+            # space, so a body carrying BOTH artifacts still reaches equality. Adopt ONLY if the
+            # two witnesses become equal; because the rejoin needs a hyphen ADJACENT to a space, a
+            # TIGHT compound hyphen ("osa-alue", "Internet-tieto") is never a candidate and its
+            # difference stays a residual. Each artifact is credited only when it materially fired.
+            left_lh = _rejoin_linebreak_hyphens(left_canon)
+            right_lh = _rejoin_linebreak_hyphens(right_canon)
+            left_both = _MIDWORD_SPACE_RE.sub("", left_lh)
+            right_both = _MIDWORD_SPACE_RE.sub("", right_lh)
+            if left_both == right_both and (
+                left_both != left_canon or right_both != right_canon
+            ):
+                extra: set[EncodingFold] = set()
+                if left_lh != left_canon or right_lh != right_canon:
+                    extra.add(EncodingFold.LINEBREAK_HYPHEN)
+                if left_both != left_lh or right_both != right_lh:
+                    extra.add(EncodingFold.WHITESPACE_MIDWORD)
+                fired = fired | extra
+                left_canon, right_canon = left_both, right_both
 
     return TextEquivalence(
         equal=left_canon == right_canon,

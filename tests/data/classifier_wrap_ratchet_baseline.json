@@ -5,7 +5,7 @@
     "src/lawvm/core/evidence_support.py": 1,
     "src/lawvm/core/identity_intrinsic_audit.py": 7,
     "src/lawvm/core/locator.py": 2,
-    "src/lawvm/core/op_equivalence.py": 6,
+    "src/lawvm/core/op_equivalence.py": 7,
     "src/lawvm/core/payload_realization.py": 2,
     "src/lawvm/core/regex_safety.py": 7,
     "src/lawvm/core/selector.py": 4,
@@ -208,5 +208,5 @@
     "src/lawvm/us_federal/table3.py": 4,
     "src/lawvm/us_federal/usc_witness.py": 4
   },
-  "total_raw_re_compile": 1323
+  "total_raw_re_compile": 1324
 }

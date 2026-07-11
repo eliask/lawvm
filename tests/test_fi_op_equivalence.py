@@ -415,6 +415,70 @@ def test_ws_sep_leaves_he_266_2002_word_split_as_a_divergence():
     assert EncodingFold.WHITESPACE_MIDWORD not in v.folds  # the word-split is NOT masked
 
 
+# --------------------------------------------------------------------------- #
+# LINEBREAK_HYPHEN (fold #7): whitespace-collapsed ASCII line-break hyphen.     #
+# --------------------------------------------------------------------------- #
+
+
+def test_linebreak_hyphen_pdf_side_wrap_folds():
+    # The dominant residual sub-cause: a pdfium wrap the text layer kept as "hyphen space"
+    # ("jär- jestelmä") vs the joined XML word — rejoined at comparison time.
+    v = text_equivalence("rahanpesun estämis- ja selvittämisjärjestel- mät",
+                         "rahanpesun estämis- ja selvittämisjärjestelmät")
+    assert v.equal
+    assert EncodingFold.LINEBREAK_HYPHEN in v.folds
+
+
+def test_linebreak_hyphen_xml_consolidation_display_hyphen_folds():
+    # SYMMETRIC: the Finlex consolidation display hyphen is on the XML side ("val- tio"), the
+    # PDF read the word joined. The fold applies to whichever witness carries the wrap.
+    v = text_equivalence("suorittaa val- tiokonttori",
+                         "suorittaa valtiokonttori")
+    assert v.equal
+    assert EncodingFold.LINEBREAK_HYPHEN in v.folds
+
+
+def test_linebreak_hyphen_recorded_only_when_it_rescues_equality():
+    # Output-sparse: a clean pair (no wrap) carries no LINEBREAK_HYPHEN tag.
+    v = text_equivalence("valtiokonttori suorittaa", "valtiokonttori suorittaa")
+    assert v.equal and EncodingFold.LINEBREAK_HYPHEN not in v.folds
+
+
+def test_linebreak_hyphen_does_not_mask_a_tight_compound_difference():
+    # THE non-masking guarantee. A genuine missing-compound-hyphen difference is TIGHT-vs-joined
+    # ("osa-alue" vs "osaalue"): the hyphen has NO adjacent space, so it is never a fold candidate
+    # and the difference MUST survive as a residual. A blanket hyphen-removal would wrongly equate
+    # these — the mandatory space-adjacency is exactly what prevents that.
+    v = text_equivalence("erotetaan yhteiseksi osa-alue", "erotetaan yhteiseksi osaalue")
+    assert not v.equal and v.residual
+    assert EncodingFold.LINEBREAK_HYPHEN not in v.folds
+
+
+def test_linebreak_hyphen_does_not_mask_a_real_compound_hyphen_observed_live():
+    # LIVE-DATA guard (HE 151/2005): the XML carries a genuine compound hyphen "Internet-tieto"
+    # (a real orthographic hyphen after a foreign stem) which the PDF joined "Internettieto". This
+    # is a VISIBLE glyph difference, not a wrap — it is TIGHT, so it stays a residual, never folded.
+    v = text_equivalence("Internet-tietoverkossa", "Internettietoverkossa")
+    assert not v.equal and v.residual
+    assert EncodingFold.LINEBREAK_HYPHEN not in v.folds
+
+
+def test_linebreak_hyphen_does_not_fold_a_numeric_compound_seam():
+    # DIGIT-flank guard: a numeric compound ("18- vuotias") is left intact — the preceding char is
+    # a digit, never a letter, so the lookbehind rejects it.
+    v = text_equivalence("täyttänyt 18- vuotias", "täyttänyt 18vuotias")
+    assert not v.equal and v.residual
+    assert EncodingFold.LINEBREAK_HYPHEN not in v.folds
+
+
+def test_linebreak_hyphen_does_not_join_before_a_capitalised_word():
+    # LOWERCASE-continuation guard: a hyphen-space before a capital (new sentence / proper noun)
+    # is not a syllable-break continuation and is left intact.
+    v = text_equivalence("annetaan lupa- Uusi", "annetaan lupaUusi")
+    assert not v.equal and v.residual
+    assert EncodingFold.LINEBREAK_HYPHEN not in v.folds
+
+
 # ===========================================================================
 # GOVERNED-INVENTORY ENFORCEMENT (audit fix #6-fingerprint)
 #
@@ -443,7 +507,7 @@ def test_ws_sep_leaves_he_266_2002_word_split_as_a_divergence():
 # computed with the shared determinism-firewall primitive so this ratchet re-keys on the
 # SAME content-hash discipline as the LLM cache keys. Update ONLY via the protocol in the
 # failure message below (ship the two new proofs FIRST, then rebaseline this constant).
-FOLD_SET_FINGERPRINT = "ead044f16c6cc5c0"
+FOLD_SET_FINGERPRINT = "88c7aa78d4f709e7"
 
 
 def _fold_inventory_vocab() -> list[str]:
@@ -526,6 +590,13 @@ FOLD_CONTRACTS: dict[EncodingFold, tuple[str, str, str, str]] = {
     EncodingFold.WHITESPACE_SEP: (
         "ulosottolaissa (37/1895)", "ulosottolaissa (37 /1895)",
         "pykälissä 195—196", "pykälissä 195— 197",
+    ),
+    # a whitespace-collapsed line-break hyphen ("val- tio" ← wrapped "valtio") rejoined; a
+    # genuine TIGHT compound-hyphen difference ("osa-alue" vs "osaalue" — no space after the
+    # hyphen) is NEVER a candidate and survives as a residual (the whole non-masking guarantee).
+    EncodingFold.LINEBREAK_HYPHEN: (
+        "val- tiokonttori", "valtiokonttori",
+        "yhteiseksi osa-alue", "yhteiseksi osaalue",
     ),
 }
 
