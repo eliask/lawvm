@@ -491,7 +491,6 @@ class TestStatuteIdResolution:
     def test_governing_statute_id_propagates_to_every_op(self) -> None:
         # Heading names the act; number lives only in the perustelut; enactingClause omits
         # it.  Every lowered op must still carry the full NNNN/YYYY/ prefix.
-        from lxml import etree
 
         doc = (
             b"<akomaNtoso xmlns='http://docs.oasis-open.org/legaldocml/ns/akn/3.0'>"

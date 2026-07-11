@@ -263,7 +263,7 @@ class TestClopperPearsonMetric:
 
     def test_bound_is_monotone_decreasing_in_n(self) -> None:
         vals = [clopper_pearson_upper(0, n, 0.05) for n in (50, 100, 1000, 3000)]
-        assert all(a > b for a, b in zip(vals, vals[1:]))
+        assert all(a > b for a, b in zip(vals, vals[1:], strict=False))
 
     def test_honest_sample_size_for_one_in_a_thousand(self) -> None:
         # The headline honesty: a strict 1e-3 upper bound at 95% needs ~3000 mutants/class;

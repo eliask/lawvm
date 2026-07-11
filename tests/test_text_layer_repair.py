@@ -22,7 +22,8 @@ def test_repair_adopts_only_when_validator_confirms() -> None:
     # A trivial confusion: a "#N" token whose "#" the layer dropped, leaving "xN"; restore the
     # "#" only when N is an even number (a stand-in independent constraint).
     corrupt = re.compile(r"x(\d)")
-    even_only = lambda m: int(m.group(1)) % 2 == 0
+    def even_only(m):
+        return int(m.group(1)) % 2 == 0
     assert repair_glyph_substitution("x2 x3 x4", corrupt_re=corrupt, restore=r"#\1", is_plausible=even_only) == "#2 x3 #4"
     # Default validator (always plausible) restores every match.
     assert repair_glyph_substitution("x2 x3", corrupt_re=corrupt, restore=r"#\1") == "#2 #3"
@@ -32,7 +33,8 @@ def test_rejected_match_is_byte_identical() -> None:
     # A match the validator rejects must leave the ORIGINAL substring untouched, not a partial
     # rebuild — so a genuine token that merely resembles the corrupt shape is never mangled.
     corrupt = re.compile(r"x(\d)")
-    never = lambda _m: False
+    def never(_m):
+        return False
     src = "x1 x9 keep-me"
     assert repair_glyph_substitution(src, corrupt_re=corrupt, restore=r"#\1", is_plausible=never) == src
 
@@ -48,7 +50,8 @@ def test_second_confusion_O_as_zero_plugs_in() -> None:
     # "O" only when the whole token is a known FOUR-glyph id shape (validator: length band) — a
     # different confusion, a different validator, ZERO change to the general primitive.
     corrupt = re.compile(r"\b0(\d{3})\b")
-    four_glyph = lambda m: len(m.group(0)) == 4
+    def four_glyph(m):
+        return len(m.group(0)) == 4
     assert repair_glyph_substitution("id 0123 here", corrupt_re=corrupt, restore=r"O\1", is_plausible=four_glyph) == "id O123 here"
     # A five-digit number is NOT the id shape → the shape re never matches it, so even the
     # default (always-plausible) validator leaves it byte-identical.
@@ -59,7 +62,8 @@ def test_second_confusion_rn_as_m_plugs_in() -> None:
     # The classic "rn"↔"m" OCR confusion: "modem" mis-read as "modern"-ish "moderndemo" — here a
     # toy where "rnodem" should be "modem", gated on a tiny known-word validator.
     corrupt = re.compile(r"\brn(\w+)\b")
-    known = lambda m: m.group(1) in {"odem", "ap"}
+    def known(m):
+        return m.group(1) in {"odem", "ap"}
     assert repair_glyph_substitution("the rnodem and rnxyz", corrupt_re=corrupt, restore=r"m\1", is_plausible=known) == "the modem and rnxyz"
 
 
@@ -71,7 +75,8 @@ def test_second_confusion_rn_as_m_plugs_in() -> None:
 
 def test_fi_cite_slash_as_one_through_general_primitive() -> None:
     four = re.compile(r"\((\d{1,4})1(\d{4})\)")
-    band = lambda m: 1600 <= int(m.group(2)) <= 2099
+    def band(m):
+        return 1600 <= int(m.group(2)) <= 2099
     assert repair_glyph_substitution("(150511992)", corrupt_re=four, restore=r"(\1/\2)", is_plausible=band) == "(1505/1992)"
     # A parenthesised number whose trailing 4 digits are not a plausible year is left untouched.
     assert repair_glyph_substitution("(123499999)", corrupt_re=four, restore=r"(\1/\2)", is_plausible=band) == "(123499999)"

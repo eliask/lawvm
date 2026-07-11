@@ -27,7 +27,6 @@ from typing import Callable, Optional
 
 from lawvm.finland.he_payload_adjudicator import DivergenceVerdict
 from lawvm.finland.he_payload_verdict_store import (
-    FI_HE_PAYLOAD_VERDICT_STORE,
     PayloadVerdictStore,
     adjudicate_payload_divergence_cached,
 )

@@ -24,7 +24,6 @@ from lawvm.tools.fi_appendix_structure import (
     ROUTE_STRUCTURAL_DISAGREEMENT,
     ROUTE_VISION_ESCALATE,
     VISION_OUTCOME_ESCALATED,
-    VISION_OUTCOME_OPEN,
     VISION_PAIR_DOCLING_VISION,
     VISION_PAIR_PDFIUM_VISION,
     CrossWitness,
@@ -46,7 +45,6 @@ from lawvm.tools.fi_appendix_structure import (
     VisionReadStore,
     VisionRegionRead,
     _make_per_bbox_reader,
-    cold_region_prompt_fingerprint,
     cross_witness,
     make_cached_region_reader,
     make_vision_region_reader,
@@ -1425,7 +1423,8 @@ def test_structural_gate_blocks_vision_graduation_of_topology_wrong_table() -> N
             TableCellDivergence(row=1, col=1, docling_text="1,5", witness_text="1.5"),
         ),
     )
-    reader = lambda _pn, _bb: "1.5"  # vision ≡ pdfium witness → would graduate if ungated
+    def reader(_pn, _bb):
+        return "1.5"  # vision ≡ pdfium witness → would graduate if ungated
 
     gated = verify_tables_vision([table], [det], reader, structural_disagreement=[True])
     assert gated == ()  # topology-wrong table skipped: never graduates

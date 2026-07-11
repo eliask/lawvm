@@ -41,8 +41,6 @@ from lawvm.ingest.corroboration import (
 from lawvm.tools.fi_he_ir_compare import (
     _BENIGN_NONCOMPARED_STATUSES,
     _ESCALATION_PENDING_STATUSES,
-    _NON_COMPARED_STATUSES,  # SINGLE authority (imported, not a dead duplicate)
-    _PATHOLOGY_STATUSES,
     HECompareResult,
     OpDivergence,
     compare_he_from_farchive,

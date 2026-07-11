@@ -22,9 +22,8 @@ end-to-end wiring/behaviour proof.
 from __future__ import annotations
 
 import io
-from typing import Optional, Tuple
+from typing import Tuple
 
-import pytest
 
 from lawvm.tools.fi_appendix_structure import (
     GRADE_EXACT_VISUAL,
@@ -48,7 +47,6 @@ from lawvm.tools.fi_appendix_structure import (
     make_vision_region_reader,
     render_params_fingerprint,
     structure_statute_pdf,
-    write_derived_tables,
     _VISION_REGION_DPI,
 )
 
