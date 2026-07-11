@@ -21,11 +21,15 @@ from lawvm.tools.fi_appendix_structure import (
     GRADE_SELF_VERIFIED,
     ROUTE_NO_WITNESS_DEFERRED,
     ROUTE_SELF_VERIFIED,
+    ROUTE_STRUCTURAL_DISAGREEMENT,
     ROUTE_VISION_ESCALATE,
     VISION_OUTCOME_ESCALATED,
     VISION_OUTCOME_OPEN,
     VISION_PAIR_DOCLING_VISION,
     VISION_PAIR_PDFIUM_VISION,
+    CrossWitness,
+    NumericRecall,
+    StatuteTableReport,
     StructuredCell,
     StructuredTable,
     StructuredTextBlock,
@@ -46,6 +50,7 @@ from lawvm.tools.fi_appendix_structure import (
     cross_witness,
     make_cached_region_reader,
     make_vision_region_reader,
+    independent_grid_counts,
     number_tokens,
     numeric_recall,
     reconcile_table_witness,
@@ -55,6 +60,7 @@ from lawvm.tools.fi_appendix_structure import (
     structured_table_from_node,
     structured_text_block_from_node,
     table_escalation_route,
+    table_route_with_structure,
     text_block_escalation_route,
     verify_table_exact,
     verify_tables_vision,
@@ -1216,3 +1222,213 @@ def test_tb_vision_verification_jsonable_shape_surfaces_graduation() -> None:
     entry = cast("dict[str, object]", grad[0])
     assert entry["corroborated_text"] == "1) kohde, kun"
     assert entry["tiebreak_status"] == "vision_corroborated_exact"
+
+
+# --------------------------------------------------------------------------- #
+# WIRE 1 — GARBLE-SCAN into the self-verify count (belt-and-suspenders).         #
+# --------------------------------------------------------------------------- #
+#
+# An A≡B agreed cell/block whose agreed text STILL carries a shared-broken-CMap corruption
+# signature (Private-Use-Area / control / U+FFFD / mojibake in BOTH decoders) must NOT count
+# self_verified/exact — it is DEMOTED to a routed divergence carrying a garble note. It never
+# promotes. An audit found 0 such cells on the corpus, so this is non-regressive on real data.
+
+_PUA = ""  # a Private-Use-Area glyph — the classic broken-ToUnicode-CMap artifact
+
+
+def test_garble_scan_demotes_agreed_but_garbled_cell_from_exact() -> None:
+    # Docling and the pdfium witness AGREE (identical text, text_equivalence-equal) but BOTH carry
+    # the same PUA glyph (shared-CMap corruption) → the cell is demoted from exact to a routed
+    # divergence with a garble[private_use_area] note, NOT counted self_verified.
+    agreed = f"Sähk{_PUA} 1,2"
+    cells = [StructuredCell(0, 0, agreed, is_header=False, bbox=(0.0, 0.0, 1.0, 1.0))]
+    v = verify_table_exact(_grid_table(cells), lambda _pn, _bb: agreed)
+    assert v.n_exact == 0 and not v.exact
+    assert len(v.divergences) == 1
+    d = v.divergences[0]
+    assert d.docling_text == agreed and d.witness_text == agreed
+    assert "garble[private_use_area]" in d.descriptor  # demotion reason surfaced
+
+
+def test_garble_scan_leaves_a_clean_agreed_cell_exact() -> None:
+    # A clean agreed cell is UNCHANGED (Wire 1 is a pure safety net — it never touches clean text).
+    cells = [StructuredCell(0, 0, "Sähkö 1,2", is_header=False, bbox=(0.0, 0.0, 1.0, 1.0))]
+    v = verify_table_exact(_grid_table(cells), lambda _pn, _bb: "Sähkö  1,2")  # inert-equal, clean
+    assert v.n_exact == 1 and v.exact and not v.divergences
+
+
+def test_garble_scan_does_not_demote_on_benign_witness_only_softhyphen() -> None:
+    # NON-REGRESSION: the scan runs on the AGREED (Docling) text only, so a BENIGN witness-only
+    # artifact the inert quotient already folds — a U+0002 soft-hyphen at a wrapped line break
+    # ("yli\x02paine" ≡ "ylipaine") — must NOT demote a cell whose Docling text is clean. (This is
+    # the 61 born-digital text blocks that a scan-BOTH rule wrongly demoted.)
+    cells = [StructuredCell(0, 0, "ylipaine", is_header=False, bbox=(0.0, 0.0, 1.0, 1.0))]
+    v = verify_table_exact(_grid_table(cells), lambda _pn, _bb: "yli\x02paine")
+    assert v.n_exact == 1 and v.exact and not v.divergences  # clean Docling text stays exact
+
+
+def test_garble_scan_demotes_agreed_but_garbled_text_block_from_exact() -> None:
+    # The text-block lane honours the same belt-and-suspenders demotion (block-for-cell).
+    agreed = f"kerroin k = {_PUA}"
+    blocks = _blocks([(agreed, (0.0, 0.0, 10.0, 2.0))])
+    v = verify_text_blocks_exact(blocks, lambda _pn, _bb: agreed)
+    assert v.n_exact == 0 and not v.exact and len(v.divergences) == 1
+    assert "garble[private_use_area]" in v.divergences[0].descriptor
+
+
+# --------------------------------------------------------------------------- #
+# WIRE 2 — STRUCTURAL MIS-ATTRIBUTION gate (independent geometric re-grid).      #
+# --------------------------------------------------------------------------- #
+#
+# A dual-table merge / duplicated spanning header makes Docling count a PHANTOM column: the
+# per-cell A≡B verdicts can ALL be exact yet the (row,col) binding is WRONG. An independent
+# geometric re-grid (cell-bbox single-linkage) exposes this as a geo-vs-Docling count disagreement.
+# The gate fires iff dual_table_merge_suspected AND geometry disagrees; a geometry-CONCORDANT
+# dual-merge flag is a false alarm and is NOT gated.
+
+_STRUCT_LOC = "finlex://sd/2003/389/fin/media/x.pdf"
+
+
+def _phantom_dual_merge_table() -> StructuredTable:
+    # Docling reports 4 cols, but geometry has only 2 x-bands: col0≡col2 (x[0,10]) and col1≡col3
+    # (x[10,20]) — the classic side-by-side dual-table merge (phantom columns). Header labels repeat
+    # → dual_table_merge_suspected. geo=(2,2) vs docling (2,4): a genuine topology error.
+    cells = (
+        StructuredCell(0, 0, "Lääni ja kunta", is_header=True, bbox=(0.0, 0.0, 10.0, 5.0)),
+        StructuredCell(0, 1, "Vero", is_header=True, bbox=(10.0, 0.0, 20.0, 5.0)),
+        StructuredCell(0, 2, "Lääni ja kunta", is_header=True, bbox=(0.0, 0.0, 10.0, 5.0)),
+        StructuredCell(0, 3, "Vero", is_header=True, bbox=(10.0, 0.0, 20.0, 5.0)),
+        StructuredCell(1, 0, "Espoo", is_header=False, bbox=(0.0, 5.0, 10.0, 10.0)),
+        StructuredCell(1, 1, "1,5", is_header=False, bbox=(10.0, 5.0, 20.0, 10.0)),
+        StructuredCell(1, 2, "Vantaa", is_header=False, bbox=(0.0, 5.0, 10.0, 10.0)),
+        StructuredCell(1, 3, "2,5", is_header=False, bbox=(10.0, 5.0, 20.0, 10.0)),
+    )
+    return StructuredTable(
+        locator=_STRUCT_LOC, page_num=1, table_index=0, n_rows=2, n_cols=4, caption="", cells=cells
+    )
+
+
+def _clean_concordant_table() -> StructuredTable:
+    # A plain 2x2 table: geometry concordant with Docling, no dual-merge suspicion.
+    cells = (
+        StructuredCell(0, 0, "Vuosi", is_header=True, bbox=(0.0, 0.0, 10.0, 5.0)),
+        StructuredCell(0, 1, "Vero", is_header=True, bbox=(10.0, 0.0, 20.0, 5.0)),
+        StructuredCell(1, 0, "2025", is_header=False, bbox=(0.0, 5.0, 10.0, 10.0)),
+        StructuredCell(1, 1, "6,5", is_header=False, bbox=(10.0, 5.0, 20.0, 10.0)),
+    )
+    return StructuredTable(
+        locator=_STRUCT_LOC, page_num=1, table_index=0, n_rows=2, n_cols=2, caption="", cells=cells
+    )
+
+
+def _dual_flag_but_concordant_table() -> StructuredTable:
+    # Header labels repeat (dual_table_merge_suspected=True) BUT the 4 columns are geometrically
+    # distinct (geo_cols==4==docling) — the geometry-concordant dual-merge FALSE ALARM.
+    cells = (
+        StructuredCell(0, 0, "Kunta", is_header=True, bbox=(0.0, 0.0, 10.0, 5.0)),
+        StructuredCell(0, 1, "Vero", is_header=True, bbox=(10.0, 0.0, 20.0, 5.0)),
+        StructuredCell(0, 2, "Kunta", is_header=True, bbox=(20.0, 0.0, 30.0, 5.0)),
+        StructuredCell(0, 3, "Vero", is_header=True, bbox=(30.0, 0.0, 40.0, 5.0)),
+        StructuredCell(1, 0, "Espoo", is_header=False, bbox=(0.0, 5.0, 10.0, 10.0)),
+        StructuredCell(1, 1, "1,5", is_header=False, bbox=(10.0, 5.0, 20.0, 10.0)),
+        StructuredCell(1, 2, "Vantaa", is_header=False, bbox=(20.0, 5.0, 30.0, 10.0)),
+        StructuredCell(1, 3, "2,5", is_header=False, bbox=(30.0, 5.0, 40.0, 10.0)),
+    )
+    return StructuredTable(
+        locator=_STRUCT_LOC, page_num=1, table_index=0, n_rows=2, n_cols=4, caption="", cells=cells
+    )
+
+
+def _exact_det(table: StructuredTable) -> TableVerification:
+    """A deterministic verdict where EVERY cell is exact (0 divergences) — the silent-exact risk."""
+    return TableVerification(
+        locator=table.locator, page_num=table.page_num, table_index=table.table_index,
+        n_cells=len(table.cells), n_exact=len(table.cells), n_no_witness=0, divergences=(),
+    )
+
+
+def _report(table: StructuredTable, sanity, det: TableVerification) -> StatuteTableReport:
+    return StatuteTableReport(
+        locator=table.locator, artifact_digest="a" * 64, n_pages=1,
+        mean_text_chars_per_page=800.0, tables=(table,), sanities=(sanity,),
+        numeric=NumericRecall(0, 0, ()), crosswitness=CrossWitness(0, 0, 0, (), ()),
+        verifications=(det,),
+    )
+
+
+def test_independent_grid_counts_recovers_geometric_topology() -> None:
+    # The phantom table's geometry has 2 rows x 2 cols despite Docling's claimed 4 cols.
+    assert independent_grid_counts(_phantom_dual_merge_table()) == (2, 2)
+    # A clean table's geometry matches Docling exactly.
+    assert independent_grid_counts(_clean_concordant_table()) == (2, 2)
+    assert independent_grid_counts(_dual_flag_but_concordant_table()) == (2, 4)
+
+
+def test_structural_disagreement_gates_phantom_column_table() -> None:
+    # The phantom-column dual-merge table is CONVICTED: structural_disagreement=True, and even with
+    # every per-cell verdict exact the table routes structural_disagreement (NOT self_verified) and
+    # its cells do NOT count self_verified/exact.
+    table = _phantom_dual_merge_table()
+    s = structural_sanity(table)
+    assert s.dual_table_merge_suspected is True
+    assert (s.geo_rows, s.geo_cols) == (2, 2)
+    assert s.structural_disagreement is True
+
+    det = _exact_det(table)  # every cell exact — the silent-exact risk the gate blocks
+    assert det.exact
+    assert table_route_with_structure(det, s) == ROUTE_STRUCTURAL_DISAGREEMENT
+
+    rep = _report(table, s, det)
+    assert rep.routes == (ROUTE_STRUCTURAL_DISAGREEMENT,)
+    assert rep.n_cells_verified == 0                     # cells NOT counted exact
+    assert rep.n_cells_structural_disagreement == 8      # all 8 demoted
+    assert rep.n_tables_exact == 0
+    assert rep.n_tables_structural_disagreement == 1
+
+
+def test_clean_concordant_table_is_not_gated() -> None:
+    # A geometry-concordant, non-dual table is untouched by the gate: self_verified, cells counted.
+    table = _clean_concordant_table()
+    s = structural_sanity(table)
+    assert s.dual_table_merge_suspected is False
+    assert s.structural_disagreement is False
+    det = _exact_det(table)
+    assert table_route_with_structure(det, s) == ROUTE_SELF_VERIFIED
+    rep = _report(table, s, det)
+    assert rep.routes == (ROUTE_SELF_VERIFIED,)
+    assert rep.n_cells_verified == 4 and rep.n_tables_exact == 1
+    assert rep.n_cells_structural_disagreement == 0
+
+
+def test_dual_merge_flag_but_geometry_concordant_is_not_gated() -> None:
+    # The false-alarm case: dual_table_merge_suspected is True, but the independent geometry AGREES
+    # with Docling's counts → structural_disagreement is False, so the table is NOT gated (it keeps
+    # its ordinary self_verified verdict). This is the 1 false alarm the audit removes.
+    table = _dual_flag_but_concordant_table()
+    s = structural_sanity(table)
+    assert s.dual_table_merge_suspected is True
+    assert (s.geo_rows, s.geo_cols) == (2, 4)
+    assert s.structural_disagreement is False
+    det = _exact_det(table)
+    assert table_route_with_structure(det, s) == ROUTE_SELF_VERIFIED
+    assert _report(table, s, det).n_cells_verified == 8  # not demoted
+
+
+def test_structural_gate_blocks_vision_graduation_of_topology_wrong_table() -> None:
+    # A structurally-disagreeing table must NOT graduate topology-wrong: verify_tables_vision skips
+    # it when its structural_disagreement flag is set — even though, ungated, its divergent cell
+    # would graduate (vision ≡ pdfium). This proves the GATE, not the data, blocks graduation.
+    table = _phantom_dual_merge_table()
+    det = TableVerification(
+        locator=table.locator, page_num=1, table_index=0, n_cells=8, n_exact=7, n_no_witness=0,
+        divergences=(
+            TableCellDivergence(row=1, col=1, docling_text="1,5", witness_text="1.5"),
+        ),
+    )
+    reader = lambda _pn, _bb: "1.5"  # vision ≡ pdfium witness → would graduate if ungated
+
+    gated = verify_tables_vision([table], [det], reader, structural_disagreement=[True])
+    assert gated == ()  # topology-wrong table skipped: never graduates
+
+    ungated = verify_tables_vision([table], [det], reader)  # gate disabled (None)
+    assert len(ungated) == 1 and ungated[0].n_graduated == 1  # would have graduated

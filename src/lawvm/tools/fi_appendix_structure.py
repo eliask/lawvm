@@ -59,6 +59,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 from lawvm.core.source_document.ir import SourceDocumentNode, SourceDocumentNodeKind
 from lawvm.finland.op_equivalence import text_equivalence
+from lawvm.tools.fi_appendix_vision_screen import scan_garble
 
 _FINLEX_DEFAULT = "data/finlex.farchive"
 
@@ -303,6 +304,33 @@ class TableVerification:
         }
 
 
+#: A cell/block whose two decoders AGREE (A≡B modulo the inert quotient) can still carry a
+#: corruption signature in its agreed text — the shared-broken-CMap path where a broken ToUnicode
+#: CMap maps ``ä``→``‰`` / a Private-Use-Area glyph and BOTH the Docling TableFormer decoder and the
+#: pdfium text layer (reading the SAME broken font) emit the SAME garbled string, so
+#: ``text_equivalence`` sees them equal and the unit would silently count EXACT. This
+#: belt-and-suspenders scan (``fi_appendix_vision_screen.scan_garble``) runs on the AGREED
+#: (Docling) text — the structured content kept for that unit — and DEMOTES it from exact to a
+#: routed divergence with a garble note when it is not clean. It NEVER promotes.
+#:
+#: It scans ONLY the agreed Docling text, NOT the pdfium witness: a genuine shared-CMap corruption
+#: corrupts the Docling text too (same broken font), so the Docling side alone catches it; scanning
+#: the witness would additionally fire on BENIGN witness-only artifacts the inert quotient already
+#: folds (e.g. a U+0002 soft-hyphen at a wrapped line break — ``yli\x02paine`` ≡ ``ylipaine``),
+#: which are NOT corruption. Auditing confirms 0 garbled-agreed units on the born-digital corpus, so
+#: this is non-regressive on real data — a pure safety net for the shared-CMap-corruption path.
+def _agreed_text_garble_note(agreed_text: str) -> str:
+    """Garble note for an A≡B agreed unit's AGREED (Docling) text, or ``""`` when clean (pure).
+
+    Scans the agreed Docling text for a deterministic corruption signature (PUA / control / U+FFFD /
+    mojibake). Returns a short ``garble[<kinds>]`` note (the demotion reason) if not clean, else ``""``.
+    """
+    report = scan_garble(agreed_text)
+    if not report.clean:
+        return "garble[" + ",".join(k.value for k in report.kinds) + "]"
+    return ""
+
+
 #: A cell whose Docling text and independent bbox witness are BOTH blank after the
 #: inert quotient is vacuously exact (an empty spacer cell); no divergence is emitted.
 def verify_table_exact(
@@ -327,7 +355,18 @@ def verify_table_exact(
             continue
         witness = bbox_witness(table.page_num, cell.bbox)
         if text_equivalence(cell.text, witness).equal:
-            n_exact += 1
+            # Belt-and-suspenders: an A≡B agreed cell whose agreed text still carries a shared-CMap
+            # corruption signature is DEMOTED from exact to a routed divergence, never counted.
+            garble_note = _agreed_text_garble_note(cell.text)
+            if garble_note:
+                divergences.append(
+                    TableCellDivergence(
+                        row=cell.row, col=cell.col, docling_text=cell.text,
+                        witness_text=witness, descriptor=garble_note,
+                    )
+                )
+            else:
+                n_exact += 1
         else:
             divergences.append(
                 TableCellDivergence(
@@ -544,6 +583,12 @@ ROUTE_SELF_VERIFIED = "self_verified"
 ROUTE_VISION_ESCALATE = "vision_escalate"
 #: No cell had a bbox witness at all → nothing for the deterministic lane to verify.
 ROUTE_NO_WITNESS_DEFERRED = "no_witness_deferred"
+#: STRUCTURAL MIS-ATTRIBUTION gate (Wire 2): an independent geometric re-grid disagrees with
+#: Docling's topology on a dual-merge-suspected table (phantom column / duplicated spanning
+#: header). Its cells' per-cell A≡B verdicts may all be exact yet the (row,col) binding is WRONG,
+#: so the table must NOT count self_verified/exact and must NOT graduate topology-wrong — it is
+#: routed to vision/human under this typed outcome. Overrides self_verified AND vision_escalate.
+ROUTE_STRUCTURAL_DISAGREEMENT = "structural_disagreement"
 
 
 # --------------------------------------------------------------------------- #
@@ -620,6 +665,23 @@ def table_escalation_route(verification: TableVerification) -> str:
     return _route_from_verdict(
         has_divergence=bool(verification.divergences), n_exact=verification.n_exact
     )
+
+
+def table_route_with_structure(
+    verification: TableVerification, sanity: StructuralSanity
+) -> str:
+    """Meta route with the Wire-2 STRUCTURAL gate applied (pure).
+
+    A table the geometric re-grid convicts of a topology error
+    (:attr:`StructuralSanity.structural_disagreement`) is routed
+    :data:`ROUTE_STRUCTURAL_DISAGREEMENT` REGARDLESS of its per-cell verdicts — overriding both
+    ``self_verified`` (its all-exact cells are topology-wrong, so must NOT count) and
+    ``vision_escalate`` (a badly-merged table must not graduate topology-wrong). Otherwise the
+    ordinary :func:`table_escalation_route` verdict stands.
+    """
+    if sanity.structural_disagreement:
+        return ROUTE_STRUCTURAL_DISAGREEMENT
+    return table_escalation_route(verification)
 
 
 # --------------------------------------------------------------------------- #
@@ -910,6 +972,7 @@ def verify_tables_vision(
     *,
     born_digital: bool = True,
     max_cells: Optional[int] = None,
+    structural_disagreement: Optional[Sequence[bool]] = None,
 ) -> Tuple[TableVisionVerification, ...]:
     """Vision THIRD-WITNESS tie-break over the ``vision_escalate`` stratum (injectable reader).
 
@@ -940,10 +1003,19 @@ def verify_tables_vision(
     TOTAL routed cells re-read (a vision-spend budget); ``None`` is unbounded. Under a cap the
     un-read routed cells stay in ``n_routed`` but appear in no bucket, so ``n_read`` (< ``n_routed``)
     is the sampled base. Pure apart from the injected reader.
+
+    ``structural_disagreement`` (optional, per-table, aligned with ``tables``): when True for a table,
+    it is SKIPPED (never re-read, never graduated) — the Wire-2 structural gate, so a topology-wrong
+    dual-merge table cannot graduate topology-wrong. Omit (``None``) to disable the gate.
     """
     out: List[TableVisionVerification] = []
     budget = max_cells
-    for table, det in zip(tables, det_verifications, strict=True):
+    for idx, (table, det) in enumerate(zip(tables, det_verifications, strict=True)):
+        # WIRE 2 gate: a table the geometric re-grid convicts of a topology error must NOT graduate
+        # (a badly-merged table can't be allowed to graduate topology-wrong) — it is skipped here
+        # and typed ROUTE_STRUCTURAL_DISAGREEMENT at the report level instead.
+        if structural_disagreement is not None and structural_disagreement[idx]:
+            continue
         if table_escalation_route(det) != ROUTE_VISION_ESCALATE:
             continue
         cells_by_pos = {(c.row, c.col): c for c in table.cells}
@@ -1201,7 +1273,22 @@ def verify_text_blocks_exact(
             continue
         witness = bbox_witness(block.page_num, block.bbox)
         if text_equivalence(block.text, witness).equal:
-            n_exact += 1
+            # Belt-and-suspenders (mirrors the table lane): an A≡B agreed block whose agreed text
+            # still carries a shared-CMap corruption signature is DEMOTED from exact to routed.
+            garble_note = _agreed_text_garble_note(block.text)
+            if garble_note:
+                divergences.append(
+                    TextBlockDivergence(
+                        block_index=block.block_index,
+                        page_num=block.page_num,
+                        kind=block.kind,
+                        docling_text=block.text,
+                        witness_text=witness,
+                        descriptor=garble_note,
+                    )
+                )
+            else:
+                n_exact += 1
         else:
             divergences.append(
                 TextBlockDivergence(
@@ -1543,9 +1630,100 @@ def structured_table_from_node(
     )
 
 
+# --------------------------------------------------------------------------- #
+# INDEPENDENT GEOMETRIC RE-GRID WITNESS (Wire 2 — the structural mis-attribution gate). #
+# --------------------------------------------------------------------------- #
+#
+# Docling's dual-table merge / duplicated-spanning-header failure produces a grid whose per-cell
+# A≡B verdicts can ALL be exact (each phantom-column cell's own bbox reads its own text) while the
+# TOPOLOGY — the (row,col) binding that carries the key→value meaning — is WRONG. The existing
+# ``dual_table_merge_suspected`` flag catches these but is diagnostic-only. This independent witness
+# re-derives the grid's (rows, cols) from the CELL BBOX GEOMETRY ALONE — clustering the cells' y- and
+# x-intervals by single-linkage overlap, IGNORING Docling's own row/col labels — so a phantom column
+# Docling counted is exposed as a geometry-vs-Docling count disagreement. (This mirrors the audit's
+# G1 re-grid, which gates 9/9 real dual-merge topology errors and leaves the 1 geometry-concordant
+# dual-merge false-alarm ungated.)
+
+
+def _cluster_interval_count(
+    intervals: Sequence[Tuple[float, float]],
+    *,
+    tol: float = 1.0,
+    min_overlap_frac: float = 0.20,
+) -> int:
+    """Count geometric clusters of 1-D ``[lo, hi]`` intervals by single-linkage overlap (pure).
+
+    Two intervals LINK iff they overlap by more than ``max(tol, min_overlap_frac * min_extent)``;
+    the number of connected components is the independent geometric row (y-intervals) or column
+    (x-intervals) count. Sorted-by-lo sweep with an early break (a later interval whose lo is past
+    this one's hi + tol cannot overlap it). Faithful to the audit's G1 re-grid clusterer so the gate
+    reproduces its witness exactly.
+    """
+    n = len(intervals)
+    if n == 0:
+        return 0
+    parent = list(range(n))
+
+    def find(a: int) -> int:
+        while parent[a] != a:
+            parent[a] = parent[parent[a]]
+            a = parent[a]
+        return a
+
+    def union(a: int, b: int) -> None:
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[ra] = rb
+
+    order = sorted(range(n), key=lambda i: intervals[i][0])
+    for ii in range(n):
+        a = order[ii]
+        lo_a, hi_a = intervals[a]
+        for jj in range(ii + 1, n):
+            b = order[jj]
+            lo_b, hi_b = intervals[b]
+            if lo_b > hi_a + tol:
+                break  # sorted by lo: no later interval can overlap this one
+            overlap = min(hi_a, hi_b) - max(lo_a, lo_b)
+            ext = min(hi_a - lo_a, hi_b - lo_b)
+            thr = max(tol, min_overlap_frac * ext) if ext > 0 else tol
+            if overlap > thr:
+                union(a, b)
+    return len({find(i) for i in range(n)})
+
+
+def independent_grid_counts(table: StructuredTable) -> Tuple[int, int]:
+    """Independent geometric ``(geo_rows, geo_cols)`` witness for a table (pure).
+
+    Clusters the table's CELL BBOXES into geometric rows (y-interval single-linkage) and columns
+    (x-interval single-linkage), deliberately IGNORING Docling's own ``(row, col)`` labels — that
+    independence is the whole point (contrast :func:`_axis_bands`, which keys the bands ON those
+    labels). A table with fewer than two bbox'd cells has no usable geometry, so it returns Docling's
+    own ``(n_rows, n_cols)`` — geometry-concordant by construction, hence never gated.
+    """
+    y_intervals: List[Tuple[float, float]] = []
+    x_intervals: List[Tuple[float, float]] = []
+    for c in table.cells:
+        bb = c.bbox
+        if bb is None:
+            continue
+        y_intervals.append((min(bb[1], bb[3]), max(bb[1], bb[3])))
+        x_intervals.append((min(bb[0], bb[2]), max(bb[0], bb[2])))
+    if len(y_intervals) < 2:
+        return (table.n_rows, table.n_cols)
+    return (_cluster_interval_count(y_intervals), _cluster_interval_count(x_intervals))
+
+
 @dataclass(frozen=True, slots=True)
 class StructuralSanity:
-    """Structural verdict on one table (rectangularity, header, dual-merge)."""
+    """Structural verdict on one table (rectangularity, header, dual-merge, geometric re-grid).
+
+    ``geo_rows`` / ``geo_cols`` are the INDEPENDENT geometric-witness counts
+    (:func:`independent_grid_counts`); ``structural_disagreement`` is the Wire-2 GATE: True iff the
+    table is dual-merge-suspected AND that geometry disagrees with Docling's ``(n_rows, n_cols)`` —
+    the phantom-column / duplicated-header topology error. A structurally-disagreeing table must NOT
+    count self_verified/exact and must NOT graduate topology-wrong (it routes to vision/human).
+    """
 
     rectangular: bool
     header_row_found: bool
@@ -1554,6 +1732,9 @@ class StructuralSanity:
     n_bbox_cells: int
     n_cells: int
     detail: str
+    geo_rows: int = 0
+    geo_cols: int = 0
+    structural_disagreement: bool = False
 
 
 def structural_sanity(table: StructuredTable) -> StructuralSanity:
@@ -1582,15 +1763,27 @@ def structural_sanity(table: StructuredTable) -> StructuralSanity:
 
     dual = bool(repeated) or table.n_cols >= _DUAL_MERGE_COL_THRESHOLD
 
+    # WIRE 2 — independent geometric re-grid witness. Cluster the cell bboxes into geometric rows /
+    # columns and gate a table whose DUAL-MERGE suspicion is CORROBORATED by a geometry-vs-Docling
+    # count disagreement (the phantom column / duplicated spanning header). Geometry-concordant
+    # dual-merge false-alarms (geo counts match Docling) are NOT gated.
+    geo_rows, geo_cols = independent_grid_counts(table)
+    structural_disagreement = dual and (
+        geo_rows != table.n_rows or geo_cols != table.n_cols
+    )
+
     n_bbox = sum(1 for c in table.cells if c.bbox is not None)
     detail_parts = [
         f"rows={table.n_rows}",
         f"cols={table.n_cols}",
         f"cells={len(table.cells)}",
         f"bbox_cells={n_bbox}",
+        f"geo={geo_rows}x{geo_cols}",
     ]
     if repeated:
         detail_parts.append("repeated_header=" + "|".join(repeated))
+    if structural_disagreement:
+        detail_parts.append("structural_disagreement")
     return StructuralSanity(
         rectangular=rectangular,
         header_row_found=header_row_found,
@@ -1599,6 +1792,9 @@ def structural_sanity(table: StructuredTable) -> StructuralSanity:
         n_bbox_cells=n_bbox,
         n_cells=len(table.cells),
         detail="; ".join(detail_parts),
+        geo_rows=geo_rows,
+        geo_cols=geo_cols,
+        structural_disagreement=structural_disagreement,
     )
 
 
@@ -1675,7 +1871,22 @@ class StatuteTableReport:
 
     @property
     def n_cells_verified(self) -> int:
-        return sum(v.n_exact for v in self.verifications)
+        # WIRE 2: a structurally-disagreeing table's per-cell exact verdicts are topology-wrong,
+        # so its cells do NOT count self_verified/exact (the gate demotes the whole table).
+        return sum(
+            v.n_exact
+            for v, s in zip(self.verifications, self.sanities, strict=True)
+            if not s.structural_disagreement
+        )
+
+    @property
+    def n_cells_structural_disagreement(self) -> int:
+        """Cells DEMOTED from exact by the Wire-2 structural gate (topology-wrong dual-merge)."""
+        return sum(
+            v.n_exact
+            for v, s in zip(self.verifications, self.sanities, strict=True)
+            if s.structural_disagreement
+        )
 
     @property
     def n_cells_routed_to_vision(self) -> int:
@@ -1699,17 +1910,31 @@ class StatuteTableReport:
 
     @property
     def n_tables_exact(self) -> int:
-        return sum(1 for v in self.verifications if v.exact)
+        # A structurally-disagreeing table is NOT exact even with 0 per-cell divergences (its
+        # topology is wrong), so the Wire-2 gate excludes it from the exact-table count.
+        return sum(
+            1
+            for v, s in zip(self.verifications, self.sanities, strict=True)
+            if v.exact and not s.structural_disagreement
+        )
 
     @property
     def routes(self) -> Tuple[str, ...]:
-        """Per-table meta-level routing verdict (self-verified / vision / deferred)."""
-        return tuple(table_escalation_route(v) for v in self.verifications)
+        """Per-table meta-level routing verdict (structural_disagreement / self-verified / vision / deferred)."""
+        return tuple(
+            table_route_with_structure(v, s)
+            for v, s in zip(self.verifications, self.sanities, strict=True)
+        )
 
     @property
     def n_tables_vision_escalate(self) -> int:
         """Tables the deterministic lane could not verify → routed to a vision witness."""
         return sum(1 for r in self.routes if r == ROUTE_VISION_ESCALATE)
+
+    @property
+    def n_tables_structural_disagreement(self) -> int:
+        """Tables the Wire-2 geometric re-grid convicted of a topology error (typed, not exact)."""
+        return sum(1 for r in self.routes if r == ROUTE_STRUCTURAL_DISAGREEMENT)
 
     def to_jsonable(self) -> Dict[str, object]:
         return {
@@ -1730,6 +1955,9 @@ class StatuteTableReport:
                     "dual_table_merge_suspected": s.dual_table_merge_suspected,
                     "repeated_header_labels": list(s.repeated_header_labels),
                     "n_bbox_cells": s.n_bbox_cells,
+                    "geo_rows": s.geo_rows,
+                    "geo_cols": s.geo_cols,
+                    "structural_disagreement": s.structural_disagreement,
                 }
                 for t, s in zip(self.tables, self.sanities, strict=True)
             ],
@@ -1752,6 +1980,8 @@ class StatuteTableReport:
                 "n_cells_verified": self.n_cells_verified,
                 "n_cells_witnessed": self.n_cells_witnessed,
                 "n_tables_vision_escalate": self.n_tables_vision_escalate,
+                "n_tables_structural_disagreement": self.n_tables_structural_disagreement,
+                "n_cells_structural_disagreement": self.n_cells_structural_disagreement,
                 "tables": [
                     {**v.to_jsonable(), "route": route}
                     for v, route in zip(self.verifications, self.routes, strict=True)
@@ -2479,6 +2709,9 @@ def structure_statute_pdf(
             vision_region_reader,
             born_digital=mean_chars >= _MIN_TEXT_LAYER_CHARS,
             max_cells=vision_max_cells,
+            # WIRE 2: a topology-wrong dual-merge table is skipped by the vision tie-break so it
+            # cannot graduate topology-wrong (it is typed structural_disagreement at report level).
+            structural_disagreement=[s.structural_disagreement for s in sanities],
         )
     all_cell_texts = tuple(txt for t in tables for txt in t.cell_texts())
     reference_text = "\n".join(page_texts)
@@ -2630,6 +2863,8 @@ def render_report_text(reports: Sequence[StatuteTableReport]) -> str:
                 flags.append("NO-HEADER")
             if s.dual_table_merge_suspected:
                 flags.append("DUAL-MERGE?")
+            if s.structural_disagreement:
+                flags.append(f"STRUCT-DISAGREE(geo={s.geo_rows}x{s.geo_cols})")
             flag_str = (" [" + ",".join(flags) + "]") if flags else ""
             lines.append(
                 f"    table#{t.table_index} p{t.page_num} "
@@ -2657,6 +2892,7 @@ def render_report_text(reports: Sequence[StatuteTableReport]) -> str:
         lines.append(
             f"  ROUTE: self_verified={r.routes.count(ROUTE_SELF_VERIFIED)} "
             f"vision_escalate={r.n_tables_vision_escalate} "
+            f"structural_disagreement={r.n_tables_structural_disagreement} "
             f"no_witness_deferred={r.routes.count(ROUTE_NO_WITNESS_DEFERRED)}"
         )
         # VISION third-witness tie-break: cells GRADUATED to exact (grade exact_visual) because two
