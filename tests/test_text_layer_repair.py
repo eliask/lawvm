@@ -11,7 +11,10 @@ from __future__ import annotations
 
 import re
 
-from lawvm.ingest.text_layer_repair import repair_glyph_substitution
+from lawvm.ingest.text_layer_repair import (
+    reconcile_vision_tokens,
+    repair_glyph_substitution,
+)
 
 # --------------------------------------------------------------------------- #
 # The general mechanic: restore + independent validator.                       #
@@ -80,3 +83,91 @@ def test_fi_cite_slash_as_one_through_general_primitive() -> None:
     assert repair_glyph_substitution("(150511992)", corrupt_re=four, restore=r"(\1/\2)", is_plausible=band) == "(1505/1992)"
     # A parenthesised number whose trailing 4 digits are not a plausible year is left untouched.
     assert repair_glyph_substitution("(123499999)", corrupt_re=four, restore=r"(\1/\2)", is_plausible=band) == "(123499999)"
+
+
+# --------------------------------------------------------------------------- #
+# The vision-witness token reconciliation (phase-5 second-reader validator).    #
+# The independent vision read is a REAL example: a rendered-page transcription   #
+# that COVERS the geom span plus surrounding page furniture / headings, so the   #
+# window-anchoring (not just a clean equal-length string) is exercised.          #
+# --------------------------------------------------------------------------- #
+
+# The corrupt-font geom read of an op body (HE 91/1998: broken CMap maps o→a).
+_GEOM_BODY = "Karvausoikeuden edellytykset Korvausta suoritetaan henkilövahingosta jos"
+# An INDEPENDENT vision read of the same rendered PAGE — the body PLUS the page's
+# running header and section heading before it (what the pixels actually show).
+_VISION_PAGE = (
+    "HE 91/1998 vp 2 § Korvausoikeuden edellytykset "
+    "Korvausta suoritetaan henkilövahingosta jos"
+)
+
+
+def test_reconcile_recovers_single_letter_glyph_confusion() -> None:
+    """(a) A corrupt token vision reads correctly (o→a) is substituted; the op body is fixed."""
+    res = reconcile_vision_tokens(_GEOM_BODY, _VISION_PAGE)
+    assert res.changed
+    assert [(s.geom_token, s.vision_token) for s in res.substitutions] == [
+        ("Karvausoikeuden", "Korvausoikeuden")
+    ]
+    # Only the corrupt boundary token changed; every other token byte-identical.
+    assert res.repaired_text == _GEOM_BODY.replace("Karvausoikeuden", "Korvausoikeuden")
+
+
+def test_reconcile_agreement_is_byte_identical() -> None:
+    """(b) Where the two independent reads AGREE, the geom text is returned UNCHANGED."""
+    geom = "Korvausta suoritetaan henkilövahingosta"
+    res = reconcile_vision_tokens(geom, "2 § " + geom + " jos")
+    assert not res.changed
+    assert res.repaired_text == geom  # byte-identical (no substitution)
+
+
+def test_reconcile_empty_vision_is_noop() -> None:
+    """(d-no-reader analogue) An empty/whitespace vision read never corrects anything."""
+    assert reconcile_vision_tokens(_GEOM_BODY, "").repaired_text == _GEOM_BODY
+    assert not reconcile_vision_tokens(_GEOM_BODY, "   \n ").changed
+
+
+def test_reconcile_preserves_a_different_word_non_masking() -> None:
+    """(c) A genuine multi-character content difference is NOT a glyph confusion → PRESERVED.
+
+    The PDF proposes a materially different word ("yhdistys") that the vision witness reads
+    (agreeing with the geom read that the pixels show it); a naive close-word substitution
+    would MASK that real difference, so a >1-character difference is never adopted.
+    """
+    geom = "kuuluttava potilasvakuutusyhdistykseen Yhdistys hoitaa"
+    # Vision reads the SAME real word (the pixels show "yhdistys") — agreement preserves it.
+    res = reconcile_vision_tokens(geom, "on kuuluttava potilasvakuutusyhdistykseen Yhdistys hoitaa toiminnan")
+    assert not res.changed
+    assert res.repaired_text == geom
+    # Even if a vision witness read a DIFFERENT real word of a different length, it is not a
+    # single-letter glyph confusion, so it is rejected (non-masking).
+    res2 = reconcile_vision_tokens("tekee Potilasvakuutuskeskus", "tekee potilasvakuutusyhdistys")
+    assert not res2.changed
+    assert res2.repaired_text == "tekee Potilasvakuutuskeskus"
+
+
+def test_reconcile_rejects_less_plausible_vision_token() -> None:
+    """(c-plausibility) A single-letter change that makes the vision token LESS plausible is rejected.
+
+    Guard 3 (``not more_plausible``) blocks a vision MISREAD that degrades a token: geom is a
+    balanced run, vision differs by ONE letter into a vowel-degenerate run (a lexical
+    implausibility signal), so the geom token survives even though the shape is single-letter.
+    """
+    geom = "aaaacaab tavaraa"  # balanced-ish run (0 implausibility signals)
+    vision = "aaaaaaab tavaraa"  # differs by one letter → all-vowel run (vowel_degenerate)
+    res = reconcile_vision_tokens(geom, vision)
+    assert not res.changed
+    assert res.repaired_text == geom
+
+
+def test_reconcile_does_not_mutate_a_digit_or_cite_difference() -> None:
+    """A single-DIGIT difference (a cite year, an enumerator) is NOT a letter glyph confusion.
+
+    The differing position must be a LETTER in both reads, so a year digit is never silently
+    rewritten toward a vision read (that repair has its own value-band validator elsewhere).
+    """
+    geom = "annetun lain (367/1961) nojalla"
+    vision = "annetun lain (367/1968) nojalla"  # single-digit difference
+    res = reconcile_vision_tokens(geom, vision)
+    assert not res.changed
+    assert res.repaired_text == geom

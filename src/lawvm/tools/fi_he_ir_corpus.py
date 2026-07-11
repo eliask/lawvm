@@ -81,6 +81,10 @@ class HEDiffRow:
     #: witness-less row is byte-identical to the pre-corroboration JSONL.
     escalation_pending: Optional[EscalationPending] = None
     corroboration_receipt: Optional[CorroborationReceipt] = None
+    #: PAYLOAD corroborations (0 / () offline). Emitted in ``to_json`` ONLY when nonzero, so
+    #: a witness-less row stays byte-identical to the pre-corroboration JSONL.
+    corroborated: int = 0
+    payload_receipts: Tuple[CorroborationReceipt, ...] = ()
 
     def to_json(self) -> Dict[str, object]:
         payload: Dict[str, object] = {
@@ -107,6 +111,9 @@ class HEDiffRow:
             payload["escalation_pending"] = self.escalation_pending.to_json()
         if self.corroboration_receipt is not None:
             payload["corroboration_receipt"] = self.corroboration_receipt.to_json()
+        if self.corroborated:
+            payload["corroborated"] = self.corroborated
+            payload["payload_receipts"] = [r.to_json() for r in self.payload_receipts]
         return payload
 
 
@@ -127,6 +134,8 @@ def _row_from_result(result: HECompareResult) -> HEDiffRow:
         payload_skipped=result.payload_skipped,
         escalation_pending=result.escalation_pending,
         corroboration_receipt=result.corroboration_receipt,
+        corroborated=result.corroborated,
+        payload_receipts=result.payload_receipts,
     )
 
 
@@ -162,6 +171,10 @@ class HECorpusReport:
     n_agreed: int = 0
     n_verdict_changed: int = 0
     receipts: Tuple[CorroborationReceipt, ...] = ()
+    #: PAYLOAD corroborations (ops a vision witness reconciled ``payload_mismatch`` →
+    #: ``payload_corroborated``). 0 on the free offline lane. NEVER folded into ``n_exact``
+    #: (a vision recovery is a receipted candidate, not a deterministic-exact certification).
+    n_corroborated: int = 0
 
     @property
     def exact_match_rate(self) -> float:
@@ -199,7 +212,7 @@ def aggregate_rows(rows: Sequence[HEDiffRow], *, worst_limit: int = 15) -> HECor
     n_benign = n_escalation = n_pathology = 0
     escalation_counts: Dict[str, int] = {}
     pathology_counts: Dict[str, int] = {}
-    n_resolved = n_agreed = n_verdict_changed = 0
+    n_resolved = n_agreed = n_verdict_changed = n_corroborated = 0
     receipts: List[CorroborationReceipt] = []
     for r in rows:
         status_counts[r.compare_status] = status_counts.get(r.compare_status, 0) + 1
@@ -212,6 +225,16 @@ def aggregate_rows(rows: Sequence[HEDiffRow], *, worst_limit: int = 15) -> HECor
             if r.corroboration_receipt.agreed:
                 n_agreed += 1
             if r.corroboration_receipt.verdict_changed:
+                n_verdict_changed += 1
+        # PAYLOAD corroborations: each vision-reconciled op carries its own receipt (a
+        # verdict_changed candidate — the corrupt geom read the vision witness corrected).
+        for rcpt in r.payload_receipts:
+            receipts.append(rcpt)
+            n_resolved += 1
+            n_corroborated += 1
+            if rcpt.agreed:
+                n_agreed += 1
+            if rcpt.verdict_changed:
                 n_verdict_changed += 1
         if r.compare_status == "compared":
             n_compared += 1
@@ -255,6 +278,7 @@ def aggregate_rows(rows: Sequence[HEDiffRow], *, worst_limit: int = 15) -> HECor
         n_agreed=n_agreed,
         n_verdict_changed=n_verdict_changed,
         receipts=tuple(receipts),
+        n_corroborated=n_corroborated,
     )
 
 
@@ -465,6 +489,13 @@ def render_report(report: HECorpusReport) -> str:
         f"  corroborated(vision witness)={report.n_escalation_resolved} "
         f"agreed={report.n_agreed} verdict_changed={report.n_verdict_changed}"
     )
+    # Payload corroborations (corrupt-font glyph confusions a vision witness reconciled to
+    # XML-equality) are surfaced ONLY when nonzero, so the free offline render is byte-identical.
+    if report.n_corroborated:
+        lines.append(
+            f"  payload_corroborated(corrupt-font glyph→vision)={report.n_corroborated} "
+            "— NOT folded into exact (a receipted candidate, not a certification)"
+        )
     lines.append(
         f"  pathology/un-accounted={report.n_pathology} "
         f"{dict(sorted(report.pathology_counts.items()))}"
@@ -506,7 +537,7 @@ def render_report(report: HECorpusReport) -> str:
 
 
 def report_to_json(report: HECorpusReport) -> Dict[str, object]:
-    return {
+    out: Dict[str, object] = {
         "n_attempted": report.n_attempted,
         "status_counts": report.status_counts,
         "n_compared": report.n_compared,
@@ -544,6 +575,11 @@ def report_to_json(report: HECorpusReport) -> Dict[str, object]:
             for r in report.worst
         ],
     }
+    # Payload-corroboration count surfaced ONLY when nonzero, so the free offline JSON is
+    # byte-identical to the pre-corroboration report.
+    if report.n_corroborated:
+        out["n_corroborated"] = report.n_corroborated
+    return out
 
 
 def main(args: argparse.Namespace) -> None:

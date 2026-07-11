@@ -22,6 +22,7 @@ from lawvm.tools.fi_he_ir_compare import (
     _PDF_COMMENCEMENT_HEAD_RE,
     _PDF_CONSEQUENTIAL_REPEAL,
     _PDF_OUT_OF_SCOPE_STATUTE,
+    _PDF_PAYLOAD_CORROBORATED,
     HECompareResult,
     HEFlatOp,
     _asetusluonnos_region,
@@ -1237,6 +1238,91 @@ def test_word_overlap() -> None:
     assert _word_overlap("alfa beeta gamma", "alfa beeta gamma") == 1.0
     assert _word_overlap("alfa beeta", "gamma delta") == 0.0
     assert _word_overlap("", "x") == 0.0
+
+
+# --------------------------------------------------------------------------- #
+# Vision-witness PAYLOAD corroboration (corrupt-font glyph confusion) — the      #
+# CORROBORATE edge wired into the payload stage, driven by a STUB reader (no     #
+# backend). Determinism: no reader → byte-identical; a witness only ever moves   #
+# a mismatch to a SEPARATE ``payload_corroborated`` bucket, never to ``exact``.  #
+# --------------------------------------------------------------------------- #
+
+# The op-5 body: XML is the correct read; the PDF geom read has a single corrupt-font
+# glyph confusion (o→a: "Korvausoikeuden" → "Karvausoikeuden"), lexically plausible so
+# ``suspect_region`` never fires — the residual payload_mismatch the vision witness fixes.
+_XML_BODY5 = "Korvausoikeuden edellytykset korvausta suoritetaan riittavan pitkasti vertailua varten"
+_PDF_BODY5 = "Karvausoikeuden edellytykset korvausta suoritetaan riittavan pitkasti vertailua varten"
+
+
+def _corrupt_font_he():
+    xml = _he_xml(_CLAUSE, bodies={"5": f"5 {_SEC} {_XML_BODY5}", "7": f"7 {_SEC} Uusi seitsemannen pykalan sisalto tassa riittavan pitkana."})
+    pdf = _pdf_page(
+        _CLAUSE,
+        body5=_PDF_BODY5,
+        body7="Uusi seitsemannen pykalan sisalto tassa riittavan pitkana.",
+    )
+    return xml, pdf
+
+
+def test_payload_mismatch_without_reader_is_open_defect() -> None:
+    """(d) No vision reader (the free lane): the corrupt-font body is an open payload_mismatch."""
+    xml, pdf = _corrupt_font_he()
+    r = compare_he(xml, pdf, he_year=2020, he_number=99)
+    assert r.counts["payload_mismatch"] == 1
+    assert r.corroborated == 0
+    assert r.counts.get(_PDF_PAYLOAD_CORROBORATED, 0) == 0
+
+
+def test_payload_corroborated_when_vision_recovers_glyph() -> None:
+    """(a) A stub vision witness reads the correct token → op moves payload_mismatch → corroborated.
+
+    Crucially, the recovery is NEVER folded into the deterministic ``exact`` headline: the HE
+    stays non-exact (``payload_corroborated`` is a typed, separately-bucketed candidate).
+    """
+    xml, pdf = _corrupt_font_he()
+    # The witness returns an INDEPENDENT page read (furniture + heading + the CORRECT body).
+    page = f"HE 99/2020 vp 5 {_SEC} {_XML_BODY5}"
+    r = compare_he(
+        xml, pdf, he_year=2020, he_number=99,
+        vision_reader=lambda pending: page,
+        pdf_locator="akn/.../main.pdf",
+        witness_model="stub-vision", witness_prompt="transcribe",
+    )
+    assert r.counts["payload_mismatch"] == 0
+    assert r.counts[_PDF_PAYLOAD_CORROBORATED] == 1
+    assert r.corroborated == 1
+    assert not r.exact_equivalent  # a vision recovery is NOT deterministic-exact
+    assert len(r.payload_receipts) == 1
+    rcpt = r.payload_receipts[0]
+    assert rcpt.verdict_changed is True and rcpt.agreed is False
+    assert rcpt.witness_fingerprint  # fingerprinted (prompt+model)
+
+
+def test_payload_stays_mismatch_when_vision_agrees_with_geom() -> None:
+    """(c) The witness reads the SAME (corrupt or genuinely-different) content → NOT corroborated.
+
+    Non-masking: where the two independent reads AGREE, no substitution is made, so a genuine
+    PDF-vs-XML difference is preserved as an honest ``payload_mismatch`` — never masked.
+    """
+    xml, pdf = _corrupt_font_he()
+    page = f"HE 99/2020 vp 5 {_SEC} {_PDF_BODY5}"  # vision agrees with the geom (corrupt) read
+    r = compare_he(
+        xml, pdf, he_year=2020, he_number=99,
+        vision_reader=lambda pending: page,
+    )
+    assert r.counts["payload_mismatch"] == 1
+    assert r.corroborated == 0
+
+
+def test_payload_stays_mismatch_when_vision_silent() -> None:
+    """A witness that could not read the page (cold store / empty read) → byte-identical mismatch."""
+    xml, pdf = _corrupt_font_he()
+    r = compare_he(
+        xml, pdf, he_year=2020, he_number=99,
+        vision_reader=lambda pending: "",
+    )
+    assert r.counts["payload_mismatch"] == 1
+    assert r.corroborated == 0
 
 
 # --------------------------------------------------------------------------- #

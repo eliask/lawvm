@@ -91,14 +91,19 @@ from lawvm.ingest.corroboration import (
     EscalationPending,
     VisionReader,
     corroborate,
+    witness_fingerprint,
 )
+from lawvm.ingest.llm_backends.prompt_fingerprint import prompt_fingerprint
 from lawvm.ingest.page_elements import dehyphenate
 from lawvm.ingest.suspect_region import (
     garble_reason,
     is_pervasively_garbled,
     is_read_garbled,
 )
-from lawvm.ingest.text_layer_repair import repair_glyph_substitution
+from lawvm.ingest.text_layer_repair import (
+    reconcile_vision_tokens,
+    repair_glyph_substitution,
+)
 from lawvm.tools.fi_amendment_ir_compare import DIVERGENCE_KINDS, OpDivergence
 
 _DEFAULT_FARCHIVE = "data/fi_government_proposal.farchive"
@@ -1260,6 +1265,17 @@ _PDF_OUT_OF_SCOPE_STATUTE = "pdf_out_of_scope_statute"
 #: titled second bill, so it is typed distinctly rather than folded into either bucket.
 _PDF_CONSEQUENTIAL_REPEAL = "pdf_consequential_repeal"
 
+#: A VISION-CORROBORATED payload recovery: a matched op whose geom body diffed from the
+#: trusted XML body as a spurious ``payload_mismatch`` caused by a CORRUPT-FONT text layer
+#: (a broken CMap mapping glyphs to wrong-but-legible shapes), which an INDEPENDENT vision
+#: read of the rendered page reconciled back to XML-equality via
+#: :func:`~lawvm.ingest.text_layer_repair.reconcile_vision_tokens` (single-letter glyph
+#: substitutions only, never consulting the XML). Typed DISTINCTLY from ``payload_mismatch``
+#: (it is no longer an open defect) but NEVER folded into the deterministic ``exact`` headline:
+#: a vision recovery is a receipted, separately-bucketed CANDIDATE — ``exact`` stays the
+#: byte-reproducible free-lane count, ``corroborated`` is the vision-witness lift.
+_PDF_PAYLOAD_CORROBORATED = "payload_corroborated"
+
 #: A bill-TITLE head word ("Laki …" / "Laiksi …" / "Laeiksi …"): the case-sensitive
 #: NOMINATIVE heading word that opens every numbered bill. Kept as spaced string literals
 #: (not a regex) — the same flat-census discipline as :data:`_ENACTMENT_FORMULA` /
@@ -2131,6 +2147,11 @@ class PayloadDiffResult:
     compared: int
     deferred: int
     skipped: int
+    #: Ops a vision witness reconciled from ``payload_mismatch`` → ``payload_corroborated``
+    #: (0 on the free offline / cold-store lane). Their receipts feed the corroboration
+    #: statistics substrate (never a certification — see :data:`_PDF_PAYLOAD_CORROBORATED`).
+    corroborated: int = 0
+    receipts: tuple[CorroborationReceipt, ...] = ()
 
 
 #: DIAGNOSTIC-ONLY display toggle (does NOT touch the equality decision, the fold set,
@@ -2162,6 +2183,12 @@ def diff_proposed_payloads(
     xml_bodies: dict[tuple[str, str], str],
     pdf_bodies: dict[tuple[str, str], str],
     matched_ops: tuple[HEFlatOp, ...],
+    *,
+    vision_reader: "Optional[VisionReader]" = None,
+    he_id: str = "",
+    pdf_locator: str = "",
+    witness_prompt: str = "",
+    witness_model: str = "",
 ) -> PayloadDiffResult:
     """Compare the proposed BODY TEXT of each matched op across witnesses.
 
@@ -2174,9 +2201,24 @@ def diff_proposed_payloads(
     Both body maps are keyed by ``(statute-id, section label)`` (the op's bill scope), so
     an omnibus HE's cross-bill "N §" reuse never pairs bill A's "17 §" body against bill B's
     "17 §" op. Each ``(statute, label)`` scope is compared once (first op in it).
+
+    ``vision_reader`` is the OPTIONAL vision witness for the CORROBORATE edge (``None`` =
+    the free offline lane, byte-identical to today). When injected, a residual-bearing body
+    is confronted against an INDEPENDENT read of its rendered page: the reader is asked for
+    the page's vision transcription (via the content-addressed store — a warm HIT replays
+    deterministically, a cold lookup returns empty and this is a no-op), that read is
+    token-reconciled against the geom body by :func:`~lawvm.ingest.text_layer_repair.
+    reconcile_vision_tokens` (single-letter glyph substitutions ONLY, never reading the XML),
+    and the REPAIRED body is re-compared with :func:`text_equivalence`. ONLY if the repair
+    now reaches XML-equality is the op re-typed ``payload_corroborated`` (with a receipt);
+    otherwise the ORIGINAL ``payload_mismatch`` stands BYTE-IDENTICALLY. The reconcile can
+    never turn a matched body into a mismatch (the acceptance gate adopts a repair only when
+    it lands on equality), so the outcome is identical to applying the witness to every
+    comparable body — it is confined to residual-bearing bodies purely for efficiency.
     """
     out: list[OpDivergence] = []
-    compared = deferred = skipped = 0
+    compared = deferred = skipped = corroborated = 0
+    receipts: list[CorroborationReceipt] = []
     seen_labels: set[tuple[str, str]] = set()
     for op in matched_ops:
         if op.action in ("repeal", "commencement", "expiry"):
@@ -2199,21 +2241,113 @@ def diff_proposed_payloads(
             continue
         compared += 1
         eq = text_equivalence(xml_text, pdf_text)
-        if eq.residual:
-            folds = ",".join(f.value for f in eq.folds) or "none"
-            out.append(
-                OpDivergence(
-                    kind="payload_mismatch",
-                    target_ref=op.target_ref,
-                    xml_op=op.render,
-                    pdf_op=op.render,
-                    detail=(
-                        f"proposed body differs beyond inert encoding (folds fired: {folds}); "
-                        f"xml={_payload_preview(eq.left_canon)!r} pdf={_payload_preview(eq.right_canon)!r}"
-                    ),
-                )
+        if not eq.residual:
+            continue
+        # A residual payload_mismatch. Confront it with the independent vision witness (if
+        # any): a CORRUPT-FONT text layer (garbled-but-legible glyphs) is reconciled against
+        # the rendered page's pixels. The reconcile + re-comparison NEVER consult the XML to
+        # DECIDE a substitution (only single-letter geom↔vision glyph confusions), so the
+        # recovery is label-independent; the XML is read only by the final equality check
+        # that already defines this stage's outcome.
+        rec = _corroborate_payload(
+            xml_text,
+            pdf_text,
+            vision_reader=vision_reader,
+            he_id=he_id,
+            target_ref=op.target_ref,
+            pdf_locator=pdf_locator,
+            witness_prompt=witness_prompt,
+            witness_model=witness_model,
+        )
+        if rec is not None:
+            corroborated += 1
+            receipts.append(rec[1])
+            out.append(rec[0])
+            continue
+        folds = ",".join(f.value for f in eq.folds) or "none"
+        out.append(
+            OpDivergence(
+                kind="payload_mismatch",
+                target_ref=op.target_ref,
+                xml_op=op.render,
+                pdf_op=op.render,
+                detail=(
+                    f"proposed body differs beyond inert encoding (folds fired: {folds}); "
+                    f"xml={_payload_preview(eq.left_canon)!r} pdf={_payload_preview(eq.right_canon)!r}"
+                ),
             )
-    return PayloadDiffResult(tuple(out), compared, deferred, skipped)
+        )
+    return PayloadDiffResult(
+        tuple(out), compared, deferred, skipped, corroborated=corroborated,
+        receipts=tuple(receipts),
+    )
+
+
+def _corroborate_payload(
+    xml_text: str,
+    pdf_text: str,
+    *,
+    vision_reader: "Optional[VisionReader]",
+    he_id: str,
+    target_ref: str,
+    pdf_locator: str,
+    witness_prompt: str,
+    witness_model: str,
+) -> "Optional[tuple[OpDivergence, CorroborationReceipt]]":
+    """Try to reconcile a corrupt-font ``payload_mismatch`` via an independent vision read.
+
+    Returns ``(payload_corroborated divergence, receipt)`` iff a vision witness is present,
+    reads the op body's page, and its token-reconciliation of the geom body reaches
+    XML-EQUALITY; otherwise ``None`` (the caller keeps the byte-identical ``payload_mismatch``).
+    The vision witness is confronted through the reused
+    :class:`~lawvm.ingest.corroboration.EscalationPending` seam (``PAYLOAD_DISPUTE``); the
+    substitutions are single-letter glyph confusions decided WITHOUT the XML. The emitted
+    receipt RECORDS the confrontation (``verdict_changed`` — the deterministic geom candidate
+    was a corrupt read the vision witness corrected); it is a candidate, not a certification.
+    """
+    if vision_reader is None:
+        return None
+    pending = EscalationPending(
+        unit_id=he_id,
+        kind=EscalationKind.PAYLOAD_DISPUTE,
+        reason=f"corrupt-font payload dispute at {target_ref}",
+        region=pdf_locator,
+        candidate_text=pdf_text,
+        candidate_op_summary=target_ref,
+    )
+    vision_text = vision_reader(pending) or ""
+    if not vision_text.strip():
+        return None  # cold store / witness could not read the page → no-op (byte-identical)
+    rec = reconcile_vision_tokens(pdf_text, vision_text)
+    if not rec.changed:
+        return None
+    if text_equivalence(xml_text, rec.repaired_text).residual:
+        return None  # the reconcile did not reach XML-equality → keep the payload_mismatch
+    subs = ", ".join(f"{s.geom_token}→{s.vision_token}" for s in rec.substitutions)
+    divergence = OpDivergence(
+        kind=_PDF_PAYLOAD_CORROBORATED,
+        target_ref=target_ref,
+        xml_op=None,
+        pdf_op=None,
+        detail=(
+            "corrupt-font geom body reconciled to XML-equality by an independent vision "
+            f"read ({len(rec.substitutions)} glyph substitution(s): {subs}) — "
+            "vision-corroborated, NOT deterministic-exact"
+        ),
+    )
+    receipt = CorroborationReceipt(
+        unit_id=he_id,
+        kind=EscalationKind.PAYLOAD_DISPUTE,
+        candidate=pdf_text,
+        vision_read=rec.repaired_text,
+        agreed=False,
+        verdict_changed=True,
+        region=f"{pdf_locator}#{target_ref}",
+        witness_fingerprint=witness_fingerprint(
+            witness_prompt=witness_prompt, witness_model=witness_model
+        ),
+    )
+    return divergence, receipt
 
 
 # --------------------------------------------------------------------------- #
@@ -2307,6 +2441,12 @@ class HECompareResult:
     #: (``None`` if the witness could not read the region → the unit stays pending).
     escalation_pending: Optional[EscalationPending] = None
     corroboration_receipt: Optional[CorroborationReceipt] = None
+    #: PAYLOAD corroborations: ops a vision witness reconciled from ``payload_mismatch`` →
+    #: ``payload_corroborated`` (0 / () on the free offline / cold-store lane). ``corroborated``
+    #: is the count; ``payload_receipts`` the per-op receipts (the statistics substrate). NEVER
+    #: folded into ``exact`` — a vision recovery is a receipted candidate, not a certification.
+    corroborated: int = 0
+    payload_receipts: tuple[CorroborationReceipt, ...] = ()
 
     @property
     def counts(self) -> dict[str, int]:
@@ -2336,6 +2476,10 @@ def compare_he(
     he_number: int,
     he_id: Optional[str] = None,
     classify_fn: "Optional[Callable[[str], object]]" = None,
+    vision_reader: "Optional[VisionReader]" = None,
+    pdf_locator: str = "",
+    witness_prompt: str = "",
+    witness_model: str = "",
 ) -> HECompareResult:
     """Diff an HE's proposed-op IR from its two witnesses (XML bytes + PDF reading text).
 
@@ -2352,6 +2496,11 @@ def compare_he(
     whole mega-amendment bill's johtolause is recovered rather than dropped.  The LLM only
     SEGMENTS; the spans still flow through the SAME ``_parse_one_clause`` and are EXACT-diffed
     against the trusted XML, so the exactness invariant is untouched.
+
+    ``vision_reader`` is the OPTIONAL vision witness for the payload CORROBORATE edge
+    (``None`` = the free offline lane, byte-identical). It renders a corrupt-font op body's
+    page and reconciles glyph confusions; see :func:`diff_proposed_payloads`. It flows only
+    into the payload stage — the deterministic op-structure diff is untouched.
     """
     hid = he_id or f"HE {he_number}/{he_year} vp"
     branch = parse_he_branch(xml_bytes, he_year=he_year, he_number=he_number, he_id=hid)
@@ -2370,7 +2519,9 @@ def compare_he(
     # invisible only because of a text-layer defect. Both passes lower the SAME spans through the
     # SAME ``_parse_one_clause`` and EXACT-diff them against the trusted XML.
     result = _compare_pdf_witness(
-        xml_bytes, reading_text, xml_flat, hid, branch_id, classify_fn, aggressive=False
+        xml_bytes, reading_text, xml_flat, hid, branch_id, classify_fn, aggressive=False,
+        vision_reader=vision_reader, pdf_locator=pdf_locator,
+        witness_prompt=witness_prompt, witness_model=witness_model,
     )
     # Retry the reading-fidelity recoveries only for a RECOVERABLE no-clause cause (a
     # missing amendment verb / an unparsed enacting signature). A ``garble_suspect`` is
@@ -2378,7 +2529,9 @@ def compare_he(
     # it escalates to vision instead.
     if result.compare_status in _PDF_NO_CLAUSE_RETRYABLE:
         recovered = _compare_pdf_witness(
-            xml_bytes, reading_text, xml_flat, hid, branch_id, classify_fn, aggressive=True
+            xml_bytes, reading_text, xml_flat, hid, branch_id, classify_fn, aggressive=True,
+            vision_reader=vision_reader, pdf_locator=pdf_locator,
+            witness_prompt=witness_prompt, witness_model=witness_model,
         )
         if recovered.compare_status == "compared":
             return recovered
@@ -2441,12 +2594,19 @@ def _compare_pdf_witness(
     classify_fn: "Optional[Callable[[str], object]]",
     *,
     aggressive: bool,
+    vision_reader: "Optional[VisionReader]" = None,
+    pdf_locator: str = "",
+    witness_prompt: str = "",
+    witness_model: str = "",
 ) -> HECompareResult:
     """Segment the PDF witness, diff against ``xml_flat``, and run the payload stage.
 
     ``aggressive`` is threaded through the extraction / body-segmentation so the fallback pass
     (see :func:`compare_he`) reads with the reading-fidelity recoveries enabled; the normal pass
     (``aggressive=False``) is byte-identical to the pre-existing behaviour.
+
+    ``vision_reader`` (``None`` = free offline lane) flows into the payload stage only, where a
+    corrupt-font ``payload_mismatch`` is reconciled against an independent vision page read.
     """
     if classify_fn is None:
         spans = extract_enacting_clause_spans(reading_text, aggressive=aggressive)
@@ -2478,7 +2638,11 @@ def _compare_pdf_witness(
     matched_ops = tuple(op for op in xml_flat if op.target_ref in matched_refs)
     xml_bodies = _xml_proposed_bodies(xml_bytes)
     pdf_bodies = _pdf_proposed_bodies(reading_text, aggressive=aggressive)
-    payload = diff_proposed_payloads(xml_bodies, pdf_bodies, matched_ops)
+    payload = diff_proposed_payloads(
+        xml_bodies, pdf_bodies, matched_ops,
+        vision_reader=vision_reader, he_id=hid, pdf_locator=pdf_locator,
+        witness_prompt=witness_prompt, witness_model=witness_model,
+    )
 
     return HECompareResult(
         hid,
@@ -2490,6 +2654,8 @@ def _compare_pdf_witness(
         payload_compared=payload.compared,
         payload_deferred=payload.deferred,
         payload_skipped=payload.skipped,
+        corroborated=payload.corroborated,
+        payload_receipts=payload.receipts,
     )
 
 
@@ -2737,6 +2903,10 @@ def compare_he_from_farchive(
         he_number=he_number,
         he_id=he_id,
         classify_fn=classify_fn,
+        vision_reader=vision_reader,
+        pdf_locator=base + "main.pdf",
+        witness_prompt=witness_prompt,
+        witness_model=witness_model,
     )
     # PAGE-WINDOW is provable ONLY here (needs the page count vs ``max_pages``): if the
     # read found no enacting directive AND the PDF had more pages than we read, the
@@ -2783,6 +2953,203 @@ def _pdf_page_count(data: bytes) -> int:
             pdf.close()
 
 
+# --------------------------------------------------------------------------- #
+# Vision page witness (payload corroborate edge) — render + blind transcribe.  #
+# --------------------------------------------------------------------------- #
+#
+# The independent second reader for the corrupt-font payload dispute. It reads the
+# rendered PAGE PIXELS (via pdfium raster) with a BLIND faithful-transcriber prompt —
+# the geom candidate is NEVER shown to the model (no echo-anchoring, per the vision
+# adjudicator design). Its output is content-addressed in the recovered-text store so a
+# warm run replays deterministically and a cold REPLAY run makes no backend call.
+
+#: The blind faithful-transcriber system prompt (never shows the geom candidate).
+_VISION_TRANSCRIBE_SYSTEM = (
+    "You are a faithful transcriber. Transcribe the visible text of this document page "
+    "EXACTLY as printed, preserving spelling, Finnish diacritics, and section markers. "
+    "Output only the transcription, no commentary."
+)
+#: Raster scale for the page render (folded into the store fingerprint).
+_VISION_RENDER_SCALE = 2.5
+
+
+def vision_witness_fingerprint(model: str, scale: float = _VISION_RENDER_SCALE) -> str:
+    """The content-address fingerprint of the vision page read (prompt + model + scale).
+
+    Folds the blind transcriber prompt, the served model id, and the render scale via the
+    canonical :func:`~lawvm.ingest.llm_backends.prompt_fingerprint.prompt_fingerprint`, so a
+    prompt/model/scale swap re-keys every stored transcription (the determinism firewall).
+    """
+    return prompt_fingerprint(_VISION_TRANSCRIBE_SYSTEM, model, f"scale={scale}")
+
+
+def _page_texts(pdf_bytes: bytes) -> "list[str]":
+    """Per-page pdfium text layer (whitespace-normalized) — the page-location substrate."""
+    import pypdfium2 as pdfium
+
+    from lawvm.ingest.visual import PDFIUM_LOCK
+
+    with PDFIUM_LOCK:
+        pdf = pdfium.PdfDocument(pdf_bytes)
+        try:
+            out = []
+            for i in range(len(pdf)):
+                tp = pdf[i].get_textpage()
+                # lawvm-regex: witness_only PDF-witness whitespace flatten for page-location; never reads XML.
+                out.append(re.sub(r"\s+", " ", tp.get_text_range()))
+                tp.close()
+            return out
+        finally:
+            pdf.close()
+
+
+def _locate_body_page(page_texts: "list[str]", geom_body: str) -> int:
+    """Index of the page whose text layer best covers ``geom_body`` (−1 if none).
+
+    Uses the geom body's DISTINCTIVE long tokens (≥10 chars, so a corrupt token or a
+    stray short word does not dominate) and picks the page containing the most of them.
+    Purely PDF-side (both the body and the page text come from the same geom read).
+    """
+    # lawvm-regex: witness_only PDF-witness anchor tokens for page location; never reads XML.
+    anchors = {t for t in re.findall(r"[^\W\d]{10,}", geom_body)}
+    if not anchors:
+        return -1
+    best_page, best_hits = -1, 0
+    for i, txt in enumerate(page_texts):
+        hits = sum(1 for a in anchors if a in txt)
+        if hits > best_hits:
+            best_page, best_hits = i, hits
+    return best_page
+
+
+def _render_page_png(pdf_bytes: bytes, page_index: int, scale: float) -> bytes:
+    """Rasterize one PDF page to PNG bytes (holds the systemic pdfium lock)."""
+    import io
+
+    import pypdfium2 as pdfium
+
+    from lawvm.ingest.visual import PDFIUM_LOCK
+
+    with PDFIUM_LOCK:
+        pdf = pdfium.PdfDocument(pdf_bytes)
+        try:
+            pil = pdf[page_index].render(scale=scale).to_pil()
+        finally:
+            pdf.close()
+    buf = io.BytesIO()
+    pil.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def _blind_transcribe(png: bytes, *, base_url: str, model: str, timeout: float = 300.0) -> str:
+    """Blind-transcribe a rendered page via the OpenAI-compatible multimodal backend."""
+    import base64
+    import json as _json
+    import urllib.request
+
+    b64 = base64.b64encode(png).decode("ascii")
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": _VISION_TRANSCRIBE_SYSTEM},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}},
+                    {"type": "text", "text": "Transcribe this page verbatim."},
+                ],
+            },
+        ],
+        "temperature": 0.0,
+        "max_tokens": 4096,
+    }
+    req = urllib.request.Request(
+        f"{base_url.rstrip('/')}/v1/chat/completions",
+        data=_json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        out = _json.loads(resp.read())
+    return out["choices"][0]["message"]["content"]
+
+
+def make_he_page_vision_reader(
+    farchive: str,
+    *,
+    store: object,
+    model: str,
+    live: bool = False,
+    base_url: str = "http://localhost:8080",
+    scale: float = _VISION_RENDER_SCALE,
+) -> "VisionReader":
+    """Build the payload-corroborate :class:`VisionReader` (render + store-gated transcribe).
+
+    Given a payload :class:`~lawvm.ingest.corroboration.EscalationPending` (``region`` = the
+    HE ``main.pdf`` locator, ``candidate_text`` = the geom op body), the reader locates the
+    body's page (PDF-side), then returns that page's BLIND vision transcription — served
+    through the content-addressed :class:`~lawvm.ingest.recovered_text_store.RecoveredTextStore`:
+
+      * a WARM store HIT (keyed by ``(artifact digest, page, fingerprint)``) replays the
+        cached transcription DETERMINISTICALLY (identical across runs);
+      * a COLD lookup in REPLAY mode (``live=False``) returns "" — NO backend call, so a
+        replay sweep is deterministic and byte-identical wherever the store is not warm;
+      * a COLD lookup in LIVE mode (``live=True``) renders the page, transcribes it via the
+        backend, PERSISTS it content-addressed, and returns it (the warming path).
+
+    The reader caches the loaded PDF + page text layers per locator so repeated ops on the
+    same HE do not re-parse. Fully PDF-side: the page location + transcription never read XML.
+    """
+    import hashlib
+
+    from lawvm.ingest.recovered_text_store import RecoveredTextStore
+
+    if not isinstance(store, RecoveredTextStore):  # narrow, explicit (never a duck-typed sink)
+        raise TypeError("make_he_page_vision_reader requires a RecoveredTextStore")
+    fingerprint = vision_witness_fingerprint(model, scale)
+    cache: dict[str, tuple[bytes, str, list[str]]] = {}
+
+    def _load(locator: str) -> tuple[bytes, str, list[str]]:
+        hit = cache.get(locator)
+        if hit is not None:
+            return hit
+        from farchive import Farchive
+
+        fa = Farchive(farchive)
+        try:
+            data = fa.get(locator)
+        finally:
+            fa.close()
+        if not data:
+            raise HEIrCompareError(f"vision witness: PDF not found: {locator}")
+        digest = hashlib.sha256(data).hexdigest()
+        entry = (data, digest, _page_texts(data))
+        cache[locator] = entry
+        return entry
+
+    def reader(pending: EscalationPending) -> str:
+        if pending.region is None or not pending.candidate_text:
+            return ""
+        try:
+            pdf_bytes, digest, page_texts = _load(pending.region)
+        except Exception:
+            return ""  # a missing/unreadable PDF is not a corroboration (never fabricate one)
+        page = _locate_body_page(page_texts, pending.candidate_text)
+        if page < 0:
+            return ""
+        cached = store.get(digest, page, fingerprint)
+        if cached is not None:
+            return cached
+        if not live:
+            return ""  # REPLAY: cold store → no backend call (deterministic, byte-identical)
+        text = _blind_transcribe(
+            _render_page_png(pdf_bytes, page, scale), base_url=base_url, model=model
+        )
+        store.put(digest, page, fingerprint, text)
+        return text
+
+    return reader
+
+
 def result_to_json(result: HECompareResult) -> dict:
     return {
         "he_id": result.he_id,
@@ -2797,6 +3164,7 @@ def result_to_json(result: HECompareResult) -> dict:
         "payload_compared": result.payload_compared,
         "payload_deferred": result.payload_deferred,
         "payload_skipped": result.payload_skipped,
+        "corroborated": result.corroborated,
         "divergences": [
             {
                 "kind": d.kind,
@@ -2818,6 +3186,7 @@ _KIND_GLYPH = {
     "payload_mismatch": "≠",
     _PDF_OUT_OF_SCOPE_STATUTE: "≈",
     _PDF_CONSEQUENTIAL_REPEAL: "≈",
+    _PDF_PAYLOAD_CORROBORATED: "✓",
 }
 
 
@@ -2845,12 +3214,14 @@ def _print_result(result: HECompareResult) -> None:
         f"matched={c['matched']}  op_missing_in_pdf={c['op_missing_in_pdf']}  "
         f"op_extra_in_pdf={c['op_extra_in_pdf']}  kind_mismatch={c['kind_mismatch']}  "
         f"payload_mismatch={c['payload_mismatch']}  "
+        f"payload_corroborated={c.get(_PDF_PAYLOAD_CORROBORATED, 0)}  "
         f"pdf_out_of_scope_statute={c.get(_PDF_OUT_OF_SCOPE_STATUTE, 0)}  "
         f"pdf_consequential_repeal={c.get(_PDF_CONSEQUENTIAL_REPEAL, 0)}"
     )
     print(
         f"  payload stage: compared={result.payload_compared}  "
-        f"deferred={result.payload_deferred}  no_body_skipped={result.payload_skipped}"
+        f"deferred={result.payload_deferred}  no_body_skipped={result.payload_skipped}  "
+        f"corroborated(vision)={result.corroborated}"
     )
     print("-" * 78)
     for d in result.divergences:
@@ -2866,6 +3237,8 @@ def _print_result(result: HECompareResult) -> None:
         elif d.kind == _PDF_CONSEQUENTIAL_REPEAL:
             print(f"  {g} {d.target_ref:<28} PDF:{d.pdf_op}  (consequential repeal in commencement clause; witness disagreement)")
         elif d.kind == "payload_mismatch":
+            print(f"  {g} {d.target_ref:<28} {d.detail}")
+        elif d.kind == _PDF_PAYLOAD_CORROBORATED:
             print(f"  {g} {d.target_ref:<28} {d.detail}")
         else:
             print(f"  {g} {d.target_ref:<28} xml={d.xml_op}  pdf={d.pdf_op}")
