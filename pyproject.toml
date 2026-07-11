@@ -30,15 +30,33 @@ test = [
 # Optional PDF-layout extraction (marginal-note / side-note geometry binding for
 # the UK PDF-only acquisition lane and Finland's pdf_layout). Imported
 # dynamically, so its absence degrades to the plain pdftotext grammar path.
+#
+# Versions are pinned EXACTLY (==) to freeze the heavy PDF stack: `pypdfium2`
+# was previously transitive-only (via pdfplumber), silently drifted to 5.x, and
+# broke ALL embedded-image ingestion (PdfImage.get_pos() removed,
+# get_data(decode=) renamed) — masked until a full test sweep. It is now a
+# DIRECT pinned dependency so a transitive bump can never move it again.
+# `pillow` is imported directly by the image path (ingest/visual.py,
+# ingest/page_elements.py) and is likewise pinned.
 pdf = [
-  "pdfplumber>=0.11",
+  "pdfplumber==0.11.10",
+  "pypdfium2==5.10.1",
+  "pillow==12.2.0",
 ]
 # Optional Docling learned-layout + TableFormer structural witness (D4). Pulls a
 # heavy ML stack (torch/transformers), so it is an EXTRA, never a base dep: the
 # producer's docling import is lazy and `is_available()`-gated, so the pipeline
 # runs offline with this backend absent (determinism firewall, AGENTS.md §1.3).
+#
+# Pinned EXACTLY (==) so the transitive ML stack cannot silently drift.
+# transformers is forked by platform because docling-core[chunking] caps it at
+# <5.9.0 on darwin: our target (linux/py3.14) freezes at 5.12.1, darwin at the
+# highest version docling permits (5.8.1). Both forks are pinned so neither can
+# drift; a single unconditional ==5.12.1 is unsatisfiable on darwin.
 docling = [
-  "docling>=2.108.0",
+  "docling==2.108.0",
+  "transformers==5.12.1; sys_platform != 'darwin'",
+  "transformers==5.8.1; sys_platform == 'darwin'",
 ]
 
 [project.scripts]

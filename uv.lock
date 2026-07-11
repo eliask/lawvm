@@ -9,7 +9,7 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "2026-07-03T03:06:54.335825178Z"
+exclude-newer = "2026-07-04T01:00:28.862423809Z"
 exclude-newer-span = "P7D"
 
 [[package]]
@@ -1027,9 +1027,13 @@ analytics = [
 ]
 docling = [
     { name = "docling" },
+    { name = "transformers", version = "5.8.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'darwin'" },
+    { name = "transformers", version = "5.12.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'darwin'" },
 ]
 pdf = [
     { name = "pdfplumber" },
+    { name = "pillow" },
+    { name = "pypdfium2" },
 ]
 test = [
     { name = "hypothesis" },
@@ -1052,20 +1056,24 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "aiohttp" },
-    { name = "docling", marker = "extra == 'docling'", specifier = ">=2.108.0" },
+    { name = "docling", marker = "extra == 'docling'", specifier = "==2.108.0" },
     { name = "duckdb", marker = "extra == 'analytics'", specifier = ">=1.0" },
     { name = "farchive", git = "https://github.com/eliask/farchive.git?rev=5ec162e9d80a1ba96b0e6116198bc396b2950430" },
     { name = "hypothesis", marker = "extra == 'test'", specifier = ">=6.100" },
     { name = "icontract", specifier = ">=2.7.3" },
     { name = "lxml", specifier = ">=6.0.0" },
     { name = "ortools", specifier = ">=9.15.6755" },
-    { name = "pdfplumber", marker = "extra == 'pdf'", specifier = ">=0.11" },
+    { name = "pdfplumber", marker = "extra == 'pdf'", specifier = "==0.11.10" },
+    { name = "pillow", marker = "extra == 'pdf'", specifier = "==12.2.0" },
     { name = "pyarrow", specifier = ">=24.0.0" },
     { name = "pyarrow", marker = "extra == 'analytics'", specifier = ">=15.0" },
+    { name = "pypdfium2", marker = "extra == 'pdf'", specifier = "==5.10.1" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=8.0" },
     { name = "python-levenshtein" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "rapidfuzz" },
+    { name = "transformers", marker = "sys_platform == 'darwin' and extra == 'docling'", specifier = "==5.8.1" },
+    { name = "transformers", marker = "sys_platform != 'darwin' and extra == 'docling'", specifier = "==5.12.1" },
     { name = "zstandard", specifier = ">=0.21" },
 ]
 provides-extras = ["analytics", "test", "pdf", "docling"]
