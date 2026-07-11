@@ -75,6 +75,7 @@ from lawvm.finland.he_branch_parser import (
 )
 from lawvm.finland.op_equivalence import text_equivalence
 from lawvm.ingest.page_elements import dehyphenate
+from lawvm.ingest.text_layer_repair import repair_glyph_substitution
 from lawvm.tools.fi_amendment_ir_compare import DIVERGENCE_KINDS, OpDivergence
 
 _DEFAULT_FARCHIVE = "data/fi_government_proposal.farchive"
@@ -525,21 +526,51 @@ _PDF_GLUED_CHAPTER_RE = re.compile(r"(?<=\d)(?=luku|luvu)", re.IGNORECASE)
 #: is a PDF-reading-faithfulness repair on PDF-STRUCTURAL signal only; it never reads the XML.
 #:
 #: SAFETY: the YEAR is anchored to the token's LAST digits (4-digit form first) and constrained
-#: to a real statute-year band (1600–2099), and the slash surrogate is the single "1" that must
-#: sit immediately before it — so the split is unambiguous and a parenthesised non-citation
-#: number (a monetary figure, a long id) whose trailing digits are not a plausible year is left
-#: untouched. The 4-digit form runs first (tighter); the 2-digit fallback recovers the pre-2000
-#: typographic convention ("(704/75)"). Flat/bounded quantifiers (FW-07).
-_CITE_SLASH_AS_ONE_4_RE = re.compile(r"\((\d{1,4})1((?:1[6-9]|20)\d{2})\)")
+#: to a real statute-year band (1600–2099) by :func:`_cite_year_band_plausible`, and the slash
+#: surrogate is the single "1" that must sit immediately before it — so the split is unambiguous
+#: and a parenthesised non-citation number (a monetary figure, a long id) whose trailing digits
+#: are not a plausible year is left untouched. The 4-digit form runs first (tighter, band-gated);
+#: the 2-digit fallback recovers the pre-2000 typographic convention ("(704/75)"). Flat/bounded
+#: quantifiers (FW-07).
+#:
+#: The restore-then-VALIDATE mechanic is jurisdiction-agnostic and lives in
+#: :func:`lawvm.ingest.text_layer_repair.repair_glyph_substitution`; only the "(NUM/YEAR)" cite
+#: SHAPE (below) and the 1600–2099 YEAR BAND (the validator) are FI/EU-citation-specific surface.
+#: The 4-digit shape captures the trailing 4 digits as the year; the band check is the validator,
+#: not baked into the pattern, so this token repair is ONE registered caller of the general seam.
+_CITE_SLASH_AS_ONE_4_RE = re.compile(r"\((\d{1,4})1(\d{4})\)")
 _CITE_SLASH_AS_ONE_2_RE = re.compile(r"\((\d{1,4})1(\d{2})\)")
+
+#: The FI/EU statute-year band the restored 4-digit cite must sit in (1600–2099) for the slash
+#: repair to be adopted — the independent validator that keeps a parenthesised monetary figure /
+#: long id from being mangled into a phantom citation.
+_CITE_YEAR_LO, _CITE_YEAR_HI = 1600, 2099
+
+
+def _cite_year_band_plausible(match: "re.Match[str]") -> bool:
+    """Is the restored cite's 4-digit YEAR (group 2) inside the statute-year band? (validator)."""
+    return _CITE_YEAR_LO <= int(match.group(2)) <= _CITE_YEAR_HI
 
 
 def _repair_slash_as_one_cites(text: str) -> str:
-    """Restore the "/" a text layer rendered as "1" inside a statute citation (see above)."""
+    """Restore the "/" a text layer rendered as "1" inside a statute citation (see above).
+
+    Delegates the restore-then-validate mechanic to the general
+    :func:`~lawvm.ingest.text_layer_repair.repair_glyph_substitution` seam, supplying the
+    FI/EU cite SHAPE + the "/"↔"1" confusion + the 1600–2099 year-band VALIDATOR (4-digit form),
+    then the 2-digit-year fallback (whose 2-digit tail carries no band constraint).
+    """
     # lawvm-regex: witness_only PDF-witness glyph-substitution repair (cite slash-as-"1"); never reads XML.
-    text = _CITE_SLASH_AS_ONE_4_RE.sub(r"(\1/\2)", text)
+    text = repair_glyph_substitution(
+        text,
+        corrupt_re=_CITE_SLASH_AS_ONE_4_RE,
+        restore=r"(\1/\2)",
+        is_plausible=_cite_year_band_plausible,
+    )
     # lawvm-regex: witness_only PDF-witness glyph-substitution repair (2-digit-year form); never reads XML.
-    return _CITE_SLASH_AS_ONE_2_RE.sub(r"(\1/\2)", text)
+    return repair_glyph_substitution(
+        text, corrupt_re=_CITE_SLASH_AS_ONE_2_RE, restore=r"(\1/\2)"
+    )
 
 
 #: A private-use sentinel marking where an isolated mid-body page-number line was removed (i.e. a
