@@ -241,23 +241,32 @@ def _parse_bool(token: str) -> Optional[bool]:
     return None
 
 
-# One FLAT, line-anchored, bounded pattern per predicate key (FW-07 / AGENTS.md §1.11:
-# no nested quantifier; the value capture is bounded). Synonyms are a flat alternation.
-def _bool_pattern(*keys: str) -> re.Pattern[str]:
-    alt = "|".join(keys)
-    return re.compile(rf"(?im)^[ \t]*(?:{alt})[ \t]*[:=][ \t]*([A-Za-z0-9]{{1,12}})")
+# ONE FLAT, line-anchored, bounded LEXER for a ``key: value`` line — a STATIC compiled
+# constant, not a per-key / f-string-built pattern (FW-08 frozen-residue: no dynamic
+# pattern construction; FW-07: a bounded lexer/locator, not a prose classifier). The key
+# is a bounded word (letters / underscore / space); the value is a bounded non-newline
+# tail. No two adjacent variable repeats share a first char (each is separated by a fixed
+# ``[A-Za-z]`` or ``[:=]``), so it carries no backtracking risk (test_regex_perf_gate).
+# Synonym→canonical mapping and yes/no parsing are done in Python below — never in regex.
+_GESTALT_LINE_RE = re.compile(r"(?im)^[ \t]*([A-Za-z][A-Za-z_ ]{0,23})[:=]([^\n]{0,200})")
 
+#: Free-text descriptor line keys (value carried out verbatim, capped at _MAX_DESCRIPTOR).
+_DESCRIPTOR_KEYS = frozenset({"descriptor", "reason", "note", "why"})
 
-_GESTALT_BOOL_PATTERNS: Dict[str, re.Pattern[str]] = {
-    "legible": _bool_pattern("legible"),
-    "complete": _bool_pattern("complete"),
-    "plausible": _bool_pattern("plausible"),
-    "obviously_wrong": _bool_pattern("obviously_wrong", "obviously wrong", "gross_error"),
-    "abstain": _bool_pattern("abstain", "unsure", "escalate", "not_sure"),
+#: Predicate-line key synonyms → canonical predicate name. A raw key is normalised by
+#: lower-casing and collapsing internal whitespace to ``_`` (so "obviously wrong" and
+#: "obviously_wrong" both land on ``obviously_wrong``).
+_KEY_SYNONYMS: Dict[str, str] = {
+    "legible": "legible",
+    "complete": "complete",
+    "plausible": "plausible",
+    "obviously_wrong": "obviously_wrong",
+    "gross_error": "obviously_wrong",
+    "abstain": "abstain",
+    "unsure": "abstain",
+    "escalate": "abstain",
+    "not_sure": "abstain",
 }
-_DESCRIPTOR_PATTERN = re.compile(
-    r"(?im)^[ \t]*(?:descriptor|reason|note|why)[ \t]*[:=][ \t]*([^\n]{0,200})"
-)
 
 
 @dataclass(frozen=True, slots=True)
@@ -311,14 +320,24 @@ def parse_gestalt_response(raw: str) -> GestaltReading:
     """
     text = raw or ""
     found: Dict[str, bool] = {}
-    for key, pat in _GESTALT_BOOL_PATTERNS.items():
-        m = pat.search(text)
-        if m is not None:
-            b = _parse_bool(m.group(1))
-            if b is not None:
-                found[key] = b
-    md = _DESCRIPTOR_PATTERN.search(text)
-    descriptor = md.group(1).strip()[:_MAX_DESCRIPTOR] if md is not None else ""
+    descriptor = ""
+    # A recall-only garble/gestalt SCREEN line-lexer: parses a tiny predicate answer to
+    # RAISE SUSPICION; it is never a legal-state recognizer (no exact/graduate code path).
+    # lawvm-regex: diagnostic gestalt-screen key:value lexer, recall-only suspicion screen
+    for m in _GESTALT_LINE_RE.finditer(text):
+        norm = "_".join(m.group(1).strip().lower().split())
+        raw_val = m.group(2)
+        if norm in _DESCRIPTOR_KEYS:
+            if not descriptor:
+                descriptor = raw_val.strip()[:_MAX_DESCRIPTOR]
+            continue
+        canon = _KEY_SYNONYMS.get(norm)
+        if canon is None or canon in found:
+            continue
+        tokens = raw_val.split()
+        b = _parse_bool(tokens[0]) if tokens else None
+        if b is not None:
+            found[canon] = b
     if not found and not descriptor:
         # Empty / unparseable read: punt (abstain), never pass as clean.
         return GestaltReading(
