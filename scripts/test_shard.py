@@ -1025,6 +1025,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # machine identifier. Mirrors the sibling firewall no-leak tests above.
         "test_core_firewall_no_he_draft_source_role.py",
         "test_comparison_normalization.py",
+        "test_comparison_normalization_shared_lifts.py",
         "test_composite_interaction_reference_model.py",
         "test_fi_abstraction_modules.py",
         "test_fi_actor_modal.py",

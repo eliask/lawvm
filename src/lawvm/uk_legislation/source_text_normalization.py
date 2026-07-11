@@ -6,16 +6,20 @@ used to mutate stored source witnesses or replay payload text silently.
 
 from __future__ import annotations
 
+from lawvm.core.comparison_normalization import (
+    DASH_CANONICAL_EM,
+    DASH_VARIANT_CHARS,
+    ComparisonNormalizationRule,
+    normalize_comparison_text,
+)
 
-_DASH_VARIANTS = {
-    "\u2010",
-    "\u2011",
-    "\u2012",
-    "\u2013",
-    "\u2014",
-    "\u2015",
-    "\u2212",
-}
+# Dash-variant fold is the jurisdiction-agnostic ``dash_variant_canonicalization``
+# primitive, now owned by the shared comparison-normalization registry
+# (``DASH_VARIANT_CANONICALIZATION_RULE``). The UK parser view applies it OUTSIDE
+# quoted legal text only (so ``"A-B"`` payloads are preserved), so it consumes the
+# shared variant set + canonical target as DATA rather than re-executing the flat
+# pipeline over the whole string.
+_DASH_VARIANTS = DASH_VARIANT_CHARS
 
 _OPEN_TO_CLOSE_QUOTE = {
     "\u201c": "\u201d",
@@ -24,12 +28,53 @@ _OPEN_TO_CLOSE_QUOTE = {
     "'": "'",
 }
 
-_OUTSIDE_QUOTE_TOKEN_JOIN_REPAIRS = (
+# UK-specific OCR/transport token-join repairs, expressed as typed
+# comparison-normalization rules and executed via the shared registry mechanism
+# (``normalize_comparison_text``) instead of an open-coded replace loop. Each base
+# pair contributes its lowercase form and its ``str.capitalize()`` form, applied in
+# the same order as the previous loop so the output is byte-identical.
+_OUTSIDE_QUOTE_TOKEN_JOIN_PAIRS = (
     ("thereshall", "there shall"),
     ("thereis", "there is"),
     ("thereare", "there are"),
     ("beomitted", "be omitted"),
     ("berepealed", "be repealed"),
+)
+
+
+def _build_outside_quote_token_join_rules(
+    pairs: tuple[tuple[str, str], ...],
+) -> tuple[ComparisonNormalizationRule, ...]:
+    rules: list[ComparisonNormalizationRule] = []
+    for joined, replacement in pairs:
+        rules.append(
+            ComparisonNormalizationRule(
+                name=f"uk_outside_quote_token_join_{joined}",
+                rule_class="ocr_token_join",
+                kind="literal",
+                description=f"Repair the transport-glued token {joined!r} -> {replacement!r}.",
+                old_text=joined,
+                new_text=replacement,
+            )
+        )
+        rules.append(
+            ComparisonNormalizationRule(
+                name=f"uk_outside_quote_token_join_{joined.capitalize()}",
+                rule_class="ocr_token_join",
+                kind="literal",
+                description=(
+                    f"Repair the capitalized transport-glued token "
+                    f"{joined.capitalize()!r} -> {replacement.capitalize()!r}."
+                ),
+                old_text=joined.capitalize(),
+                new_text=replacement.capitalize(),
+            )
+        )
+    return tuple(rules)
+
+
+_OUTSIDE_QUOTE_TOKEN_JOIN_RULES = _build_outside_quote_token_join_rules(
+    _OUTSIDE_QUOTE_TOKEN_JOIN_PAIRS
 )
 
 
@@ -42,11 +87,7 @@ def _is_word_apostrophe(text: str, index: int) -> bool:
 
 
 def _repair_outside_quote_token_joins(segment: str) -> str:
-    repaired = segment
-    for joined, replacement in _OUTSIDE_QUOTE_TOKEN_JOIN_REPAIRS:
-        repaired = repaired.replace(joined, replacement)
-        repaired = repaired.replace(joined.capitalize(), replacement.capitalize())
-    return repaired
+    return normalize_comparison_text(segment, _OUTSIDE_QUOTE_TOKEN_JOIN_RULES).text
 
 
 def normalize_uk_parser_text(text: str) -> str:
@@ -82,7 +123,7 @@ def normalize_uk_parser_text(text: str) -> str:
             quote_stack.append(closing_quote)
             out.append(char)
         elif char in _DASH_VARIANTS:
-            outside_segment.append("\u2014")
+            outside_segment.append(DASH_CANONICAL_EM)
         else:
             outside_segment.append(char)
     flush_outside_segment()

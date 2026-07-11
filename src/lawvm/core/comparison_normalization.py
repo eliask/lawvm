@@ -191,6 +191,70 @@ _INLINE_TEXT_COMPARISON_RULE_ISSUES = validate_comparison_normalization_rules(
 if _INLINE_TEXT_COMPARISON_RULE_ISSUES:
     raise ValueError("; ".join(_INLINE_TEXT_COMPARISON_RULE_ISSUES))
 
+
+# Jurisdiction-agnostic comparison-normalization primitives that individual
+# frontends previously open-coded. Expressed here as typed rules so every
+# frontend applies ONE canonical definition (via ``normalize_comparison_text``)
+# rather than reinventing a per-jurisdiction variant. Comparison-only, like the
+# rest of this module: they must not repair source text, replay payloads, or
+# legal tree state.
+
+# Canonical em dash used by the dash-fold below.
+DASH_CANONICAL_EM = "—"
+
+# Hyphen/dash/minus variants folded to the em dash for comparison. Covers the
+# Unicode hyphen (U+2010), non-breaking hyphen (U+2011), figure dash (U+2012),
+# en dash (U+2013), em dash (U+2014), horizontal bar (U+2015), and minus sign
+# (U+2212).
+DASH_VARIANT_CHARS: frozenset[str] = frozenset(
+    (
+        "‐",
+        "‑",
+        "‒",
+        "–",
+        "—",
+        "―",
+        "−",
+    )
+)
+
+DASH_VARIANT_CANONICALIZATION_RULE = ComparisonNormalizationRule(
+    name="dash_variant_canonicalization",
+    rule_class="presentation_cleanup",
+    kind="translation",
+    description=(
+        "Canonicalize hyphen/dash/minus variants (U+2010..U+2015, U+2212) to the "
+        "em dash U+2014 for comparison. Jurisdiction-agnostic dash-fold. Frontends "
+        "that must preserve dashes inside quoted legal text apply it OUTSIDE quotes "
+        "only (see the UK parser-view normalizer), so the shared typed rule is the "
+        "single source of the variant set and the canonical target."
+    ),
+    translation={ord(ch): DASH_CANONICAL_EM for ch in DASH_VARIANT_CHARS},
+)
+
+EDITORIAL_HYPHEN_WRAP_SPACE_RULE = ComparisonNormalizationRule(
+    name="editorial_hyphen_wrap_space",
+    rule_class="presentation_cleanup",
+    kind="regex",
+    description=(
+        "Collapse a line-wrap space sitting BETWEEN two word characters joined by "
+        "a hyphen (``non- Federal`` -> ``non-Federal``). A consolidated body "
+        "re-joins a hyphenated compound the enacted source broke across a line. "
+        "Matches ONLY ``\\w-\\s+\\w`` (never a space after a standalone dash / "
+        "em-dash introducer). Jurisdiction-agnostic; witnessed by U.S. F1 "
+        "(``the non- Federal cost share``) but a general OLRC/consolidation "
+        "artifact. Comparison-only."
+    ),
+    pattern=re.compile(r"(?<=\w-)\s+(?=\w)"),
+    replacement="",
+)
+
+_SHARED_PRIMITIVE_RULE_ISSUES = validate_comparison_normalization_rules(
+    (DASH_VARIANT_CANONICALIZATION_RULE, EDITORIAL_HYPHEN_WRAP_SPACE_RULE)
+)
+if _SHARED_PRIMITIVE_RULE_ISSUES:
+    raise ValueError("; ".join(_SHARED_PRIMITIVE_RULE_ISSUES))
+
 _INLINE_SPACE_BEFORE_PUNCT_RE = re.compile(r"\s+([,.;:)\]])")
 _INLINE_SPACE_AFTER_OPEN_PAREN_RE = re.compile(r"([(])\s+")
 

@@ -56,7 +56,11 @@ from lawvm.core.agreement_residual import (
     AgreementResidualFamily,
     agreement_surface_from_residuals,
 )
-from lawvm.core.comparison_normalization import normalize_inline_comparison_text
+from lawvm.core.comparison_normalization import (
+    EDITORIAL_HYPHEN_WRAP_SPACE_RULE,
+    normalize_comparison_text,
+    normalize_inline_comparison_text,
+)
 from lawvm.core.branch_authority import PENDING_CONDITION_STATUS
 from lawvm.core.ir import LegalAddress, LegalOperation
 from lawvm.core.mutation_boundary import TreePath, tree_path_from_legal_address
@@ -407,18 +411,18 @@ _EDITORIAL_SEMICOLON_AND_SPACE_RE = re.compile(r";\s+(?=and\b)")
 _EDITORIAL_CONJ_PAREN_MARKER_SPACE_RE = re.compile(
     r"(;\s*(?:and|or))\s+(\([A-Za-z0-9]+[)\.])"
 )
-# OLRC hyphenated-compound line-wrap space (F1, ``non- Federal`` -> ``non-Federal``):
-# the enacted USLM ``quotedText`` payload preserves a line-wrap space after an
-# intra-word hyphen (``the non- Federal cost share`` — the PL text broke
-# ``non-Federal`` across a line), which the materializer faithfully reproduces; the
-# OLRC consolidated Code re-joins the hyphenated compound (``non-Federal``). Collapse
-# ONLY a space that sits BETWEEN two word characters joined by a hyphen (``\w-\s+\w``)
-# — the hyphenated-compound wrap — never a space after a standalone dash/em-dash
-# introducer (those are handled by :data:`_EDITORIAL_DASH_PAREN_SPACE_RE`). Applied to
-# BOTH sides symmetrically: it only erases the difference when this intra-word
-# hyphen-wrap space is the SOLE divergence; it never invents agreement between texts
-# that differ in any other character.
-_EDITORIAL_HYPHEN_WRAP_SPACE_RE = re.compile(r"(?<=\w-)\s+(?=\w)")
+# OLRC hyphenated-compound line-wrap space (F1, ``non- Federal`` -> ``non-Federal``)
+# is the jurisdiction-agnostic ``editorial_hyphen_wrap_space`` primitive, now owned
+# by the shared comparison-normalization registry
+# (:data:`EDITORIAL_HYPHEN_WRAP_SPACE_RULE`). The enacted USLM ``quotedText`` payload
+# preserves a line-wrap space after an intra-word hyphen (``the non- Federal cost
+# share`` — the PL text broke ``non-Federal`` across a line), which the materializer
+# faithfully reproduces; the OLRC consolidated Code re-joins the hyphenated compound.
+# The shared rule collapses ONLY a space BETWEEN two word characters joined by a
+# hyphen (``\w-\s+\w``) — never a space after a standalone dash/em-dash introducer
+# (those are handled by :data:`_EDITORIAL_DASH_PAREN_SPACE_RE`). Applied to BOTH sides
+# symmetrically in :func:`_norm_editorial`: it only erases the difference when this
+# intra-word hyphen-wrap space is the SOLE divergence.
 
 # Detect a payload that opens with a new-section catchline (possibly after the USLM
 # quotedContent wrapper's leading quote). Used to decide when a whole-section INSERT
@@ -490,7 +494,9 @@ def _norm_editorial(text: str) -> str:
     respaced = _EDITORIAL_INSERT_AFTER_ANCHOR_SPACE_RE.sub(r"\1", respaced)
     respaced = _EDITORIAL_SEMICOLON_AND_SPACE_RE.sub(";", respaced)
     respaced = _EDITORIAL_CONJ_PAREN_MARKER_SPACE_RE.sub(r"\1\2", respaced)
-    respaced = _EDITORIAL_HYPHEN_WRAP_SPACE_RE.sub("", respaced)
+    respaced = normalize_comparison_text(
+        respaced, (EDITORIAL_HYPHEN_WRAP_SPACE_RULE,)
+    ).text
     return _norm(respaced)
 
 

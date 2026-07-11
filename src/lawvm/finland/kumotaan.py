@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Set
 
 from lawvm.core.payload_surface import TargetUnitKind
+from lawvm.finland.provenance_tail import strip_source_provenance_tail
 from lawvm.finland.references.sections import (
     parse_body_provision_tail_spanned,
 )
@@ -220,16 +221,10 @@ def kumotaan_recycle_guard_result(johto: str) -> KumotaanRecycleGuardResult:
     )
 
 
-def _strip_source_provenance_tail(kumotaan_text: str) -> str:
-    """Drop trailing ``sellaisena/sellaisina kuin ...`` provenance citations.
-
-    Kumotaan clauses often append source-history qualifiers like
-    ``sellaisina kuin ne ovat ... asetuksessa 1282/2000``. Those extra
-    statute references do not change the repeal targets; they only identify
-    the amendment source of the current wording. Strip that tail before
-    applying the multi-statute guard and extracting targets.
-    """
-    return re.split(r",\s*sellais[a-zäöå\s]*kuin\b", kumotaan_text, maxsplit=1, flags=re.I)[0]
+# The provenance-tail stripper is the shared FI primitive (canonical home:
+# ``finland.provenance_tail``). Aliased under the historical private name so the
+# eight call sites below are unchanged.
+_strip_source_provenance_tail = strip_source_provenance_tail
 
 
 def _extract_muutetaan_section_refs(johto: str) -> Set[str]:

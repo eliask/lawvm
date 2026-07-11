@@ -84,6 +84,7 @@ from lawvm.finland.he_branch_parser import (
     parse_he_branch,
 )
 from lawvm.finland.op_equivalence import text_equivalence
+from lawvm.finland.provenance_tail import HISTORY_MARKER_RE
 from lawvm.ingest.corroboration import (
     CorroborationReceipt,
     EscalationKind,
@@ -283,7 +284,10 @@ _HEAD_TO_CITE = 400
 #: the whole ulkomaalaislaki 301/2004 provision list mis-attributed to a history id).  A cite
 #: that lies past this marker within a directive is excluded from head-cite / bill-scope
 #: resolution (:func:`_governing_cite_after`).  Purely PDF-structural; never reads the XML.
-_HISTORY_MARKER_RE = re.compile(r"sellais(?:ena|ina)\s+kuin", re.IGNORECASE)
+#: The marker itself is the shared FI primitive (canonical home:
+#: :data:`lawvm.finland.provenance_tail.HISTORY_MARKER_RE`); aliased here for the
+#: existing call sites.
+_HISTORY_MARKER_RE = HISTORY_MARKER_RE
 
 #: A provision marker ("§") — a genuine amendment directive lists the provisions it
 #: touches (7 §, 9 §:n 2 momentti, ...) between its statute citation and "seuraavasti:".

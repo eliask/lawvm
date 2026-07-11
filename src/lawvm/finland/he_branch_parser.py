@@ -74,6 +74,7 @@ from typing import Optional
 from lxml import etree
 
 from lawvm.finland.fi_dates import parse_fi_day_month_year
+from lawvm.finland.provenance_tail import HISTORY_MARKER_RE
 
 
 # ---------------------------------------------------------------------------
@@ -394,7 +395,9 @@ _STATUTE_CITE_BARE_RE = re.compile(
 # is always cited BEFORE it, so a citation past the marker (with no intervening directive
 # boundary) must NOT be read as the op target (AGENTS.md §1.1 — no silent target hijacking to a
 # later amending statute).  Label-independent: reads only the clause word order.
-_HE_HISTORY_MARKER_RE = re.compile(r"sellais(?:ena|ina)\s+kuin", re.IGNORECASE)
+# The marker is the shared FI primitive (canonical home:
+# :data:`lawvm.finland.provenance_tail.HISTORY_MARKER_RE`); aliased for the call site below.
+_HE_HISTORY_MARKER_RE = HISTORY_MARKER_RE
 
 # A directive BOUNDARY — an amendment-verb head opening a new directive, or the "seuraavasti:"
 # terminator closing one.  A citation after a history marker but AFTER such a boundary belongs
