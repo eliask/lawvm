@@ -84,7 +84,7 @@ import argparse
 import json
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Protocol, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Protocol, Sequence, Tuple
 
 from lawvm.core.source_document.adjudication import assurance_for
 from lawvm.core.source_document.extraction import SourceManifestation
@@ -1000,7 +1000,7 @@ def report_to_json(rollup: RollupReport) -> Dict[str, Any]:
 
 
 def plan_run(
-    pairs: Sequence[PdfXmlPair], producers: Dict[str, Level1Producer]
+    pairs: Sequence[PdfXmlPair], producers: Mapping[str, Level1Producer]
 ) -> str:
     """A --dry-run plan: selected pairs + which producers are available/SKIPPED.
 

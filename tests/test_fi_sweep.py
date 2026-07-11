@@ -336,8 +336,9 @@ def test_json_report_shape() -> None:
     payload = report_to_json(report)
     assert payload["n_selected"] == 30
     assert payload["stopped_at_stage"] is None
-    assert [s["planned_size"] for s in payload["stages"]] == [10, 30]
-    assert payload["residual_ranking"][0]["defect_class"] == "EXTRA"
+    # report_to_json() returns Dict[str, object] by design (a dynamic JSON payload); narrow here.
+    assert [s["planned_size"] for s in payload["stages"]] == [10, 30]  # ty: ignore[not-iterable]
+    assert payload["residual_ranking"][0]["defect_class"] == "EXTRA"  # ty: ignore[not-subscriptable]
     # round-trips through json cleanly (deterministic, no non-serializable types).
     assert json.loads(json.dumps(payload)) == payload
 

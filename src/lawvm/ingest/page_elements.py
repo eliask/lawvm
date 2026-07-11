@@ -1121,7 +1121,7 @@ class PageElementProducer:
             if fn is None:
                 continue
             try:
-                pos = fn()  # ty: ignore[call-non-callable]
+                pos = fn()
                 x0, y0, x1, y1 = float(pos[0]), float(pos[1]), float(pos[2]), float(pos[3])
                 return (min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1))
             # No readable geometry (non-numeric / short tuple / pdfium error) → try

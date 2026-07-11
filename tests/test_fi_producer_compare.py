@@ -12,9 +12,10 @@ byte-for-byte determinism (two renders diff empty).
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, List, Sequence
 
+from lawvm.core.source_document import SourceManifestation
 from lawvm.tools.fi_producer_compare import (
     ComboProducer,
     PdfProducerReport,
@@ -44,11 +45,19 @@ _GOLD = "\n".join(
 )
 
 
-@dataclass(frozen=True, slots=True)
-class _FakeManifestation:
-    locator: str = "finlex://sd/2020/1/fin/media/0001.pdf"
-    artifact_digest: str = "0" * 64
-    source_bytes: bytes = b""
+def _fake_manifestation(
+    locator: str = "finlex://sd/2020/1/fin/media/0001.pdf",
+) -> SourceManifestation:
+    """A real ``SourceManifestation`` (not a structural fake) so it type-conforms to every
+    ``Level1Producer``-consuming call — ``SourceManifestation`` is a concrete dataclass, not a
+    ``Protocol``, so a separate lookalike class is never assignable to it."""
+    return SourceManifestation(
+        artifact_digest="0" * 64,
+        source_bytes=b"",
+        locator=locator,
+        source_role="attachment",
+        fetched_at=datetime(2020, 1, 1),
+    )
 
 
 class _ScriptedProducer:
@@ -115,7 +124,7 @@ def test_numeric_precision_degenerate_empty_hyp() -> None:
 
 
 def test_score_producer_faithful_beats_garbled() -> None:
-    man = _FakeManifestation()
+    man = _fake_manifestation()
     faithful = score_producer(_ScriptedProducer("geom", _FAITHFUL_PAGES), man, (None, None), _GOLD)
     garbled = score_producer(_ScriptedProducer("vision", _GARBLED_PAGES), man, (None, None), _GOLD)
     assert faithful.score_status == "scored" and garbled.score_status == "scored"
@@ -129,7 +138,7 @@ def test_score_producer_faithful_beats_garbled() -> None:
 
 
 def test_score_producer_unavailable_is_typed() -> None:
-    man = _FakeManifestation()
+    man = _fake_manifestation()
     sc = score_producer(
         _ScriptedProducer("docling", [], available=False), man, (None,), _GOLD
     )
@@ -137,7 +146,7 @@ def test_score_producer_unavailable_is_typed() -> None:
 
 
 def test_score_producer_failure_is_typed_not_crash() -> None:
-    man = _FakeManifestation()
+    man = _fake_manifestation()
     sc = score_producer(_RaisingProducer(), man, (None,), _GOLD)
     assert sc.score_status == "failed"
     assert sc.detail is not None and "scripted failure" in sc.detail
@@ -149,7 +158,7 @@ def test_score_producer_failure_is_typed_not_crash() -> None:
 
 
 def test_combo_union_prefers_primary_and_counts_corroboration() -> None:
-    man = _FakeManifestation()
+    man = _fake_manifestation()
     # primary covers page 1 only; secondary covers page 2 only → union covers both,
     # and NO page has both → 0 corroborating pages.
     primary = _ScriptedProducer("geom", [_FAITHFUL_PAGES[0], ""])

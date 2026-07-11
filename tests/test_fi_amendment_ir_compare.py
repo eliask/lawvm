@@ -389,7 +389,7 @@ def test_text_layer_density_predicate() -> None:
     # A page of pure whitespace (image-only scan) is NOT dense however long.
     assert _text_layer_is_dense(" \n\t" * 10_000) is False
     assert _text_layer_is_dense("") is False
-    assert _text_layer_is_dense(None) is False  # type: ignore[arg-type]
+    assert _text_layer_is_dense(None) is False  # ty: ignore[invalid-argument-type]
 
 
 def test_text_layer_reading_text_prefers_dense_else_none(monkeypatch) -> None:

@@ -570,7 +570,7 @@ def test_vision_read_is_blind_no_candidates_reach_the_model(monkeypatch) -> None
     from lawvm.ingest.llm_backends.vision_producer import _COLD_REGION_SYSTEM_PROMPT
 
     monkeypatch.setattr(mod, "_pdf_page_heights", lambda _b: {1: 100.0})
-    seen: dict[str, object] = {}
+    seen: dict[str, tuple[object, ...]] = {}
 
     class _RecordingProducer:
         def read_region_cold(self, manifestation, page_num, bbox, *, dpi, expected_lines) -> str:
@@ -584,7 +584,7 @@ def test_vision_read_is_blind_no_candidates_reach_the_model(monkeypatch) -> None
     assert out.text == "blindly-read"
     # No positional/keyword the model sees carries a candidate transcription — only geometry +
     # render params reach read_region_cold (which itself sends only the crop image + the prompt).
-    flat = " ".join(str(a) for a in seen["args"])  # type: ignore[arg-type]
+    flat = " ".join(str(a) for a in seen["args"])
     for candidate_marker in ("raikasta", "2 500 mg/kg", "docling_candidate", "pdfium_candidate"):
         assert candidate_marker not in flat
     # The frozen blind prompt is a pure transcription instruction — it references no candidate text.
@@ -643,7 +643,8 @@ def test_vision_tiebreak_abstain_is_escalated_never_graduated() -> None:
     assert esc.descriptor == "glyph ambiguous under ‰ artifact"  # model reason recorded
     # the escalated bucket surfaces the distinct terminal outcome in the JSON (never "open").
     js = vv.to_jsonable()
-    assert [e["outcome"] for e in js["escalated"]] == [VISION_OUTCOME_ESCALATED]  # type: ignore[index]
+    # to_jsonable() returns Dict[str, object] by design (a dynamic JSON payload); narrow here.
+    assert [e["outcome"] for e in js["escalated"]] == [VISION_OUTCOME_ESCALATED]  # ty: ignore[not-iterable]
     assert js["open_divergences"] == []
 
 

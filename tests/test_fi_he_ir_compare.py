@@ -1679,7 +1679,7 @@ def test_pdfium_text_layer_raises_when_backend_missing() -> None:
     from lawvm.tools.fi_he_ir_compare import HEReaderUnavailableError, _pdfium_text_layer
 
     orig = sys.modules.get("pypdfium2", None)
-    sys.modules["pypdfium2"] = None  # type: ignore[assignment]
+    sys.modules["pypdfium2"] = None  # ty: ignore[invalid-assignment]
     try:
         with pytest.raises(HEReaderUnavailableError):
             _pdfium_text_layer(b"%PDF-1.4 fake bytes", 5)

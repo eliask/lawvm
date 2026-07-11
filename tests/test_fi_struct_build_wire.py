@@ -396,7 +396,9 @@ class _FakeStructVision(VisionPageProducer):
         self.seen: List[Tuple[str, str]] = []
         self._content = content
 
-    def _render_page_png(self, pdf_bytes: bytes, page_num: int) -> bytes:  # type: ignore[override]
+    def _render_page_png(
+        self, pdf_bytes: bytes, page_num: int, *, scale: float | None = None
+    ) -> bytes:
         return b"\x89PNG-fake"
 
     def _chat_struct(self, png_b64, numbered_text, *, page_num, leaf_mode):  # type: ignore[override]

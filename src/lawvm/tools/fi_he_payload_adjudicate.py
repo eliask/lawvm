@@ -45,11 +45,14 @@ _JSONL_SNIPPET = 400
 
 def _residual_body_pairs(
     farchive: str, units, *, max_pages: int
-) -> "list[tuple[str, int, str, str, str]]":
-    """(he_id, he_year, label, xml_body, pdf_body) for each matched body still differing post-quotient."""
+) -> "list[tuple[str, int, tuple[str, str], str, str]]":
+    """(he_id, he_year, label, xml_body, pdf_body) for each matched body still differing post-quotient.
+
+    ``label`` is the ``(statute-id, section label)`` key that :func:`_xml_proposed_bodies` /
+    :func:`_pdf_proposed_bodies` use to align a matched body across the two witnesses."""
     from farchive import Farchive
 
-    pairs: list[tuple[str, int, str, str, str]] = []
+    pairs: list[tuple[str, int, tuple[str, str], str, str]] = []
     for unit in units:
         base = f"{_AKN_PATH_PREFIX}{unit.he_year}/{unit.he_number}/fin@/"
         fa = Farchive(farchive)

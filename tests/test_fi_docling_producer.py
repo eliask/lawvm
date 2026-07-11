@@ -29,10 +29,14 @@ from lawvm.finland.source_document.docling_producer import (
     DoclingStructuralProducer,
     DoclingTableView,
     DoclingUnavailable,
-    _normalized_bbox,
     docling_document_to_nodes,
     docling_page_nodes,
 )
+
+# The compat shim above re-exports its public surface via `import *`, which never
+# carries underscore-prefixed names — import the private helper from its canonical
+# home directly (same object at runtime; the shim aliases sys.modules to it).
+from lawvm.ingest.llm_backends.docling_producer import _normalized_bbox
 
 _DIGEST = "d" * 64
 

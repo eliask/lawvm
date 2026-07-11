@@ -37,7 +37,9 @@ _PAYLOAD = {
 
 
 def test_inert_without_env(monkeypatch, tmp_path):
-    import lawvm.ingest.llm_backends.model_io_log as mio
+    # importlib.import_module (not `import ... as mio`) so `mio`'s inferred type is the
+    # general ModuleType — matching importlib.reload's return type on reassignment below.
+    mio = importlib.import_module("lawvm.ingest.llm_backends.model_io_log")
 
     monkeypatch.delenv("LAWVM_MODEL_IO_LOG", raising=False)
     mio = importlib.reload(mio)
