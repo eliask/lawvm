@@ -8,7 +8,10 @@ genuine numeric/citation difference can never hide inside a fold.
 """
 from __future__ import annotations
 
+import pytest
+
 from lawvm.finland.op_equivalence import EncodingFold, text_equivalence
+from lawvm.ingest.llm_backends.prompt_fingerprint import prompt_fingerprint
 
 
 def test_identical_text_is_equal_with_no_folds():
@@ -410,3 +413,153 @@ def test_ws_sep_leaves_he_266_2002_word_split_as_a_divergence():
     v = text_equivalence(xml, pdf)
     assert not v.equal and v.residual
     assert EncodingFold.WHITESPACE_MIDWORD not in v.folds  # the word-split is NOT masked
+
+
+# ===========================================================================
+# GOVERNED-INVENTORY ENFORCEMENT (audit fix #6-fingerprint)
+#
+# Every fold claims a class of typography is LEGALLY INERT — two payloads equal
+# modulo it count as "exact". A fold that over-reaches would MASK a real content
+# difference, the exact "slop" this quotient exists to prevent. Ad-hoc per-fold
+# tests are not enough: nothing GUARANTEES that every fold carries both a
+# fires-on-inert proof and a non-masking proof, and nothing alerts when the fold
+# set changes. These two mechanisms close that gap:
+#
+#   (A) an inventory FINGERPRINT ratchet — the frozen member set is content-hashed
+#       and pinned to a checked-in constant; adding/removing/renaming a fold reddens
+#       CI with the update protocol (mirrors the classifier-wrap / regex ratchets).
+#   (B) a totality-enforced per-fold mutation CONTRACT table — every fold MUST carry
+#       BOTH a fires-on-inert proof AND a non-masking proof, or CI reddens; you cannot
+#       add a fold without a non-masking guard.
+#
+# The MECHANISM is jurisdiction-neutral: it imports only the enum and the shared
+# ``prompt_fingerprint`` primitive; nothing FI-specific is baked into the scaffolding
+# beyond the enum's own members (op_equivalence merely happens to live under finland/).
+# It is an INVENTORY GATE, not a runtime cache key — the phase-2 harness recomputes
+# equality verdicts live, so the fingerprint is never folded into any stored key.
+# ===========================================================================
+
+# Frozen fingerprint of the EncodingFold inventory (sorted "NAME=value" member pairs),
+# computed with the shared determinism-firewall primitive so this ratchet re-keys on the
+# SAME content-hash discipline as the LLM cache keys. Update ONLY via the protocol in the
+# failure message below (ship the two new proofs FIRST, then rebaseline this constant).
+FOLD_SET_FINGERPRINT = "ead044f16c6cc5c0"
+
+
+def _fold_inventory_vocab() -> list[str]:
+    """The content-addressed inventory: sorted "NAME=value" strings, one per fold member.
+
+    Both the member NAME and its string VALUE are hashed, so a rename, an added member,
+    a removed member, or a changed value all move the fingerprint.
+    """
+    return sorted(f"{m.name}={m.value}" for m in EncodingFold)
+
+
+def test_fold_set_inventory_fingerprint_is_frozen():
+    # (A) Inventory-fingerprint ratchet. The frozen fold set is the quotient's whole
+    # attack surface; pin it so no new fold can silently land.
+    got = prompt_fingerprint(vocab=_fold_inventory_vocab())
+    assert got == FOLD_SET_FINGERPRINT, (
+        "the inert-fold set changed; a new fold must ship with a fires-on-inert test "
+        "AND a non-masking mutation guard (register it in FOLD_CONTRACTS — the totality "
+        "meta-test enforces both), and ONLY THEN update FOLD_SET_FINGERPRINT.\n"
+        f"  expected {FOLD_SET_FINGERPRINT!r}\n"
+        f"  computed {got!r}\n"
+        f"  current inventory: {_fold_inventory_vocab()}"
+    )
+
+
+# FOLD_CONTRACTS: for EVERY EncodingFold member, a 4-tuple
+#     (inert_left, inert_right, mutated_left, mutated_right)
+# proving BOTH halves of the fold's contract:
+#   (1) POSITIVE  — the INERT pair is EQUAL after folding AND this fold is CREDITED
+#       (it actually fired to rescue equality on its inert target); and
+#   (2) NON-MASKING — a GENUINE content difference (a digit / glyph / word / citation
+#       change) injected in the SAME structural position the fold operates on SURVIVES
+#       as a residual (the mutated pair is NOT equal), so the fold cannot hide it.
+# The meta-test asserts the keys are TOTAL over EncodingFold, so a new fold cannot land
+# without a non-masking proof. These rows mirror the ad-hoc guards above in one table.
+FOLD_CONTRACTS: dict[EncodingFold, tuple[str, str, str, str]] = {
+    # soft-hyphen line join fuses the two halves; a changed fused letter (a→o) survives.
+    EncodingFold.SOFT_HYPHEN_JOIN: (
+        "kriisinrat­\nkaisusta", "kriisinratkaisusta",
+        "kriisinrat­\nkaisusta", "kriisinratkoisusta",
+    ),
+    # invisible ZERO WIDTH SPACE deleted; a changed letter in the same word survives.
+    EncodingFold.CF_FORMAT: (
+        "sana​toinen", "sanatoinen",
+        "sana​toinen", "sanatuinen",
+    ),
+    # C0/C1 control noise deleted; a changed figure past the control byte survives.
+    EncodingFold.CONTROL_STRIP: (
+        "Nimi\x01\x1f ja\x7f numero\x9f", "Nimi ja numero",
+        "numero\x01 5,9", "numero 6,5",
+    ),
+    # whitespace run/newline collapse; a changed word in the same slot survives.
+    EncodingFold.WHITESPACE: (
+        "3 §   muutetaan\n", "3 § muutetaan",
+        "3 §   muutetaan\n", "3 § korotetaan",
+    ),
+    # a run of 2+ dashes ("— — —") deleted; a genuine trailing word is NOT swept.
+    EncodingFold.SEPARATOR_DASH_RUN: (
+        "Uskotun miehen palkkio maksetaan.",
+        "Uskotun miehen palkkio maksetaan. — — — — — —",
+        "Uskotun miehen palkkio maksetaan valtiolle.",
+        "Uskotun miehen palkkio maksetaan. — — — — — —",
+    ),
+    # a run of 2+ dots (TOC/table leader) deleted; the trailing figure difference survives.
+    EncodingFold.DOT_LEADER: (
+        "Käsivarsi 2,46", "Käsivarsi.................. 2,46",
+        "Käsivarsi 2,46", "Käsivarsi.................. 2,99",
+    ),
+    # a space before a period folded; a changed number at that punctuation seam survives.
+    EncodingFold.WHITESPACE_PUNCT: (
+        "annetun lain 20 .", "annetun lain 20.",
+        "annetun lain 20 .", "annetun lain 21.",
+    ),
+    # a letter-letter mid-word space deleted; a changed letter in that word survives.
+    EncodingFold.WHITESPACE_MIDWORD: (
+        "yhteiseen alueeseen olevan", "yhteiseen alue eseen olevan",
+        "yhteiseen alue eseen olevan", "yhteiseen alue asten olevan",
+    ),
+    # a space inside a citation slash folded; a changed range figure at a dash survives.
+    EncodingFold.WHITESPACE_SEP: (
+        "ulosottolaissa (37/1895)", "ulosottolaissa (37 /1895)",
+        "pykälissä 195—196", "pykälissä 195— 197",
+    ),
+}
+
+
+def test_fold_contracts_are_total_over_the_enum():
+    # (B.i) TOTALITY: a new fold with no contract FAILS here — you cannot add a fold
+    # without both a fires-on-inert proof and a non-masking proof registered below.
+    assert set(FOLD_CONTRACTS) == set(EncodingFold), (
+        "FOLD_CONTRACTS must cover EVERY EncodingFold member; each fold needs BOTH a "
+        "fires-on-inert row and a non-masking mutation guard.\n"
+        f"  missing contracts: {sorted(f.name for f in set(EncodingFold) - set(FOLD_CONTRACTS))}\n"
+        f"  stale contracts:   {sorted(f.name for f in set(FOLD_CONTRACTS) - set(EncodingFold))}"
+    )
+
+
+@pytest.mark.parametrize("fold", list(EncodingFold), ids=lambda f: f.name)
+def test_every_fold_fires_on_inert_and_cannot_mask_a_content_difference(fold: EncodingFold):
+    # (B.ii) Per-fold, both halves of the contract. Parametrising over the LIVE enum means
+    # a newly-added fold with no FOLD_CONTRACTS row fails the lookup below immediately.
+    assert fold in FOLD_CONTRACTS, (
+        f"EncodingFold.{fold.name} has no FOLD_CONTRACTS row: every fold must register "
+        "BOTH a fires-on-inert proof AND a non-masking mutation guard."
+    )
+    inert_left, inert_right, mut_left, mut_right = FOLD_CONTRACTS[fold]
+
+    inert = text_equivalence(inert_left, inert_right)
+    assert inert.equal, f"{fold.name}: the inert pair must be EQUAL after folding"
+    assert fold in inert.folds, (
+        f"{fold.name}: the inert pair must CREDIT this fold (it must actually fire to "
+        f"rescue equality), but recorded folds were {[f.name for f in inert.folds]}"
+    )
+
+    mutated = text_equivalence(mut_left, mut_right)
+    assert not mutated.equal and mutated.residual, (
+        f"{fold.name}: a GENUINE content difference in the fold's structural position "
+        "MUST survive as a residual — the fold must never mask it."
+    )
