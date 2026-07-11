@@ -41,6 +41,8 @@ from datetime import datetime, timezone
 from enum import StrEnum
 from typing import Callable, Optional
 
+from lawvm.ingest.llm_backends.prompt_fingerprint import prompt_fingerprint
+
 
 class JohtolauseTag(StrEnum):
     """The closed set of classifications for one candidate amendment-verb head."""
@@ -100,12 +102,9 @@ def tag_prompt_fingerprint() -> str:
 
     Folded into the firewall-cache key alongside the model id, so any edit to the prompt or the
     label vocabulary MECHANICALLY invalidates every stored tag rather than serving a stale read.
+    Delegates to the shared ``prompt_fingerprint`` primitive (byte-identical composition).
     """
-    h = hashlib.sha256()
-    h.update(_TAG_SYSTEM.encode("utf-8"))
-    h.update(b"\x00")
-    h.update("|".join(v.value for v in JohtolauseTag).encode("utf-8"))
-    return h.hexdigest()[:16]
+    return prompt_fingerprint(_TAG_SYSTEM, vocab=[v.value for v in JohtolauseTag])
 
 
 def classify_candidate(window: str, *, chat_fn: Callable[[str, str], str]) -> JohtolauseTag:

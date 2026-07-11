@@ -394,7 +394,13 @@ class _TolerantAdjudicator:
 # identical across all. Each lane's records COEXIST under a DISTINCT tag; the
 # rasterization DPI is folded in so a crop re-rendered at a new DPI writes under a
 # NEW path.
-_STRUCT_WIRE_TAG = f"+wire=structbuild.v1+rasterdpi={RASTERIZE_DPI}"
+# Per-modality leaf-content suffix for the struct-build lanes (all share one wire tag).
+_STRUCT_LEAF_SUFFIX = {
+    "struct_span": "+leaf=span",
+    "struct_full": "+leaf=full",
+    "struct_auto": "+leaf=auto",
+    "struct_patch": "+leaf=patch",
+}
 # The Level-1 patch-to-convergence lane (Track B): the struct_patch build-script
 # grammar PLUS the closed-gate refine loop (Decision 2), text-PATCH fixpoint
 # (Decisions 1/10), max_iters=4. Its records are per-PAGE simulacra
@@ -407,28 +413,60 @@ _STRUCT_WIRE_TAG = f"+wire=structbuild.v1+rasterdpi={RASTERIZE_DPI}"
 # region-read / scanned converge routing changes (invalidates struct_converge +
 # defacsimile records; struct_span ``leaf=span`` records use a different tag, unaffected).
 _DEFACSIMILE_READER_VERSION = "regionreader.v1"
-_STRUCT_CONVERGE_TAG = (
-    "+wire=structbuild.v1"
-    "+leaf=patch+converge.v1+gate=hard.v1+iters=4+structpatch=text.v1+node.v1"
-    f"+reader={_DEFACSIMILE_READER_VERSION}"
-    f"+rasterdpi={RASTERIZE_DPI}"
+
+# The valid transcription modalities (was the key-set of the retired tag dict). The
+# actual version TAG is composed per-call by ``_modality_version_tag`` so the ACTIVE
+# vision-prompt fingerprints (not a hand-bumped literal) drive invalidation.
+_MODALITY_KEYS = frozenset(
+    (
+        "struct_span",
+        "struct_full",
+        "struct_auto",
+        "struct_patch",
+        "struct_converge",
+        "defacsimile",
+    )
 )
+
+
+def _struct_wire_tag(struct_prompt_fp: str) -> str:
+    """Wire tag for the single-level struct-build lanes. ``struct_prompt_fp`` is the
+    fingerprint of the ACTIVE vision struct/appraise system prompts + leaf-mode grammar
+    (``vision_producer.struct_build_prompt_fingerprint``), REPLACING the old
+    hand-bumped ``structbuild.v1`` literal so a prompt edit re-keys mechanically."""
+    return f"+wire=structbuild.{struct_prompt_fp}+rasterdpi={RASTERIZE_DPI}"
+
+
+def _struct_converge_tag(struct_prompt_fp: str, converge_prompt_fp: str) -> str:
+    """Wire+leaf tag for the Level-1 converge lane. Folds BOTH the struct-build prompt
+    fingerprint and the converge-refine prompt fingerprint (REPLACING ``structbuild.v1``
+    / ``converge.v1``) plus the region-reader version and raster DPI."""
+    return (
+        f"+wire=structbuild.{struct_prompt_fp}"
+        f"+leaf=patch+converge.{converge_prompt_fp}"
+        "+gate=hard.v1+iters=4+structpatch=text.v1+node.v1"
+        f"+reader={_DEFACSIMILE_READER_VERSION}"
+        f"+rasterdpi={RASTERIZE_DPI}"
+    )
+
+
 # The converged two-level lane (Track B+C integration): Level-1 patch-to-convergence
-# simulacra (``_STRUCT_CONVERGE_TAG``) FOLLOWED by the Level-2 holistic de-facsimile
-# composer (Decision 11 version shape). The ``+defacsimile.v1+<adjudicator-id or
+# simulacra (``_struct_converge_tag``) FOLLOWED by the Level-2 holistic de-facsimile
+# composer (Decision 11 version shape). The ``+defacsimile.v1+<adjudicator-model or
 # "fallback">`` suffix is composed at ``resolve_pipeline`` time (the adjudicator model
 # id is a runtime probe; when the L2 backend is down the lane degrades to the
-# deterministic ``compose_pages`` fallback → the ``fallback`` id, Decision 8). This
-# base tag omits the composer suffix; ``resolve_pipeline`` appends it.
-_DEFACSIMILE_BASE_TAG = _STRUCT_CONVERGE_TAG
-_MODALITY_VERSION_TAG = {
-    "struct_span": _STRUCT_WIRE_TAG + "+leaf=span",
-    "struct_full": _STRUCT_WIRE_TAG + "+leaf=full",
-    "struct_auto": _STRUCT_WIRE_TAG + "+leaf=auto",
-    "struct_patch": _STRUCT_WIRE_TAG + "+leaf=patch",
-    "struct_converge": _STRUCT_CONVERGE_TAG,
-    "defacsimile": _DEFACSIMILE_BASE_TAG,
-}
+# deterministic ``compose_pages`` fallback → the ``fallback`` id, Decision 8). The base
+# tag omits the composer suffix; ``resolve_pipeline`` appends it.
+def _modality_version_tag(
+    modality: str, *, struct_prompt_fp: str, converge_prompt_fp: str
+) -> str:
+    """Compose a modality's version tag, folding the ACTIVE vision-prompt fingerprints
+    in place of the retired hand-bumped ``structbuild.v1`` / ``converge.v1`` literals."""
+    if modality in _STRUCT_LEAF_SUFFIX:
+        return _struct_wire_tag(struct_prompt_fp) + _STRUCT_LEAF_SUFFIX[modality]
+    if modality in ("struct_converge", "defacsimile"):
+        return _struct_converge_tag(struct_prompt_fp, converge_prompt_fp)
+    raise KeyError(modality)
 
 # The build-script lanes (share one grammar; differ in leaf-content source). The
 # converged ``defacsimile`` lane reuses the L1 patch simulacra then runs Level 2.
@@ -473,25 +511,43 @@ def resolve_pipeline(
     (see ``adjudicated_ingest``) and is folded into the pipeline VERSION so each
     lane's records are separately content-addressed.
     """
+    from lawvm.ingest.llm_backends import vision_producer as _vp
     from lawvm.ingest.llm_backends.llm_adjudicator import LlmWorkflowAdjudicator
     from lawvm.ingest.llm_backends.vision_producer import VisionPageProducer
 
-    if transcription_modality not in _MODALITY_VERSION_TAG:
+    if transcription_modality not in _MODALITY_KEYS:
         raise ValueError(
             f"unknown transcription_modality {transcription_modality!r}; "
-            f"expected one of {tuple(_MODALITY_VERSION_TAG)}"
+            f"expected one of {tuple(sorted(_MODALITY_KEYS))}"
         )
+    verify_pass = False
     vision = VisionPageProducer(max_tokens=vision_max_tokens)
-    adjudicator = LlmWorkflowAdjudicator(verify_pass=False, max_tokens=adjudicator_max_tokens)
+    adjudicator = LlmWorkflowAdjudicator(
+        verify_pass=verify_pass, max_tokens=adjudicator_max_tokens
+    )
     if not (vision.is_available() and adjudicator.is_available()):
         raise ParseBackendUnavailable(
             "LLM parse backend unreachable — the source_document pipeline requires "
             "a vision+adjudication server (default localhost:8080). No deterministic "
             "fallback: bring the backend up and retry."
         )
-    modality_tag = _MODALITY_VERSION_TAG[transcription_modality]
+    # Fold EVERY output-determining input into the content-address VERSION so a warm
+    # store can never serve byte-stale IR after a swap: the served vision model AND
+    # adjudication model (``_resolve_model`` — NOT the constant ``adjudicator_id``),
+    # the ACTIVE vision system-prompt fingerprints (via the modality tag, replacing the
+    # old hand-bumped ``structbuild.v1``/``converge.v1`` literals), the render scale,
+    # both token budgets, and the verify-pass flag.
+    modality_tag = _modality_version_tag(
+        transcription_modality,
+        struct_prompt_fp=_vp.struct_build_prompt_fingerprint(),
+        converge_prompt_fp=_vp.converge_prompt_fingerprint(),
+    )
     version = (
-        f"vision={vision._resolve_model()}+{adjudicator.adjudicator_id}"
+        f"vision={vision._resolve_model()}"
+        f"+adjudicator=llm_workflow:{adjudicator._resolve_model()}"
+        f"+scale={vision._scale}"
+        f"+vtok={vision_max_tokens}+atok={adjudicator_max_tokens}"
+        f"+verify={int(verify_pass)}"
         f"{modality_tag}+{ADJUDICATED_COMPOSE_VERSION}"
     )
     # The converged de-facsimile lane resolves a Level-2 ``DeFacsimileAdjudicator``
@@ -508,7 +564,9 @@ def resolve_pipeline(
         probe = DeFacsimileAdjudicator()
         if probe.is_available():
             defacsimile_adjudicator = probe
-            l2_id = probe.adjudicator_id
+            # Fold the SERVED L2 model (``_resolve_model``), not the constant
+            # ``adjudicator_id`` — an L2 adjudication-model swap must re-key.
+            l2_id = probe._resolve_model()
         else:
             l2_id = "fallback"
         version = f"{version}+defacsimile.v1+{l2_id}"

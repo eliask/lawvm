@@ -540,7 +540,9 @@ def test_struct_modality_folds_into_a_distinct_coexisting_cache_key(monkeypatch)
     s_span = resolve_pipeline(transcription_modality="struct_span")
     s_full = resolve_pipeline(transcription_modality="struct_full")
     s_patch = resolve_pipeline(transcription_modality="struct_patch")
-    assert "+wire=structbuild.v1" in s_span.version and "+leaf=span" in s_span.version
+    # The wire tag now folds the ACTIVE vision struct-prompt fingerprint in place of
+    # the retired hand-bumped ``structbuild.v1`` literal (determinism-firewall fix).
+    assert "+wire=structbuild." in s_span.version and "+leaf=span" in s_span.version
     assert "+leaf=full" in s_full.version
     assert "+leaf=patch" in s_patch.version
     # Every struct lane gets a page-element producer (one shared grammar).
@@ -551,6 +553,117 @@ def test_struct_modality_folds_into_a_distinct_coexisting_cache_key(monkeypatch)
         for s in (s_span, s_full, s_patch)
     }
     assert len(keys) == 3
+
+
+def _patch_backends(monkeypatch, *, vlm="vlm-A", adj="adj-A", scale=2.0):
+    """Wire a probeable-but-fake vision+adjudication backend so ``resolve_pipeline``
+    composes a VERSION without a live server. Returns the two backend modules."""
+    from lawvm.ingest.llm_backends import llm_adjudicator as la
+    from lawvm.ingest.llm_backends import vision_producer as vp
+
+    orig_init = vp.VisionPageProducer.__init__
+
+    def _init(self, *a, **k):
+        orig_init(self, *a, **k)
+        self._scale = scale
+
+    monkeypatch.setattr(vp.VisionPageProducer, "__init__", _init)
+    monkeypatch.setattr(vp.VisionPageProducer, "is_available", lambda self: True)
+    monkeypatch.setattr(vp.VisionPageProducer, "_resolve_model", lambda self: vlm)
+    monkeypatch.setattr(la.LlmWorkflowAdjudicator, "is_available", lambda self: True)
+    monkeypatch.setattr(la.LlmWorkflowAdjudicator, "_resolve_model", lambda self: adj)
+    return vp, la
+
+
+def test_resolve_pipeline_version_folds_every_output_determining_input(monkeypatch) -> None:
+    """The determinism-firewall cache VERSION must CHANGE on every output-determining
+    input — the served vision model, the ADJUDICATION model (not the constant
+    ``adjudicator_id``), any ACTIVE vision system prompt, the render scale, both token
+    budgets — and stay STABLE (deterministic) otherwise. A warm store keyed on the old
+    incomplete key would serve BYTE-STALE IR after any such swap; this asserts it cannot.
+    """
+    from lawvm.finland.source_document.parsed_store import resolve_pipeline
+
+    def _version(**kw):
+        return resolve_pipeline(transcription_modality="struct_span", **kw).version
+
+    _patch_backends(monkeypatch, vlm="vlm-A", adj="adj-A", scale=2.0)
+    base = _version()
+    # DETERMINISM: same inputs → byte-identical version across runs.
+    assert _version() == base
+    # Every folded component is present in the version string.
+    for token in ("vision=vlm-A", "adjudicator=llm_workflow:adj-A", "scale=2.0",
+                  "vtok=3000", "atok=2000", "verify=0", "+wire=structbuild."):
+        assert token in base, token
+
+    # (a) token budgets — folded as resolve_pipeline params.
+    assert _version(vision_max_tokens=9999) != base
+    assert _version(adjudicator_max_tokens=9999) != base
+
+    # (b) vision model swap.
+    with monkeypatch.context() as m:
+        _patch_backends(m, vlm="vlm-B", adj="adj-A", scale=2.0)
+        assert _version() != base
+
+    # (c) ADJUDICATION model swap — the defect: the old key used the CONSTANT
+    # ``adjudicator_id`` (llm_workflow:qwen) so this did NOT invalidate.
+    with monkeypatch.context() as m:
+        _patch_backends(m, vlm="vlm-A", adj="adj-B", scale=2.0)
+        assert _version() != base
+
+    # (d) render scale swap.
+    with monkeypatch.context() as m:
+        _patch_backends(m, vlm="vlm-A", adj="adj-A", scale=3.0)
+        assert _version() != base
+
+    # (e) a vision system prompt edit — the fingerprint over the ACTIVE struct/appraise
+    # prompts (replacing the hand-bumped ``structbuild.v1``) must re-key.
+    with monkeypatch.context() as m:
+        vp, _ = _patch_backends(m, vlm="vlm-A", adj="adj-A", scale=2.0)
+        m.setattr(vp, "_STRUCT_SYSTEM_PROMPT", vp._STRUCT_SYSTEM_PROMPT + " (edited)")
+        assert _version() != base
+
+    # (f) STABILITY: editing a prompt NOT active on the struct_span lane (the agentic
+    # re-read prompt, used only on the scanned converge lane) must NOT re-key struct_span.
+    with monkeypatch.context() as m:
+        vp, _ = _patch_backends(m, vlm="vlm-A", adj="adj-A", scale=2.0)
+        m.setattr(vp, "_REREAD_REGION_SYSTEM_PROMPT", vp._REREAD_REGION_SYSTEM_PROMPT + " (x)")
+        assert _version() == base
+
+
+def test_resolve_pipeline_defacsimile_version_folds_converge_prompt_and_l2_model(
+    monkeypatch,
+) -> None:
+    """The converge/de-facsimile lane additionally folds the converge-refine prompt
+    fingerprint (replacing ``converge.v1``) and the SERVED Level-2 adjudication model."""
+    from lawvm.ingest.llm_backends import defacsimile_adjudicator as da
+    from lawvm.finland.source_document.parsed_store import resolve_pipeline
+
+    vp, _ = _patch_backends(monkeypatch)
+    monkeypatch.setattr(da.DeFacsimileAdjudicator, "is_available", lambda self: True)
+    monkeypatch.setattr(da.DeFacsimileAdjudicator, "_resolve_model", lambda self: "l2-A")
+
+    base = resolve_pipeline(transcription_modality="defacsimile").version
+    assert "+converge." in base and "+defacsimile.v1+l2-A" in base
+
+    # L2 adjudication-model swap must re-key (old code used the constant adjudicator_id).
+    with monkeypatch.context() as m:
+        _patch_backends(m)
+        m.setattr(da.DeFacsimileAdjudicator, "is_available", lambda self: True)
+        m.setattr(da.DeFacsimileAdjudicator, "_resolve_model", lambda self: "l2-B")
+        assert resolve_pipeline(transcription_modality="defacsimile").version != base
+
+    # Converge-refine prompt edit must re-key.
+    with monkeypatch.context() as m:
+        vp2, _ = _patch_backends(m)
+        m.setattr(da.DeFacsimileAdjudicator, "is_available", lambda self: True)
+        m.setattr(da.DeFacsimileAdjudicator, "_resolve_model", lambda self: "l2-A")
+        m.setattr(
+            vp2,
+            "_STRUCT_CONVERGE_SYSTEM_PROMPT",
+            vp2._STRUCT_CONVERGE_SYSTEM_PROMPT + " (edited)",
+        )
+        assert resolve_pipeline(transcription_modality="defacsimile").version != base
 
 
 def test_image_locator_shares_the_ir_record_prefix() -> None:

@@ -41,10 +41,11 @@ the two body digests + adjudicator id (no stale reads).
 """
 from __future__ import annotations
 
-import hashlib
 import re
 from enum import StrEnum
 from typing import Callable
+
+from lawvm.ingest.llm_backends.prompt_fingerprint import prompt_fingerprint
 
 
 class DivergenceVerdict(StrEnum):
@@ -132,12 +133,12 @@ def parse_verdict(content: str) -> DivergenceVerdict:
 #: key (alongside the model id), so any change to the prompt or the label vocabulary MECHANICALLY
 #: invalidates every stored verdict rather than serving a stale read from a superseded classifier.
 def adjudication_prompt_fingerprint() -> str:
-    """Short SHA-256 fingerprint of the adjudication prompt + label set (cache-key input)."""
-    h = hashlib.sha256()
-    h.update(_ADJUDICATION_SYSTEM.encode("utf-8"))
-    h.update(b"\x00")
-    h.update("|".join(v.value for v in DivergenceVerdict).encode("utf-8"))
-    return h.hexdigest()[:16]
+    """Short SHA-256 fingerprint of the adjudication prompt + label set (cache-key input).
+
+    Delegates to the shared ``prompt_fingerprint`` primitive (byte-identical composition)."""
+    return prompt_fingerprint(
+        _ADJUDICATION_SYSTEM, vocab=[v.value for v in DivergenceVerdict]
+    )
 
 
 def adjudicate_payload_divergence(
