@@ -46,12 +46,6 @@ DEAD_ALLOWLIST: dict[str, str] = {
     # agreed text carries a PUA/control/U+FFFD/mojibake signature. That makes it a
     # LIVE production importer, so its DEAD_ALLOWLIST entry was removed (a
     # legitimate one-way ratchet shrink: frontier wired to production).
-    "lawvm.finland.canonical_compositor": (
-        "Level-2 canonical compositor (ledgered, content-preserving PDF→clean "
-        "reflowable text) — built + hermetically tested over an injected LLM "
-        "proposer (pure, no live backend); production wiring into the ingest "
-        "pipeline as the level-2 stage is the next integration wave."
-    ),
     "lawvm.tools.fi_appendix_vision_eval": (
         "Phase-3 vision false-graduation validation harness (mutation gold + "
         "Clopper-Pearson bound + live-canary ratchet); exercised by "

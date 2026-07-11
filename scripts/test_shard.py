@@ -1273,11 +1273,6 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # never graduates) + false-graduation canary ratchet (frozen mutant gold).
         "test_fi_appendix_vision_screen.py",
         "test_fi_appendix_vision_canary.py",
-        # Level-2 canonical compositor (finland.canonical_compositor): ledgered
-        # content-preserving PDF→clean-text transforms over an injected LLM
-        # proposer; deterministic subsequence safety gate rejects hallucination.
-        # Hermetic (pure, no live backend); builds on op_equivalence + dehyphenate.
-        "test_fi_canonical_compositor.py",
     ),
     "tools_audit_restructure": (
         "test_fi_restructure_plan.py",
