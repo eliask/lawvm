@@ -139,6 +139,45 @@ def test_extract_stops_at_rinnakkaistekstit_appendix() -> None:
     assert "(999/1999)" not in spans[0]
 
 
+def test_extract_old_format_two_digit_year_cite() -> None:
+    # The pre-2000 typographic convention prints the statute year as TWO digits
+    # ("(178/76)" = statute 178, year 1976). The whole 1992–1999 pdf_no_clause stratum
+    # used it, and the 4-digit-only cite anchor never matched → the clause was invisible.
+    # The 2-digit form is now admitted as the span-detection anchor.
+    clause = "muutetaan testilain (178/76) 11 " + _SEC + " seuraavasti: Uusi 11 §."
+    spans = extract_enacting_clause_spans("Lakiehdotukset " + clause)
+    assert len(spans) == 1
+    assert "(178/76)" in spans[0]
+
+
+def test_extract_two_digit_cite_body_prose_still_rejected() -> None:
+    # The 2-digit widening must NOT relax the enacting-clause discipline. A body-prose
+    # sentence carrying an amendment verb + a 2-digit cite but NO "§" provision list before
+    # the terminator is not a directive and yields no span (the "§" discriminator holds
+    # identically for the widened cite form).
+    prose = (
+        "Ehdotuksessa muutetaan kansanelakelain (347/56) rakennetta merkittavasti "
+        "seuraavasti: ensin ja sitten."
+    )
+    assert extract_enacting_clause_spans(prose) == []
+
+
+def test_lakiehdotus_region_skips_toc_leader_entry() -> None:
+    # An old-format HE opens with a sisällysluettelo listing "Rinnakkaistekstit . . . . 41"
+    # (dotted leaders to the page number). That front-matter entry matched the appendix-end
+    # marker and truncated the WHOLE bill body away (4 of the 14 pdf_no_clause HEs). A TOC
+    # entry — label immediately trailed by a dotted-leader run — must NOT cut the region;
+    # only a genuine body heading (followed by parallel-text content) does.
+    toc = "Sisallys Lakiehdotukset 3 Rinnakkaistekstit . . . . . . . . . . . 41 "
+    body = "Lakiehdotukset muutetaan testilain (123/2020) 5 " + _SEC + " seuraavasti: Uusi 5 §."
+    flat = _flatten_reading_text(toc + body)
+    region = _lakiehdotus_region(flat)
+    assert "muutetaan testilain (123/2020)" in region
+    spans = extract_enacting_clause_spans(toc + body)
+    assert len(spans) == 1
+    assert "(123/2020)" in spans[0]
+
+
 # --------------------------------------------------------------------------- #
 # draft-decree (asetusluonnos) recovery: directives sit AFTER the appendix     #
 # --------------------------------------------------------------------------- #

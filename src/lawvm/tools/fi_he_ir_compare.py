@@ -162,7 +162,16 @@ _HE_HEAD_VERB_RE = re.compile(
 
 #: A bare Finnish statute citation "(NUM/YEAR)" — the target-statute anchor an amendment
 #: directive head must be followed by (the parser resolves the op targets against it).
-_CITE_RE = re.compile(r"\(\d{1,5}/\d{4}\)")
+#: The year is FOUR digits in the modern convention ("(758/1989)") but TWO in the pre-2000
+#: typographic convention the 1990s HEs used ("(178/76)", "(452/72)"); a bare 2-digit-year
+#: cite defeated this anchor on the whole old-format stratum (14 pdf_no_clause HEs, all
+#: 1992–1999), so the enacting clause was never detected. Admitting the 2-digit form recovers
+#: it. This is ONLY the span-detection ANCHOR (an existence check): the span text still flows
+#: through the SHARED :func:`_parse_one_clause`, whose statute resolver keeps the 4-digit form
+#: — so a 2-digit-cite HE resolves an EMPTY statute id on BOTH witnesses identically (the XML
+#: johtolause carries the same 2-digit cite) and the ops match on their provision paths. A
+#: 3-digit year is not a real statute year, so it is excluded (``\d{2}|\d{4}``).
+_CITE_RE = re.compile(r"\(\d{1,5}/(?:\d{2}|\d{4})\)")
 
 #: Max distance from an amendment-verb head to the statute citation it governs. Must
 #: span a full Finnish law TITLE, which for EU-implementation acts is long ("lisätään
@@ -265,6 +274,55 @@ _LAKIEHDOTUS_HEADING = "Lakiehdotukset"
 #: bare "Liite", which occurs in genuine bill text ("muutetaan liite 1 ...").
 #: Flat quantifiers only (FW-07).
 _LAKIEHDOTUS_END_RE = re.compile(r"\b(?:Rinnakkaisteksti[a-zä]{0,4}|Liitteet)\b")
+
+#: Minimum dots that mark a TABLE-OF-CONTENTS dotted leader ("Rinnakkaistekstit . . . . 41").
+#: A genuine sentence following a heading never opens with a run of bare dots, so four is an
+#: ample, false-positive-safe floor.
+_TOC_LEADER_MIN_DOTS = 4
+
+
+def _starts_with_toc_leader(flat: str, pos: int) -> bool:
+    """True iff ``flat[pos:]`` opens with a table-of-contents dotted-leader run.
+
+    A TOC entry prints its label then a dotted leader to the page number
+    ("Rinnakkaistekstit . . . . . . 41"); a GENUINE body appendix heading is immediately
+    followed by parallel-text content ("Voimassa oleva laki | Ehdotus …"), never a leader.
+    So a leader immediately trailing an appendix-heading match convicts it as a front-matter
+    TOC entry. Bounded MANUAL scan (no regex — the flat-census / FW-07 discipline of
+    :func:`_numbered_bill_follows` / :func:`_lakiehdotus_scan_start`): count dots, tolerate the
+    single spaces the flattener leaves between them, stop at the first other char. A run of
+    ``_TOC_LEADER_MIN_DOTS`` dots convicts; anything else (a real word, a page digit, a stray
+    single dot) does not.
+    """
+    dots = 0
+    for c in flat[pos : pos + 256]:
+        if c == ".":
+            dots += 1
+            if dots >= _TOC_LEADER_MIN_DOTS:
+                return True
+        elif c != " ":  # a leader tolerates the single spaces between its dots
+            return False
+    return False
+
+
+def _first_appendix_end(flat: str) -> "Optional[re.Match[str]]":
+    """First GENUINE appendix-heading match in ``flat``, skipping table-of-contents entries.
+
+    :data:`_LAKIEHDOTUS_END_RE` locates the "Rinnakkaistekstit"/"Liitteet" heading that opens
+    the post-bill appendix. In an old-format HE the same word FIRST appears in the front-matter
+    table of contents ("… Rinnakkaistekstit . . . . 41"), and cutting there dropped the entire
+    bill body (4 of the 14 pdf_no_clause HEs). A TOC entry is distinguished PURELY STRUCTURALLY
+    by the dotted leader immediately trailing its label (:func:`_starts_with_toc_leader`),
+    whereas a real body heading is followed by the parallel-text reprint. We return the first
+    match that is NOT a TOC entry, or ``None`` if every match is one (then the region is left
+    uncut — correct: the real appendix is beyond the page window or absent, bills stay in scope).
+    """
+    # lawvm-regex: witness_only PDF-witness structural anchor (appendix heading enumeration); never reads XML.
+    for m in _LAKIEHDOTUS_END_RE.finditer(flat):
+        if not _starts_with_toc_leader(flat, m.end()):
+            return m
+    return None
+
 
 #: The editorial section heading a multi-instrument HE prints its DRAFT-DECREE
 #: (asetusluonnos) proposals under — the decrees sit AFTER the law-bills and their
@@ -469,8 +527,13 @@ def _lakiehdotus_region(flat: str) -> str:
     (:func:`_asetusluonnos_region`) it is re-appended after the pre-appendix text (joined by a
     single space, which cannot bridge an enacting clause across the seam because the pre-appendix
     text ends at a completed bill).  HEs with no draft decrees are byte-for-byte unchanged.
+
+    The appendix heading is resolved by :func:`_first_appendix_end`, which SKIPS a front-matter
+    table-of-contents entry (an old-format HE lists "Rinnakkaistekstit … 41" in its
+    sisällysluettelo; cutting there truncated the whole bill body to the cover page). A HE whose
+    only appendix match is a TOC entry is left uncut.
     """
-    m = _LAKIEHDOTUS_END_RE.search(flat)
+    m = _first_appendix_end(flat)
     if m is None:
         return flat
     head = flat[: m.start()]
