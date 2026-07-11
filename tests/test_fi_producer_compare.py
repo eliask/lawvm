@@ -118,7 +118,7 @@ def test_score_producer_faithful_beats_garbled() -> None:
     man = _FakeManifestation()
     faithful = score_producer(_ScriptedProducer("geom", _FAITHFUL_PAGES), man, (None, None), _GOLD)
     garbled = score_producer(_ScriptedProducer("vision", _GARBLED_PAGES), man, (None, None), _GOLD)
-    assert faithful.status == "scored" and garbled.status == "scored"
+    assert faithful.score_status == "scored" and garbled.score_status == "scored"
     assert faithful.word_coverage >= garbled.word_coverage
     assert faithful.wer <= garbled.wer
     assert faithful.numeric_recall == 1.0
@@ -133,13 +133,13 @@ def test_score_producer_unavailable_is_typed() -> None:
     sc = score_producer(
         _ScriptedProducer("docling", [], available=False), man, (None,), _GOLD
     )
-    assert sc.status == "unavailable"
+    assert sc.score_status == "unavailable"
 
 
 def test_score_producer_failure_is_typed_not_crash() -> None:
     man = _FakeManifestation()
     sc = score_producer(_RaisingProducer(), man, (None,), _GOLD)
-    assert sc.status == "failed"
+    assert sc.score_status == "failed"
     assert sc.detail is not None and "scripted failure" in sc.detail
 
 
@@ -159,7 +159,7 @@ def test_combo_union_prefers_primary_and_counts_corroboration() -> None:
     assert union[0].strip() and union[1].strip()  # both pages covered
     assert both == 0
     sc = score_producer(combo, man, (None, None), _GOLD)
-    assert sc.status == "scored"
+    assert sc.score_status == "scored"
     assert sc.corroborating_pages == 0
     # Union of the two halves reconstructs the whole gold → full numeric recall.
     assert sc.numeric_recall == 1.0
@@ -184,7 +184,7 @@ def _report(stratum: str, kind: str, scores: Sequence[ProducerScore]) -> PdfProd
         pdf_locator=f"{stratum}://x/{kind}",
         xml_locator="x/main.xml",
         stratum=stratum,
-        status="compared",
+        pair_status="compared",
         dominant_kind=kind,
         scores=tuple(scores),
     )
