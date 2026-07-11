@@ -182,6 +182,18 @@ _CITE_RE = re.compile(r"\(\d{1,5}/(?:\d{2}|\d{4})\)")
 #: admit perustelut prose.
 _HEAD_TO_CITE = 400
 
+#: The Finnish amendment-HISTORY marker that opens a provenance sub-clause: "sellaisena kuin
+#: se on …" / "sellaisina kuin ne ovat …" / "sellaisina kuin niistä ovat …" = "as it stands,
+#: [as] amended by acts …".  Everything AFTER this marker, up to the directive's terminator
+#: (the next amendment-verb head or "seuraavasti:"), is a list of the PRIOR AMENDING acts of
+#: the sections being touched — NOT the governing (amended) act.  Those ids are frequently
+#: parenthesised ("… ja (668/2013), 80 § …"), so a naive "(NUM/YEAR)" head-cite anchor picks
+#: the MOST RECENT amending act as a phantom op TARGET (HE 139/2013: 26 phantom ops on 668/2013,
+#: the whole ulkomaalaislaki 301/2004 provision list mis-attributed to a history id).  A cite
+#: that lies past this marker within a directive is excluded from head-cite / bill-scope
+#: resolution (:func:`_governing_cite_after`).  Purely PDF-structural; never reads the XML.
+_HISTORY_MARKER_RE = re.compile(r"sellais(?:ena|ina)\s+kuin", re.IGNORECASE)
+
 #: A provision marker ("§") — a genuine amendment directive lists the provisions it
 #: touches (7 §, 9 §:n 2 momentti, ...) between its statute citation and "seuraavasti:".
 #: Requiring one INSIDE the candidate span is the structural discriminator that separates
@@ -239,6 +251,47 @@ def _korvataan_head_is_directive(flat: str, hstart: int, cite_end: int) -> bool:
     if _ENACTMENT_FORMULA in flat[lo:hstart].lower():
         return True
     return _ENACTMENT_FORMULA in flat[cite_end : cite_end + _KORVATAAN_FORMULA_AFTER_CITE].lower()
+
+
+def _governing_cite_after(flat: str, lo: int, hi: int) -> "Optional[re.Match[str]]":
+    """First GOVERNING statute cite "(NUM/YEAR)" in ``flat[lo:hi]``, skipping history-list ids.
+
+    The GOVERNING (amended) act of a johtolause directive is cited right after the verb head
+    and its law-name — BEFORE any "sellaisena kuin se on … / sellaisina kuin ne ovat …"
+    amendment-history sub-clause (:data:`_HISTORY_MARKER_RE`).  Every parenthesised id that
+    appears AFTER that marker within the directive is a PRIOR AMENDING act of the touched
+    sections, not the target (e.g. "muutetaan 3 §:n 6 ja 7 kohta … sellaisina kuin niistä ovat,
+    73 § osaksi laissa 449/2012, 79 § laeissa … ja (668/2013), …": (668/2013) is merely the most
+    recent amending act).  We therefore return the first ``(NUM/YEAR)`` with NO history marker
+    between ``lo`` and the cite — the genuine governing anchor — and ``None`` when a directive
+    head carries ONLY history-list ids (a same-bill continuation verb whose governing act was
+    named by an earlier head; the earlier head's span already covers these provisions).
+
+    Purely PDF-structural (it reads only the johtolause word order), so it never risks dropping
+    a real SECOND bill: a real bill prints its own "muutetaan <name> (id)" with the governing id
+    BEFORE any "sellaisina", which this returns unchanged.
+    """
+    for cite in _CITE_RE.finditer(flat, lo, hi):
+        if _HISTORY_MARKER_RE.search(flat, lo, cite.start()) is None:
+            return cite
+    return None
+
+
+def _is_continuation_head(flat: str, hstart: int, scan_lo: int) -> bool:
+    """True iff an amendment-verb head at ``hstart`` continues an already-open johtolause.
+
+    A CONTINUATION head is preceded — since the last "seuraavasti:" terminator (or the scan
+    start) — by another amendment-verb head that opened the current johtolause: the two share a
+    directive block ("kumotaan (id) … muutetaan … lisätään … seuraavasti:").  The opening head's
+    span already runs to the shared terminator and covers this head's provisions, so a
+    continuation head that carries no governing cite of its own is a redundant duplicate.  An
+    OPENING head (none precedes it in the block) is NOT a continuation and is kept.
+    """
+    prev_term = None
+    for t in _TERMINATOR_RE.finditer(flat, scan_lo, hstart):
+        prev_term = t
+    block_lo = prev_term.end() if prev_term is not None else scan_lo
+    return _HE_HEAD_VERB_RE.search(flat, block_lo, hstart) is not None
 
 
 #: Bounded window back from a "... seuraavasti:" terminator (AGENTS.md §1.11 bound).
@@ -695,9 +748,30 @@ def extract_enacting_clause_spans(
     spans: list[str] = []
     for head in _HE_HEAD_VERB_RE.finditer(flat, scan_lo):
         hstart = head.start()
-        # The head must govern a statute citation just after it.
+        # The head must be followed by a statute citation "(NUM/YEAR)" within the window — the
+        # existence anchor that separates a genuine johtolause from a stray perustelut sentence.
         cite = _CITE_RE.search(flat, head.end(), min(len(flat), head.end() + _HEAD_TO_CITE))
         if cite is None:
+            continue
+        # DROP a redundant CONTINUATION head whose only nearby "(NUM/YEAR)" is a history-list
+        # amending act.  A combined johtolause ("kumotaan <name> (301/2004) N §, … muutetaan 3 §
+        # … sellaisina kuin niistä ovat … ja (668/2013) …, seuraavasti:") is split by finditer
+        # into one span per verb head; the CONTINUATION heads (muutetaan/lisätään) carry no
+        # governing cite of their own — only the trailing history id — so they would lower the
+        # SAME provisions the opening head's span already covers, but mis-attributed to the most
+        # recent amending act (HE 139/2013: 26 phantom ops on 668/2013). We drop such a head only
+        # when (a) it has NO governing cite (only history ids follow) AND (b) it is a continuation
+        # (an earlier amendment-verb head shares its johtolause — no "seuraavasti:" between them).
+        # An OPENING head whose sole cite is a history id is KEPT (existence anchor): a law named
+        # by DATE, not a "(NUM/YEAR)" id ("kumotaan 3 päivänä joulukuuta 1895 annetun ulosottolain
+        # … sellaisina kuin ne ovat … (389/73) …"), has no governing "(NUM/YEAR)" at all, and its
+        # ops resolve to an EMPTY statute id on BOTH witnesses identically (both skip the history
+        # id via _extract_statute_citation) so they still match — dropping it would strand them.
+        if (
+            _governing_cite_after(flat, head.end(), min(len(flat), head.end() + _HEAD_TO_CITE))
+            is None
+            and _is_continuation_head(flat, hstart, scan_lo)
+        ):
             continue
         # The ambiguous "korvataan" head ("is reimbursed" in prose vs "is replaced" as a
         # directive) is admitted ONLY when the enactment formula corroborates it (else a body

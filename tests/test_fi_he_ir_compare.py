@@ -469,6 +469,101 @@ def test_genuine_muutetaan_bill_extracts_fully() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Amendment-HISTORY id ("sellaisena/sellaisina kuin …") must not become a       #
+# phantom op TARGET (HE 139/2013: 26 phantom ops on 668/2013).                  #
+# --------------------------------------------------------------------------- #
+
+
+def test_history_list_id_not_a_phantom_target() -> None:
+    # HE 139/2013 shape: a single COMBINED johtolause ("kumotaan <name> (301/2004) … muutetaan
+    # 3 § … sellaisina kuin niistä ovat … ja (668/2013), 80 § … seuraavasti:").  668/2013 is
+    # merely the MOST RECENT amending act in the provenance list, not an amendment target.  A
+    # "§" follows the (668/2013) id, so the provision-mark guard does NOT reject the muutetaan
+    # continuation head — the continuation-drop is what prevents the phantom.  Every op must
+    # target the GOVERNING act 301/2004; none may target the history id 668/2013.
+    from lawvm.finland.he_branch_parser import _parse_one_clause
+
+    text = (
+        "Lakiehdotukset 1. Laki ulkomaalaislain muuttamisesta "
+        "kumotaan ulkomaalaislain (301/2004) 81 c " + _SEC + ", "
+        "muutetaan 3 " + _SEC + ":n 6 kohta, 70 " + _SEC + ", 72 " + _SEC + ", "
+        "sellaisina kuin niistä ovat, 70 " + _SEC + " laeissa 34/2006 ja (668/2013), "
+        "72 " + _SEC + " osaksi laissa 549/2010, seuraavasti: "
+        "3 " + _SEC + " Uusi teksti. 70 " + _SEC + " Uusi teksti. 72 " + _SEC + " Uusi teksti."
+    )
+    spans = extract_enacting_clause_spans(text)
+    pdf_ops: list = []
+    for span in spans:
+        ops, _ = _parse_one_clause(span, len(pdf_ops), "HE 139/2013 vp", "fi/he/2013/139")
+        pdf_ops.extend(ops)
+    sids = {o.target_statute_id for o in pdf_ops}
+    assert "668/2013" not in sids, sids
+    assert sids == {"301/2004"}, sids
+    # The governing act's touched provisions are all present (via the opening head's span).
+    refs = {o.target_provision_ref for o in pdf_ops}
+    assert {"301/2004/70", "301/2004/72", "301/2004/3/1/kohta_6"} <= refs, refs
+
+
+def test_date_identified_law_opening_head_kept() -> None:
+    # An OLD law named by DATE, not a "(NUM/YEAR)" id ("kumotaan 3 päivänä joulukuuta 1895
+    # annetun ulosottolain … sellaisina kuin ne ovat … (389/73) …"): its ONLY parenthesised
+    # id is a history id, but the head is the OPENING head of its johtolause (no earlier verb
+    # head shares its block), so the span must still be created (existence anchor).  Its ops
+    # resolve to an EMPTY statute id — the same on both witnesses, so they still match — and the
+    # history id 389/73 must NOT be attributed as a target.
+    from lawvm.finland.he_branch_parser import _parse_one_clause
+
+    text = (
+        "Lakiehdotukset 1. Laki ulosottolain muuttamisesta "
+        "kumotaan 3 päivänä joulukuuta 1895 annetun ulosottolain "
+        "3 luvun 12 " + _SEC + ":n 3 momentti ja 4 luvun 9 c " + _SEC + ", "
+        "sellaisina kuin ne ovat, 3 luvun 12 " + _SEC + ":n 3 momentti laissa (389/73) "
+        "ja 4 luvun 9 c " + _SEC + " laissa 197/1996, seuraavasti: "
+        "3 luvun 12 " + _SEC + " Uusi teksti. 4 luvun 9 c " + _SEC + " Uusi teksti."
+    )
+    spans = extract_enacting_clause_spans(text)
+    assert len(spans) == 1, spans
+    pdf_ops: list = []
+    for span in spans:
+        ops, _ = _parse_one_clause(span, len(pdf_ops), "HE 106/1995 vp", "fi/he/1995/106")
+        pdf_ops.extend(ops)
+    sids = {o.target_statute_id for o in pdf_ops}
+    assert "389/73" not in sids, sids
+    assert sids == {""}, sids
+    assert any(o.target_provision_ref == "/luku_3/12/3" for o in pdf_ops), [
+        o.target_provision_ref for o in pdf_ops
+    ]
+
+
+def test_extract_statute_citation_skips_history_and_keeps_governing() -> None:
+    # Unit-level: the GOVERNING id is cited BEFORE any "sellaisena/sellaisina kuin …" marker and
+    # must resolve; every id AFTER the marker (a prior amending act) is excluded.
+    from lawvm.finland.he_branch_parser import _extract_statute_citation
+
+    # Governing (301/2004) before the marker resolves; the trailing (668/2013) is ignored.
+    gov = _extract_statute_citation(
+        "muutetaan ulkomaalaislain (301/2004) 70 "
+        + _SEC
+        + ", sellaisina kuin se on laissa (668/2013)"
+    )
+    assert gov is not None and gov[0] == "301/2004", gov
+
+    # History-only directive (no governing paren id before the marker) resolves to nothing.
+    hist_only = _extract_statute_citation(
+        "muutetaan 3 " + _SEC + ", sellaisina kuin niistä ovat 79 " + _SEC + " ja (668/2013)"
+    )
+    assert hist_only is None, hist_only
+
+    # Multi-act parenthesised history list — ALL ids after the marker are excluded.
+    multi = _extract_statute_citation(
+        "muutetaan 3 "
+        + _SEC
+        + ", sellaisina kuin ne ovat laeissa (34/2006), (380/2006) ja (668/2013)"
+    )
+    assert multi is None, multi
+
+
+# --------------------------------------------------------------------------- #
 # Design B: bills-heading anchor widens the bound for a mega-johtolause,       #
 # while fencing the perustelut out (no op_extra regression).                  #
 # --------------------------------------------------------------------------- #

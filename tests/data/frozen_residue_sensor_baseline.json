@@ -18,6 +18,7 @@
       "src/lawvm/estonia/fetch.py": 1,
       "src/lawvm/estonia/target_resolution.py": 1,
       "src/lawvm/finland/amendment_chapter_precreate.py": 2,
+      "src/lawvm/finland/he_branch_parser.py": 1,
       "src/lawvm/finland/johto_scope_mentions.py": 4,
       "src/lawvm/finland/metadata.py": 8,
       "src/lawvm/finland/normalize.py": 2,
@@ -98,10 +99,10 @@
       "src/lawvm/substrate/locus_links.py": 1
     }
   },
-  "grand_total": 429,
+  "grand_total": 430,
   "totals": {
     "clause_boundary_dup": 55,
-    "multi_finditer_same_src": 107,
+    "multi_finditer_same_src": 108,
     "per_op_fstring_regex": 248,
     "span_overlap_dedup": 19
   }

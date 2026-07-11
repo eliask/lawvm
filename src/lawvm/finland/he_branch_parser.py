@@ -388,6 +388,42 @@ _STATUTE_CITE_BARE_RE = re.compile(
     r"\s+(?P<statute_number>\d{1,5})\s*/\s*(?P<statute_year>\d{4})\b",
 )
 
+# Amendment-HISTORY marker ("sellaisena kuin se on … / sellaisina kuin ne ovat …" = "as it
+# stands, [as] amended by acts …").  Ids listed AFTER this marker within a directive are the
+# PRIOR AMENDING acts of the touched sections, not the amended (target) act.  The governing act
+# is always cited BEFORE it, so a citation past the marker (with no intervening directive
+# boundary) must NOT be read as the op target (AGENTS.md §1.1 — no silent target hijacking to a
+# later amending statute).  Label-independent: reads only the clause word order.
+_HE_HISTORY_MARKER_RE = re.compile(r"sellais(?:ena|ina)\s+kuin", re.IGNORECASE)
+
+# A directive BOUNDARY — an amendment-verb head opening a new directive, or the "seuraavasti:"
+# terminator closing one.  A citation after a history marker but AFTER such a boundary belongs
+# to a FRESH directive (its governing cite), so it is NOT a history id.
+_HE_DIRECTIVE_BOUNDARY_RE = re.compile(
+    r"\b(?:muut(?:etaan|ettu)|lis[äa]t[äa]{1,2}n|kumo(?:taan|ttu)|korv(?:ataan|attu))\b"
+    r"|seuraavasti\s*:",
+    re.IGNORECASE,
+)
+
+
+def _cite_in_history_span(clause_text: str, pos: int) -> bool:
+    """True iff the citation at offset ``pos`` lies inside a "sellaisena/sellaisina kuin …" span.
+
+    The nearest preceding directive marker before ``pos`` decides: if it is a history marker
+    (:data:`_HE_HISTORY_MARKER_RE`) rather than a directive boundary
+    (:data:`_HE_DIRECTIVE_BOUNDARY_RE` — a new amendment-verb head or "seuraavasti:"), the cite
+    is a PRIOR-AMENDING-act id in a provenance list, not the governing target.  Purely on the
+    clause word order; never reads the XML or a label.
+    """
+    markers = [m.start() for m in _HE_HISTORY_MARKER_RE.finditer(clause_text, 0, pos)]
+    if not markers:
+        return False
+    boundaries = [m.start() for m in _HE_DIRECTIVE_BOUNDARY_RE.finditer(clause_text, 0, pos)]
+    last_marker = max(markers)
+    last_boundary = max(boundaries) if boundaries else -1
+    return last_marker > last_boundary
+
+
 # Pattern for "Ehdotetaan muutettavaksi" (alternative "ehdotetaan" forms)
 _EHDOTETAAN_VARIANT_RE = re.compile(
     r"^Ehdotetaan\s+(?:säädettäväksi|muutettavaksi|kumottavaksi|lisättäväksi)",
@@ -460,18 +496,31 @@ def _extract_statute_citation(clause_text: str) -> Optional[tuple[str, str]]:
     Finnish statute IDs use NUMBER/YEAR format (not YEAR/NUMBER).
     """
     # lawvm-regex: owning_parser HE branch owning parser extracts the statute citation from its own clause text
-    m = _STATUTE_CITE_RE.search(clause_text)
+    # Return the first GOVERNING cite, skipping any id inside a "sellaisena/sellaisina kuin …"
+    # amendment-history span (the parenthesised most-recent amending act is otherwise picked as a
+    # phantom target — AGENTS.md §1.1).  Parenthesised form preferred, then the bare form.
+    m = _first_non_history_cite(_STATUTE_CITE_RE, clause_text)
     if m is None:
         # lawvm-regex: owning_parser fallback to the UNPARENTHESISED citation form (target-case
         # name + NUMBER/YEAR) that many pre-2010 / procedural HEs use; suffix-gated so the
         # "sellaisina kuin … laissa NNNN" amending-law back-references cannot hijack the target.
-        m = _STATUTE_CITE_BARE_RE.search(clause_text)
+        m = _first_non_history_cite(_STATUTE_CITE_BARE_RE, clause_text)
     if m is None:
         return None
     year = m.group("statute_year")
     number = m.group("statute_number")
     name = m.group("statute_name").strip()
     return f"{number}/{year}", name
+
+
+def _first_non_history_cite(
+    pattern: "re.Pattern[str]", clause_text: str
+) -> "Optional[re.Match[str]]":
+    """First ``pattern`` match whose id does NOT lie in a history span (:func:`_cite_in_history_span`)."""
+    for m in pattern.finditer(clause_text):
+        if not _cite_in_history_span(clause_text, m.start("statute_number")):
+            return m
+    return None
 
 
 # Finnish nominal case suffixes stripped to key a statute name for cross-citation
