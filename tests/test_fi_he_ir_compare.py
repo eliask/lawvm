@@ -244,6 +244,42 @@ def test_extract_tolerates_reordered_formula() -> None:
     assert "(123/2020)" in spans[0]
 
 
+def test_body_prose_korvataan_crossreference_is_not_a_clause() -> None:
+    # "korvataan" is the one amendment-head verb that is ALSO pervasive body prose ("is
+    # reimbursed" vs the directive "is replaced"). A section-body cross-reference
+    # "... kustannukset korvataan <lain> (767/2005) 10 luvun 7 §:n perusteella; ..." carries
+    # the head-verb + citation + "§" + a downstream "seuraavasti:" signature, so it MIMICS an
+    # enacting clause and lowered phantom ops on the merely-referenced statute (HE 103/2013:
+    # 12 phantom ops on vankeuslaki 767/2005, a law it never amends). Absent the enactment
+    # formula, a "korvataan" head is body prose and yields NO span.
+    # The body-prose "korvataan (767/2005)" sits DEEP in the section body — far past the bill's
+    # own enactment formula (as in real HEs, thousands of chars downstream), so the formula does
+    # not corroborate it.
+    filler = ("Tässä pykälässä säädetään sairaanhoidon kustannusten korvaamisesta ja "
+              "matkakustannuksista sen mukaan kuin jäljempänä tarkemmin luetellaan. ") * 8
+    text = (
+        "Lakiehdotukset 1. Laki testilain muuttamisesta Eduskunnan päätöksen mukaisesti "
+        "muutetaan testilain (123/2020) 5 " + _SEC + " seuraavasti: 5 " + _SEC + " " + filler
+        + "Korvataan sairaanhoidon kustannuksia, jos kustannukset korvataan vankeuslain "
+        "(767/2005) 10 luvun 7 " + _SEC + ":n perusteella; 7) muut kustannukset seuraavasti: nns."
+    )
+    joined = "".join(extract_enacting_clause_spans(text))
+    assert "(123/2020)" in joined  # the genuine muutetaan bill survives
+    assert "(767/2005)" not in joined  # the body-prose korvataan cross-reference is rejected
+
+
+def test_formula_corroborated_korvataan_directive_is_extracted() -> None:
+    # A GENUINE "korvataan" johtolause — introduced by the enactment formula — IS a directive
+    # and must be extracted (the gate rejects only the un-corroborated body-prose usage).
+    text = (
+        "Lakiehdotukset 1. Laki testilain muuttamisesta Eduskunnan päätöksen mukaisesti "
+        "korvataan testilain (123/2020) 5 " + _SEC + " seuraavasti: 5 " + _SEC + " Uusi teksti."
+    )
+    spans = extract_enacting_clause_spans(text)
+    assert len(spans) == 1
+    assert "(123/2020)" in spans[0]
+
+
 # --------------------------------------------------------------------------- #
 # terminator-less repeal must not claim a later bill's terminator/provisions   #
 # --------------------------------------------------------------------------- #

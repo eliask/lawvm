@@ -182,11 +182,55 @@ _HEAD_TO_CITE = 400
 #: its clause does not cause the (genuine) clause to be dropped.
 _PROVISION_MARK_RE = re.compile(r"§")
 
+#: The enactment FORMULA token ("<Eduskunnan|Valtioneuvoston|…ministeriön> päätöksen
+#: mukaisesti") that introduces every genuine johtolause.  It is NOT required in general (geom
+#: can scatter the centered formula far from its clause — see
+#: :func:`extract_enacting_clause_spans`), but it is the corroboration demanded of the one
+#: AMBIGUOUS head verb, "korvataan" (:func:`_korvataan_head_is_directive`).  Matched by
+#: ``str.find`` on a lowercased window (no regex — the same flat-census discipline as
+#: :data:`_LAKIEHDOTUS_HEADING` / :data:`_ASETUSLUONNOS_HEADING`); the flattened reading text
+#: collapses whitespace runs to single spaces, so the single-space form is reliable.
+_ENACTMENT_FORMULA = "päätöksen mukaisesti"
+
+#: How far BEFORE a "korvataan" head, and AFTER its citation, the enactment formula is
+#: accepted as corroboration (a genuine johtolause prints "… päätöksen mukaisesti korvataan
+#: … (N/YEAR) … seuraavasti:", the formula abutting the head; geom may reorder the centered
+#: formula onto the line just AFTER the provision list, hence the small forward window too).
+_KORVATAAN_FORMULA_REACH = 300
+_KORVATAAN_FORMULA_AFTER_CITE = 60
+
 #: Any amendment verb (vs the new-law-only "säädetään"): tells a proposed-AMENDMENT HE
 #: apart from a pure new-statute enactment when the XML lowers to zero ops.
 _AMEND_VERB_RE = re.compile(
     r"\b(muut(?:etaan|tanut|ettu)|lis[äa]t|kumo|korv|poist|siirr)", re.IGNORECASE
 )
+
+
+def _korvataan_head_is_directive(flat: str, hstart: int, cite_end: int) -> bool:
+    """True iff an ambiguous ``korvataan`` head is a genuine amendment directive, not body prose.
+
+    ``korvataan`` is the ONE amendment-head verb (:data:`_HE_HEAD_VERB_RE`) that is ALSO
+    pervasive body prose.  As a directive it means "is replaced" (rare — a replacement is
+    normally written ``muutetaan``); as substantive prose it means "is reimbursed / compensated",
+    which saturates social-insurance and health-law bill BODIES ("… sairaanhoidon kustannuksia,
+    jos kustannukset korvataan vankeuslain (767/2005) 10 luvun 7 §:n perusteella; 7) …").  Such
+    a body cross-reference carries an amendment verb + a parenthesised statute citation + "§" +
+    a downstream "seuraavasti:", so it MIMICS an enacting clause and was lowered as a phantom
+    amendment of the merely CROSS-REFERENCED statute (HE 103/2013: 12 phantom ops on vankeuslaki
+    767/2005 — a law the HE never amends — that the reclassifier then force-typed benign
+    ``pdf_out_of_scope_statute``, masking a target-misresolution defect).
+
+    Unlike ``muutetaan`` / ``lisätään`` / ``kumotaan`` — rare in prose, so admitted with no
+    corroboration (a genuine clause needs no formula; geom may scatter it) — a ``korvataan`` head
+    is admitted ONLY when the enactment FORMULA (:data:`_ENACTMENT_FORMULA`) corroborates it:
+    just BEFORE the head (the formula abutting it) or just AFTER its citation (geom reordered the
+    centered formula past the provision list).  Purely PDF-structural; never reads the XML.
+    """
+    lo = max(0, hstart - _KORVATAAN_FORMULA_REACH)
+    if _ENACTMENT_FORMULA in flat[lo:hstart].lower():
+        return True
+    return _ENACTMENT_FORMULA in flat[cite_end : cite_end + _KORVATAAN_FORMULA_AFTER_CITE].lower()
+
 
 #: Bounded window back from a "... seuraavasti:" terminator (AGENTS.md §1.11 bound).
 _MAX_CLAUSE_CHARS = 2400
@@ -577,6 +621,14 @@ def extract_enacting_clause_spans(
         cite = _CITE_RE.search(flat, head.end(), min(len(flat), head.end() + _HEAD_TO_CITE))
         if cite is None:
             continue
+        # The ambiguous "korvataan" head ("is reimbursed" in prose vs "is replaced" as a
+        # directive) is admitted ONLY when the enactment formula corroborates it (else a body
+        # cross-reference "… kustannukset korvataan (N/YEAR) …" lowers phantom ops on the
+        # merely-referenced statute). The unambiguous heads need no corroboration.
+        if head.group()[:4].lower() == "korv" and not _korvataan_head_is_directive(
+            flat, hstart, cite.end()
+        ):
+            continue
         term = _TERMINATOR_RE.search(flat, hstart, hstart + bound)
         if term is None:
             continue
@@ -638,7 +690,13 @@ def extract_enacting_clause_spans_llm(
         cite = _CITE_RE.search(flat, head.end(), min(len(flat), head.end() + _HEAD_TO_CITE))
         if cite is None:
             continue
-        # LLM gate FIRST (cheap, cached): reject perustelut prose before locating a terminator.
+        # Same ambiguous-"korvataan" structural gate as the mechanical lane: a body cross-
+        # reference "… kustannukset korvataan (N/YEAR) …" must not be lowered as a phantom clause.
+        if head.group()[:4].lower() == "korv" and not _korvataan_head_is_directive(
+            flat, hstart, cite.end()
+        ):
+            continue
+        # LLM gate (cheap, cached): reject perustelut prose before locating a terminator.
         tag = classify_fn(flat[hstart : hstart + _LLM_CLASSIFY_WINDOW])
         if tag is not JohtolauseTag.JOHTOLAUSE:
             continue
