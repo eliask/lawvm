@@ -120,6 +120,52 @@ attempted ONLY when the two texts still differ after every other fold, and recor
 actually rescues equality, so a clean or otherwise-decided pair carries no WHITESPACE_MIDWORD tag
 (preserving the output-sparse audit trail — the same discipline that keeps ``§`` out of the punct set).
 
+Graduated fold #6: WHITESPACE_SEP (whitespace adjacent to a range/citation separator)
+-------------------------------------------------------------------------------------
+The dominant residual *sub-cause* of ``payload_mismatch`` on the wide HE sweep is a pure
+SPACING difference where the PDF text layer over- or under-spaces a NUMERIC-CONTEXT
+separator that WHITESPACE_PUNCT does not reach. Characterised on the 300-HE sweep (seed 0):
+of the 13 pure-spacing residual fragments, 12 sit adjacent to a *separator* glyph and one
+sits strictly between two letters (that last is a genuine pdfium word-split, left to the
+output-sparse WHITESPACE_MIDWORD fallback — see below). The 12 separator seams are, by
+frequency: a space next to a numeric-range DASH ("195— 196", "2014– 2020", 10 of 12), a
+space inside a citation SLASH ("37 /1895"), a comma inside a section-number ENUMERATION
+("169, 209"), a clitic COLON after a §/number ("13 §: ssä"), and a list-marker PAREN
+("3) kohta"). Each is a space touching a NON-alphanumeric separator whose glyph is a
+range/citation/enumeration mark, never a compound-word joiner — so the space around it is
+typographic, never content. The fold DELETES only that space (the separator glyph itself is
+untouched), applied SYMMETRICALLY to both witnesses, so — exactly like WHITESPACE_PUNCT — it
+cannot hide a numeric/citation/glyph/word difference: the non-space skeleton is preserved, so
+any real digit/letter/dash-glyph change survives as a residual ("195—196" vs "195—197",
+"2014–2020" vs "2015–2020", an en-dash vs em-dash on a lone dash all stay divergent).
+
+The separator set is DELIBERATELY NARROW and data-derived:
+- the four TYPOGRAPHIC dashes U+2012–2015 (``‒ – — ―``) and ``/`` — range/citation marks —
+  have their adjacent space folded on EITHER side. The ASCII HYPHEN ``-`` is EXCLUDED: it is
+  a compound-word joiner ("sotilas- ja siviilihenkilöstö"), where the space after it is a
+  legitimate word boundary, not a typesetting artifact; folding it would be wrong.
+- a ``,`` is folded ONLY as ``digit , SPACE digit`` (a section-number enumeration "169, 209"),
+  never a prose comma ("virasto, joka") — the digit-both-flanks guard keeps ordinary prose
+  spacing out of the fold (preserving the output-sparse audit trail);
+- a ``:`` is folded ONLY as a clitic colon after a ``§`` or digit ("§: ssä", "10: nnessä"),
+  never a prose colon ("otsikko: teksti");
+- a ``)`` is folded ONLY as a list-marker after a digit ("3) kohta"), never a prose paren.
+
+``§`` is DELIBERATELY EXCLUDED here too (as it is from WHITESPACE_PUNCT): the standard "N §"
+reference legitimately carries a space, so folding it would fire on almost every body while
+recovering ZERO net additional HE equivalences (the one §-adjacent residual co-occurs with a
+genuine letter-letter word-split in HE 266/2002, which MUST stay a divergence). That §
+exclusion is load-bearing for correctness: HE 266/2002's payload differs by (a) a comma-
+enumeration space (folded here), (b) a space before ``§`` (NOT folded), and (c) the word-split
+"säädetään"→"sääde tään". Because the § seam is left intact, the two witnesses still differ
+after this fold, so the output-sparse WHITESPACE_MIDWORD fallback — which would otherwise
+delete the letter-letter split and wrongly declare the bodies equal — never fires; the genuine
+word-split correctly SURVIVES as a residual. A mutation test pins this (HE 266/2002 divergent).
+
+Digit-LETTER spacing ("5 a" vs "5a") is NOT folded — no such seam appears in the sweep, and
+the pre-existing WHITESPACE_MIDWORD contract already pins "4 a" vs "4a" (a section sub-label)
+as a residual; folding it would regress that guard.
+
 ``§`` is DELIBERATELY EXCLUDED from the before-set. Unlike ``: ; , . )`` — whose standard
 typographic form carries NO leading space, so a leading space is the anomaly to fold — the
 standard Finnish section reference ``"N §"`` legitimately CARRIES a space. Folding it would be
@@ -216,6 +262,25 @@ _WS_ADJACENT_PUNCT_RE = re.compile(r" +(?=[:;,.)])|(?<=\() +")
 # ``text_equivalence``), so it is recorded only when it actually rescues an equality.
 _MIDWORD_SPACE_RE = re.compile(r"(?<=[^\W\d_]) (?=[^\W\d_])")
 
+# Whitespace adjacent to a RANGE/CITATION SEPARATOR — the second pure-spacing quotient, a
+# strict SUPERSET of the seams WHITESPACE_PUNCT leaves behind. Data-derived from the 300-HE
+# sweep (see the WHITESPACE_SEP docstring section): a single ASCII space (its input is the
+# whitespace-normalised form) is deleted when it touches one of the NON-alphanumeric separators
+# below. Runs AFTER WHITESPACE_PUNCT, one non-overlapping left-to-right pass, flat zero-width
+# guards only (no quantified group → no nested-backtracking). It NEVER touches a separator
+# glyph, a digit, or a letter — only the space — so the non-space skeleton is preserved and no
+# numeric/citation/glyph/word difference can hide. ``§`` and the ASCII hyphen ``-`` are
+# DELIBERATELY EXCLUDED (a standard "N §" reference and a compound-word "sotilas- ja" both carry
+# a legitimate space); the comma/colon/paren branches are digit/§-anchored so ordinary PROSE
+# spacing ("virasto, joka", "otsikko: teksti") never folds — preserving the output-sparse trail.
+_WS_SEP_RE = re.compile(
+    r"(?<=[/‒-―]) "         # space immediately AFTER a slash or typographic dash (U+2012–2015)
+    r"| (?=[/‒-―])"         # space immediately BEFORE a slash or typographic dash
+    r"|(?<=\d,) (?=\d)"     # space in a section-number ENUMERATION: "169, 209"
+    r"|(?<=[§\d]:) (?=\w)"  # space after a CLITIC COLON (colon following §/digit): "13 §: ssä"
+    r"|(?<=\d\)) (?=\w)"    # space after a LIST-MARKER paren: "3) kohta"
+)
+
 
 class EncodingFold(StrEnum):
     """The closed set of legally-inert folds this module applies to body text.
@@ -233,6 +298,7 @@ class EncodingFold(StrEnum):
     DOT_LEADER = "dot_leader"  # run of 2+ dots (table/TOC leader "....." / ellipsis) deleted
     WHITESPACE_PUNCT = "whitespace_punct"  # space adjacent to punctuation (before ":;,.)" / after "(") removed
     WHITESPACE_MIDWORD = "whitespace_midword"  # pdfium errant space strictly between two letters removed
+    WHITESPACE_SEP = "whitespace_sep"  # space adjacent to a range/citation separator (dash "/" enum-comma clitic-colon list-paren) removed
 
 
 def _canonicalize_text(text: str) -> Tuple[str, frozenset[EncodingFold]]:
@@ -283,7 +349,14 @@ def _canonicalize_text(text: str) -> Tuple[str, frozenset[EncodingFold]]:
     if punct_normed != collapsed:
         fired.add(EncodingFold.WHITESPACE_PUNCT)
 
-    return punct_normed, frozenset(fired)
+    # WHITESPACE_SEP runs after WHITESPACE_PUNCT: delete a space adjacent to a range/citation
+    # separator (typographic dash / "/" enum-comma clitic-colon list-paren). Symmetric, pure-
+    # space; the separator glyph and every digit/letter survive, so the skeleton is preserved.
+    sep_normed = _WS_SEP_RE.sub("", punct_normed)
+    if sep_normed != punct_normed:
+        fired.add(EncodingFold.WHITESPACE_SEP)
+
+    return sep_normed, frozenset(fired)
 
 
 @dataclass(frozen=True, slots=True)

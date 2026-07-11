@@ -291,3 +291,122 @@ def test_midword_space_genuine_word_boundary_is_the_documented_tradeoff():
     v = text_equivalence("työn antaja maksaa", "työnantaja maksaa")
     assert v.equal
     assert EncodingFold.WHITESPACE_MIDWORD in v.folds
+
+
+# ---------------------------------------------------------------------------
+# WHITESPACE_SEP — whitespace adjacent to a range/citation separator (fold #6)
+# ---------------------------------------------------------------------------
+
+
+def test_ws_sep_space_around_citation_slash_folds():
+    # "37 /1895" vs "37/1895": a space inside a statute-number citation slash is inert.
+    v = text_equivalence("ulosottolaissa (37/1895)", "ulosottolaissa (37 /1895)")
+    assert v.equal
+    assert EncodingFold.WHITESPACE_SEP in v.folds
+
+
+def test_ws_sep_space_around_range_dash_folds():
+    # "195— 196" vs "195—196": a space next to a numeric-range dash (em, en, and the other
+    # typographic dashes U+2012–2015) is typesetting, not content — the dash itself survives.
+    for xml, pdf in (
+        ("pykälissä 195—196", "pykälissä 195— 196"),     # em-dash
+        ("vuosina 2014–2020", "vuosina 2014– 2020"),     # en-dash
+        ("ax–maakunta", "ax– maakunta"),                 # en-dash before a letter
+    ):
+        v = text_equivalence(xml, pdf)
+        assert v.equal, (xml, pdf)
+        assert EncodingFold.WHITESPACE_SEP in v.folds
+
+
+def test_ws_sep_section_number_enumeration_comma_folds():
+    # "169, 209" vs "169,209": a space after a comma BETWEEN DIGITS is a section-number
+    # enumeration artifact — folded. A PROSE comma ("virasto, joka") is NOT (letter follows).
+    v = text_equivalence("Mitä 169,209 säädetään", "Mitä 169, 209 säädetään")
+    assert v.equal
+    assert EncodingFold.WHITESPACE_SEP in v.folds
+    prose = text_equivalence("virasto, joka päättää", "virasto,joka päättää")
+    assert not prose.equal and prose.residual  # prose comma untouched → residual
+    assert EncodingFold.WHITESPACE_SEP not in prose.folds
+
+
+def test_ws_sep_clitic_colon_after_section_or_digit_folds():
+    # "13 §: ssä" vs "13 §:ssä": a space after a CLITIC colon (colon following a §/number)
+    # is inert. A PROSE colon ("otsikko: teksti") is NOT folded.
+    v = text_equivalence("13 §:ssä säädetään", "13 §: ssä säädetään")
+    assert v.equal
+    assert EncodingFold.WHITESPACE_SEP in v.folds
+    prose = text_equivalence("otsikko:teksti", "otsikko: teksti")
+    assert not prose.equal and prose.residual
+    assert EncodingFold.WHITESPACE_SEP not in prose.folds
+
+
+def test_ws_sep_list_marker_paren_folds():
+    # "3) maatalous" vs "3)maatalous": a space after a numbered list-marker paren is inert.
+    v = text_equivalence("kohdassa;3)maataloustuki", "kohdassa;3) maataloustuki")
+    assert v.equal
+    assert EncodingFold.WHITESPACE_SEP in v.folds
+
+
+def test_ws_sep_recorded_only_when_it_fires():
+    # output-sparse: a clean payload with no separator-adjacent space does not record the fold.
+    v = text_equivalence("Mitä 169,209 säädetään", "Mitä 169,209 säädetään")
+    assert v.equal
+    assert EncodingFold.WHITESPACE_SEP not in v.folds
+
+
+# --- WHITESPACE_SEP mutation guards: it must NOT mask a real content/glyph/word difference ---
+
+
+def test_ws_sep_does_not_hide_numeric_difference_across_a_range_dash():
+    # deleting the space around a dash preserves the skeleton, so a changed range figure
+    # ("195—196" vs "195—197") still falls through as a residual.
+    v = text_equivalence("pykälissä 195—196", "pykälissä 195— 197")
+    assert not v.equal and v.residual  # 196 != 197
+    w = text_equivalence("vuosina 2014–2020", "vuosina 2015– 2020")
+    assert not w.equal and w.residual  # 2014 != 2015
+
+
+def test_ws_sep_does_not_fold_the_dash_glyph_identity():
+    # WHITESPACE_SEP removes only the SPACE, never the dash — so an en-dash-vs-em-dash
+    # difference on a lone dash is still the visible residual the discovery loop must judge.
+    v = text_equivalence("16 a–b", "16 a—b")
+    assert not v.equal and v.residual
+    assert EncodingFold.WHITESPACE_SEP not in v.folds  # no space to fold; glyph difference survives
+
+
+def test_ws_sep_excludes_ascii_hyphen_compound_word_boundary():
+    # the ASCII hyphen "-" is a compound-word joiner ("sotilas- ja siviili…"): the space after
+    # it is a legitimate word boundary and must NOT be folded (only the typographic dashes are).
+    v = text_equivalence("sotilas-ja siviilihenkilöstö", "sotilas- ja siviilihenkilöstö")
+    assert not v.equal and v.residual
+    assert EncodingFold.WHITESPACE_SEP not in v.folds
+
+
+def test_ws_sep_does_not_fold_thousands_separator_or_section_sublabel():
+    # a digit-space-digit thousands separator ("2 500" vs "2500") and a digit-space-letter
+    # section sub-label ("4 a" vs "4a") have NO separator flank → untouched, both residuals.
+    assert text_equivalence("enintään 2 500 euroa", "enintään 2500 euroa").residual
+    assert text_equivalence("4 a §:n nojalla", "4a §:n nojalla").residual
+
+
+def test_ws_sep_does_not_hide_a_dropped_word():
+    # a dropped word is content, not typesetting — stays a residual even with separators present.
+    v = text_equivalence("mitä 195—196 §:ssä veroviraston tai kunnan",
+                         "mitä 195— 196 §:ssä veroviraston kunnan")
+    assert not v.equal and v.residual
+
+
+def test_ws_sep_leaves_he_266_2002_word_split_as_a_divergence():
+    # LIVE-DATA mutation guard (HE 266/2002, target 1501/1993/173a/2): the payload differs by
+    # (a) a comma-enumeration space (WHITESPACE_SEP folds it), (b) a space BEFORE "§" (NOT
+    # folded — § is excluded), and (c) a genuine pdfium word-split "säädetään"→"sääde tään".
+    # Because the § seam is left intact, the two witnesses still differ after WHITESPACE_SEP,
+    # so the output-sparse WHITESPACE_MIDWORD fallback never fires and the word-split correctly
+    # SURVIVES as a residual — it must NOT be silently folded to exact.
+    xml = ("Mitä 169,209 ja 209 g—209 i§:ssä säädetään verovelvollisen velvollisuuksista, "
+           "sovelletaan myös 1 momentissa tarkoitettuun edustajaan.")
+    pdf = ("Mitä 169, 209 ja 209 g—209 i §:ssä sääde tään verovelvollisen velvollisuuksista, "
+           "sovelletaan myös 1 momentissa tarkoitettuun edustajaan.")
+    v = text_equivalence(xml, pdf)
+    assert not v.equal and v.residual
+    assert EncodingFold.WHITESPACE_MIDWORD not in v.folds  # the word-split is NOT masked
