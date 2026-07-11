@@ -744,6 +744,16 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # segmentation + coverage gate + struct_geom fast-path on synthetic
         # PageElements (hermetic, no PDF lib / model). Ingest-carrier family.
         "test_ingest_born_digital.py",
+        # Jurisdiction-agnostic glyph-substitution text-layer repair primitive
+        # (ingest.text_layer_repair): validated re.sub against a known shape +
+        # independent-constraint validator (the general multi-witness token
+        # reconciliation the FI cite slash-as-"1" repair delegates to). Ingest-carrier.
+        "test_text_layer_repair.py",
+        # The CORROBORATE edge (ingest.corroboration): typed EscalationPending +
+        # CorroborationReceipt + offline-safe corroborate() driving a candidate through
+        # an injected vision witness (agree/verdict-changed off the canonical
+        # cross_reader_disagrees/more_plausible primitives). Ingest-carrier family.
+        "test_corroboration.py",
         # Durable model-I/O side-channel log (env-gated append-only JSONL; images
         # stored as sha256/len metadata, never the blob). Ingest-carrier family.
         "test_ingest_model_io_log.py",
