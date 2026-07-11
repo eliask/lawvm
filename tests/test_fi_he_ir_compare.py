@@ -389,6 +389,34 @@ def test_chapter_path_symmetric_across_xml_and_pdf_input_shapes() -> None:
     assert "1290/2002/luku_6/3" in xml_refs
 
 
+def test_glued_chapter_ordinal_recovers_luku_scope() -> None:
+    # GEOM ARTIFACT: a two-column lakiehdotus reprint drops the thin space between a chapter
+    # ordinal and its "luku"/"luvu" noun, so the PDF text layer reads "15lukuun"/"16luvun"
+    # (glued).  The shared johtolause lexer tokenizes the glued form as a single opaque WORD and
+    # drops the chapter, lowering the insert op to a BARE ref ("39/1889/12a") that never pairs
+    # with the XML's luku-scoped ref ("39/1889/luku_15/12a") — the same target double-counted as
+    # op_missing + op_extra (HE 161/2000).  _flatten_reading_text un-glues the ordinal from PDF-
+    # STRUCTURAL signal alone (a digit abutting the chapter-noun stem is never a legitimate
+    # token), so the chapter scope is recovered.  Regression guard: the glued reading text must
+    # lower to the SAME luku-scoped ref as the spaced form.
+    from lawvm.finland.he_branch_parser import _parse_one_clause
+
+    glued = _pdf_page(
+        "muutetaan rikoslain (39/1889) 1 luvun 11 §:n 2 momentti sekä lisätään "
+        "15lukuun uusi 12 a §, 16luvun 20 §:ään uusi 4 momentti seuraavasti:"
+    )
+    spans = extract_enacting_clause_spans(glued)
+    pdf_ops: list = []
+    for span in spans:
+        ops, _ = _parse_one_clause(span, len(pdf_ops), "HE 161/2000 vp", "fi/he/2000/161")
+        pdf_ops.extend(ops)
+    refs = {o.target_provision_ref for o in pdf_ops}
+    assert "39/1889/luku_15/12a" in refs
+    assert "39/1889/luku_16/20/4" in refs
+    # the chapter must NOT have been dropped to a bare ref
+    assert "39/1889/12a" not in refs
+
+
 # --------------------------------------------------------------------------- #
 # flatten + diff                                                             #
 # --------------------------------------------------------------------------- #

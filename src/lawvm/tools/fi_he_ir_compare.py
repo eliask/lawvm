@@ -267,6 +267,19 @@ _SIGNATURE_DATE_RE = re.compile(
     re.IGNORECASE,
 )
 
+#: A CHAPTER ordinal glued to its "luku"/"luvu" chapter noun ("15lukuun", "16luvun") — a geom
+#: text-layer artifact that drops the thin space between the number and the chapter word in a
+#: two-column lakiehdotus reprint.  The XML clause always spaces it ("15 lukuun"), so the shared
+#: johtolause lexer tokenizes the XML "15" + "lukuun" as NUM + LUKU (chapter scope resolved) but
+#: the glued PDF "15lukuun" as a single opaque WORD — dropping the chapter, so the op target reads
+#: bare ("39/1889/12a" vs XML "39/1889/luku_15/12a") and never pairs (double-counted op_missing +
+#: op_extra).  Restoring the missing space is a PDF-reading-faithfulness fix on PDF-STRUCTURAL
+#: signal only (a digit abutting the chapter-noun stem is never a legitimate token); it lets BOTH
+#: witnesses flow through the IDENTICAL lexer with the chapter intact, and never reads the XML
+#: answer key.  Fixed-width look-behind + bounded stem alternation, no variable quantifiers
+#: (FW-07); the zero-width insert leaves an already-spaced "15 luvun" untouched.
+_PDF_GLUED_CHAPTER_RE = re.compile(r"(?<=\d)(?=luku|luvu)", re.IGNORECASE)
+
 
 #: A private-use sentinel marking where an isolated mid-body page-number line was removed (i.e. a
 #: PAGE BREAK fell inside a section body).  Used ONLY by :func:`_pdf_proposed_bodies`: when a
@@ -328,7 +341,11 @@ def _flatten_reading_text(reading_text: str) -> str:
     text = _SIGNATURE_DATE_RE.sub("", reading_text or "")
     text = _PAGE_FURNITURE_RE.sub(" ", text)
     text = dehyphenate(text)
-    return re.sub(r"[ \t\r\n­]+", " ", text).strip()
+    text = re.sub(r"[ \t\r\n­]+", " ", text).strip()
+    # Un-glue a chapter ordinal welded to its "luku"/"luvu" noun ("15lukuun" → "15 lukuun"),
+    # a geom text-layer artifact, so the shared lexer resolves the chapter scope on the PDF
+    # witness exactly as it does on the XML witness (see :data:`_PDF_GLUED_CHAPTER_RE`).
+    return _PDF_GLUED_CHAPTER_RE.sub(" ", text)
 
 
 def _lakiehdotus_region(flat: str) -> str:
