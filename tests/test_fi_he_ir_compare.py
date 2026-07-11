@@ -775,6 +775,48 @@ def test_scattered_signature_date_lets_split_word_rejoin() -> None:
     assert "Helsingissä" not in flat
 
 
+def test_page_header_at_hyphen_seam_lets_wrapped_word_rejoin() -> None:
+    from lawvm.tools.fi_he_ir_compare import _flatten_reading_text
+    from lawvm.finland.op_equivalence import text_equivalence
+
+    # A word WRAPPED at a page break has the running header ("2 HE 195/1996 vp") emitted
+    # BETWEEN its trailing hyphen and its continuation ("jär-\n2 HE 195/1996 vp\njestämisestä"
+    # for "järjestämisestä"). The header is stripped BEFORE de-hyphenation, so the leading
+    # page digit no longer masquerades as a numeric compound seam ("40-vuotias") that keeps
+    # the hyphen — the trailing hyphen abuts its continuation and the wrapped word rejoins.
+    # (The residual mid-word space is closed by WHITESPACE_MIDWORD at comparison time.)
+    raw = "oikeuden jär-\r\n2 HE 195/1996 vp\r\njestämisestä ja muusta"
+    flat = _flatten_reading_text(raw)
+    assert "jär- jestämisestä" not in flat  # no stranded residual hyphen at the seam
+    assert "HE 195/1996 vp" not in flat  # header furniture removed
+    # End-to-end: the reconstructed body is EXACT-equivalent to the clean XML form.
+    eq = text_equivalence("oikeuden järjestämisestä ja muusta", flat)
+    assert eq.equal
+
+
+def test_page_header_at_hyphen_seam_preserves_genuine_compound() -> None:
+    from lawvm.tools.fi_he_ir_compare import _flatten_reading_text
+
+    # INVARIANT: the reorder must NEVER fuse a genuine compound hyphen. A "sotilas- ja …"
+    # elliptical compound that happens to break at a page seam (header interleaved) is kept
+    # by ``dehyphenate``'s corroboration gate — it stays "sotilas- ja", never "sotilasja".
+    raw = "valtion sotilas-\r\n5 HE 1/2000 vp\r\nja siviilihenkilöstö palvelee"
+    flat = _flatten_reading_text(raw)
+    assert "sotilas- ja" in flat
+    assert "sotilasja" not in flat
+
+
+def test_compound_hyphen_distinction_is_never_folded_to_equal() -> None:
+    from lawvm.finland.op_equivalence import text_equivalence
+
+    # A GENUINE compound-hyphen difference (one witness dropped the hyphen of an elliptical
+    # "X- ja Y" compound) is a REAL difference the quotient must NOT mask — folding it would
+    # hide a genuine content divergence. Both canonical elliptical forms must survive as a
+    # residual (equal is False), so the fold can never launder a compound distinction.
+    assert not text_equivalence("sotilas- ja siviilihenkilöstö", "sotilasja siviilihenkilöstö").equal
+    assert not text_equivalence("työ- ja elinkeinoministeriö", "työja elinkeinoministeriö").equal
+
+
 # --------------------------------------------------------------------------- #
 # next-section TITLE over-capture — the otsikko before the next "N §" bled in.  #
 # --------------------------------------------------------------------------- #

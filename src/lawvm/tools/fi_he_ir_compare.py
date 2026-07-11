@@ -231,6 +231,20 @@ _LAKIEHDOTUS_END_RE = re.compile(r"\b(?:Rinnakkaisteksti[a-zä]{0,4}|Liitteet)\b
 #: DASH form the lakiehdotus reprint carries at each page top — "<YEAR> vp - HE <NUM> <page>"
 #: ("1992 vp - HE 231 3", "1993 vp - HE 285 7") — same running-header furniture, opposite
 #: token order and no "/year"; its trailing digits are the liite / page number.
+#:
+#: This header is stripped BEFORE de-hyphenation (see :func:`_flatten_reading_text`), for the
+#: SAME reason as the signature-date furniture below: when a word wraps at a PAGE break the
+#: header is emitted BETWEEN the trailing hyphen and its continuation ("eyden jär-\n2 HE
+#: 195/1996 vp\njestämisestä" for "järjestämisestä"). If the header is stripped only AFTER
+#: de-hyphenation, de-hyphenation sees the header's leading page digit right after the hyphen
+#: ("jär-\n2…"), mis-reads it as a NUMERIC compound seam ("40-vuotias") and KEEPS the hyphen;
+#: the later strip then leaves a spurious "jär- jestämisestä" residual (the residual-hyphen-
+#: at-seam payload_mismatch stratum). Stripping the header first lets the trailing hyphen abut
+#: its real continuation so the EXISTING corroboration gate in ``dehyphenate`` decides it
+#: correctly — fusing the wrapped word and PRESERVING a genuine compound ("maa- ja",
+#: "rakennus- tai", which are NOT header-interleaved and survive untouched). The residual
+#: single mid-word space the " " replacement leaves ("jär jestämisestä") is then folded by the
+#: adjudicator-proven WHITESPACE_MIDWORD quotient at comparison time.
 _PAGE_FURNITURE_RE = re.compile(
     r"(?:\d{0,4}\s{0,3}HE\s{1,3}\d{1,4}/\d{4}\s{1,3}vp\s{0,3}\d{0,4}"
     r"|\d{4}\s{1,3}vp\s{0,3}-?\s{0,3}HE\s{1,3}\d{1,4}\s{0,3}\d{0,4})",
@@ -257,12 +271,21 @@ _SIGNATURE_DATE_RE = re.compile(
 def _flatten_reading_text(reading_text: str) -> str:
     """De-hyphenate, strip per-page running headers, and whitespace-flatten reading text.
 
-    The signature-date furniture is stripped BEFORE de-hyphenation so a word it scattered
-    across (see :data:`_SIGNATURE_DATE_RE`) can rejoin; the running header afterwards.
+    BOTH page furniture classes — the centered signature-date line
+    (:data:`_SIGNATURE_DATE_RE`) and the per-page running header (:data:`_PAGE_FURNITURE_RE`)
+    — are stripped BEFORE de-hyphenation, because either can be emitted BETWEEN a wrapped
+    word's trailing hyphen and its continuation at a column/page break. Removing them first
+    lets the trailing hyphen abut its real continuation so ``dehyphenate``'s corroboration
+    gate resolves it correctly (fuse a wrapped word, PRESERVE a genuine compound) instead of
+    mis-reading the header's leading page digit as a numeric compound seam and stranding a
+    spurious "word- word" residual. The header is replaced by a SPACE (not ""): unlike the
+    hyphen-adjacent case, an INLINE header glues its neighbours if deleted, so the space is
+    kept and the one residual mid-word space it leaves at a hyphen seam ("jär jestämisestä")
+    is folded by WHITESPACE_MIDWORD at comparison time.
     """
     text = _SIGNATURE_DATE_RE.sub("", reading_text or "")
-    text = dehyphenate(text)
     text = _PAGE_FURNITURE_RE.sub(" ", text)
+    text = dehyphenate(text)
     return re.sub(r"[ \t\r\n­]+", " ", text).strip()
 
 
