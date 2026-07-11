@@ -495,11 +495,28 @@ def test_internal_profile_tag_compat_imports_do_not_warn():
         "lawvm.tools.cmd_validate_claims",
         "lawvm.tools.export_fi_refs",
     )
-    with warnings.catch_warnings():
-        warnings.simplefilter("error", DeprecationWarning)
-        for module_name in module_names:
-            module = importlib.import_module(module_name)
-            importlib.reload(module)
+    # ``importlib.reload`` re-executes each module in its EXISTING namespace,
+    # replacing that module's class/enum objects in place. Any already-imported
+    # test module that did ``from <mod> import X`` keeps the pre-reload ``X``
+    # while the live module now holds a fresh, non-identical ``X`` — a
+    # duplicate-class / enum-identity leak that fails unrelated tests co-located
+    # on the same worker (e.g. tests/test_fi_export_parity.py's repealedBy
+    # candidate identity checks, which reference export_fi_refs enums). This
+    # check only needs to observe that reloading emits no DeprecationWarning, so
+    # snapshot each module namespace and restore it afterwards, leaving no
+    # duplicated objects behind for the rest of the process.
+    snapshots: list[tuple[Any, dict[str, Any]]] = []
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            for module_name in module_names:
+                module = importlib.import_module(module_name)
+                snapshots.append((module, dict(module.__dict__)))
+                importlib.reload(module)
+    finally:
+        for module, snapshot in snapshots:
+            module.__dict__.clear()
+            module.__dict__.update(snapshot)
 
 
 def test_json_alias_is_constrained_recursive_type_not_object() -> None:
