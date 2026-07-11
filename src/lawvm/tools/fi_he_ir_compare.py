@@ -268,6 +268,48 @@ _SIGNATURE_DATE_RE = re.compile(
 )
 
 
+#: A private-use sentinel marking where an isolated mid-body page-number line was removed (i.e. a
+#: PAGE BREAK fell inside a section body).  Used ONLY by :func:`_pdf_proposed_bodies`: when a
+#: dash-elided body SPANS one, the capture stitched text across a page break whose text layer may
+#: carry an unresolved hyphen seam or scattered furniture ("…Pää-<hdr><pagenum>töksen…" for
+#: "Päätöksen"); such a body is DEFERRED, never forced into a payload_mismatch (AGENTS.md: a
+#: segmentation / extraction miss is a deferral, never a "the HE proposes different text" diff).
+_PDF_PAGE_BREAK_SENTINEL = ""
+
+#: An ISOLATED page-number line ("…eläkelain mukaisen\n119\nvanhuuseläkkeen…") the text layer
+#: emits mid-body at a page break.  It is distinct from the running header (:data:`_PAGE_FURNITURE_RE`)
+#: and survives it when a blank line separates the two (the header's tight trailing bound cannot
+#: reach across it).  Captured WITH its preceding line so a genuine REFERENCE number ("§:n 1
+#: momentissa", "1 momentin 3 kohta" — preceded by a section marker or a legal-unit word, via
+#: :data:`_PDF_REF_NUMBER_CONTEXT_RE`) is KEPT while a page number (preceded by ordinary prose) is
+#: dropped.  The following-content guard requires prose / a "N)" marker after the digit line so a
+#: section header ("14 §") or a wrapped list marker ("2\n)") is never eaten.  Flat/bounded (FW-07).
+_PDF_PAGE_NUMBER_LINE_RE = re.compile(
+    r"([^\n]{0,24})\n[ \t\r]*\d{1,4}[ \t\r]*\n"
+    r"(?=[ \t\r]*(?:[a-zà-öø-ÿ]|\d{1,2}\s{0,2}\)))"
+)
+_PDF_REF_NUMBER_CONTEXT_RE = re.compile(
+    r"(?:§[:a-zäö]{0,4}|moment\w*|kohd\w*|pykäl\w*|luvu\w*|luku)\s*$", re.IGNORECASE
+)
+
+
+def _strip_page_number_lines(reading_text: str) -> str:
+    """Replace isolated mid-body page-number lines with :data:`_PDF_PAGE_BREAK_SENTINEL`.
+
+    A legal REFERENCE number (preceded by a section marker / legal-unit word) is KEPT; only a
+    genuine PAGE number (preceded by ordinary prose) is removed.  Applied ONLY on the body-
+    segmentation path (:func:`_pdf_proposed_bodies`), so the shared op-segmentation flatten and
+    its de-hyphenation are untouched.
+    """
+
+    def repl(m: "re.Match[str]") -> str:
+        if _PDF_REF_NUMBER_CONTEXT_RE.search(m.group(1)):
+            return m.group(0)  # a legal reference number, not page furniture
+        return m.group(1) + "\n" + _PDF_PAGE_BREAK_SENTINEL + "\n"
+
+    return _PDF_PAGE_NUMBER_LINE_RE.sub(repl, reading_text or "")
+
+
 def _flatten_reading_text(reading_text: str) -> str:
     """De-hyphenate, strip per-page running headers, and whitespace-flatten reading text.
 
@@ -740,34 +782,25 @@ _PDF_SECTION_HEADER_RE = re.compile(r"(\d{1,4}\s{0,3}[a-zä]?)\s{0,3}§(?!\s{0,2
 #: Leading "N §" address header stripped from a payload so the comparison is over prose.
 _LEADING_SECTION_HEADER_RE = re.compile(r"^\s{0,4}\d{1,4}\s{0,3}[a-zä]?\s{0,3}§\s*", re.IGNORECASE)
 
-#: A section body's trailer boundary: the entry-into-force divider ("———"/"—————", a run
-#: of 3+ dash glyphs) or a bill/appendix/rinnakkaistekstit heading.  The last section of
-#: a bill otherwise runs to the next "N §" (or EOF) and swallows the voimaantulo clause /
-#: parallel-texts / appendix that the trusted XML section body never carries — a spurious
-#: payload_mismatch.  We bound each PDF section body at the FIRST such marker.
-#:
-#: The added alternatives bound the body against the ENACTING FURNITURE that follows a bill's
-#: last provision and precedes the next bill's reprint, which the XML section body never
-#: carries: the signature block ("Tasavallan Presidentti <NAME>", case-sensitive "Presidentti"
-#: so a body's own "…tasavallan presidentin asetuksella" is untouched), the next-law title
-#: heading ("2. Laki …", case-sensitive "Laki" so a mid-sentence "…2. laki…" is untouched),
-#: and a chapter heading ("10 luku …", nominative "luku" only so an inflected "…5 luvun…"
-#: cross-reference is untouched).  The commencement clause is handled separately by
-#: :data:`_PDF_BODY_VOIMAANTULO_RE` because a genuine voimaantulo §-body STARTS with it.
+#: A section body's trailer boundary: a bill/appendix/rinnakkaistekstit heading or the ENACTING
+#: FURNITURE that follows a bill's last provision.  The last section of a bill otherwise runs to
+#: the next "N §" (or EOF) and swallows the parallel-texts / appendix / signature block that the
+#: trusted XML section body never carries — a spurious payload_mismatch.  We bound each PDF
+#: section body at the FIRST such marker: the signature block ("Tasavallan Presidentti <NAME>",
+#: case-sensitive "Presidentti" so a body's own "…tasavallan presidentin asetuksella" is
+#: untouched), the next-law title heading ("2. Laki …", case-sensitive "Laki" so a mid-sentence
+#: "…2. laki…" is untouched), and a chapter heading ("10 luku …", nominative "luku" only so an
+#: inflected "…5 luvun…" cross-reference is untouched).  The commencement clause is handled
+#: separately by :data:`_PDF_BODY_VOIMAANTULO_RE` (a genuine voimaantulo §-body STARTS with it).
 #: Flat/bounded quantifiers; case scoped with ``(?-i:…)`` (FW-07).
-#: The two dash-divider alternatives below bound the body at an entry-into-force / omission
-#: divider run. The first matches a CONTIGUOUS run ("———"/"—————"); the second matches the
-#: SPACED run ("— — — —") the text layer emits when a centered divider's glyphs are laid out
-#: with intervening spaces — a common Finnish statute section-divider / omission marker that
-#: the contiguous class misses, letting it bleed into the body. After :func:`_flatten_reading_text`
-#: every whitespace run is a single space, so the spaced form is exactly dash-space-dash…; the
-#: single-space separator ``\s`` (no inner quantifier) keeps this flat/bounded (FW-07). Requiring
-#: at least THREE dashes (``[dash](?:\s[dash]){2,}``) is conservative: a single in-sentence
-#: em-dash ("sana — toinen") or a two-dash pair never triggers — only a genuine divider run does.
+#:
+#: A dash-run divider ("———"/"— — — —") is NOT a terminator here: it is split out into
+#: :data:`_PDF_BODY_DIVIDER_RE` and disambiguated per-run by :func:`_pdf_divider_is_omission`,
+#: because a run has two roles — a MID-body OMISSION divider (the XML elides it and KEEPS the
+#: text on both sides) vs an END divider (the XML drops everything after it).  Folding the run
+#: in with the genuine terminators truncated a role-(a) omission body at its FIRST dash.
 _PDF_BODY_TRAILER_RE = re.compile(
-    r"(?:[—–\-]{3,}"
-    r"|[—–\-](?:\s[—–\-]){2,40}"
-    r"|\bRinnakkaistekstit\b"
+    r"(?:\bRinnakkaistekstit\b"
     r"|\bLiitteet?\b"
     r"|\bVoimassa\s+oleva\s+laki\b"
     r"|\bEhdotus\b"
@@ -776,6 +809,47 @@ _PDF_BODY_TRAILER_RE = re.compile(
     r"|\b\d{1,3}\s{0,3}luku\b)",
     re.IGNORECASE,
 )
+
+#: An entry-into-force / omission divider run.  The first alternative matches a CONTIGUOUS run
+#: ("———"/"—————"); the second the SPACED run ("— — — —") the text layer emits when a centered
+#: divider's glyphs are laid out with intervening spaces.  Requiring at least THREE dashes is
+#: conservative: a single in-sentence em-dash ("sana — toinen") or a two-dash pair never fires —
+#: only a genuine divider run does.  Flat/bounded quantifiers (FW-07).
+_PDF_BODY_DIVIDER_RE = re.compile(r"(?:[—–\-]{3,}|[—–\-](?:\s[—–\-]){2,40})")
+
+#: Collapse a whitespace run to a single space when re-joining elided body segments.
+_WS_RUN_RE = re.compile(r"\s+")
+
+#: Per-divider role classifier support.  An OMISSION divider is followed by RETAINED provision
+#: text (a "N)" kohta marker or a prose sentence); an END divider is followed by the commencement
+#: clause, only page furniture, or nothing.  Flat/bounded quantifiers (FW-07).
+_PDF_DIVIDER_LEAD_RE = re.compile(r"^[—–\-\s]+")
+_PDF_DIVIDER_PAGENUM_RE = re.compile(r"^\d{1,3}(?:\s|$)")
+_PDF_COMMENCEMENT_HEAD_RE = re.compile(r"Tämä\s+laki\s+tulee\s+voimaan", re.IGNORECASE)
+_PDF_KOHTA_MARKER_RE = re.compile(r"\d{1,2}\s{0,2}\)")
+
+
+def _pdf_divider_is_omission(after: str) -> bool:
+    """True iff a dash-run is a MID-body OMISSION divider (elide + keep reading), else END (trim).
+
+    Decided PURELY from the PDF text that FOLLOWS the run up to the next genuine terminator — the
+    XML body / answer key is NEVER consulted, so the rule holds on novel PDFs (phase 5).  A
+    POSITIVE continuation signal (a "N)" kohta marker or a retained prose sentence) => omission;
+    the commencement clause ("Tämä laki tulee voimaan …"), only page furniture, or nothing => END.
+    Precision-first / ASYMMETRIC risk: a false ELIDE over-captures the next section (a regression),
+    a false TRIM only misses a recovery — so the omission verdict requires the positive signal.
+    """
+    s = _PDF_DIVIDER_LEAD_RE.sub("", after)  # skip any further dash glyphs / spaces
+    m = _PDF_DIVIDER_PAGENUM_RE.match(s)  # skip a lone page number (never a "N)" kohta marker)
+    if m:
+        s = _PDF_DIVIDER_LEAD_RE.sub("", s[m.end():])
+    if not s:
+        return False  # nothing retained before the terminator -> END divider
+    if _PDF_COMMENCEMENT_HEAD_RE.match(s):
+        return False  # commencement clause follows -> END divider
+    if _PDF_KOHTA_MARKER_RE.match(s):
+        return True  # a retained "N)" kohta -> OMISSION divider
+    return s[0].isalpha()  # a retained prose sentence -> OMISSION divider
 
 #: The commencement clause "Tämä laki tulee voimaan …" appended after a bill's last
 #: substantive provision (the XML keeps it as a SEPARATE unnumbered section, so the PDF's last
@@ -1030,7 +1104,7 @@ def _pdf_proposed_bodies(reading_text: str) -> dict[tuple[str, str], str]:
     payload_mismatch. Scoping the body to its bill keeps them distinct. First-wins within a
     single ``(statute, label)`` scope (a rinnakkaistekstit dupe of the same bill's section).
     """
-    flat = _lakiehdotus_region(_flatten_reading_text(reading_text))
+    flat = _lakiehdotus_region(_flatten_reading_text(_strip_page_number_lines(reading_text)))
     regions = _enacting_clause_regions(flat)
     if not regions:
         # WRONG-START guard. No GENUINE enacting clause (johtolause) was found, so there is no
@@ -1071,34 +1145,62 @@ def _pdf_proposed_bodies(reading_text: str) -> dict[tuple[str, str], str]:
             continue
         start = hm.end()
         raw_end = headers[i + 1].start() if i + 1 < len(headers) else len(flat)
-        end = min(raw_end, _next_region_start(start))  # do not spill into the next bill's clause
-        trailer = _PDF_BODY_TRAILER_RE.search(flat, start, end)
+        # do not spill into the next bill's enacting clause / the next section header
+        end_cap = min(raw_end, _next_region_start(start))
+        trailer = _PDF_BODY_TRAILER_RE.search(flat, start, end_cap)
         if trailer is not None:
-            end = trailer.start()
+            end_cap = trailer.start()
         # The commencement clause is trimmed only when it follows the substantive body's own
         # sentence-ending period (see _PDF_BODY_VOIMAANTULO_RE); a genuine voimaantulo §-body
         # (which STARTS with it, no preceding in-body period) is left whole.
-        voim = _PDF_BODY_VOIMAANTULO_RE.search(flat, start, end)
+        voim = _PDF_BODY_VOIMAANTULO_RE.search(flat, start, end_cap)
         if voim is not None:
-            end = voim.start()
-        # Next-section TITLE over-capture: a section otsikko sits in reading order just BEFORE
-        # the following "N §" number (see _looks_like_section_title), so a body that ran all the
-        # way up to that next header (no furniture trailer / voimaantulo fired first, i.e. end is
-        # still the next-header boundary raw_end) swallowed the next section's title heading.
-        # Trim it off the body's tail — the last sentence-ending period splits the body's own
-        # final sentence from the trailing title, so keep everything through that period and drop
-        # only a short Capitalized title after it. Precision-first: a genuine trailing SENTENCE
-        # ends in a period (so nothing follows the last period to trim) — this never truncates
-        # real body prose; ``p > start`` keeps the retained body non-empty.
-        if i + 1 < len(headers) and end == raw_end:
-            p = flat.rfind(".", start, end)
-            if p > start:
-                tail = flat[p + 1 : end].strip().strip('"“”')
-                if _looks_like_section_title(tail):
-                    end = p + 1
+            end_cap = voim.start()
+        # Walk the dash-run dividers left-to-right within [start, end_cap].  ELIDE each MID-body
+        # OMISSION divider (drop the run, keep the retained text on BOTH sides, keep scanning) and
+        # STOP at the first END divider.  This replaces the old first-dash-wins truncation, which
+        # lost a role-(a) omission body's retained tail (the dominant payload_mismatch sub-cause).
+        pos = start
+        segments: list[str] = []
+        end = end_cap
+        elided = False
+        while True:
+            dm = _PDF_BODY_DIVIDER_RE.search(flat, pos, end_cap)
+            if dm is None:
+                segments.append(flat[pos:end_cap])
+                break
+            segments.append(flat[pos : dm.start()])
+            if _pdf_divider_is_omission(flat[dm.end() : end_cap]):
+                pos = dm.end()
+                elided = True
+            else:  # END divider -> the section body stops here
+                end = dm.start()
+                break
         key = (sid, label)
         if key not in out:
-            body = flat[start:end].strip()
+            body = " ".join(segments)
+            # An ELIDED capture that SPANS a page break (sentinel present from
+            # _strip_page_number_lines) stitched text across page furniture whose text layer may
+            # carry an unresolved hyphen seam / scattered header — a low-confidence cross-furniture
+            # capture, so DEFER it (never force a payload_mismatch on a segmentation artifact).
+            if elided and _PDF_PAGE_BREAK_SENTINEL in body:
+                continue
+            body = _WS_RUN_RE.sub(" ", body.replace(_PDF_PAGE_BREAK_SENTINEL, " ")).strip()
+            # Next-section TITLE over-capture: a section otsikko sits in reading order just BEFORE
+            # the following "N §" number (see _looks_like_section_title), so a body that ran all
+            # the way up to that next header (no furniture / voimaantulo / END divider fired first,
+            # i.e. end is still the next-header boundary raw_end) swallowed the next section's
+            # title heading. Trim it off the body's tail — the last sentence-ending period splits
+            # the body's own final sentence from the trailing title, so keep everything through
+            # that period and drop only a short Capitalized title after it. Precision-first: a
+            # genuine trailing SENTENCE ends in a period, so nothing follows the last period to
+            # trim — this never truncates real body prose; ``p > 0`` keeps the body non-empty.
+            if i + 1 < len(headers) and end == raw_end:
+                p = body.rfind(".")
+                if p > 0:
+                    tail = body[p + 1 :].strip().strip('"“”')
+                    if _looks_like_section_title(tail):
+                        body = body[: p + 1]
             body = _PDF_BODY_TRAILING_PAGENUM_RE.sub("", body)
             out[key] = body
     return out

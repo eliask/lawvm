@@ -701,6 +701,39 @@ def test_body_trimmed_at_spaced_emdash_divider() -> None:
     assert _pdf_proposed_bodies(rt)[_BODY_KEY] == _PROVISION
 
 
+def test_omission_divider_is_elided_body_kept_on_both_sides() -> None:
+    from lawvm.tools.fi_he_ir_compare import _pdf_proposed_bodies
+
+    # A dash-run divider has TWO roles. Here it is a MID-body OMISSION divider: substantial
+    # RETAINED provision prose follows it before any genuine terminator, so the XML elides the
+    # run and keeps the text on BOTH sides. The old first-dash-wins truncation cut the body at
+    # the run (dropping "Toinen …" — the dominant payload_mismatch sub-cause); it must now be
+    # ELIDED (run -> single space) and the retained tail kept, while the FINAL END divider +
+    # commencement clause is still trimmed.
+    first = "Ensimmäinen momentti joka on riittävän pitkä vertailua varten."
+    second = "Toinen säilytetty momentti joka jatkuu tämän jälkeen samassa pykälässä."
+    rt = _body_reading(
+        f"{first} — — — — {second}",
+        tail="——— Tämä laki tulee voimaan päivänä kuuta 20 .",
+    )
+    assert _pdf_proposed_bodies(rt)[_BODY_KEY] == f"{first} {second}"
+
+
+def test_omission_divider_before_kohta_marker_is_elided() -> None:
+    from lawvm.tools.fi_he_ir_compare import _pdf_proposed_bodies
+
+    # The retained continuation after a MID-body omission divider is often a "N)" kohta list
+    # item (an amendment that keeps only some kohdat, eliding the divider between them). A short
+    # kohta continuation must still be recognised as retained body (elide), not an END divider.
+    first = "Tässä laissa tarkoitetaan riittävän pitkä johdantolause vertailua varten:"
+    second = "5) viidennellä kohdalla säilytettyä määritelmää joka jää voimaan;"
+    rt = _body_reading(
+        f"{first} — — — — {second}",
+        tail="——— Tämä laki tulee voimaan päivänä kuuta 20 .",
+    )
+    assert _pdf_proposed_bodies(rt)[_BODY_KEY] == f"{first} {second}"
+
+
 def test_body_with_single_in_sentence_dash_is_not_trimmed() -> None:
     from lawvm.tools.fi_he_ir_compare import _pdf_proposed_bodies
 
