@@ -222,6 +222,33 @@ _LAKIEHDOTUS_HEADING = "Lakiehdotukset"
 #: Flat quantifiers only (FW-07).
 _LAKIEHDOTUS_END_RE = re.compile(r"\b(?:Rinnakkaisteksti[a-zä]{0,4}|Liitteet)\b")
 
+#: The editorial section heading a multi-instrument HE prints its DRAFT-DECREE
+#: (asetusluonnos) proposals under — the decrees sit AFTER the law-bills and their
+#: rinnakkaistekstit appendix, so :data:`_LAKIEHDOTUS_END_RE` truncates them away with the
+#: appendix (their genuine "muutetaan … (N/YEAR) … § … seuraavasti:" directives were dropped
+#: as op_missing while the XML witness parses them).  Matched by ``str.find`` (no regex — the
+#: same discipline as :data:`_LAKIEHDOTUS_HEADING`).  A draft decree's enacting clause carries
+#: the SAME amendment-directive grammar as a law bill; only its enactment FORMULA differs — a
+#: decree is issued "Valtioneuvoston/…ministeriön päätöksen mukaisesti" (never the law bills'
+#: "Eduskunnan päätöksen mukaisesti"), which is the structural discriminator below.
+_ASETUSLUONNOS_HEADING = "Asetusluonnokset"
+
+#: A DRAFT-DECREE amendment johtolause head: the decree enactment formula immediately
+#: followed by a STRONG amendment verb.  The formula ("Valtioneuvoston …" / a
+#: "…ministeriön päätöksen mukaisesti") is unique to a proposed asetus and never appears in a
+#: law bill or its rinnakkaisteksti (those read "Eduskunnan päätöksen mukaisesti"), so this is
+#: the structural anchor that (a) CONFIRMS a genuine draft-decree section (rejecting a stray
+#: "Asetusluonnokset" heading word) and (b) marks where in that section the amendment decrees
+#: begin — a leading NEW-decree ("… päätöksen mukaisesti säädetään … nojalla:") carries no
+#: amendment op, so ``säädetään`` is deliberately EXCLUDED here: the appended region starts at
+#: the FIRST amendment decree, keeping a new-decree's provision bodies out of the scan. The
+#: amend-verb list mirrors :data:`_HE_HEAD_VERB_RE`. Flat/bounded quantifiers only (FW-07).
+_DECREE_ENACT_RE = re.compile(
+    r"(?:Valtioneuvoston|ministeri[öo]n)\s{1,4}p[aä]{1,2}t[öo]ksen\s{1,4}mukaisesti\s{1,4}"
+    r"(?:muut(?:etaan|ettu)|lis[äa]t[äa]{1,2}n|kumo(?:taan|ttu)|korv(?:ataan|attu))",
+    re.IGNORECASE,
+)
+
 #: The per-page running header "HE <n>/<year> vp" (with its adjacent page number) that the
 #: text layer emits at every page top/bottom. It lands MID-body when a provision spans a
 #: page break ("…joka 4 HE 84/1998 vp omistajan…"), breaking payload equality. It is never
@@ -348,16 +375,63 @@ def _flatten_reading_text(reading_text: str) -> str:
     return _PDF_GLUED_CHAPTER_RE.sub(" ", text)
 
 
-def _lakiehdotus_region(flat: str) -> str:
-    """Truncate flattened reading text at the first Rinnakkaistekstit/Liitteet heading.
+def _asetusluonnos_region(flat: str, lo: int) -> str:
+    """The DRAFT-DECREE (asetusluonnos) directive block in ``flat[lo:]``, or "" if none.
 
-    The bill directives (lakiehdotus) always precede the parallel-texts appendix, so
-    cutting at the first appendix heading drops the spurious enacting-clause spans the
-    two-column reprint would otherwise yield — without touching a genuine directive.
-    No heading present (the common case: HEs with no rinnakkaistekstit) → unchanged.
+    In a multi-instrument HE the proposed decrees (asetusluonnokset) are printed UNDER their
+    own section heading AFTER the law-bills' rinnakkaistekstit appendix — i.e. after the
+    :data:`_LAKIEHDOTUS_END_RE` cut ``lo``.  They carry the identical
+    "muutetaan … (N/YEAR) … § … seuraavasti:" amendment grammar the XML witness parses, so
+    dropping them with the appendix strands their ops as op_missing.  This recovers ONLY that
+    block, LABEL-INDEPENDENTLY (never reads the XML answer key):
+
+      * The genuine section is fixed by the "Asetusluonnokset" editorial heading (``str.find``
+        after the appendix cut, so a table-of-contents entry that precedes the cut is skipped).
+      * A stray heading word is rejected — and a leading NEW decree's provision bodies are
+        excluded — by anchoring the returned region at the FIRST **amendment** decree johtolause
+        (:data:`_DECREE_ENACT_RE`: the "Valtioneuvoston/…ministeriön päätöksen mukaisesti" +
+        amend-verb signature that a law bill / rinnakkaisteksti can never carry).  No such
+        amendment directive ⇒ nothing to recover ⇒ "" (unchanged behaviour).
+      * The block ends at the next appendix heading after it (a decree's own rinnakkaisteksti,
+        were one ever printed), else the document end.
+
+    Because the appended block BEGINS at the decree amendment formula, only genuine draft-decree
+    directives — never perustelut (which precede the law-bills) or the rinnakkaistekstit
+    (which lie between ``lo`` and this block) — enter the scan.
+    """
+    d = flat.find(_ASETUSLUONNOS_HEADING, lo)
+    if d < 0:
+        return ""
+    # lawvm-regex: witness_only PDF-witness structural anchor (draft-decree johtolause); never reads XML.
+    enact = _DECREE_ENACT_RE.search(flat, d)
+    if enact is None:
+        return ""
+    # lawvm-regex: witness_only bound the decree block before any trailing appendix reprint of it.
+    end = _LAKIEHDOTUS_END_RE.search(flat, enact.start())
+    return flat[enact.start() : end.start()] if end else flat[enact.start() :]
+
+
+def _lakiehdotus_region(flat: str) -> str:
+    """Flattened reading text with the appendix elided but the draft decrees kept.
+
+    The bill directives (lakiehdotus) always precede the parallel-texts appendix, so cutting at
+    the first appendix heading drops the spurious enacting-clause spans the two-column reprint
+    would otherwise yield — without touching a genuine directive.  No heading present (the
+    common case: HEs with no rinnakkaistekstit) → unchanged.
+
+    A multi-instrument HE, however, prints its DRAFT-DECREE (asetusluonnos) proposals AFTER that
+    appendix; they carry the same amendment grammar the XML witness parses, so eliding them with
+    the appendix stranded their ops as op_missing.  When such a block is present
+    (:func:`_asetusluonnos_region`) it is re-appended after the pre-appendix text (joined by a
+    single space, which cannot bridge an enacting clause across the seam because the pre-appendix
+    text ends at a completed bill).  HEs with no draft decrees are byte-for-byte unchanged.
     """
     m = _LAKIEHDOTUS_END_RE.search(flat)
-    return flat[: m.start()] if m else flat
+    if m is None:
+        return flat
+    head = flat[: m.start()]
+    decree = _asetusluonnos_region(flat, m.end())
+    return f"{head} {decree}" if decree else head
 
 
 def _numbered_bill_follows(flat: str, p: int) -> bool:
@@ -842,7 +916,9 @@ _WS_RUN_RE = re.compile(r"\s+")
 #: clause, only page furniture, or nothing.  Flat/bounded quantifiers (FW-07).
 _PDF_DIVIDER_LEAD_RE = re.compile(r"^[—–\-\s]+")
 _PDF_DIVIDER_PAGENUM_RE = re.compile(r"^\d{1,3}(?:\s|$)")
-_PDF_COMMENCEMENT_HEAD_RE = re.compile(r"Tämä\s+laki\s+tulee\s+voimaan", re.IGNORECASE)
+_PDF_COMMENCEMENT_HEAD_RE = re.compile(
+    r"Tämä\s+(?:laki|asetus)\s+tulee\s+voimaan", re.IGNORECASE
+)
 _PDF_KOHTA_MARKER_RE = re.compile(r"\d{1,2}\s{0,2}\)")
 
 
@@ -874,9 +950,12 @@ def _pdf_divider_is_omission(after: str) -> bool:
 #: it follows a sentence-ending period (the substantive provision's own final "."), via the
 #: fixed-width look-behind: a genuine voimaantulo §-body (XML §5 = "Tämä laki tulee voimaan
 #: …") is NOT preceded by an in-body period and is left whole, so this never truncates a real
-#: commencement provision.  Flat/bounded quantifiers (FW-07).
+#: commencement provision.  The DECREE form ("Tämä asetus tulee voimaan …") is accepted too, so
+#: a recovered draft-decree §-body (see :func:`_asetusluonnos_region`) sheds its commencement
+#: tail exactly as a law body does; the alternative only reaches decree bodies (a law body never
+#: contains "Tämä asetus tulee voimaan").  Flat/bounded quantifiers (FW-07).
 _PDF_BODY_VOIMAANTULO_RE = re.compile(
-    r"(?<=\.)\s{0,3}Tämä\s+laki\s+tulee\s+voimaan", re.IGNORECASE
+    r"(?<=\.)\s{0,3}Tämä\s+(?:laki|asetus)\s+tulee\s+voimaan", re.IGNORECASE
 )
 
 #: A lone page number the text layer appends at the very END of a body ("…tulosta. 40"). It is

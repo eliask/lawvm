@@ -21,6 +21,10 @@ from lawvm.tools.fi_he_ir_compare import (
     _PDF_OUT_OF_SCOPE_STATUTE,
     HECompareResult,
     HEFlatOp,
+    _asetusluonnos_region,
+    _flatten_reading_text,
+    _lakiehdotus_region,
+    _pdf_proposed_bodies,
     _reclassify_out_of_scope_second_bills,
     _section_label_of,
     _statute_id_of,
@@ -133,6 +137,85 @@ def test_extract_stops_at_rinnakkaistekstit_appendix() -> None:
     assert len(spans) == 1
     assert "(123/2020)" in spans[0]
     assert "(999/1999)" not in spans[0]
+
+
+# --------------------------------------------------------------------------- #
+# draft-decree (asetusluonnos) recovery: directives sit AFTER the appendix     #
+# --------------------------------------------------------------------------- #
+
+# A law bill, its commencement, a spurious rinnakkaistekstit reprint of that bill, then an
+# "Asetusluonnokset" section whose decree carries the SAME amendment grammar under the
+# decree-specific "Valtioneuvoston päätöksen mukaisesti" enactment formula.
+_LAW_BILL = (
+    "Lakiehdotukset 1. Laki testilain muuttamisesta Eduskunnan päätöksen mukaisesti "
+    f"muutetaan testilain (123/2020) 5 {_SEC} seuraavasti: 5 {_SEC} Uusi lain teksti. "
+    "——— Tämä laki tulee voimaan päivänä kuuta 20 ."
+)
+_RINNAKKAIS_REPRINT = (
+    " Liitteet Rinnakkaistekstit Voimassa oleva laki Ehdotus "
+    f"muutetaan testilain (123/2020) 5 {_SEC} seuraavasti: vanha rinnakkaisteksti."
+)
+_DECREE_BLOCK = (
+    " Asetusluonnokset Valtioneuvoston asetus testiasetuksen muuttamisesta "
+    f"Valtioneuvoston päätöksen mukaisesti muutetaan testiasetuksen (456/2019) 3 {_SEC} "
+    f"seuraavasti: 3 {_SEC} Uusi asetuksen teksti joka on riittävän pitkä vertailua varten. "
+    "——— Tämä asetus tulee voimaan päivänä kuuta 20 ."
+)
+
+
+def test_asetusluonnos_decree_recovered_after_rinnakkaistekstit() -> None:
+    # The draft decree sits AFTER the rinnakkaistekstit appendix; its genuine amendment
+    # directive must be recovered (previously dropped with the appendix as op_missing),
+    # while the appendix's spurious REPRINT of the law bill stays excluded.
+    text = _LAW_BILL + _RINNAKKAIS_REPRINT + _DECREE_BLOCK
+    spans = extract_enacting_clause_spans(text)
+    cites = [c for s in spans for c in ("(123/2020)", "(456/2019)") if c in s]
+    assert "(456/2019)" in cites  # decree directive recovered
+    assert cites.count("(123/2020)") == 1  # law bill once, NOT the appendix reprint
+
+
+def test_asetusluonnos_region_starts_at_amendment_decree_not_appendix() -> None:
+    # The re-appended region is exactly the decree block (from its amendment johtolause),
+    # never the intervening rinnakkaistekstit reprint.
+    flat = _flatten_reading_text(_LAW_BILL + _RINNAKKAIS_REPRINT + _DECREE_BLOCK)
+    from lawvm.tools.fi_he_ir_compare import _LAKIEHDOTUS_END_RE
+
+    cut = _LAKIEHDOTUS_END_RE.search(flat)
+    assert cut is not None
+    region = _asetusluonnos_region(flat, cut.end())
+    assert region.startswith("Valtioneuvoston päätöksen mukaisesti muutetaan")
+    assert "(456/2019)" in region
+    assert "rinnakkaisteksti" not in region  # the appendix reprint is not pulled in
+
+
+def test_asetusluonnos_saadetaan_only_section_not_reopened() -> None:
+    # A section whose only decree is a NEW enactment ("… päätöksen mukaisesti säädetään …
+    # nojalla:") carries no amendment op to recover, so the region is NOT re-opened — this
+    # keeps a new-decree's provision bodies (and any trailing reprint) out of the scan.
+    new_decree = (
+        " Asetusluonnokset Valtioneuvoston asetus uudesta asiasta Valtioneuvoston päätöksen "
+        f"mukaisesti säädetään testilain (789/2018) 2 {_SEC}:n nojalla: 1 {_SEC} Uusi säännös."
+    )
+    flat = _flatten_reading_text(_LAW_BILL + _RINNAKKAIS_REPRINT + new_decree)
+    from lawvm.tools.fi_he_ir_compare import _LAKIEHDOTUS_END_RE
+
+    cut = _LAKIEHDOTUS_END_RE.search(flat)
+    assert cut is not None
+    assert _asetusluonnos_region(flat, cut.end()) == ""
+    # and the whole region collapses to the pre-appendix text (unchanged behaviour)
+    assert _lakiehdotus_region(flat) == flat[: cut.start()]
+    assert "(789/2018)" not in "".join(extract_enacting_clause_spans(flat))
+
+
+def test_decree_body_sheds_asetus_commencement_clause() -> None:
+    # A recovered decree §-body must trim its "Tämä asetus tulee voimaan …" commencement
+    # tail exactly as a law body trims "Tämä laki tulee voimaan …" (the XML keeps it a
+    # separate section), so the recovered decree op does not surface a spurious payload_mismatch.
+    bodies = _pdf_proposed_bodies(_LAW_BILL + _RINNAKKAIS_REPRINT + _DECREE_BLOCK)
+    key = ("456/2019", "3")
+    assert key in bodies
+    assert "tulee voimaan" not in bodies[key]
+    assert "Uusi asetuksen teksti" in bodies[key]
 
 
 def test_extract_keeps_bare_liite_reference_in_bill() -> None:
