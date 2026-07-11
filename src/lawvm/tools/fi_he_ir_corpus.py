@@ -33,6 +33,11 @@ from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 from lawvm.finland.he_johtolause_tagger import FI_HE_JOHTOLAUSE_TAG_STORE
+from lawvm.ingest.corroboration import (
+    CorroborationReceipt,
+    EscalationPending,
+    VisionReader,
+)
 from lawvm.tools.fi_he_ir_compare import (
     _BENIGN_NONCOMPARED_STATUSES,
     _ESCALATION_PENDING_STATUSES,
@@ -73,9 +78,14 @@ class HEDiffRow:
     payload_compared: int = 0
     payload_deferred: int = 0
     payload_skipped: int = 0
+    #: The CORROBORATE edge, populated ONLY when a vision witness was injected (the free
+    #: offline sweep leaves both ``None``). Emitted in ``to_json`` ONLY when present, so a
+    #: witness-less row is byte-identical to the pre-corroboration JSONL.
+    escalation_pending: Optional[EscalationPending] = None
+    corroboration_receipt: Optional[CorroborationReceipt] = None
 
     def to_json(self) -> Dict[str, object]:
-        return {
+        payload: Dict[str, object] = {
             "he_id": self.he_id,
             "branch_id": self.branch_id,
             "compare_status": self.compare_status,
@@ -93,6 +103,13 @@ class HEDiffRow:
                 for d in self.divergences
             ],
         }
+        # Conditional keys: absent on the free (witness-less) sweep so its JSONL is
+        # byte-identical; present only once a witness engaged the CORROBORATE edge.
+        if self.escalation_pending is not None:
+            payload["escalation_pending"] = self.escalation_pending.to_json()
+        if self.corroboration_receipt is not None:
+            payload["corroboration_receipt"] = self.corroboration_receipt.to_json()
+        return payload
 
 
 def _row_from_result(result: HECompareResult) -> HEDiffRow:
@@ -110,6 +127,8 @@ def _row_from_result(result: HECompareResult) -> HEDiffRow:
         payload_compared=result.payload_compared,
         payload_deferred=result.payload_deferred,
         payload_skipped=result.payload_skipped,
+        escalation_pending=result.escalation_pending,
+        corroboration_receipt=result.corroboration_receipt,
     )
 
 
@@ -137,6 +156,14 @@ class HECorpusReport:
     n_pathology: int = 0
     escalation_counts: Dict[str, int] = field(default_factory=dict)
     pathology_counts: Dict[str, int] = field(default_factory=dict)
+    #: CORROBORATE-edge receipt statistics (0 / empty on the free witness-less sweep).
+    #: ``n_escalation_resolved`` = escalation-pending units a vision witness produced a
+    #: receipt for; ``n_agreed`` / ``n_verdict_changed`` fold the receipts' verdicts. The
+    #: receipts are the statistics substrate for later deriving the operating point.
+    n_escalation_resolved: int = 0
+    n_agreed: int = 0
+    n_verdict_changed: int = 0
+    receipts: Tuple[CorroborationReceipt, ...] = ()
 
     @property
     def exact_match_rate(self) -> float:
@@ -174,8 +201,20 @@ def aggregate_rows(rows: Sequence[HEDiffRow], *, worst_limit: int = 15) -> HECor
     n_benign = n_escalation = n_pathology = 0
     escalation_counts: Dict[str, int] = {}
     pathology_counts: Dict[str, int] = {}
+    n_resolved = n_agreed = n_verdict_changed = 0
+    receipts: List[CorroborationReceipt] = []
     for r in rows:
         status_counts[r.compare_status] = status_counts.get(r.compare_status, 0) + 1
+        # CORROBORATE-edge receipts (present only when a witness was injected). A resolved
+        # unit is one the witness produced a receipt for; agreed / verdict_changed fold its
+        # verdict. Un-resolvable escalation-pending rows carry no receipt (stay pending).
+        if r.corroboration_receipt is not None:
+            receipts.append(r.corroboration_receipt)
+            n_resolved += 1
+            if r.corroboration_receipt.agreed:
+                n_agreed += 1
+            if r.corroboration_receipt.verdict_changed:
+                n_verdict_changed += 1
         if r.compare_status == "compared":
             n_compared += 1
             if r.exact_equivalent:
@@ -214,6 +253,10 @@ def aggregate_rows(rows: Sequence[HEDiffRow], *, worst_limit: int = 15) -> HECor
         n_pathology=n_pathology,
         escalation_counts=escalation_counts,
         pathology_counts=pathology_counts,
+        n_escalation_resolved=n_resolved,
+        n_agreed=n_agreed,
+        n_verdict_changed=n_verdict_changed,
+        receipts=tuple(receipts),
     )
 
 
@@ -361,6 +404,9 @@ def make_comparer(
     llm_johtolause: bool = False,
     johtolause_cache: str = FI_HE_JOHTOLAUSE_TAG_STORE,
     base_url: Optional[str] = None,
+    vision_reader: Optional[VisionReader] = None,
+    witness_prompt: str = "",
+    witness_model: str = "",
 ) -> Callable[[HEUnit], HECompareResult]:
     """Build the farchive-backed ``comparer`` (HEUnit → :class:`HECompareResult`).
 
@@ -369,6 +415,12 @@ def make_comparer(
     cache-through LLM johtolause classifier is bound (store at ``johtolause_cache``, transport
     at ``base_url`` or the adjudicator's default :8080) and threaded into every comparison so
     whole mega-amendment bills are recovered rather than dropped.
+
+    ``vision_reader`` is the OPTIONAL vision witness for the CORROBORATE edge, threaded to
+    :func:`~lawvm.tools.fi_he_ir_compare.compare_he_from_farchive`. ``None`` (default) is the
+    free offline sweep — every result is byte-identical to today. When injected, an
+    escalation-pending unit is corroborated and carries the receipt (fingerprinted by
+    ``witness_prompt`` / ``witness_model``).
     """
     classify_fn: Optional[Callable[[str], object]] = None
     if llm_johtolause:
@@ -384,6 +436,9 @@ def make_comparer(
             he_id=unit.he_id,
             max_pages=max_pages,
             classify_fn=classify_fn,
+            vision_reader=vision_reader,
+            witness_prompt=witness_prompt,
+            witness_model=witness_model,
         )
 
     return comparer
@@ -407,6 +462,10 @@ def render_report(report: HECorpusReport) -> str:
     lines.append(
         f"  escalation_pending(vision re-read)={report.n_escalation_pending} "
         f"{dict(sorted(report.escalation_counts.items()))}"
+    )
+    lines.append(
+        f"  corroborated(vision witness)={report.n_escalation_resolved} "
+        f"agreed={report.n_agreed} verdict_changed={report.n_verdict_changed}"
     )
     lines.append(
         f"  pathology/un-accounted={report.n_pathology} "
@@ -461,6 +520,13 @@ def report_to_json(report: HECorpusReport) -> Dict[str, object]:
         "n_pathology": report.n_pathology,
         "escalation_counts": report.escalation_counts,
         "pathology_counts": report.pathology_counts,
+        # CORROBORATE-edge receipt statistics + the receipts themselves (0 / [] on the free
+        # witness-less sweep; the receipt store is the substrate for the empirical operating
+        # point). Additive keys — they do NOT touch the per-row JSONL the free lane emits.
+        "n_escalation_resolved": report.n_escalation_resolved,
+        "n_agreed": report.n_agreed,
+        "n_verdict_changed": report.n_verdict_changed,
+        "receipts": [rcpt.to_json() for rcpt in report.receipts],
         "bucket_counts": report.bucket_counts,
         "payload_compared": report.payload_compared,
         "payload_deferred": report.payload_deferred,

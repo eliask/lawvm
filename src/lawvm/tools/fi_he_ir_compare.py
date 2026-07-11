@@ -84,6 +84,13 @@ from lawvm.finland.he_branch_parser import (
     parse_he_branch,
 )
 from lawvm.finland.op_equivalence import text_equivalence
+from lawvm.ingest.corroboration import (
+    CorroborationReceipt,
+    EscalationKind,
+    EscalationPending,
+    VisionReader,
+    corroborate,
+)
 from lawvm.ingest.page_elements import dehyphenate
 from lawvm.ingest.suspect_region import (
     garble_reason,
@@ -179,8 +186,16 @@ class HEReadGarbledError(HEIrCompareError):
     read is NEVER returned raw and NEVER silently collapses to a benign no-clause bucket.
     :func:`compare_he_from_farchive` catches it and types the HE ``garble_suspect`` — a
     first-class VISION re-read escalation candidate (un-accounted, escalation-pending),
-    not a clean read. Carries the deterministic garble reason for the typed detail.
+    not a clean read. Carries the deterministic garble reason for the typed detail, AND
+    the raw garbled text layer as the ``candidate`` an injected vision witness is later
+    confronted against (the CORROBORATE edge — see :func:`_maybe_corroborate`).
     """
+
+    def __init__(self, reason: str, *, garbled_text: str = "") -> None:
+        super().__init__(reason)
+        #: The pervasively-garbled read (the deterministic candidate a vision witness
+        #: corroborates); empty when the raw layer was not retained.
+        self.garbled_text = garbled_text
 
 
 class HEReaderUnavailableError(HEIrCompareError):
@@ -2065,6 +2080,13 @@ class HECompareResult:
     payload_compared: int = 0
     payload_deferred: int = 0
     payload_skipped: int = 0
+    #: The CORROBORATE edge (populated ONLY when a vision witness is injected — the free
+    #: offline sweep leaves both ``None``, so a witness-less row is byte-identical). When
+    #: the status is escalation-pending and a witness is present, ``escalation_pending`` is
+    #: the typed pending confronted and ``corroboration_receipt`` the witness's record
+    #: (``None`` if the witness could not read the region → the unit stays pending).
+    escalation_pending: Optional[EscalationPending] = None
+    corroboration_receipt: Optional[CorroborationReceipt] = None
 
     @property
     def counts(self) -> dict[str, int]:
@@ -2335,7 +2357,7 @@ def he_pdf_reading_text(
         # (A PARTIALLY garbled read is NOT refused here: it flows on and, if it then
         # yields no clause, is typed ``garble_suspect`` by the no-clause discriminator.)
         if is_pervasively_garbled(text_layer):
-            raise HEReadGarbledError(garble_reason(text_layer))
+            raise HEReadGarbledError(garble_reason(text_layer), garbled_text=text_layer)
         return text_layer
     # No usable text layer (scanned / image-only) → geom bbox reconstruction.
     man = SourceManifestation(
@@ -2350,6 +2372,53 @@ def he_pdf_reading_text(
     return "\n".join(GeomProducer().reconstruct_pages(man, pages))
 
 
+#: FI-local map from an escalation-pending STATUS to its jurisdiction-neutral
+#: :class:`~lawvm.ingest.corroboration.EscalationKind`. Only ``garble_suspect`` is
+#: escalation-pending in the HE lane today (mirrors ``_ESCALATION_PENDING_STATUSES``);
+#: a new escalation status must register its kind here (kept 1:1 with that tuple).
+_ESCALATION_STATUS_TO_KIND: dict[str, EscalationKind] = {
+    "garble_suspect": EscalationKind.GARBLE_READ,
+}
+
+
+def _maybe_corroborate(
+    result: HECompareResult,
+    *,
+    vision_reader: "Optional[VisionReader]",
+    candidate_text: str,
+    region: Optional[str],
+    witness_prompt: str,
+    witness_model: str,
+) -> HECompareResult:
+    """The CORROBORATE edge (FI-local wiring): confront an escalation-pending with a witness.
+
+    Backend-gated and offline-SAFE. With no ``vision_reader`` (the free sweep) OR a
+    non-escalation status, the result is returned UNCHANGED — so a witness-less row is
+    byte-identical to today (the free lane's integrity is non-negotiable). When a witness
+    IS injected and the status is escalation-pending, build the typed
+    :class:`~lawvm.ingest.corroboration.EscalationPending` (the deterministic candidate +
+    reason + region) and drive it through the jurisdiction-neutral
+    :func:`~lawvm.ingest.corroboration.corroborate`. The receipt is attached; the STATUS is
+    left as-is (this RECORDS — a downstream lane decides graduation from the receipt store).
+    """
+    if vision_reader is None or result.compare_status not in _ESCALATION_STATUS_TO_KIND:
+        return result
+    pending = EscalationPending(
+        unit_id=result.he_id,
+        kind=_ESCALATION_STATUS_TO_KIND[result.compare_status],
+        reason=result.detail,
+        region=region,
+        candidate_text=candidate_text,
+    )
+    receipt = corroborate(
+        pending,
+        vision_reader=vision_reader,
+        witness_prompt=witness_prompt,
+        witness_model=witness_model,
+    )
+    return replace(result, escalation_pending=pending, corroboration_receipt=receipt)
+
+
 def compare_he_from_farchive(
     farchive: str,
     he_year: int,
@@ -2359,6 +2428,9 @@ def compare_he_from_farchive(
     lang: str = "fin",
     max_pages: int = 5000,
     classify_fn: "Optional[Callable[[str], object]]" = None,
+    vision_reader: "Optional[VisionReader]" = None,
+    witness_prompt: str = "",
+    witness_model: str = "",
 ) -> HECompareResult:
     """Read both HE witnesses from the farchive and run :func:`compare_he`.
 
@@ -2368,6 +2440,13 @@ def compare_he_from_farchive(
     ``classify_fn`` is passed straight through to :func:`compare_he` — ``None`` (default)
     keeps the mechanical enacting-clause segmentation; an injected classifier switches the
     PDF side onto the LLM-gated span extractor.
+
+    ``vision_reader`` is the OPTIONAL vision witness for the CORROBORATE edge. ``None``
+    (default) is the free offline sweep: every result is byte-identical to today, and an
+    escalation-pending (``garble_suspect``) unit stays honestly un-resolved. When injected,
+    an escalation-pending unit is corroborated and its result carries the receipt
+    (``witness_prompt`` / ``witness_model`` fingerprint the witness). The read lane itself
+    is unchanged — the witness only confronts a unit the free lane could not certify.
     """
     from farchive import Farchive
 
@@ -2409,9 +2488,18 @@ def compare_he_from_farchive(
     except HEReadGarbledError as exc:
         # The PDF text layer is pervasively garbled (corrupt font / broken CMap). Type it
         # a first-class VISION re-read escalation candidate — un-accounted, NEVER a benign
-        # no-clause bucket and NEVER a silent raw return. The actual vision re-read is a
-        # downstream lane; here the state is honestly ``garble_suspect`` / escalation-pending.
-        return HECompareResult(hid, branch_id, "garble_suspect", (), 0, 0, str(exc))
+        # no-clause bucket and NEVER a silent raw return. The state is honestly
+        # ``garble_suspect`` / escalation-pending; if a vision witness is injected the
+        # CORROBORATE edge confronts the garbled read (the candidate) with it.
+        garble_result = HECompareResult(hid, branch_id, "garble_suspect", (), 0, 0, str(exc))
+        return _maybe_corroborate(
+            garble_result,
+            vision_reader=vision_reader,
+            candidate_text=exc.garbled_text,
+            region=base + "main.pdf",
+            witness_prompt=witness_prompt,
+            witness_model=witness_model,
+        )
     except Exception as exc:  # a bad/unreadable PDF is a typed status, never a crash
         return HECompareResult(
             hid,
@@ -2446,7 +2534,17 @@ def compare_he_from_farchive(
                     "directive within the window — lakiehdotus beyond the window, deferred"
                 ),
             )
-    return result
+    # A PARTIALLY-garbled read that yielded no clause is typed ``garble_suspect`` by the
+    # no-clause discriminator (via :func:`compare_he`); confront it with the injected
+    # witness too, using the (partially-garbled) reading text as the candidate.
+    return _maybe_corroborate(
+        result,
+        vision_reader=vision_reader,
+        candidate_text=reading_text,
+        region=base + "main.pdf",
+        witness_prompt=witness_prompt,
+        witness_model=witness_model,
+    )
 
 
 def _pdf_page_count(data: bytes) -> int:

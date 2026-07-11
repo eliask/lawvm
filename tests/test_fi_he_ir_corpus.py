@@ -72,6 +72,78 @@ def test_driver_aggregates_and_persists(tmp_path: Path) -> None:
     }
 
 
+def test_corroborate_edge_folds_receipts_and_stays_byte_identical_offline(
+    tmp_path: Path,
+) -> None:
+    """The CORROBORATE edge: an injected witness folds receipts; the free lane is unchanged.
+
+    Hermetic — no farchive, no vision backend. A ``garble_suspect`` (escalation-pending)
+    row carrying a verdict-changed receipt (a caught false-exact) folds into
+    ``n_escalation_resolved`` / ``n_verdict_changed`` and emits the receipt into its JSONL
+    row; a receipt-less (offline) row's JSONL is byte-identical to the pre-corroboration
+    shape (no ``escalation_pending`` / ``corroboration_receipt`` keys).
+    """
+    from lawvm.ingest.corroboration import (
+        CorroborationReceipt,
+        EscalationKind,
+        EscalationPending,
+    )
+    from lawvm.tools.fi_he_ir_corpus import _row_from_result
+
+    # Offline garble_suspect: no receipt attached (the honest un-resolved state).
+    offline = _typed("HE 1/2020 vp", "garble_suspect")
+    # Online garble_suspect: a witness caught a false-exact (verdict_changed).
+    pending = EscalationPending(
+        unit_id="HE 2/2020 vp",
+        kind=EscalationKind.GARBLE_READ,
+        reason="garbled text layer",
+        region="akn/fi/.../main.pdf",
+        candidate_text="garbled",
+    )
+    receipt = CorroborationReceipt(
+        unit_id="HE 2/2020 vp",
+        kind=EscalationKind.GARBLE_READ,
+        candidate="garbled",
+        vision_read="the clean amended section",
+        agreed=False,
+        verdict_changed=True,
+        region="akn/fi/.../main.pdf",
+        witness_fingerprint="deadbeefcafef00d",
+    )
+    online = HECompareResult(
+        "HE 2/2020 vp", "fi/he/2020/2", "garble_suspect", (), 0, 0, "garbled",
+        escalation_pending=pending, corroboration_receipt=receipt,
+    )
+
+    out = tmp_path / "he.jsonl"
+    rows = [_row_from_result(offline), _row_from_result(online)]
+    by_id = {"HE 1/2020 vp": offline, "HE 2/2020 vp": online}
+    report = run_he_corpus(
+        [HEUnit(2020, 1, "HE 1/2020 vp"), HEUnit(2020, 2, "HE 2/2020 vp")],
+        lambda u: by_id[u.he_id],
+        out_path=str(out),
+    )
+    # Both stay escalation-pending (a receipt RECORDS; it never flips the status to compared).
+    assert report.n_escalation_pending == 2
+    assert report.n_compared == 0
+    # Receipt statistics folded from the online row only.
+    assert report.n_escalation_resolved == 1
+    assert report.n_verdict_changed == 1
+    assert report.n_agreed == 0
+    assert len(report.receipts) == 1 and report.receipts[0].verdict_changed
+
+    persisted = [json.loads(line) for line in out.read_text(encoding="utf-8").splitlines()]
+    # The OFFLINE row is byte-identical to the pre-corroboration shape: no new keys.
+    assert "escalation_pending" not in persisted[0]
+    assert "corroboration_receipt" not in persisted[0]
+    # The ONLINE row carries the typed pending + the receipt.
+    assert persisted[1]["escalation_pending"]["kind"] == "garble_read"
+    assert persisted[1]["corroboration_receipt"]["verdict_changed"] is True
+    assert persisted[1]["corroboration_receipt"]["witness_fingerprint"] == "deadbeefcafef00d"
+    # aggregate_rows over the same rows agrees (single authority).
+    assert aggregate_rows(rows).n_verdict_changed == 1
+
+
 def test_comparer_exception_is_typed_error(tmp_path: Path) -> None:
     units = [HEUnit(2020, 1, "HE 1/2020 vp")]
 
@@ -122,8 +194,12 @@ def test_make_comparer_default_threads_no_classify_fn(monkeypatch) -> None:
 
     seen: dict = {}
 
-    def fake_compare(farchive, yr, num, *, he_id, max_pages, classify_fn):
+    def fake_compare(
+        farchive, yr, num, *, he_id, max_pages, classify_fn,
+        vision_reader=None, witness_prompt="", witness_model="",
+    ):
         seen["classify_fn"] = classify_fn
+        seen["vision_reader"] = vision_reader
         return HECompareResult(he_id, f"fi/he/{yr}/{num}", "not_applicable", (), 0, 0, "")
 
     monkeypatch.setattr(corpus, "compare_he_from_farchive", fake_compare)
@@ -143,8 +219,12 @@ def test_make_comparer_llm_threads_the_built_classify_fn(monkeypatch) -> None:
     )
     seen: dict = {}
 
-    def fake_compare(farchive, yr, num, *, he_id, max_pages, classify_fn):
+    def fake_compare(
+        farchive, yr, num, *, he_id, max_pages, classify_fn,
+        vision_reader=None, witness_prompt="", witness_model="",
+    ):
         seen["classify_fn"] = classify_fn
+        seen["vision_reader"] = vision_reader
         return HECompareResult(he_id, f"fi/he/{yr}/{num}", "not_applicable", (), 0, 0, "")
 
     monkeypatch.setattr(corpus, "compare_he_from_farchive", fake_compare)
