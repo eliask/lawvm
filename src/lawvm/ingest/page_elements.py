@@ -1112,14 +1112,23 @@ class PageElementProducer:
         return tuple(out), tuple(notes)
 
     def _object_bbox(self, obj: object) -> Tuple[float, float, float, float]:
-        try:
-            pos = obj.get_pos()  # ty: ignore[unresolved-attribute]
-            x0, y0, x1, y1 = float(pos[0]), float(pos[1]), float(pos[2]), float(pos[3])
-            return (min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1))
-        # No readable geometry (missing get_pos / non-numeric / short tuple) → zero
-        # bbox sentinel; the caller's rasterize path handles it (whole-page crop).
-        except (AttributeError, TypeError, ValueError, IndexError, _PdfiumError()):
-            return _ZERO_BBOX
+        # pypdfium2 renamed the page-object geometry accessor across majors: <5.x
+        # exposed ``get_pos()`` (left, bottom, right, top); 5.x drops it for
+        # ``get_bounds()`` (same 4-tuple). Try both before degrading to the zero
+        # sentinel so a lib bump does not silently strip every image's geometry.
+        for accessor in ("get_pos", "get_bounds"):
+            fn = getattr(obj, accessor, None)
+            if fn is None:
+                continue
+            try:
+                pos = fn()  # ty: ignore[call-non-callable]
+                x0, y0, x1, y1 = float(pos[0]), float(pos[1]), float(pos[2]), float(pos[3])
+                return (min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1))
+            # No readable geometry (non-numeric / short tuple / pdfium error) → try
+            # the next accessor, then fall to the zero-bbox sentinel below.
+            except (AttributeError, TypeError, ValueError, IndexError, _PdfiumError()):
+                continue
+        return _ZERO_BBOX
 
     def _extract_image_bytes(
         self,
@@ -1137,7 +1146,7 @@ class PageElementProducer:
             get_bitmap = getattr(obj, "get_bitmap", None)
             extract = getattr(obj, "get_data", None) or getattr(obj, "get_image_data", None)
             if extract is not None:
-                raw = extract(decode=False)
+                raw = self._read_image_stream(extract)
                 if raw:
                     raw = bytes(raw)
                     media_type = _media_type_for(raw)
@@ -1152,6 +1161,27 @@ class PageElementProducer:
         if raw is not None:
             return raw, "image/png", dims, False
         return None, "application/octet-stream", None, False
+
+    def _read_image_stream(self, extract: object) -> Optional[bytes]:
+        """Read the RAW stored image stream, tolerating pypdfium2 kwarg drift.
+
+        ``PdfImage.get_data`` renamed its "return the undecoded stored bytes" flag
+        across majors (<5.x: ``decode=False`` → 5.x: ``decode_simple=False``); the
+        default is already "no decode", so a bare call also yields the raw stream.
+        We want the RAW stored bytes so a DCT/JPX XObject stays a valid JPEG/JP2
+        file that is content-addressed BIT-EXACT (never a lib-version-dependent
+        re-encode). Try the current kwarg, the legacy kwarg, then a bare call; a
+        genuine pdfium extraction error propagates to the Tier-2 fallback.
+        """
+        for kwargs in ({"decode_simple": False}, {"decode": False}, {}):
+            try:
+                raw = extract(**kwargs)  # ty: ignore[call-non-callable]
+                return bytes(raw) if raw else None
+            # Wrong kwarg name for THIS lib version → try the next signature. A real
+            # extraction failure (pdfium error) is NOT a TypeError and propagates.
+            except TypeError:
+                continue
+        return None
 
     def _bitmap_dims(self, get_bitmap: object) -> Optional[Tuple[int, int]]:
         try:

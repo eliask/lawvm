@@ -645,8 +645,13 @@ def test_struct_ingest_stores_image_blobs_and_stitches_the_ir_locator(tmp_path) 
         blob = store.get_image(entry["locator"])
         assert blob is not None
         assert hashlib.sha256(blob).hexdigest() == entry["digest"]
-        # The blob shares the IR record prefix and is {N}-indexed.
-        assert entry["locator"].endswith("/0001.png")
+        # The blob shares the IR record prefix and is {N}-indexed. The extension
+        # follows the BIT-EXACT embedded XObject's own container: PIL embeds this
+        # raster as a DCTDecode stream, so the stored blob is the raw JPEG (``.jpg``),
+        # never a lib-version-dependent PNG re-encode (that would only be the Tier-2
+        # rasterized-crop fallback for an XObject with no extractable bytes).
+        assert entry["locator"].endswith("/0001.jpg")
+        assert entry["media_type"] == "image/jpeg"
         # The IR IMAGE node carries image_locator mapping I{1} → its blob 1:1.
         node = cast(dict, _find_ir_image(record.ir))
         assert node is not None
