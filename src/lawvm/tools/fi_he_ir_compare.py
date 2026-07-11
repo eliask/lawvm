@@ -1226,7 +1226,11 @@ def diff_proposed_ops(
 #   (b) a GENUINE CONSEQUENTIAL REPEAL — a commencement clause of ANOTHER bill repeals a
 #       provision of an outside act ("Tällä lailla kumotaan … vesilain (264/1961) 17 luvun
 #       10 §."); a real proposed effect the law-level XML omits, but NOT a second bill (no
-#       title). First-class witness disagreement → ``pdf_consequential_repeal``.
+#       title). First-class witness disagreement → ``pdf_consequential_repeal`` — but ONLY the
+#       op whose PROVISION is actually named in that clause; benigning is PER-OP, not per
+#       statute, so a phantom op mis-attributed onto the same statute (e.g. a following act's
+#       "24 ja 24 a §" span-slipped onto a statute whose clause names only "11 §") cannot ride
+#       the statute-granular label and stays a first-class ``op_extra`` defect (case (c)).
 #   (c) a PDF DEFECT — target MIS-ATTRIBUTION: the block has NEITHER a governing bill title
 #       NOR a consequential-repeal head; it is phantom (a sibling bill's provisions cloned
 #       onto the wrong statute by a span-boundary slip). Stays ``op_extra_in_pdf`` (defect).
@@ -1287,6 +1291,17 @@ _CONSEQUENTIAL_REPEAL_MARK = "lailla kumotaan"
 #: chars). Bounded so an unrelated earlier repeal formula is not swept in.
 _CONSEQUENTIAL_REPEAL_REACH = 160
 
+#: Amendment-history / cross-reference tails that END a repeal enumeration ("… 10 §, sellaisena
+#: kuin se on laissa 467/1987." / "… 105 §, niistä 9 luku siihen myöhemmin tehtyine
+#: muutoksineen"). The enumeration of NAMED provisions stops BEFORE these, so a repealed
+#: provision's amendment-history YEAR ("467/1987" → 467, 1987) never enters the named-token set.
+#: ", sellaise" covers both "sellaisena" (sg.) and "sellaisina" (pl.).
+_CONSEQUENTIAL_REPEAL_TAILS = (", sellaise", ", niistä")
+
+#: Max chars a repeal enumeration may run past its "(sid)" citation before a terminator caps the
+#: scan — a backstop when no next-citation "(", sentence "."/";", or history tail is nearby.
+_CONSEQUENTIAL_REPEAL_ENUM_CAP = 300
+
 
 def _statute_id_of(target_ref: str) -> str:
     """Reduce a ``target_provision_ref`` to its statute id ("1707/1995/9/2" → "1707/1995").
@@ -1336,26 +1351,139 @@ def _titled_bill_statute_ids(flat: str) -> set[str]:
     return ids
 
 
-def _statute_has_consequential_repeal(flat: str, sid: str) -> bool:
-    """True iff ``flat`` repeals a provision of statute ``sid`` via a COMMENCEMENT clause.
+def _scan_repeal_provision_tokens(span: str) -> "tuple[bool, set[str]]":
+    """``(has_provision_marker, {section tokens})`` parsed from a repeal enumeration.
 
-    The signature is the consequential-repeal formula (:data:`_CONSEQUENTIAL_REPEAL_MARK`,
-    "Tällä lailla kumotaan …") sitting within :data:`_CONSEQUENTIAL_REPEAL_REACH` chars
-    BEFORE a ``(sid)`` citation — the "by this act is repealed <outside act> (N/YEAR) N §."
-    pattern an omnibus HE uses to retire a provision of an act it does not otherwise amend.
-    This is categorically distinct from a johtolause repeal head ("kumotaan <act> (N/YEAR) …
-    seuraavasti:") — the formula names no ``seuraavasti:`` and sits in a voimaantulo clause.
-    All matching is ``str.find`` (no regex); purely PDF-structural, never reads the XML.
+    A section token is a provision number with an OPTIONAL single-letter suffix ("24 a" /
+    "24a" → "24a"; "10" → "10") — the same shape :func:`_op_provision_section_token` reduces an
+    op ``target_ref`` to, so the two compare directly. A bare numeric range ("15-19") expands to
+    every integer in the interval (a repeal span retires each). ``has_provision_marker`` is True
+    iff the span carries a "§" or a chapter word ("luku"/"luvun"); False means a WHOLE-ACT repeal
+    (no provision enumerated — "kumotaan … laki (sid);"). Pure ``str`` scanning (no regex);
+    reads only the PDF clause text, never a resolved label.
+    """
+    low = span.lower()
+    has_marker = "§" in span or "luku" in low or "luvun" in low
+    tokens: set[str] = set()
+    i, length = 0, len(span)
+    while i < length:
+        if not span[i].isdigit():
+            i += 1
+            continue
+        j = i
+        while j < length and span[j].isdigit():
+            j += 1
+        num = span[i:j]
+        # A single-letter suffix ("24 a" / "24a" → "24a"), a LONE letter only (so "104 ja 105"
+        # never fuses the "ja" conjunction into "104j").
+        k = j
+        while k < length and span[k] == " ":
+            k += 1
+        suffix = ""
+        if k < length and span[k].isalpha() and (k + 1 >= length or not span[k + 1].isalpha()):
+            suffix = span[k].lower()
+        tokens.add(num + suffix)
+        # A numeric range ("15-19" / "15–19" / "15 - 19") → fill the interval.
+        k = j
+        while k < length and span[k] == " ":
+            k += 1
+        if k < length and span[k] in "-–—":
+            k += 1
+            while k < length and span[k] == " ":
+                k += 1
+            m = k
+            while m < length and span[m].isdigit():
+                m += 1
+            if m > k:
+                lo_n, hi_n = int(num), int(span[k:m])
+                if 0 < hi_n - lo_n <= 200:
+                    for v in range(lo_n, hi_n + 1):
+                        tokens.add(str(v))
+        i = j
+    return has_marker, tokens
+
+
+def _op_provision_section_token(target_ref: str) -> str:
+    """The SECTION identity token of an op ``target_ref`` ("264/1961/luku_17/10" → "10").
+
+    Reduces the provision path (everything after the statute id) to the single section token a
+    consequential-repeal clause NAMES: the section within a chapter ("luku_17/10" → "10"), a
+    bare chapter repeal ("luku_9" → "9"), a plain section (momentti dropped — "24a/2" → "24a",
+    "125/2" → "125"). A statute-level op (no provision path) yields "". Normalized (lowercased,
+    spaces stripped) to match :func:`_scan_repeal_provision_tokens`. ``str.split`` only (no regex).
+    """
+    path = [p for p in target_ref.split("/") if p][2:]
+    if not path:
+        return ""
+    head = path[0]
+    if head.startswith("luku_"):
+        chapter = head[len("luku_"):]
+        section = path[1] if len(path) >= 2 else chapter
+    else:
+        section = head
+    return section.replace(" ", "").lower()
+
+
+def _consequential_repeal_named_provisions(
+    flat: str, sid: str
+) -> "Optional[tuple[bool, frozenset[str]]]":
+    """The provisions of ``sid`` a COMMENCEMENT clause repeals — PER-provision (metric integrity).
+
+    Returns ``None`` when ``flat`` carries no consequential-repeal of ``sid`` at all. Otherwise
+    ``(whole_act, tokens)``:
+
+    * ``whole_act=True`` — the clause repeals the WHOLE act ("Tällä lailla kumotaan … laki
+      (sid);", no "§"/chapter enumerated); EVERY op on ``sid`` is a genuine consequential effect.
+      ``tokens`` is empty.
+    * ``whole_act=False`` — the clause NAMES specific provisions ("… (sid) 17 luvun 10 §.");
+      ``tokens`` is the set of named section tokens. ONLY an op whose section token is in this set
+      is the named repeal; any OTHER op on ``sid`` is a phantom (a sibling bill's provision
+      mis-attributed onto ``sid`` by a span-boundary slip — HE 300/2022's ``(812/2000) 24 ja 24 a
+      §`` cloned onto ``785/1992``) and MUST stay ``op_extra_in_pdf``. A statute-granular mask
+      would silently absolve it; benigning at PROVISION granularity surfaces it.
+
+    The signature is the formula (:data:`_CONSEQUENTIAL_REPEAL_MARK`) within
+    :data:`_CONSEQUENTIAL_REPEAL_REACH` chars BEFORE a ``(sid)`` citation. The enumeration is read
+    from AFTER that citation up to the FIRST of: the next citation's "(", a sentence terminator
+    ("."/";"), an amendment-history tail (:data:`_CONSEQUENTIAL_REPEAL_TAILS`), or
+    :data:`_CONSEQUENTIAL_REPEAL_ENUM_CAP` chars — so a following statute's provisions ("… (785/
+    1992) 11 § ja … (812/2000) 24 ja 24 a §") never bleed into ``sid``'s token set. All ``str``
+    scanning (no regex); purely PDF-structural, never reads the XML op-set or a resolved label.
     """
     needle = f"({sid})"
     low = flat.lower()
     pos = flat.find(needle)
+    found = False
+    whole_act = False
+    tokens: set[str] = set()
     while pos >= 0:
         lo = max(0, pos - _CONSEQUENTIAL_REPEAL_REACH)
         if _CONSEQUENTIAL_REPEAL_MARK in low[lo:pos]:
-            return True
+            found = True
+            start = pos + len(needle)
+            end = min(len(flat), start + _CONSEQUENTIAL_REPEAL_ENUM_CAP)
+            # The next statute citation opens with "(" (a repeal enumeration itself carries no
+            # parens); bounding there keeps a FOLLOWING act's provisions out of ``sid``'s set.
+            cut = flat.find("(", start, end)
+            if cut >= 0:
+                end = cut
+            for term in (".", ";"):
+                t = flat.find(term, start, end)
+                if t >= 0:
+                    end = t
+            for tail in _CONSEQUENTIAL_REPEAL_TAILS:
+                t = flat.find(tail, start, end)
+                if t >= 0:
+                    end = t
+            has_marker, span_tokens = _scan_repeal_provision_tokens(flat[start:end])
+            if has_marker:
+                tokens |= span_tokens
+            else:
+                whole_act = True
         pos = flat.find(needle, pos + 1)
-    return False
+    if not found:
+        return None
+    return whole_act, frozenset(tokens)
 
 
 def _reclassify_out_of_scope_second_bills(
@@ -1370,12 +1498,16 @@ def _reclassify_out_of_scope_second_bills(
     lakiehdotus reading text):
 
     * a real bill TITLE (:func:`_titled_bill_statute_ids`) → :data:`_PDF_OUT_OF_SCOPE_STATUTE`
-      (genuine second bill, PDF more complete);
-    * a consequential-repeal formula (:func:`_statute_has_consequential_repeal`) →
-      :data:`_PDF_CONSEQUENTIAL_REPEAL` (a real effect the XML omits, but not a second bill);
-    * NEITHER → left as ``op_extra_in_pdf`` (a phantom target-misresolution DEFECT — a block
-      that "looks coherent" but has no governing head, e.g. a sibling bill's provisions
-      cloned onto the wrong statute).
+      (genuine second bill, PDF more complete) — whole-block;
+    * a consequential-repeal clause (:func:`_consequential_repeal_named_provisions`) →
+      :data:`_PDF_CONSEQUENTIAL_REPEAL`, but PER-OP: only the op whose PROVISION reference is
+      ACTUALLY NAMED in the "Tällä lailla kumotaan … (sid) <provision> §" clause (or every op
+      when the WHOLE act is repealed) is benigned; any OTHER op on that statute STAYS
+      ``op_extra_in_pdf`` (a phantom mis-attributed onto ``sid`` — HE 300/2022 cloned
+      ``(812/2000) 24 ja 24 a §`` onto ``785/1992`` whose clause names only ``11 §``). A
+      statute-granular mask absolved that phantom; provision-granular benigning surfaces it.
+    * NEITHER a title NOR a consequential repeal of ``sid`` → left as ``op_extra_in_pdf`` (a
+      phantom target-misresolution DEFECT — a "coherent" block with no governing head).
 
     Block SIZE is deliberately NOT a criterion (the prior ``≥3`` proxy force-benigned exactly
     the phantom block a span-boundary slip manufactures). Any op on a statute-id the XML
@@ -1404,10 +1536,8 @@ def _reclassify_out_of_scope_second_bills(
         ):
             j += 1
         block = j - i
-        kind: Optional[str] = None
-        detail = ""
         if sid in titled_ids:
-            kind = _PDF_OUT_OF_SCOPE_STATUTE
+            # Genuine omnibus second bill — whole-block witness disagreement.
             detail = (
                 f"PDF captured a {block}-op amendment block on statute {sid}, GOVERNED BY A "
                 "REAL BILL TITLE (Laki … muuttamisesta) yet ABSENT from the trusted XML op-set "
@@ -1415,17 +1545,34 @@ def _reclassify_out_of_scope_second_bills(
                 "subset of amended statutes; first-class witness disagreement (PDF more "
                 "complete), NOT a PDF op_extra defect"
             )
-        elif _statute_has_consequential_repeal(flat, sid):
-            kind = _PDF_CONSEQUENTIAL_REPEAL
-            detail = (
-                f"PDF captured a {block}-op consequential repeal on statute {sid} via a "
-                "commencement clause (Tällä lailla kumotaan … (N/YEAR) … §.) of another bill "
-                "— a real proposed effect the law-level XML op-set omits; first-class witness "
-                "disagreement (PDF more complete), NOT a titled second bill and NOT a defect"
-            )
-        if kind is not None:
             for k in range(i, j):
-                out[k] = replace(out[k], kind=kind, detail=detail)
+                out[k] = replace(out[k], kind=_PDF_OUT_OF_SCOPE_STATUTE, detail=detail)
+            i = j
+            continue
+        prov = _consequential_repeal_named_provisions(flat, sid)
+        if prov is not None:
+            # PER-OP: benign ONLY the op whose provision is NAMED in the repeal clause (or every
+            # op when the whole act is repealed); a non-named op on ``sid`` is a phantom
+            # (mis-attributed from a sibling bill) and STAYS op_extra_in_pdf — a defect the
+            # statute-granular mask used to silently absolve.
+            whole_act, named = prov
+            for k in range(i, j):
+                sec = _op_provision_section_token(out[k].target_ref)
+                if not (whole_act or sec in named):
+                    continue
+                where = "the whole act" if whole_act else f"provision {sec or '(statute-level)'}"
+                out[k] = replace(
+                    out[k],
+                    kind=_PDF_CONSEQUENTIAL_REPEAL,
+                    detail=(
+                        f"PDF captured a consequential repeal of statute {sid} {where} via a "
+                        "commencement clause (Tällä lailla kumotaan … (N/YEAR) … §.) of another "
+                        "bill — a real proposed effect the law-level XML op-set omits; "
+                        "first-class witness disagreement (PDF more complete), the NAMED "
+                        "provision of the repeal clause, NOT a titled second bill and NOT a "
+                        "defect"
+                    ),
+                )
         i = j
     return tuple(out)
 

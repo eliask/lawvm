@@ -922,6 +922,73 @@ def test_consequential_repeal_typed_distinctly_not_second_bill() -> None:
     assert not any(d.kind == "op_extra_in_pdf" for d in div)
 
 
+def test_consequential_repeal_benign_is_per_op_not_per_statute() -> None:
+    # The consequential-repeal benign must be PER-OP: only the op whose PROVISION is NAMED in
+    # the "Tällä lailla kumotaan … (sid) <provision> §" clause is absolved; ANY OTHER op on the
+    # same statute stays op_extra_in_pdf (a phantom the statute-granular mask would ride). The
+    # clause names statute 594/1956 provision §5 ONLY; the PDF ALSO carries §9 on 594/1956
+    # (mis-attributed from a sibling bill). §5 → benign, §9 → STAYS a defect. (HE 300/2022:
+    # (812/2000) 24 ja 24 a § span-slipped onto 785/1992 whose clause named only 11 §.)
+    xml = (HEFlatOp("replace", "123/2020/5"),)
+    pdf = (
+        HEFlatOp("replace", "123/2020/5"),   # matched
+        HEFlatOp("repeal", "594/1956/5"),    # NAMED consequential repeal → benign
+        HEFlatOp("repeal", "594/1956/9"),    # NOT named → phantom, STAYS op_extra_in_pdf
+    )
+    flat = (
+        "muutetaan jonkin lain (123/2020) 5 § seuraavasti: ... Tämä laki tulee voimaan 1 "
+        "päivänä tammikuuta 2020. Tällä lailla kumotaan vanhan lain (594/1956) 5 §."
+    )
+    div = _reclassify_out_of_scope_second_bills(diff_proposed_ops(xml, pdf), xml, flat)
+    by_ref = {d.target_ref: d for d in div}
+    assert by_ref["594/1956/5"].kind == _PDF_CONSEQUENTIAL_REPEAL
+    assert by_ref["594/1956/9"].kind == "op_extra_in_pdf"  # the surfaced phantom
+    assert by_ref["123/2020/5"].kind == "matched"
+
+
+def test_consequential_whole_act_repeal_benigns_every_op() -> None:
+    # A WHOLE-ACT consequential repeal ("… kumotaan … laki (594/1956);", NO provision
+    # enumerated) genuinely retires every provision — so every op on that statute is a real
+    # effect and IS benigned (the per-op rule does not over-tighten a whole-act repeal).
+    xml = (HEFlatOp("replace", "123/2020/5"),)
+    pdf = (
+        HEFlatOp("replace", "123/2020/5"),
+        HEFlatOp("repeal", "594/1956/5"),
+        HEFlatOp("repeal", "594/1956/9"),
+    )
+    flat = (
+        "muutetaan jonkin lain (123/2020) 5 § seuraavasti: ... Tämä laki tulee voimaan. "
+        "Tällä lailla kumotaan vanha laki (594/1956); ja jotain muuta."
+    )
+    div = _reclassify_out_of_scope_second_bills(diff_proposed_ops(xml, pdf), xml, flat)
+    by_ref = {d.target_ref: d for d in div}
+    assert by_ref["594/1956/5"].kind == _PDF_CONSEQUENTIAL_REPEAL
+    assert by_ref["594/1956/9"].kind == _PDF_CONSEQUENTIAL_REPEAL
+
+
+def test_consequential_repeal_next_statute_provisions_do_not_bleed() -> None:
+    # HE 300/2022 shape: one clause repeals (785/1992) 11 § AND (812/2000) 24 ja 24 a §. The
+    # enumeration for 785/1992 must STOP before the (812/2000) citation, so 24/24a never enter
+    # 785/1992's named set — a phantom 785/1992/24 stays a defect.
+    xml = (HEFlatOp("replace", "123/2020/5"),)
+    pdf = (
+        HEFlatOp("replace", "123/2020/5"),
+        HEFlatOp("repeal", "785/1992/11"),   # NAMED for 785/1992 → benign
+        HEFlatOp("repeal", "785/1992/24"),   # belongs to 812/2000 → phantom, STAYS op_extra
+        HEFlatOp("repeal", "785/1992/24a"),  # belongs to 812/2000 → phantom, STAYS op_extra
+    )
+    flat = (
+        "muutetaan jonkin lain (123/2020) 5 § seuraavasti: ... Tällä lailla kumotaan potilaan "
+        "asemasta annetun lain (785/1992) 11 § ja sosiaalihuollon asiakkaan asemasta annetun "
+        "lain (812/2000) 24 ja 24 a §, sellaisina kuin ne ovat."
+    )
+    div = _reclassify_out_of_scope_second_bills(diff_proposed_ops(xml, pdf), xml, flat)
+    by_ref = {d.target_ref: d for d in div}
+    assert by_ref["785/1992/11"].kind == _PDF_CONSEQUENTIAL_REPEAL
+    assert by_ref["785/1992/24"].kind == "op_extra_in_pdf"
+    assert by_ref["785/1992/24a"].kind == "op_extra_in_pdf"
+
+
 def test_same_statute_granularity_stays_op_extra() -> None:
     # Even a ≥3-op extra block on a statute the XML op-set DOES name is finer-granularity
     # PDF ops (same statute), NOT an out-of-scope second bill — it STAYS op_extra_in_pdf,
