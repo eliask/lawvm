@@ -989,6 +989,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_citation_graph_totality_audit.py",
         "test_compare_eid_parity_audit.py",
         "test_oracle_divergence_kernel.py",
+        "test_oracle_default_policy_parity.py",
         # NB: test_uk_oracle_divergence_parallel_run.py is intentionally NOT pinned
         # here — it matches the "uk" shard's test_uk_*.py glob, and the flat
         # fnmatch matcher has no per-shard exclusion, so a second explicit pin

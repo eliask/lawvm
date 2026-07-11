@@ -1,8 +1,7 @@
-"""``lawvm.core.oracle_divergence`` — the universal oracle-comparison kernel.
+"""``lawvm.core.oracle_divergence`` — the UK oracle-comparison kernel.
 
-Stream **G**: the jurisdiction-neutral "materialized-PIT vs oracle -> typed
-divergence" classification, extracted from the per-frontend oracle-check code into
-one core module. It is the *compare-plane* sibling of the apply-seam unification
+Stream **G**: the "materialized-PIT vs oracle -> typed divergence" classification.
+It is the *compare-plane* sibling of the apply-seam unification
 (``notes/CORE_PIPELINE_UNIFICATION_DESIGN.md`` §3.5): the kernel hoists the
 **typing algebra + vocabulary + partition discipline**; frontends keep supplying
 the **per-EID evidence** that decides which kind a given EID takes — exactly as
@@ -10,10 +9,36 @@ the **per-EID evidence** that decides which kind a given EID takes — exactly a
 *extraction* stays in the frontend (§3.3 / §3.5, "coverage **unit extraction**"
 stays in frontend).
 
-WHAT IS UNIVERSAL (hoisted here)
---------------------------------
-1. **The divergence-kind vocabulary.** Every frontend that scores a materialized
-   PIT against an oracle partitions each divergent EID into the same four kinds:
+SCOPE — WHO IMPORTS THIS (honest, not aspirational)
+---------------------------------------------------
+This kernel is imported by **UK alone** (``tools.uk_oracle_check`` — grep
+``classify_divergences``). It is NOT a shared code path across the eight frontends:
+Finland (``tools.oracle_check``), Estonia (``estonia.spec_ledger_adapter`` +
+``core.timeline_consistency``), EU (``eu.eu_oracle_divergence``), US
+(``us_federal.dry_run``) and NZ (``new_zealand.dry_run_oracle``) each reimplement
+oracle-divergence typing in their own vocabulary. What IS shared is the **default
+POLICY** this kernel encodes for the one ambiguous case below — and that policy is
+ENFORCED across frontends by ``tests/test_oracle_default_policy_parity.py`` (a
+cross-jurisdiction parity test), NOT by everyone calling this function.
+
+THE SHARED DEFAULT POLICY (the deliverable that parity enforces)
+----------------------------------------------------------------
+An EID/provision **present in the oracle but absent from replay** ("only-oracle")
+defaults to the **deterministic-gap class** — a lawvm-side replay miss to
+investigate (``deterministic_gap`` here; the neutral ``lawvm_wrong`` /
+``structural`` *falsifying* dispositions in the spec-ledger vocabulary) — and is
+promoted to the benign **manual-frontier class** (needs an owned claim / source
+ambiguous / out-of-scope; neutral ``missing_source``) ONLY behind an explicit
+evidence predicate. Defaulting only-oracle straight to a benign bucket is
+FAIL-OPEN: it launders a genuine replay miss into a "not our bug" cell. The parity
+test asserts every frontend honors this default or records a *documented, justified
+exception* (US / NZ carry one) — never a silent drift.
+
+THE TYPING ALGEBRA (as hoisted here)
+------------------------------------
+1. **The divergence-kind vocabulary.** This kernel (and, by the parity policy
+   above, every frontend's own scorer) partitions each divergent EID into the same
+   four kinds:
 
    * ``deterministic_gap`` — the oracle has a provision replay *should* have
      produced; replay missed it and a compile rejection/unwarranted op explains
@@ -79,12 +104,14 @@ from lawvm.core.phase_result import Observation
 
 
 class DivergenceKind(Enum):
-    """The universal oracle-comparison divergence vocabulary.
+    """The UK kernel's oracle-comparison divergence vocabulary.
 
-    The ``.value`` strings are the wire/bucket names every frontend already uses
-    (UK ``_classify_divergences`` buckets; the spec-ledger ``diagnosis`` surface),
+    The ``.value`` strings are the wire/bucket names UK's classifier uses
+    (``_classify_divergences`` buckets; the spec-ledger ``diagnosis`` surface),
     so the kernel's output keys are byte-identical to the legacy dict keys and a
-    re-expression is a drop-in replacement.
+    re-expression is a drop-in replacement. The other frontends type divergences
+    in their own vocabularies; the *default policy* (not this enum) is what the
+    cross-jurisdiction parity test holds shared (see the module docstring).
     """
 
     DETERMINISTIC_GAP = "deterministic_gap"
@@ -184,7 +211,8 @@ def classify_divergences(
 ) -> OracleDivergenceReport:
     """Type each divergent EID into exactly one :class:`DivergenceKind`.
 
-    The universal algebra (identical across jurisdictions):
+    The typing algebra (whose only-oracle default is the shared cross-jurisdiction
+    policy — see the module docstring — enforced by parity, not a shared call):
 
       * ``only_oracle`` -> ``deterministic_gap`` by default (oracle has it, replay
         missed it — the most actionable kind); promoted to ``manual_frontier``
