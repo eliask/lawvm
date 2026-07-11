@@ -67,6 +67,7 @@ from lawvm.ingest.simulacrum import (
     ConvergenceInfo,
     PageSimulacrum,
 )
+from lawvm.ingest.suspect_region import is_read_garbled
 
 # The Level-1 producer id stamped on ``prov.producer`` for a geom-lane node — a
 # DIFFERENT producer than the vision lane (``vision_struct.v1``), so a downstream
@@ -625,6 +626,21 @@ def born_digital_page(
             fallbacks.append(
                 GeomFallbackRegion(
                     node_path=path, reason=reason, bbox=bbox, line_indexes=line_indexes
+                )
+            )
+        elif reg.line_indexes and is_read_garbled(node.text):
+            # The geom lane span-copies the pdfium text layer and asserts it is LOSSLESS —
+            # but a corrupt-font / broken-CMap layer copies GARBLED glyphs faithfully. A
+            # garbled node breaks the lossless assumption, so it is SURFACED as a
+            # ``garble_suspect`` re-read candidate routed through the SAME §8/§9 vision
+            # re-read affordance as a low-confidence region — never a silent clean read.
+            # (Detection uses the unified ``suspect_region`` garble primitive.)
+            fallbacks.append(
+                GeomFallbackRegion(
+                    node_path=path,
+                    reason="garble_suspect",
+                    bbox=_region_bbox(page_elements, reg.line_indexes),
+                    line_indexes=reg.line_indexes,
                 )
             )
 

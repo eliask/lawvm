@@ -28,10 +28,16 @@ from lawvm.ingest.page_level import (
 from lawvm.ingest.simulacrum import PageSimulacrum
 from lawvm.ingest.struct_wire import STRUCT_COMMAND_SEPARATOR, parse_struct_wire
 from lawvm.ingest.suspect_region import (
+    DEFAULT_LEXICAL_PROFILE,
+    LexicalProfile,
     cross_reader_disagrees,
+    garble_signature,
+    is_pervasively_garbled,
+    is_read_garbled,
     lexical_implausibility,
     more_plausible,
     pdfium_region_text,
+    scan_char_class_garble,
 )
 from lawvm.ingest.visual import RegionRenderFailure, region_crop_locator, render_region_crop
 
@@ -74,6 +80,62 @@ def test_lexical_implausibility_fires_on_sludge_and_not_on_real_text() -> None:
     assert lexical_implausibility("epäjärjestelmällistyttämättömyydellänsäkäänköhän") == ()
     assert lexical_implausibility("tarkoituksenmukaisuusharkinta") == ()
     assert lexical_implausibility("Sen lisäksi, mitä 1 momentissa säädetään.") == ()
+
+
+def test_scan_char_class_garble_flags_corruption_and_clears_clean_prose() -> None:
+    # The unified char-class scanner (delegated to by fi_appendix_vision_screen.scan_garble):
+    # PUA, non-whitespace control, U+FFFD, mojibake-against-letter fire; clean prose + a
+    # whitespace control + a lone figure-‰ + a benign U+FFFE noncharacter do NOT.
+    assert scan_char_class_garble("value\x07here")  # BEL control
+    assert scan_char_class_garble("m�n")  # U+FFFD
+    assert scan_char_class_garble("mn")  # PUA
+    assert scan_char_class_garble("m‰n")  # mojibake against a letter
+    assert scan_char_class_garble("Sen lisäksi, mitä 1 momentissa säädetään.") == ()
+    assert scan_char_class_garble("a\tb\nc\rd\x85e") == ()  # whitespace controls are fine
+    assert scan_char_class_garble("verokanta 5 ‰") == ()  # lone figure-‰ is legitimate
+    assert scan_char_class_garble("koskevien￾asian") == ()  # U+FFFE noncharacter is benign here
+
+
+def test_is_read_garbled_uses_density_not_a_raw_hit_count() -> None:
+    # A whole read is garbled when char-class corruption DOMINATES the density, not merely
+    # when a hit exists: a large clean read with a few stray glyphs stays clean.
+    garbled = ("\x01\x02\x14\x0e\x05" * 40)  # ~all control glyphs
+    assert is_read_garbled(garbled)
+    assert is_pervasively_garbled(garbled)
+    # A long clean run with a handful of PUA glyphs at ~0 density is NOT flagged.
+    clean_big = ("sopimuksen ehtojen mukaisesti saatavien vakuutusten " * 200) + ""
+    assert not is_read_garbled(clean_big)
+    assert not is_pervasively_garbled(clean_big)
+    # A PARTIALLY garbled read (clean clause + one garbled region) is MATERIAL but NOT
+    # pervasive — so the boundary lets it flow on to be typed by the no-clause split.
+    partial = ("Eduskunnan päätöksen mukaisesti muutetaan lakia seuraavasti: " * 20) + (
+        "\x01\x02\x03\x04\x05\x06\x07\x08\x09a" * 5
+    )
+    assert is_read_garbled(partial)
+    assert not is_pervasively_garbled(partial)
+    # A tiny run with a single stray glyph never trips (min-hit guard).
+    assert not is_read_garbled("a\x01b")
+
+
+def test_garble_signature_unifies_char_class_and_lexical_with_injected_profile() -> None:
+    sig = garble_signature("value\x07here\x08now\x09")
+    assert sig.char_class_hits and "control_char" in sig.char_class_kinds
+    assert sig.scanned_chars > 0
+    # The lexical profile is INJECTED: an empty-bigram profile makes any long run
+    # implausible, proving the language surface is a parameter (EE/EU/US reuse).
+    empty_profile = LexicalProfile(
+        name="empty",
+        vowels=DEFAULT_LEXICAL_PROFILE.vowels,
+        common_bigrams=frozenset(),
+        vowel_ratio_low=0.12,
+        vowel_ratio_high=0.80,
+        longest_run_floor=26,
+        bigram_plausibility_floor=0.18,
+    )
+    long_run = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"  # 30 chars, all vowels
+    assert lexical_implausibility(long_run, profile=empty_profile)  # implausible under empty
+    # And the default FI+EN profile leaves ordinary spaced Finnish clean.
+    assert garble_signature("Sen lisäksi, mitä 1 momentissa säädetään.").clean
 
 
 def test_cross_reader_disagreement_fires_only_on_material_divergence() -> None:

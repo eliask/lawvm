@@ -119,6 +119,11 @@ from lawvm.core.clause_ast import (
 from lawvm.core.regex_safety import compile_classifier_regex
 from lawvm.core.source_document.extraction import SourceManifestation
 from lawvm.finland.op_equivalence import text_equivalence
+from lawvm.ingest.suspect_region import (
+    garble_reason,
+    is_pervasively_garbled,
+    is_read_garbled,
+)
 
 _FINLEX_FARCHIVE = "data/finlex.farchive"
 
@@ -193,8 +198,13 @@ def classify_no_operative_johtolause(reading_text: str) -> "tuple[str, str]":
     absolve every zero-op PDF as a benign annex — hiding genuine reader defects
     and language/pairing artifacts in the same bucket, which is exactly what let
     a "0 divergences" corpus certification read as all-clean over 316 statutes.
-    The reading text tells us which of four causes it is:
+    The reading text tells us which cause it is:
 
+      ``garble_suspect``        the reading text is materially GARBLED (a corrupt-font /
+                                broken-CMap text layer of control-code / PUA glyphs) —
+                                checked FIRST (it cannot yield a johtolause for any other
+                                reason); a first-class VISION re-read escalation candidate
+                                (unified ``ingest.suspect_region`` primitive), NOT benign.
       ``pdf_read_empty``        near-empty reading text — the reader recovered
                                 (almost) nothing; on the vision lane this is a
                                 reader/source DEFECT (or missing media), NOT
@@ -214,6 +224,11 @@ def classify_no_operative_johtolause(reading_text: str) -> "tuple[str, str]":
                                 table / body), no enacting johtolause — the
                                 genuine benign annex case.
     """
+    # A GARBLED layer is checked FIRST: a corrupt-font / broken-CMap read cannot yield a
+    # johtolause for any other reason, and it must NEVER be absolved as a benign annex —
+    # it is a first-class VISION re-read escalation candidate (unified garble primitive).
+    if is_read_garbled(reading_text):
+        return ("garble_suspect", garble_reason(reading_text))
     flat = re.sub(r"\s+", " ", reading_text or "").strip()
     n = len(flat)
     if n < _PDF_READ_EMPTY_MIN_CHARS:
@@ -288,6 +303,16 @@ class OperativeClauseNotFound(AmendmentIrCompareError):
 
     On the PDF side this is the ``pdf_incomplete`` stratum: the media PDF is an
     annex attachment, not the operative gazette page.
+    """
+
+
+class PdfGarbleSuspectError(AmendmentIrCompareError):
+    """The PDF text layer read back PERVASIVELY GARBLED (corrupt font / broken CMap).
+
+    Raised at the read boundary (:func:`pdf_reading_text`) so a corruption-dominated
+    read is never returned raw and never silently typed a benign zero-op annex.
+    :func:`compare_statute` catches it and types the statute ``garble_suspect`` — a
+    first-class vision re-read escalation candidate (un-accounted), NOT benign.
     """
 
 
@@ -982,6 +1007,14 @@ def pdf_reading_text(
         )
     native = text_layer_reading_text(data, max_pages)
     if native is not None:
+        # A DENSE text layer is not automatically CLEAN: a corrupt-font / broken-CMap
+        # statute layer emits control-code / PUA glyphs that pass the density gate, then
+        # yield no johtolause and would type a benign zero-op annex. Refuse to return a
+        # PERVASIVELY garbled layer raw — escalate it. (A partially-garbled read flows on
+        # and, if it yields no clause, is typed ``garble_suspect`` by the no-clause
+        # discriminator below.)
+        if is_pervasively_garbled(native):
+            raise PdfGarbleSuspectError(garble_reason(native))
         return native
     man = _manifestation(data, pdf_locator)
     if lane == "defacsimile":
@@ -1111,8 +1144,9 @@ class CompareResult:
     lang: str
     compare_status: str  # "compared" | "xml_frame_only" | "pdf_annex_only" |
     # "pdf_language_mismatch" | "appendix_only" | "pdf_read_empty" |
-    # "pdf_johtolause_unparsed" | "error"  (last two + read_empty are non-benign
-    # pathologies surfaced for adjudication, NOT clean benign strata)
+    # "pdf_johtolause_unparsed" | "garble_suspect" | "error"  (johtolause_unparsed,
+    # read_empty, garble_suspect + error are non-benign pathologies surfaced for
+    # adjudication / vision escalation, NOT clean benign strata)
     divergences: tuple[OpDivergence, ...]
     xml_op_count: int
     pdf_op_count: int
@@ -1220,6 +1254,12 @@ def compare_statute(
             pdf_spec, farchive, lang=lang, lane=lane, max_pages=max_pages, text_fn=pdf_text_fn
         )
         pdf_ast = _pdf_ast_from_reading_text(reading_text, loc.sid)
+    except PdfGarbleSuspectError as exc:
+        # A pervasively garbled text layer is a first-class VISION re-read escalation
+        # candidate — un-accounted, NEVER a benign zero-op annex and never a raw return.
+        return CompareResult(
+            loc.sid, loc.lang, "garble_suspect", (), len(xml_flat), 0, str(exc)
+        )
     except OperativeClauseNotFound as exc:
         # A zero-op PDF is NOT blanket-benign: discriminate read defect vs
         # wrong-language pairing vs suspect-unparsed vs genuine annex, so the

@@ -55,6 +55,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Callable, Dict, List, Optional, Tuple
 
+from lawvm.ingest.suspect_region import scan_char_class_garble
+
 # The injectable vision witness: SAME signature as
 # ``fi_appendix_structure.make_vision_region_reader`` — ``(page_num, bbox) -> str``,
 # returning the model's TINY gestalt answer for that rendered region.
@@ -81,33 +83,13 @@ class GarbleKind(Enum):
     MOJIBAKE = "mojibake_signature"
 
 
-# BMP + supplementary Private-Use-Area ranges (inclusive). Plane-15/16 PUA are the
-# supplementary blocks fonts stash custom glyphs in when the CMap is broken.
-_PUA_RANGES: Tuple[Tuple[int, int], ...] = (
-    (0xE000, 0xF8FF),
-    (0xF0000, 0xFFFFD),
-    (0x100000, 0x10FFFD),
-)
-
-# Substitution glyphs a broken CMap emits where a LETTER should be. ``‰`` (per-mille)
-# is LEGITIMATE Finnish next to a number ("5 ‰" promille), so the mojibake rule fires
-# only when such a glyph sits AGAINST a letter or in a run — never on a lone figure-‰.
-_MOJIBAKE_GLYPHS = frozenset("‰†‡")  # ‰ † ‡
-
 #: How many chars of context to keep around a hit (for the ``reason`` surfaced upstream).
 _CONTEXT_RADIUS = 8
 
-
-def _in_pua(cp: int) -> bool:
-    return any(lo <= cp <= hi for lo, hi in _PUA_RANGES)
-
-
-def _is_bad_control(ch: str) -> bool:
-    """A C0/C1 control char that is NOT whitespace (``\\t``/``\\n``/``\\r``/… are fine)."""
-    cp = ord(ch)
-    if not (0x00 <= cp <= 0x1F or 0x80 <= cp <= 0x9F):
-        return False
-    return not ch.isspace()  # str.isspace() covers \t \n \v \f \r and NEL (U+0085)
+#: The corruption-glyph vocabulary is defined ONCE, in ``ingest.suspect_region`` (the
+#: unified garble primitive); ``GarbleKind`` mirrors its string kinds for this screen's
+#: JSON surface. ``scan_garble`` DELEGATES the scan there rather than duplicating it.
+_GARBLE_KIND_BY_VALUE = {k.value: k for k in GarbleKind}
 
 
 @dataclass(frozen=True, slots=True)
@@ -168,25 +150,24 @@ def scan_garble(text: str) -> GarbleReport:
     glyph that sits immediately against a letter (``m‰n`` for ``män``) or forms a run of
     two or more such glyphs (a garbled word). A lone figure-adjacent ``‰`` ("5 ‰") is
     legitimate Finnish and is NOT flagged. Clean Finnish prose returns an empty report.
+
+    DELEGATES the actual character scan to the unified garble primitive
+    (``ingest.suspect_region.scan_char_class_garble``) — the ONE authority for the
+    char-class corruption signature (shared with the read-boundary garble detection) —
+    and only adds this screen's per-hit ``context`` window + ``GarbleKind`` enum surface.
     """
     src = text or ""
-    hits: List[GarbleHit] = []
-    for i, ch in enumerate(src):
-        cp = ord(ch)
-        if ch == "�":
-            hits.append(GarbleHit(GarbleKind.REPLACEMENT_CHAR, i, ch, cp, _context(src, i)))
-        elif _in_pua(cp):
-            hits.append(GarbleHit(GarbleKind.PRIVATE_USE_AREA, i, ch, cp, _context(src, i)))
-        elif _is_bad_control(ch):
-            hits.append(GarbleHit(GarbleKind.CONTROL_CHAR, i, ch, cp, _context(src, i)))
-        elif ch in _MOJIBAKE_GLYPHS:
-            prev_ch = src[i - 1] if i > 0 else ""
-            next_ch = src[i + 1] if i + 1 < len(src) else ""
-            against_letter = prev_ch.isalpha() or next_ch.isalpha()
-            in_run = prev_ch in _MOJIBAKE_GLYPHS or next_ch in _MOJIBAKE_GLYPHS
-            if against_letter or in_run:
-                hits.append(GarbleHit(GarbleKind.MOJIBAKE, i, ch, cp, _context(src, i)))
-    return GarbleReport(hits=tuple(hits))
+    hits = tuple(
+        GarbleHit(
+            _GARBLE_KIND_BY_VALUE[h.kind],
+            h.index,
+            h.char,
+            h.codepoint,
+            _context(src, h.index),
+        )
+        for h in scan_char_class_garble(src)
+    )
+    return GarbleReport(hits=hits)
 
 
 # --------------------------------------------------------------------------- #

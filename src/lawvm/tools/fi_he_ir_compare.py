@@ -42,15 +42,25 @@ empty — the same discipline as phase-1's ``xml_frame_only`` / ``pdf_annex_only
   * ``xml_parse_incomplete`` — an amendment-verb enacting clause is present but the
     trusted XML parser lowered it to zero ops (an XML-side parse gap, not a PDF defect);
     deferred, never charged to the PDF path.
-  * ``pdf_no_clause`` — the PDF reading text yielded no extractable enacting clause
-    (born-digital lakiehdotus beyond the page window, a scanned HE the geom lane returns
-    nothing for, or a corrupt-font text layer that renders to control codes — the last a
-    VISION re-OCR escalation candidate the ingest suspect-region / cross-reader machinery
-    owns, out of scope for this free-lane tool); deferred rather than forced into an
-    all-ops-missing diff.  A no-clause HE is RETRIED once with reading-fidelity recoveries
-    enabled (a text-layer glyph-substitution cite repair, a preceding-TOC-leader appendix
-    uncut, and an annex/chapter target) before it is deferred — those recoveries are gated
-    to this fallback so a normally-detected HE is byte-identical (0 collateral).
+  * PDF-no-clause SPLIT — the PDF reading text yielded no extractable enacting clause;
+    the CAUSE is now typed honestly (the old blanket ``pdf_no_clause``, which was
+    affirmatively labelled "never a genuine PDF defect", silently absolved a corrupt-font
+    read as clean). :func:`_classify_pdf_no_clause` discriminates:
+      - ``garble_suspect`` — a corrupt-font / broken-CMap text layer (renders to control
+        codes / PUA glyphs); a first-class VISION re-read ESCALATION candidate (typed
+        via the unified ``ingest.suspect_region`` garble primitive), UN-ACCOUNTED and
+        NEVER benign. A pervasively-garbled layer is refused at the read boundary
+        (:class:`HEReadGarbledError`) before it can masquerade as a clean no-clause read.
+      - ``pdf_amend_verb_unparsed`` — an enacting signature is present but no clause
+        segmented (a suspect reader/segmentation defect).
+      - ``pdf_no_amend_verb`` — no enacting directive in the read text (lakiehdotus
+        beyond the read window or a rationale-only proposal); deferred.
+      - ``pdf_page_window_exhausted`` — the read was page-truncated and the directive
+        lay beyond it (provable only at the farchive layer, from the page count).
+    The two non-garble no-clause causes are RETRIED once with reading-fidelity recoveries
+    (a text-layer glyph-substitution cite repair, a preceding-TOC-leader appendix uncut,
+    an annex/chapter target) before deferral — gated so a normally-detected HE is
+    byte-identical (0 collateral); a ``garble_suspect`` is NOT retried (escalates instead).
 
 The extraction here (enacting-clause span segmentation + per-section body payloads) is
 deliberately reusable toward the FULL-HE-structure goal (extracting every section — the
@@ -75,6 +85,11 @@ from lawvm.finland.he_branch_parser import (
 )
 from lawvm.finland.op_equivalence import text_equivalence
 from lawvm.ingest.page_elements import dehyphenate
+from lawvm.ingest.suspect_region import (
+    garble_reason,
+    is_pervasively_garbled,
+    is_read_garbled,
+)
 from lawvm.ingest.text_layer_repair import repair_glyph_substitution
 from lawvm.tools.fi_amendment_ir_compare import DIVERGENCE_KINDS, OpDivergence
 
@@ -93,15 +108,57 @@ _XML_WRAPPER_BODY_MAX_CHARS = 2000
 #: diff. Normal HEs are a few MB; this only catches the rare outlier.
 _MAX_HE_PDF_BYTES = 30_000_000
 
-#: Non-compared terminal strata (never a genuine PDF defect).
-_NON_COMPARED_STATUSES = (
+# --------------------------------------------------------------------------- #
+# Terminal (non-compared) status partition — the SINGLE authority.             #
+# --------------------------------------------------------------------------- #
+#
+# A non-compared result is NOT automatically benign. The old ``status != 'error'``
+# heuristic (and a ``pdf_no_clause`` bucket the corpus affirmatively labelled "never
+# a genuine PDF defect") silently absolved a corrupt-font read as clean. The partition
+# below is explicit and honest — benign is an ALLOWLIST, everything else is UN-ACCOUNTED.
+
+#: BENIGN non-compared strata: genuinely never a PDF read defect — the XML side has
+#: nothing to compare (a wrapper frame, a treaty/budget with no enactment, a new-statute
+#: enactment, an XML-side parse gap). Drives the ``benign`` display + the corpus benign count.
+_BENIGN_NONCOMPARED_STATUSES = (
     "xml_wrapper_only",
     "not_applicable",
     "new_statute_only",
     "xml_parse_incomplete",
-    "pdf_no_clause",
+)
+
+#: ESCALATION-PENDING strata: a first-class VISION re-read candidate. The deterministic
+#: free lane cannot read the layer; typed as an escalation candidate, NOT benign and NOT
+#: a silent raw return. UN-ACCOUNTED in the aggregate until a vision re-read resolves it.
+_ESCALATION_PENDING_STATUSES = ("garble_suspect",)
+
+#: PATHOLOGY / deferred strata: a potential reader/source defect or a resource deferral
+#: surfaced for adjudication — a no-clause read whose CAUSE is now typed (the split of
+#: the old blanket ``pdf_no_clause``), an oversize skip, or a hard error. NEVER folded
+#: into the clean count: a "0 divergences" pass with a nonzero pathology surface is NOT
+#: a clean certification.
+_PATHOLOGY_STATUSES = (
+    "pdf_no_amend_verb",
+    "pdf_amend_verb_unparsed",
+    "pdf_page_window_exhausted",
     "pdf_oversize",
     "error",
+)
+
+#: The three PDF-no-clause sub-causes the discriminator emits (honest reasons that
+#: replaced the single ``pdf_no_clause`` bucket). ``garble_suspect`` escalates; the other
+#: two are retried once with the reading-fidelity recoveries before being deferred.
+_PDF_NO_CLAUSE_STATUSES = (
+    "garble_suspect",
+    "pdf_no_amend_verb",
+    "pdf_amend_verb_unparsed",
+)
+_PDF_NO_CLAUSE_RETRYABLE = ("pdf_no_amend_verb", "pdf_amend_verb_unparsed")
+
+#: The full non-compared set (SINGLE authority; ``fi_he_ir_corpus`` imports this — no
+#: dead duplicate). Any status not in ``{"compared"} ∪ this`` is a bug.
+_NON_COMPARED_STATUSES = (
+    _BENIGN_NONCOMPARED_STATUSES + _ESCALATION_PENDING_STATUSES + _PATHOLOGY_STATUSES
 )
 
 
@@ -112,6 +169,18 @@ _NON_COMPARED_STATUSES = (
 
 class HEIrCompareError(Exception):
     """Base for all typed failures of the HE proposed-effect IR comparison."""
+
+
+class HEReadGarbledError(HEIrCompareError):
+    """The PDF text layer read back PERVASIVELY GARBLED (a corrupt-font / broken-CMap
+    layer that renders to control codes or PUA glyphs).
+
+    Raised at the read boundary (:func:`he_pdf_reading_text`) so a corruption-dominated
+    read is NEVER returned raw and NEVER silently collapses to a benign no-clause bucket.
+    :func:`compare_he_from_farchive` catches it and types the HE ``garble_suspect`` — a
+    first-class VISION re-read escalation candidate (un-accounted, escalation-pending),
+    not a clean read. Carries the deterministic garble reason for the typed detail.
+    """
 
 
 class HEReaderUnavailableError(HEIrCompareError):
@@ -2061,13 +2130,64 @@ def compare_he(
     result = _compare_pdf_witness(
         xml_bytes, reading_text, xml_flat, hid, branch_id, classify_fn, aggressive=False
     )
-    if result.compare_status == "pdf_no_clause":
+    # Retry the reading-fidelity recoveries only for a RECOVERABLE no-clause cause (a
+    # missing amendment verb / an unparsed enacting signature). A ``garble_suspect`` is
+    # NOT retried here — the aggressive text recoveries cannot repair a corrupt-font layer;
+    # it escalates to vision instead.
+    if result.compare_status in _PDF_NO_CLAUSE_RETRYABLE:
         recovered = _compare_pdf_witness(
             xml_bytes, reading_text, xml_flat, hid, branch_id, classify_fn, aggressive=True
         )
         if recovered.compare_status == "compared":
             return recovered
     return result
+
+
+def _classify_pdf_no_clause(reading_text: str) -> "tuple[str, str]":
+    """Discriminate the CAUSE of a PDF that yielded no extractable enacting clause.
+
+    The old blanket ``pdf_no_clause`` bucket was affirmatively labelled "never a genuine
+    PDF defect" — which silently absolved a corrupt-font read as clean. This splits it
+    into honest, PROVEN sub-causes read straight off the reading text:
+
+      ``garble_suspect``          the reading text is materially GARBLED (a corrupt-font /
+                                  broken-CMap layer) — a first-class VISION re-read
+                                  escalation candidate, NOT benign (checked FIRST: a
+                                  garbled layer cannot yield a clause for any other reason).
+      ``pdf_amend_verb_unparsed`` an enacting SIGNATURE is present (an amendment head verb
+                                  AND the ``seuraavasti:`` terminator) yet no clause
+                                  segmented — a SUSPECT reader/segmentation defect.
+      ``pdf_no_amend_verb``       no enacting directive found in the read text at all —
+                                  the lakiehdotus is beyond the read page window or the
+                                  proposal is rationale-only; deferred, not a read defect.
+
+    (A true ``pdf_page_window_exhausted`` — the read was PAGE-TRUNCATED, provable only at
+    the farchive layer — is re-typed there; the reading-text-only discriminator cannot
+    distinguish it from ``pdf_no_amend_verb`` and never falsely asserts it.)
+    """
+    if is_read_garbled(reading_text):
+        return ("garble_suspect", garble_reason(reading_text))
+    flat = re.sub(r"\s+", " ", reading_text or "").strip()
+    # PDF-witness no-clause DIAGNOSTICS: do an enacting signature (terminator + amendment
+    # head verb) exist at all? Reads ONLY the PDF reading text to TYPE the defect cause,
+    # never the XML and never a production op.
+    # lawvm-regex: witness_only PDF-witness no-clause defect diagnostic (terminator present?).
+    has_terminator = bool(_TERMINATOR_RE.search(flat))
+    # lawvm-regex: witness_only PDF-witness no-clause defect diagnostic (head verb present?).
+    has_head_verb = bool(_HE_HEAD_VERB_RE.search(flat))
+    if has_terminator and has_head_verb:
+        return (
+            "pdf_amend_verb_unparsed",
+            "an enacting signature (amendment head verb + 'seuraavasti:' terminator) is "
+            "present in the PDF reading text but no clause segmented — suspect reader/"
+            "segmentation defect, adjudicate (not forced into an all-missing diff)",
+        )
+    return (
+        "pdf_no_amend_verb",
+        "no enacting directive (amendment head verb + 'seuraavasti:' terminator) found in "
+        "the PDF reading text — lakiehdotus beyond the read page window or a rationale-only "
+        "proposal; deferred, not forced into an all-missing diff",
+    )
 
 
 def _compare_pdf_witness(
@@ -2099,16 +2219,8 @@ def _compare_pdf_witness(
     pdf_flat = flatten_branch_ops(tuple(pdf_ops))
 
     if not pdf_flat:
-        return HECompareResult(
-            hid,
-            branch_id,
-            "pdf_no_clause",
-            (),
-            len(xml_flat),
-            0,
-            "PDF reading text yielded no extractable enacting clause (lakiehdotus beyond "
-            "the page window or a scanned HE) — deferred, not forced into an all-missing diff",
-        )
+        status, detail = _classify_pdf_no_clause(reading_text)
+        return HECompareResult(hid, branch_id, status, (), len(xml_flat), 0, detail)
 
     divergences = diff_proposed_ops(xml_flat, pdf_flat)
     # Retype XML-absent op_extra blocks by their GOVERNING HEAD in the PDF reading text — a
@@ -2216,6 +2328,14 @@ def he_pdf_reading_text(
         raise HEIrCompareError(f"fi-he-ir-compare: HE main.pdf not found: {pdf_locator}")
     text_layer = _pdfium_text_layer(data, max_pages)
     if len(re.sub(r"\s+", "", text_layer)) >= _TEXT_LAYER_MIN_CHARS:
+        # A DENSE text layer is not automatically a CLEAN one: a corrupt-font / broken-
+        # CMap layer emits >400 control-code / PUA glyphs and would pass the length gate,
+        # then yield no clause and fall into a benign-looking no-clause bucket. Refuse to
+        # return a PERVASIVELY garbled layer raw — type it a vision-escalation candidate.
+        # (A PARTIALLY garbled read is NOT refused here: it flows on and, if it then
+        # yields no clause, is typed ``garble_suspect`` by the no-clause discriminator.)
+        if is_pervasively_garbled(text_layer):
+            raise HEReadGarbledError(garble_reason(text_layer))
         return text_layer
     # No usable text layer (scanned / image-only) → geom bbox reconstruction.
     man = SourceManifestation(
@@ -2286,6 +2406,12 @@ def compare_he_from_farchive(
         # ``error`` (a non-compared status an aggregate would read as clean). Absence of a
         # witness must never read as absence of divergence.
         raise
+    except HEReadGarbledError as exc:
+        # The PDF text layer is pervasively garbled (corrupt font / broken CMap). Type it
+        # a first-class VISION re-read escalation candidate — un-accounted, NEVER a benign
+        # no-clause bucket and NEVER a silent raw return. The actual vision re-read is a
+        # downstream lane; here the state is honestly ``garble_suspect`` / escalation-pending.
+        return HECompareResult(hid, branch_id, "garble_suspect", (), 0, 0, str(exc))
     except Exception as exc:  # a bad/unreadable PDF is a typed status, never a crash
         return HECompareResult(
             hid,
@@ -2296,7 +2422,7 @@ def compare_he_from_farchive(
             0,
             f"HE main.pdf read failed: {type(exc).__name__}: {exc}",
         )
-    return compare_he(
+    result = compare_he(
         xml_bytes,
         reading_text,
         he_year=he_year,
@@ -2304,6 +2430,39 @@ def compare_he_from_farchive(
         he_id=he_id,
         classify_fn=classify_fn,
     )
+    # PAGE-WINDOW is provable ONLY here (needs the page count vs ``max_pages``): if the
+    # read found no enacting directive AND the PDF had more pages than we read, the
+    # lakiehdotus genuinely sat beyond the window — re-type the reading-text-only
+    # ``pdf_no_amend_verb`` to the sharper ``pdf_page_window_exhausted``. Both are
+    # UN-ACCOUNTED; this only makes the deferral cause honest. (Default reads the whole
+    # doc, so this fires only for an explicitly page-capped sweep.)
+    if result.compare_status == "pdf_no_amend_verb" and pdf_bytes:
+        if _pdf_page_count(pdf_bytes) > max_pages:
+            return replace(
+                result,
+                compare_status="pdf_page_window_exhausted",
+                detail=(
+                    f"PDF has >{max_pages} pages (the read page window); no enacting "
+                    "directive within the window — lakiehdotus beyond the window, deferred"
+                ),
+            )
+    return result
+
+
+def _pdf_page_count(data: bytes) -> int:
+    """The PDF's page count (0 if the backend is unavailable). Holds the systemic lock."""
+    try:
+        import pypdfium2 as pdfium
+    except ImportError:
+        return 0
+    from lawvm.ingest.visual import PDFIUM_LOCK
+
+    with PDFIUM_LOCK:
+        pdf = pdfium.PdfDocument(data)
+        try:
+            return len(pdf)
+        finally:
+            pdf.close()
 
 
 def result_to_json(result: HECompareResult) -> dict:
@@ -2348,8 +2507,16 @@ def _print_result(result: HECompareResult) -> None:
     print(f"fi-he-ir-compare  {result.he_id}  ({result.branch_id})")
     print("=" * 78)
     if result.compare_status != "compared":
-        benign = result.compare_status != "error"
-        print(f"STATUS: {result.compare_status}  ({'benign/deferred' if benign else 'error'})")
+        # Benign is an EXPLICIT allowlist, NOT ``status != 'error'``: a garbled read
+        # (``garble_suspect``) or a typed no-clause defect is UN-ACCOUNTED / escalation-
+        # pending, never silently absolved as benign.
+        if result.compare_status in _BENIGN_NONCOMPARED_STATUSES:
+            label = "benign/deferred"
+        elif result.compare_status in _ESCALATION_PENDING_STATUSES:
+            label = "escalation-pending (vision re-read)"
+        else:
+            label = "pathology/un-accounted"
+        print(f"STATUS: {result.compare_status}  ({label})")
         print(f"  {result.detail}")
         if result.xml_op_count:
             print(f"  (XML→ops produced {result.xml_op_count} proposed ops)")

@@ -250,6 +250,19 @@ def test_classify_no_johtolause_empty_is_read_defect_not_annex() -> None:
     assert "near-empty" in detail
 
 
+def test_classify_no_johtolause_garbled_layer_is_vision_escalation_not_annex() -> None:
+    # A corrupt-font / broken-CMap statute text layer (control-code glyphs) that yields no
+    # johtolause is a first-class VISION re-read escalation candidate (``garble_suspect``),
+    # checked FIRST — NEVER absolved as a benign annex or typed a bare read-empty. Detected
+    # by the unified ingest.suspect_region garble primitive.
+    from lawvm.tools.fi_amendment_ir_compare import classify_no_operative_johtolause
+
+    garbled = ("\x01\x02\x14\x0e\x05\x07\x10\x08" * 40) + " reunatekstiä"
+    status, detail = classify_no_operative_johtolause(garbled)
+    assert status == "garble_suspect"
+    assert "corruption glyphs" in detail
+
+
 def test_classify_no_johtolause_sami_is_language_mismatch() -> None:
     # The fin/media PDF is sometimes the Northern Sámi manifestation — a pairing
     # artifact, typed distinct from a genuine annex (benign for FI-vs-FI).

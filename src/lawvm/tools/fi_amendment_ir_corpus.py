@@ -280,8 +280,15 @@ _BENIGN_NONCOMPARED_STATUSES = (
 # are potential reader/source DEFECTS surfaced for adjudication — NEVER folded
 # into the clean count. Keeping them visible is what stops a "0 divergences"
 # certification from silently absolving a broken read (see
-# ``fi_amendment_ir_compare.classify_no_operative_johtolause``).
-_PATHOLOGY_STATUSES = ("pdf_read_empty", "pdf_johtolause_unparsed", "error")
+# ``fi_amendment_ir_compare.classify_no_operative_johtolause``). ``garble_suspect``
+# is a corrupt-font / broken-CMap text layer — a first-class VISION re-read
+# escalation candidate (detected by the unified ``ingest.suspect_region`` primitive).
+_PATHOLOGY_STATUSES = (
+    "pdf_read_empty",
+    "pdf_johtolause_unparsed",
+    "garble_suspect",
+    "error",
+)
 # Back-compat alias (the full non-compared set).
 _NON_COMPARED_STATUSES = _BENIGN_NONCOMPARED_STATUSES + _PATHOLOGY_STATUSES
 

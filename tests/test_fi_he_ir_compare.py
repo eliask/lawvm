@@ -1028,7 +1028,10 @@ def test_compare_he_classify_fn_rejecting_all_yields_no_clause() -> None:
         he_number=99,
         classify_fn=lambda _w: JohtolauseTag.PERUSTELU,
     )
-    assert r.compare_status == "pdf_no_clause"
+    # The clean PDF DOES carry an enacting signature (verb + "seuraavasti:"); the LLM
+    # classifier just refused to segment it → the honest no-clause sub-cause is
+    # "amend verb present but unparsed", NOT a benign blanket bucket.
+    assert r.compare_status == "pdf_amend_verb_unparsed"
     # Contrast: the mechanical lane WOULD have compared it.
     assert compare_he(xml, _pdf_page(_CLAUSE), he_year=2020, he_number=99).compare_status == (
         "compared"
@@ -1503,11 +1506,67 @@ def test_new_statute_only_is_typed() -> None:
 
 
 def test_pdf_no_clause_deferred() -> None:
-    # XML has amendment ops but the PDF text carries no extractable enacting clause.
+    # XML has amendment ops but the PDF text carries NO enacting directive at all (no
+    # amendment head verb, no "seuraavasti:" terminator) → the honest ``pdf_no_amend_verb``
+    # sub-cause of the old blanket ``pdf_no_clause``. Deferred, never a benign clean read.
     xml = _he_xml(_CLAUSE)
     r = compare_he(xml, "VEROTAULUKKO tuote perusvero lisävero ilman lauseketta", he_year=2020, he_number=99)
-    assert r.compare_status == "pdf_no_clause"
+    assert r.compare_status == "pdf_no_amend_verb"
     assert r.xml_op_count >= 1
+
+
+def test_garbled_layer_typed_garble_suspect_not_benign() -> None:
+    # A corrupt-font / broken-CMap PDF text layer (control-code glyphs) that yields no
+    # clause MUST type ``garble_suspect`` — a first-class VISION re-read escalation
+    # candidate — NEVER a benign no-clause bucket and never a silent raw return.
+    xml = _he_xml(_CLAUSE)
+    garbled = ("\x01\x02\x14\x0e\x05" * 60) + " " + ("\x07\x10\x08\x12" * 60)
+    r = compare_he(xml, garbled, he_year=2020, he_number=99)
+    assert r.compare_status == "garble_suspect"
+    assert "corruption glyphs" in r.detail
+    # It is UN-ACCOUNTED: not in the benign allowlist, and never "compared".
+    from lawvm.tools.fi_he_ir_compare import (
+        _BENIGN_NONCOMPARED_STATUSES,
+        _ESCALATION_PENDING_STATUSES,
+    )
+    assert r.compare_status not in _BENIGN_NONCOMPARED_STATUSES
+    assert r.compare_status in _ESCALATION_PENDING_STATUSES
+
+
+def test_clean_born_digital_read_is_not_flagged_garble() -> None:
+    # 0 false positives: a clean enacting clause reads EXACT — the garble detection must
+    # not divert a clean born-digital read. (A stray odd glyph at ~0 density stays clean.)
+    xml = _he_xml(_CLAUSE)
+    clean = _pdf_page(_CLAUSE) + " sopimusvelvoitteista￾käsittelyssä"  # benign U+FFFE
+    r = compare_he(xml, clean, he_year=2020, he_number=99)
+    assert r.compare_status == "compared"
+    assert r.exact_equivalent
+
+
+def test_benign_is_an_explicit_allowlist_not_status_ne_error() -> None:
+    # The benign partition is an EXPLICIT allowlist: the escalation / pathology strata
+    # (which are NOT "error") must NOT be classed benign — killing the old
+    # ``status != 'error'`` heuristic that silently absolved a garbled read as benign.
+    from lawvm.tools.fi_he_ir_compare import (
+        _BENIGN_NONCOMPARED_STATUSES,
+        _ESCALATION_PENDING_STATUSES,
+        _NON_COMPARED_STATUSES,
+        _PATHOLOGY_STATUSES,
+    )
+
+    # garble_suspect and the no-clause defects are NON-error yet NON-benign.
+    for s in ("garble_suspect", "pdf_no_amend_verb", "pdf_amend_verb_unparsed"):
+        assert s != "error"
+        assert s not in _BENIGN_NONCOMPARED_STATUSES
+        assert s in _NON_COMPARED_STATUSES
+    # The three partitions are disjoint and cover the whole non-compared set.
+    assert not (set(_BENIGN_NONCOMPARED_STATUSES) & set(_ESCALATION_PENDING_STATUSES))
+    assert not (set(_BENIGN_NONCOMPARED_STATUSES) & set(_PATHOLOGY_STATUSES))
+    assert set(_NON_COMPARED_STATUSES) == (
+        set(_BENIGN_NONCOMPARED_STATUSES)
+        | set(_ESCALATION_PENDING_STATUSES)
+        | set(_PATHOLOGY_STATUSES)
+    )
 
 
 # --------------------------------------------------------------------------- #

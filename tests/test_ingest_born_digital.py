@@ -180,6 +180,30 @@ def test_numeric_heavy_run_flagged_table_candidate_but_text_kept() -> None:
         assert tok in joined
 
 
+def test_garbled_node_surfaces_garble_suspect_fallback_not_silent_lossless() -> None:
+    # A corrupt-font / broken-CMap region copies GARBLED glyphs faithfully; the geom
+    # lane's "text is lossless" claim does not hold, so a garbled node MUST surface a
+    # ``garble_suspect`` re-read candidate (routed to the vision §8 lane) — never a
+    # silent clean read. A clean page emits ZERO such fallbacks.
+    garbled = "\x01\x02\x14\x0e\x05\x07\x10\x08\x12\x0c\x04\x1a\x0d\x05\x08\x0f"
+    page = _page(
+        [
+            _pl("LAKI VALMISTEVEROSTA", 0, top=770, band="top"),
+            _pl(garbled + garbled, 1, top=740),
+            _pl(garbled + garbled, 2, top=724),
+        ]
+    )
+    result = born_digital_page(_man(), 1, page)
+    assert any(fb.reason == "garble_suspect" for fb in result.fallbacks)
+    assert any(
+        r == "geom_fallback:garble_suspect"
+        for r in result.simulacrum.convergence.gate_reasons
+    )
+    # A clean page emits ZERO garble fallbacks (no false flag).
+    clean = born_digital_page(_man(), 1, _clean_page())
+    assert not any(fb.reason == "garble_suspect" for fb in clean.fallbacks)
+
+
 def test_embedded_image_routes_to_image_region() -> None:
     img = EmbeddedImage(
         element=ImageElement(

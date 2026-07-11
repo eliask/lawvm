@@ -34,6 +34,10 @@ from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 from lawvm.finland.he_johtolause_tagger import FI_HE_JOHTOLAUSE_TAG_STORE
 from lawvm.tools.fi_he_ir_compare import (
+    _BENIGN_NONCOMPARED_STATUSES,
+    _ESCALATION_PENDING_STATUSES,
+    _NON_COMPARED_STATUSES,  # SINGLE authority (imported, not a dead duplicate)
+    _PATHOLOGY_STATUSES,
     HECompareResult,
     OpDivergence,
     compare_he_from_farchive,
@@ -41,16 +45,6 @@ from lawvm.tools.fi_he_ir_compare import (
 
 _DEFAULT_FARCHIVE = "data/fi_government_proposal.farchive"
 _AKN_PATH_PREFIX = "akn/fi/doc/government-proposal/"
-
-# The benign / non-compared terminal strata (never a genuine PDF defect).
-_NON_COMPARED_STATUSES = (
-    "xml_wrapper_only",
-    "not_applicable",
-    "new_statute_only",
-    "xml_parse_incomplete",
-    "pdf_no_clause",
-    "error",
-)
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,6 +127,16 @@ class HECorpusReport:
     payload_compared: int = 0
     payload_deferred: int = 0
     payload_skipped: int = 0
+    #: Honest partition of the NON-compared rows (a non-compared result is NOT
+    #: automatically benign). ``n_benign`` = the explicit allowlist (genuinely nothing
+    #: to compare); ``n_escalation_pending`` = vision re-read candidates (``garble_suspect``,
+    #: un-accounted); ``n_pathology`` = typed potential defects / deferrals (un-accounted).
+    #: A "0 divergences" pass with a nonzero escalation/pathology surface is NOT clean.
+    n_benign: int = 0
+    n_escalation_pending: int = 0
+    n_pathology: int = 0
+    escalation_counts: Dict[str, int] = field(default_factory=dict)
+    pathology_counts: Dict[str, int] = field(default_factory=dict)
 
     @property
     def exact_match_rate(self) -> float:
@@ -167,6 +171,9 @@ def aggregate_rows(rows: Sequence[HEDiffRow], *, worst_limit: int = 15) -> HECor
     }
     n_compared = n_exact = total_typed = 0
     payload_compared = payload_deferred = payload_skipped = 0
+    n_benign = n_escalation = n_pathology = 0
+    escalation_counts: Dict[str, int] = {}
+    pathology_counts: Dict[str, int] = {}
     for r in rows:
         status_counts[r.compare_status] = status_counts.get(r.compare_status, 0) + 1
         if r.compare_status == "compared":
@@ -180,6 +187,17 @@ def aggregate_rows(rows: Sequence[HEDiffRow], *, worst_limit: int = 15) -> HECor
             payload_compared += r.payload_compared
             payload_deferred += r.payload_deferred
             payload_skipped += r.payload_skipped
+        elif r.compare_status in _BENIGN_NONCOMPARED_STATUSES:
+            n_benign += 1
+        elif r.compare_status in _ESCALATION_PENDING_STATUSES:
+            n_escalation += 1
+            escalation_counts[r.compare_status] = escalation_counts.get(r.compare_status, 0) + 1
+        else:
+            # Anything non-compared and not benign is a potential defect / deferral —
+            # un-accounted, never folded into the clean count (includes any unrecognised
+            # status, so a new one can never silently read as benign).
+            n_pathology += 1
+            pathology_counts[r.compare_status] = pathology_counts.get(r.compare_status, 0) + 1
     return HECorpusReport(
         n_attempted=len(rows),
         status_counts=status_counts,
@@ -191,6 +209,11 @@ def aggregate_rows(rows: Sequence[HEDiffRow], *, worst_limit: int = 15) -> HECor
         payload_compared=payload_compared,
         payload_deferred=payload_deferred,
         payload_skipped=payload_skipped,
+        n_benign=n_benign,
+        n_escalation_pending=n_escalation,
+        n_pathology=n_pathology,
+        escalation_counts=escalation_counts,
+        pathology_counts=pathology_counts,
     )
 
 
@@ -374,7 +397,21 @@ def render_report(report: HECorpusReport) -> str:
     lines.append("")
     lines.append("## STATUS STRATA")
     for status in sorted(report.status_counts):
-        lines.append(f"  {status:<22} {report.status_counts[status]}")
+        lines.append(f"  {status:<26} {report.status_counts[status]}")
+    lines.append("")
+    lines.append("## HONEST ACCOUNTING (a non-compared row is NOT automatically benign)")
+    lines.append(
+        f"  verified(exact)={report.n_exact}  typed_divergence={report.n_compared - report.n_exact}"
+        f"  genuinely_benign={report.n_benign}"
+    )
+    lines.append(
+        f"  escalation_pending(vision re-read)={report.n_escalation_pending} "
+        f"{dict(sorted(report.escalation_counts.items()))}"
+    )
+    lines.append(
+        f"  pathology/un-accounted={report.n_pathology} "
+        f"{dict(sorted(report.pathology_counts.items()))}"
+    )
     lines.append("")
     lines.append("## OVER THE 'compared' SET (clean born-digital gold, XML has amendment ops)")
     lines.append(
@@ -419,6 +456,11 @@ def report_to_json(report: HECorpusReport) -> Dict[str, object]:
         "n_exact": report.n_exact,
         "exact_match_rate": report.exact_match_rate,
         "total_typed_divergences": report.total_typed_divergences,
+        "n_benign": report.n_benign,
+        "n_escalation_pending": report.n_escalation_pending,
+        "n_pathology": report.n_pathology,
+        "escalation_counts": report.escalation_counts,
+        "pathology_counts": report.pathology_counts,
         "bucket_counts": report.bucket_counts,
         "payload_compared": report.payload_compared,
         "payload_deferred": report.payload_deferred,
