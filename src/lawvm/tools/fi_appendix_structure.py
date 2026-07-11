@@ -58,8 +58,21 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 from lawvm.core.source_document.ir import SourceDocumentNode, SourceDocumentNodeKind
-from lawvm.finland.op_equivalence import text_equivalence
-from lawvm.tools.fi_appendix_vision_screen import scan_garble
+from lawvm.finland.op_equivalence import EncodingFold, text_equivalence
+from lawvm.ingest.corroboration import (
+    CorroborationReceipt,
+    EscalationKind,
+    EscalationPending,
+    corroborate,
+)
+from lawvm.ingest.llm_backends.prompt_fingerprint import prompt_fingerprint
+from lawvm.tools.fi_appendix_vision_screen import (
+    GestaltRegionReader,
+    RoutedVerdict,
+    ScreenRoute,
+    scan_garble,
+    screen_and_route,
+)
 
 _FINLEX_DEFAULT = "data/finlex.farchive"
 
@@ -1834,6 +1847,14 @@ class StatuteTableReport:
     #: the vision witness was not run or the appendix self-verified): render-based graduation of
     #: routed blocks whose independent vision read reproduces the pdfium witness (Docling outvoted).
     text_block_vision_verification: Optional[TextBlockVisionVerification] = None
+    #: CORROBORATE-edge receipts for cells where the vision read materially disagreed with the
+    #: deterministic grid (an open divergence) or a recall-screen suspect was confronted — each a
+    #: jurisdiction-neutral :class:`CorroborationReceipt` (agreed / verdict_changed). Empty on the
+    #: default (no-vision) path.
+    corroboration_receipts: Tuple[CorroborationReceipt, ...] = ()
+    #: RECALL-screen suspects: self-verified cells the gestalt screen flagged (clipped / incomplete
+    #: / implausible) as candidates to escalate. Empty unless a gestalt reader was injected.
+    screen_suspects: Tuple[RoutedVerdict, ...] = ()
 
     @property
     def text_block_route(self) -> Optional[str]:
@@ -1937,7 +1958,7 @@ class StatuteTableReport:
         return sum(1 for r in self.routes if r == ROUTE_STRUCTURAL_DISAGREEMENT)
 
     def to_jsonable(self) -> Dict[str, object]:
-        return {
+        payload: Dict[str, object] = {
             "locator": self.locator,
             "artifact_digest": self.artifact_digest,
             "n_pages": self.n_pages,
@@ -2019,6 +2040,23 @@ class StatuteTableReport:
             },
             "note": self.note,
         }
+        # CONDITIONAL keys (byte-identical default path): only present when the vision/screen
+        # lanes actually produced a receipt / suspect, so a no-vision run's JSON is unchanged.
+        if self.corroboration_receipts:
+            payload["corroboration"] = {
+                "n_receipts": len(self.corroboration_receipts),
+                "n_agreed": sum(1 for r in self.corroboration_receipts if r.agreed),
+                "n_verdict_changed": sum(
+                    1 for r in self.corroboration_receipts if r.verdict_changed
+                ),
+                "receipts": [r.to_json() for r in self.corroboration_receipts],
+            }
+        if self.screen_suspects:
+            payload["recall_screen"] = {
+                "n_suspects": len(self.screen_suspects),
+                "suspects": [s.to_jsonable() for s in self.screen_suspects],
+            }
+        return payload
 
 
 def _page_texts(pdf_bytes: bytes) -> List[str]:
@@ -2583,6 +2621,395 @@ def make_region_crop_digester(
     return crop_digest
 
 
+# --------------------------------------------------------------------------- #
+# CONSUMED DERIVED-IR SINK for the verified structured appendix tables.         #
+# --------------------------------------------------------------------------- #
+#
+# ``write_tables_jsonl`` is a REPORT dead-end — a flat dump nothing reads back. The verified
+# structured-IR (every table the deterministic lane self-verified EXACT, or the vision third-
+# witness GRADUATED to ``exact_visual``) is the actual phase-3 PRODUCT and must land in a
+# CONSUMABLE, content-addressed store the structured-law corpus can surface, not a throwaway
+# JSONL. This sink mirrors :class:`VisionReadStore` (a sibling farchive) and the ``parsed_store``
+# determinism-firewall discipline: a derived table enters ONLY as a self-describing record keyed
+# by ``(artifact_digest, table_index, CODE FINGERPRINT)``. The code fingerprint folds the
+# exactness-quotient contract (the closed ``EncodingFold`` vocabulary — the folds that decide
+# whether a cell VERIFIES) via the canonical :func:`prompt_fingerprint`, so a quotient edit (which
+# could change WHICH tables verify) re-keys every record without overwriting the old — a versioned,
+# auditable derived-IR store, never a stale verified table.
+
+#: Default sibling derived-IR store path (gitignored; mirrors ``FI_VISION_READ_STORE``).
+FI_DERIVED_IR_STORE = "data/fi_appendix_structured_ir.farchive"
+
+#: Bump when the row SHAPE / key construction changes (independently of the quotient fingerprint).
+_DERIVED_IR_SCHEMA = "appendix_structured_table.v1"
+
+
+def derived_ir_fingerprint() -> str:
+    """Fingerprint the derived-IR contract: the exactness quotient + this sink's grade vocabulary.
+
+    Folds the closed ``EncodingFold`` quotient vocabulary (the legally-inert folds that decide
+    whether a cell VERIFIES) and the grade vocabulary through the canonical
+    :func:`prompt_fingerprint`, so any change to the quotient — which could change which tables
+    graduate to exact — MECHANICALLY re-keys every derived record (no stale verified IR served
+    under a superseded contract). Reinvents nothing (the determinism-firewall key discipline)."""
+    return prompt_fingerprint(
+        _DERIVED_IR_SCHEMA,
+        GRADE_SELF_VERIFIED,
+        GRADE_EXACT_VISUAL,
+        vocab=tuple(f.value for f in EncodingFold),
+    )
+
+
+def derived_table_key(
+    *, artifact_digest: str, table_index: int, code_fingerprint: str
+) -> str:
+    """Content-address a derived table by (schema, artifact-digest, table-index, code-fingerprint).
+
+    Each component is length-prefixed then NUL-joined so no two distinct tuples collide on one
+    digest. Pure — the SAME table under the SAME quotient contract always yields the SAME key (a
+    re-run is a HIT, never a duplicate)."""
+    h = hashlib.sha256()
+    for part in (
+        _DERIVED_IR_SCHEMA,
+        artifact_digest or ("0" * 64),
+        str(table_index),
+        code_fingerprint,
+    ):
+        b = part.encode("utf-8")
+        h.update(str(len(b)).encode("ascii"))
+        h.update(b"\x00")
+        h.update(b)
+    return h.hexdigest()
+
+
+def derived_table_locator(key: str) -> str:
+    """Content-addressed store locator for a derived-table key (per-digest record)."""
+    return f"fi_appendix_structured_table/{key}"
+
+
+@dataclass(frozen=True, slots=True)
+class DerivedTableRow:
+    """The persisted VERIFIED structured-table record — the TYPED carrier crossing the sink seam.
+
+    Field names are exactly the persisted JSON keys. ``grade`` is :data:`GRADE_SELF_VERIFIED`
+    (deterministic exact) or :data:`GRADE_EXACT_VISUAL` (vision third-witness graduated).
+    ``cells`` is the consumable rows×cols cell grid (geometry dropped — the structured content)."""
+
+    artifact_digest: str
+    locator: str
+    page_num: int
+    table_index: int
+    n_rows: int
+    n_cols: int
+    grade: str
+    caption: str
+    cells: Tuple[Dict[str, object], ...]
+    code_fingerprint: str
+    schema_version: str
+    created_at: str
+
+    def to_json(self) -> Dict[str, object]:
+        return {
+            "artifact_digest": self.artifact_digest,
+            "locator": self.locator,
+            "page_num": self.page_num,
+            "table_index": self.table_index,
+            "n_rows": self.n_rows,
+            "n_cols": self.n_cols,
+            "grade": self.grade,
+            "caption": self.caption,
+            "cells": [dict(c) for c in self.cells],
+            "code_fingerprint": self.code_fingerprint,
+            "schema_version": self.schema_version,
+            "created_at": self.created_at,
+        }
+
+    @staticmethod
+    def from_json(obj: Any) -> "DerivedTableRow":
+        raw_cells = obj.get("cells") or []
+        return DerivedTableRow(
+            artifact_digest=str(obj["artifact_digest"]),
+            locator=str(obj["locator"]),
+            page_num=int(obj["page_num"]),
+            table_index=int(obj["table_index"]),
+            n_rows=int(obj["n_rows"]),
+            n_cols=int(obj["n_cols"]),
+            grade=str(obj["grade"]),
+            caption=str(obj["caption"]),
+            cells=tuple(
+                {
+                    "row": int(c["row"]),
+                    "col": int(c["col"]),
+                    "text": str(c["text"]),
+                    "is_header": bool(c["is_header"]),
+                }
+                for c in raw_cells
+            ),
+            code_fingerprint=str(obj["code_fingerprint"]),
+            schema_version=str(obj["schema_version"]),
+            created_at=str(obj["created_at"]),
+        )
+
+
+class DerivedTableStore:
+    """A farchive of content-addressed VERIFIED structured appendix tables (the consumed sink).
+
+    The reader side ``write_tables_jsonl`` never had: :meth:`read_all` surfaces the verified
+    structured-IR back into the structured-law corpus. Sibling to ``data/fi_parsed_ir.farchive``
+    / the vision-read store; the reader stays a plain method so the roundtrip is hermetically
+    testable with a tmp store."""
+
+    def __init__(self, path: str = FI_DERIVED_IR_STORE) -> None:
+        from farchive import Farchive
+
+        self._fa = Farchive(path)
+        self.path = path
+
+    def get(self, key: str) -> Optional[DerivedTableRow]:
+        """Read a persisted derived-table row by key (``None`` on miss)."""
+        span = self._fa.resolve(derived_table_locator(key))
+        if span is None:
+            return None
+        data = self._fa.read(span.digest)
+        if data is None:
+            return None
+        return DerivedTableRow.from_json(json.loads(data.decode("utf-8")))
+
+    def put(self, key: str, row: DerivedTableRow) -> str:
+        """Persist one derived-table row (deterministic sorted-keys JSON); returns the blob digest."""
+        return self._fa.store(
+            derived_table_locator(key),
+            json.dumps(row.to_json(), ensure_ascii=False, sort_keys=True).encode("utf-8"),
+            storage_class="fi_appendix_structured_table",
+            metadata={"grade": row.grade, "artifact_digest": row.artifact_digest},
+        )
+
+    def read_all(self) -> Tuple[DerivedTableRow, ...]:
+        """READER: surface every persisted verified table (the structured-law corpus view).
+
+        Enumerates the sink's locators, rehydrates each row, and returns them sorted by
+        ``(artifact_digest, table_index)`` for a deterministic corpus view — the consumed side
+        that makes the verified structured-IR readable BACK, not a throwaway dump."""
+        rows: List[DerivedTableRow] = []
+        for loc in self._fa.locators():
+            if not loc.startswith("fi_appendix_structured_table/"):
+                continue
+            span = self._fa.resolve(loc)
+            if span is None:
+                continue
+            data = self._fa.read(span.digest)
+            if data is None:
+                continue
+            rows.append(DerivedTableRow.from_json(json.loads(data.decode("utf-8"))))
+        return tuple(sorted(rows, key=lambda r: (r.artifact_digest, r.table_index)))
+
+    def close(self) -> None:
+        self._fa.close()
+
+
+def _derived_cells(table: StructuredTable) -> Tuple[Dict[str, object], ...]:
+    """The consumable cell grid of a verified table (row/col/text/is_header; geometry dropped)."""
+    return tuple(
+        {"row": c.row, "col": c.col, "text": c.text, "is_header": c.is_header}
+        for c in table.cells
+    )
+
+
+def eligible_derived_tables(
+    report: "StatuteTableReport",
+) -> Tuple[Tuple[StructuredTable, str], ...]:
+    """The (table, grade) pairs eligible for the derived-IR sink.
+
+    A ``self_verified`` table (deterministic exact, structurally sane) lands at grade
+    :data:`GRADE_SELF_VERIFIED`; a ``vision_escalate`` table whose EVERY routed cell the witness
+    read graduated to exact_visual (``all_graduated`` with the full routed set read) lands at
+    :data:`GRADE_EXACT_VISUAL` — the whole table is now verified. A topology-wrong / open /
+    deferred / partially-read table is NOT eligible (never a half-verified table into the corpus)."""
+    vv_by_index = {vv.table_index: vv for vv in report.vision_verifications}
+    out: List[Tuple[StructuredTable, str]] = []
+    for table, route in zip(report.tables, report.routes, strict=True):
+        if route == ROUTE_SELF_VERIFIED:
+            out.append((table, GRADE_SELF_VERIFIED))
+        elif route == ROUTE_VISION_ESCALATE:
+            vv = vv_by_index.get(table.table_index)
+            if (
+                vv is not None
+                and vv.n_read > 0
+                and vv.n_read == vv.n_routed
+                and vv.all_graduated
+            ):
+                out.append((table, GRADE_EXACT_VISUAL))
+    return tuple(out)
+
+
+def write_derived_tables(
+    report: "StatuteTableReport", store: DerivedTableStore, *, code_fingerprint: str
+) -> int:
+    """Persist every SINK-ELIGIBLE verified table into the derived-IR store; returns the count.
+
+    The consumed side ``write_tables_jsonl`` never had: self_verified + fully-vision-graduated
+    tables land content-addressed (keyed by artifact_digest + table_index + the quotient-contract
+    fingerprint) so the structured-law corpus reads verified IR BACK."""
+    from datetime import datetime, timezone
+
+    n = 0
+    for table, grade in eligible_derived_tables(report):
+        key = derived_table_key(
+            artifact_digest=report.artifact_digest,
+            table_index=table.table_index,
+            code_fingerprint=code_fingerprint,
+        )
+        store.put(
+            key,
+            DerivedTableRow(
+                artifact_digest=report.artifact_digest,
+                locator=table.locator,
+                page_num=table.page_num,
+                table_index=table.table_index,
+                n_rows=table.n_rows,
+                n_cols=table.n_cols,
+                grade=grade,
+                caption=table.caption,
+                cells=_derived_cells(table),
+                code_fingerprint=code_fingerprint,
+                schema_version=_DERIVED_IR_SCHEMA,
+                created_at=datetime.now(tz=timezone.utc).isoformat(),
+            ),
+        )
+        n += 1
+    return n
+
+
+# --------------------------------------------------------------------------- #
+# CORROBORATE-EDGE tie-in: a disagreeing vision-verified cell → a typed RECEIPT. #
+# --------------------------------------------------------------------------- #
+#
+# Where the vision third-witness READ a routed cell and corroborated NEITHER text decoder (an
+# ``open_divergence``), the deterministic grid and the independent vision read materially disagree
+# — exactly the CORROBORATE edge (#2). Rather than a bespoke appendix record, the disagreement
+# rides the SAME jurisdiction-neutral ``ingest.corroboration`` types: each is an
+# ``EscalationPending`` (kind PAYLOAD_DISPUTE — two witnesses proposed different body text for a
+# matched cell) confronted against the ALREADY-obtained blind vision read via ``corroborate``,
+# whose canonical primitives decide ``agreed`` / ``verdict_changed``. The receipt is the record; it
+# never itself asserts a graduation.
+
+#: Stable witness-prompt tag folded into every appendix corroboration receipt's fingerprint (a
+#: contract edit re-keys via ``prompt_fingerprint``; the region-reader model id is folded in too).
+_APPENDIX_VISION_WITNESS_TAG = "fi_appendix_vision_region_read"
+
+
+def _cell_unit_id(locator: str, table_index: int, row: int, col: int) -> str:
+    """Opaque per-cell unit id for a corroboration pending (the mechanism never parses it)."""
+    return f"{locator}#t{table_index}r{row}c{col}"
+
+
+def _corroboration_receipts(
+    vision_verifications: Sequence[TableVisionVerification],
+    screen_pendings: Sequence[Tuple[EscalationPending, str]],
+    *,
+    witness_model: str,
+) -> Tuple[CorroborationReceipt, ...]:
+    """Emit a corroboration RECEIPT for every disagreeing cell — the corroborate edge.
+
+    Two disagreement sources ride ONE edge: (a) each vision ``open_divergence`` (the witness read
+    the cell but corroborated neither text decoder) — its candidate is the Docling text and the
+    confronting read is the already-obtained blind vision read; and (b) each recall-screen suspect
+    ``(pending, vision_read)`` (a self-verified cell the gestalt screen flagged, confronted against
+    a fresh vision read). Both are confronted through :func:`corroborate`, whose canonical
+    primitives decide agreed/verdict_changed — no hand-rolled comparison. Returns the receipts (the
+    statistics substrate the adjudicator consumes; an unreadable confront yields no receipt)."""
+    receipts: List[CorroborationReceipt] = []
+    pendings: List[Tuple[EscalationPending, str]] = []
+    for vv in vision_verifications:
+        for d in vv.open_divergences:
+            pendings.append(
+                (
+                    EscalationPending(
+                        unit_id=_cell_unit_id(vv.locator, vv.table_index, d.row, d.col),
+                        kind=EscalationKind.PAYLOAD_DISPUTE,
+                        reason=(
+                            f"appendix_vision_open:{d.descriptor}"
+                            if d.descriptor
+                            else "appendix_vision_open"
+                        ),
+                        region=f"page={vv.page_num},table={vv.table_index},cell=({d.row},{d.col})",
+                        candidate_text=d.docling_text,
+                    ),
+                    d.witness_text,  # the blind vision read already obtained (open bucket carries it)
+                )
+            )
+    pendings.extend(screen_pendings)
+    for pending, vision_read in pendings:
+        receipt = corroborate(
+            pending,
+            vision_reader=lambda _p, _v=vision_read: _v,
+            witness_prompt=_APPENDIX_VISION_WITNESS_TAG,
+            witness_model=witness_model,
+        )
+        if receipt is not None:
+            receipts.append(receipt)
+    return tuple(receipts)
+
+
+def _screen_recall_suspects(
+    tables: Sequence[StructuredTable],
+    verifications: Sequence[TableVerification],
+    gestalt_region_reader: GestaltRegionReader,
+    vision_region_reader: Optional[
+        Callable[[int, Tuple[float, float, float, float]], VisionReadResult]
+    ],
+) -> Tuple[Tuple[RoutedVerdict, ...], Tuple[Tuple[EscalationPending, str], ...]]:
+    """RECALL pre-filter: gestalt-screen the SELF-VERIFIED cells → suspects + corroborate pendings.
+
+    The precision gate (:func:`verify_table_exact` + :func:`verify_tables_vision`) only re-reads
+    DETERMINISTICALLY-divergent cells; a cell BOTH text witnesses agree on but that looks broken /
+    incomplete (a clipped column, a dropped row — the gestalt-completeness axis the deterministic
+    char-class scan cannot see) would silently pass. So over an INJECTED gestalt reader this screens
+    each self-verified cell and returns the NON-CLEAN routed verdicts (the recall suspects), plus —
+    when a transcribing ``vision_region_reader`` is available — a corroborate ``EscalationPending``
+    per suspect paired with a fresh blind vision read, so the suspect ESCALATES onto the SAME
+    corroborate edge. Opt-in: the default path injects no gestalt reader (byte-identical)."""
+    suspects: List[RoutedVerdict] = []
+    pendings: List[Tuple[EscalationPending, str]] = []
+    for table, det in zip(tables, verifications, strict=True):
+        divergent = {(d.row, d.col) for d in det.divergences}
+        for cell in table.cells:
+            if cell.bbox is None or (cell.row, cell.col) in divergent:
+                continue  # only self-verified (exact) cells get the recall screen
+            routed = screen_and_route(
+                cell.text,
+                locator=table.locator,
+                unit_ref=f"t{table.table_index}r{cell.row}c{cell.col}",
+                page_num=table.page_num,
+                bbox=cell.bbox,
+                gestalt_reader=gestalt_region_reader,
+            )
+            if routed.route is ScreenRoute.CLEAN:
+                continue
+            suspects.append(routed)
+            if vision_region_reader is not None:
+                read = _as_vision_read(vision_region_reader(table.page_num, cell.bbox))
+                if not read.abstain:
+                    pendings.append(
+                        (
+                            EscalationPending(
+                                unit_id=_cell_unit_id(
+                                    table.locator, table.table_index, cell.row, cell.col
+                                ),
+                                kind=EscalationKind.GARBLE_READ,
+                                reason=f"appendix_screen:{routed.route.value}:{routed.descriptor}",
+                                region=(
+                                    f"page={table.page_num},table={table.table_index},"
+                                    f"cell=({cell.row},{cell.col})"
+                                ),
+                                candidate_text=cell.text,
+                            ),
+                            read.text,
+                        )
+                    )
+    return tuple(suspects), tuple(pendings)
+
+
 def _docling_document(pdf_bytes: bytes, *, name: str) -> Any:
     """Convert PDF bytes → a ``DoclingDocument`` on CPU (lazy import).
 
@@ -2628,6 +3055,9 @@ def structure_statute_pdf(
         Callable[[int, Tuple[float, float, float, float]], VisionReadResult]
     ] = None,
     vision_max_cells: Optional[int] = None,
+    gestalt_region_reader: Optional[GestaltRegionReader] = None,
+    derived_store: Optional[DerivedTableStore] = None,
+    vision_model: str = "",
 ) -> StatuteTableReport:
     """Docling-structure ONE appendix PDF into tables + fidelity metrics.
 
@@ -2637,12 +3067,14 @@ def structure_statute_pdf(
     text layer, cross-witness numeric agreement vs pypdfium2, and per-table
     structural sanity.
 
-    When ``vision_region_reader`` is supplied (the injectable render-based witness),
-    the ``vision_escalate`` stratum — tables the deterministic pdfium witness could
-    not reconcile with Docling — is additionally adjudicated by the vision THIRD-WITNESS
-    tie-break: each routed cell's isolated bbox region is re-read and GRADUATED to exact
-    iff the vision read reproduces the pdfium witness (Docling outvoted by two independent
-    witnesses), guarded out on sparse/scanned PDFs where vision hallucinates.
+    This is the docling/pdfium PRODUCER seam; every verification / vision / sink /
+    corroborate step is delegated to the PURE :func:`build_statute_report` (hermetically
+    testable with synthetic tables + a scripted reader). When ``vision_region_reader`` is
+    supplied (the injectable render-based witness), the ``vision_escalate`` stratum — tables
+    the deterministic pdfium witness could not reconcile with Docling — is additionally
+    adjudicated by the vision THIRD-WITNESS tie-break; when a ``derived_store`` is supplied the
+    self_verified / exact_visual tables are persisted into the consumed derived-IR sink; when a
+    ``gestalt_region_reader`` is supplied the self-verified cells are recall-screened.
     """
     from lawvm.ingest.llm_backends.docling_producer import (
         _docling_document_to_page_views,
@@ -2677,42 +3109,115 @@ def structure_statute_pdf(
     # TEXT-BLOCK LANE: a 0-grid appendix with a real text layer is structured into ordered
     # verbatim text blocks and exact-verified — so it is no longer silently dropped. Sparse/
     # scanned PDFs keep their existing text_layer_sparse typed status (they need vision/OCR).
+    # The DETERMINISTIC verification is done here (needs pdf_bytes); the vision tie-break is
+    # delegated to build_statute_report.
     text_blocks: Tuple[StructuredTextBlock, ...] = ()
     text_block_verification: Optional[TextBlockVerification] = None
-    text_block_vision_verification: Optional[TextBlockVisionVerification] = None
     if should_run_text_block_lane(n_tables=len(tables), mean_text_chars=mean_chars):
         text_blocks = tuple(
             structured_text_block_from_node(node, locator=locator, block_index=i)
             for i, node in enumerate(block_nodes)
         )
         text_block_verification = _verify_text_blocks_against_pdfium(pdf_bytes, text_blocks)
-        # TEXT-BLOCK VISION third-witness tie-break: the SAME graduation the table lane runs,
-        # over the escalated blocks — opt-in (only when a vision reader is injected), so the
-        # default path stays firewall-deterministic. Shares the ``vision_max_cells`` budget
-        # (the table and text-block lanes never both spend on one PDF).
-        if vision_region_reader is not None:
-            text_block_vision_verification = verify_text_blocks_vision(
-                text_blocks,
-                text_block_verification,
-                vision_region_reader,
-                born_digital=mean_chars >= _MIN_TEXT_LAYER_CHARS,
-                max_cells=vision_max_cells,
-            )
+
+    verifications = _verify_tables_against_pdfium(pdf_bytes, tuple(tables))
+
+    return build_statute_report(
+        locator=locator,
+        artifact_digest=artifact_digest,
+        page_texts=page_texts,
+        tables=tuple(tables),
+        verifications=verifications,
+        text_blocks=text_blocks,
+        text_block_verification=text_block_verification,
+        vision_region_reader=vision_region_reader,
+        vision_max_cells=vision_max_cells,
+        gestalt_region_reader=gestalt_region_reader,
+        derived_store=derived_store,
+        vision_model=vision_model,
+    )
+
+
+def build_statute_report(
+    *,
+    locator: str,
+    artifact_digest: str,
+    page_texts: Sequence[str],
+    tables: Sequence[StructuredTable],
+    verifications: Sequence[TableVerification],
+    text_blocks: Sequence[StructuredTextBlock] = (),
+    text_block_verification: Optional[TextBlockVerification] = None,
+    vision_region_reader: Optional[
+        Callable[[int, Tuple[float, float, float, float]], VisionReadResult]
+    ] = None,
+    vision_max_cells: Optional[int] = None,
+    gestalt_region_reader: Optional[GestaltRegionReader] = None,
+    derived_store: Optional[DerivedTableStore] = None,
+    vision_model: str = "",
+) -> StatuteTableReport:
+    """Assemble a :class:`StatuteTableReport` from ALREADY-produced tables + deterministic
+    verifications — the PURE verification / vision / sink / corroborate core of the appendix lane.
+
+    Separated from the docling/pdfium producer (:func:`structure_statute_pdf`) so the whole vision
+    + derived-IR-sink + corroborate-edge wiring is hermetically drivable with SYNTHETIC tables and
+    a SCRIPTED region reader — no docling, no PDF, no live backend. Steps:
+
+      * per-table structural sanity + the vision THIRD-WITNESS tie-break over the ``vision_escalate``
+        stratum (when a ``vision_region_reader`` is injected), plus the text-block vision tie-break;
+      * the RECALL screen over self-verified cells (when a ``gestalt_region_reader`` is injected):
+        gestalt-flagged suspects that ESCALATE onto the corroborate edge;
+      * the CORROBORATE-edge receipts for cells where the vision read disagreed with the grid (open
+        divergences) or a screen suspect was confronted — the same ``ingest.corroboration`` types;
+      * the CONSUMED derived-IR sink (when a ``derived_store`` is supplied): every self_verified /
+        exact_visual table persisted content-addressed for the structured-law corpus.
+
+    With NO readers / store this is byte-identically the old deterministic report."""
+    n_pages = len(page_texts)
+    mean_chars = (
+        sum(len(t.strip()) for t in page_texts) / n_pages if n_pages else 0.0
+    )
+    born_digital = mean_chars >= _MIN_TEXT_LAYER_CHARS
 
     sanities = tuple(structural_sanity(t) for t in tables)
-    verifications = _verify_tables_against_pdfium(pdf_bytes, tables)
     vision_verifications: Tuple[TableVisionVerification, ...] = ()
+    text_block_vision_verification: Optional[TextBlockVisionVerification] = None
     if vision_region_reader is not None:
         vision_verifications = verify_tables_vision(
             tables,
             verifications,
             vision_region_reader,
-            born_digital=mean_chars >= _MIN_TEXT_LAYER_CHARS,
+            born_digital=born_digital,
             max_cells=vision_max_cells,
             # WIRE 2: a topology-wrong dual-merge table is skipped by the vision tie-break so it
             # cannot graduate topology-wrong (it is typed structural_disagreement at report level).
             structural_disagreement=[s.structural_disagreement for s in sanities],
         )
+        if text_block_verification is not None:
+            # TEXT-BLOCK VISION third-witness tie-break: the SAME graduation over escalated blocks,
+            # sharing the ``vision_max_cells`` budget (table + text-block lanes never both spend).
+            text_block_vision_verification = verify_text_blocks_vision(
+                text_blocks,
+                text_block_verification,
+                vision_region_reader,
+                born_digital=born_digital,
+                max_cells=vision_max_cells,
+            )
+
+    # RECALL pre-filter (opt-in over an injected gestalt reader): self-verified cells the gestalt
+    # screen flags as suspect ESCALATE onto the corroborate edge as extra pendings.
+    screen_suspects: Tuple[RoutedVerdict, ...] = ()
+    screen_pendings: Tuple[Tuple[EscalationPending, str], ...] = ()
+    if gestalt_region_reader is not None:
+        screen_suspects, screen_pendings = _screen_recall_suspects(
+            tables, verifications, gestalt_region_reader, vision_region_reader
+        )
+
+    # CORROBORATE edge: a disagreeing vision-verified cell (or a confronted screen suspect) rides
+    # the shared receipt types. Empty unless the vision/screen lanes ran and disagreed.
+    corroboration_receipts = _corroboration_receipts(
+        vision_verifications, screen_pendings, witness_model=vision_model
+    )
+
     all_cell_texts = tuple(txt for t in tables for txt in t.cell_texts())
     reference_text = "\n".join(page_texts)
     numeric = numeric_recall(reference_text, all_cell_texts)
@@ -2725,7 +3230,7 @@ def structure_statute_pdf(
             "less), so numeric_recall/cross_witness lean on a WEAK reference — a "
             "vision witness is the appropriate second reader here."
         )
-    return StatuteTableReport(
+    report = StatuteTableReport(
         locator=locator,
         artifact_digest=artifact_digest,
         n_pages=n_pages,
@@ -2735,12 +3240,22 @@ def structure_statute_pdf(
         numeric=numeric,
         crosswitness=xwit,
         note=note,
-        verifications=verifications,
+        verifications=tuple(verifications),
         vision_verifications=vision_verifications,
-        text_blocks=text_blocks,
+        text_blocks=tuple(text_blocks),
         text_block_verification=text_block_verification,
         text_block_vision_verification=text_block_vision_verification,
+        corroboration_receipts=corroboration_receipts,
+        screen_suspects=screen_suspects,
     )
+
+    # CONSUMED derived-IR sink: persist every self_verified / exact_visual table so the verified
+    # structured-IR is readable BACK (the reader is DerivedTableStore.read_all).
+    if derived_store is not None:
+        write_derived_tables(
+            report, derived_store, code_fingerprint=derived_ir_fingerprint()
+        )
+    return report
 
 
 def _measure_one(
@@ -2750,6 +3265,7 @@ def _measure_one(
     vision_producer: Any = None,
     vision_max_cells: Optional[int] = None,
     vision_read_store: Optional[VisionReadStore] = None,
+    derived_store: Optional[DerivedTableStore] = None,
 ) -> StatuteTableReport:
     """Resolve + structure ONE media PDF locator; a bad PDF is a typed record.
 
@@ -2757,7 +3273,9 @@ def _measure_one(
     built for this PDF and the ``vision_escalate`` stratum is tie-broken by it
     (bounded to ``vision_max_cells`` routed-cell re-reads). When ``vision_read_store`` is
     also supplied the blind reads are cache-through (content-addressed by model-id +
-    prompt + render-params + image-bytes-hash) so replay is byte-identical.
+    prompt + render-params + image-bytes-hash) so replay is byte-identical. When a
+    ``derived_store`` is supplied the self_verified / exact_visual tables are persisted into
+    the consumed derived-IR sink.
     """
     from farchive import Farchive
 
@@ -2795,6 +3313,12 @@ def _measure_one(
             digest,
             vision_region_reader=reader,
             vision_max_cells=vision_max_cells,
+            derived_store=derived_store,
+            vision_model=(
+                _resolve_producer_model_id(vision_producer)
+                if vision_producer is not None
+                else ""
+            ),
         )
     except Exception as exc:  # a bad PDF is a typed record, not a pool-sinking crash
         return StatuteTableReport(
@@ -2931,6 +3455,17 @@ def render_report_text(reports: Sequence[StatuteTableReport]) -> str:
                 f"blocks_exact(self_verified) {r.n_text_blocks_exact}"
                 f"→{r.n_text_blocks_exact}+{r.n_text_blocks_vision_graduated} exact_visual"
             )
+        # RECALL SCREEN suspects (self-verified cells the gestalt screen flagged). Only when ran.
+        if r.screen_suspects:
+            lines.append(f"  RECALL-SCREEN: suspects={len(r.screen_suspects)}")
+        # CORROBORATE edge: receipts for cells where the vision read disagreed with the grid.
+        if r.corroboration_receipts:
+            n_agreed = sum(1 for x in r.corroboration_receipts if x.agreed)
+            n_changed = sum(1 for x in r.corroboration_receipts if x.verdict_changed)
+            lines.append(
+                f"  CORROBORATE: receipts={len(r.corroboration_receipts)} "
+                f"agreed={n_agreed} verdict_changed={n_changed}"
+            )
         lines.append("")
     return "\n".join(lines) + "\n"
 
@@ -2984,6 +3519,15 @@ def main(args: argparse.Namespace) -> None:
         vision_read_store = VisionReadStore(
             getattr(args, "vision_read_store", None) or FI_VISION_READ_STORE
         )
+
+    # CONSUMED derived-IR sink: with ``--derived-store PATH`` the self_verified / exact_visual
+    # tables are persisted content-addressed for the structured-law corpus (read back via
+    # DerivedTableStore.read_all). Opt-in — the default path opens NO store, so it is a pure
+    # side-store that never perturbs the report output.
+    derived_store: Optional[DerivedTableStore] = None
+    derived_store_path = getattr(args, "derived_store", None)
+    if derived_store_path:
+        derived_store = DerivedTableStore(derived_store_path)
     try:
         reports = [
             _measure_one(
@@ -2992,12 +3536,19 @@ def main(args: argparse.Namespace) -> None:
                 vision_producer=vision_producer,
                 vision_max_cells=vision_cap,
                 vision_read_store=vision_read_store,
+                derived_store=derived_store,
             )
             for loc in locators
         ]
     finally:
         if vision_read_store is not None:
             vision_read_store.close()
+        if derived_store is not None:
+            print(
+                f"# derived-IR sink → {derived_store.path} "
+                f"({len(derived_store.read_all())} verified tables total)"
+            )
+            derived_store.close()
 
     if args.json:
         payload = {"reports": [r.to_jsonable() for r in reports]}

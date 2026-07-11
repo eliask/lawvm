@@ -1,5 +1,14 @@
 """Phase-3 vision-adjudicator FALSE-GRADUATION canary ratchet.
 
+DRIFT-CANARY, NOT A STATISTICAL EVAL. This is the frozen 14-case DRIFT ratchet — a small,
+content-addressed curated set re-run every CI to catch a REGRESSION (model-version drift, prompt
+rot, a silently-loosened quotient) between baselines. It is deliberately DISTINCT from the
+STATISTICAL false-graduation eval (``fi_appendix_vision_eval.run_mutation_eval`` +
+``sample_size_for_upper_bound``), whose honest 1e-3 upper bound needs N≈3000 mutants/class and
+is run offline over the real corpus — a 14-case set proves nothing about that bound and is not
+claimed to. Here the small frozen set is the cheap every-CI guard; the statistical eval is the
+periodic measurement.
+
 The durable *no-false-exact* CI defense for the phase-3 appendix vision adjudicator. A
 FALSE GRADUATION — the gate marking two genuinely-different witnesses EXACT — is the single
 safety failure the exactness invariant forbids; every other outcome (a typed divergence, an

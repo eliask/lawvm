@@ -9797,6 +9797,29 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
                             help="write the report to PATH instead of stdout")
     appendix_p.add_argument("--jsonl-out", default=None, metavar="PATH", dest="jsonl_out",
                             help="persist the structured tables as JSONL to PATH")
+    appendix_p.add_argument(
+        "--vision", action="store_true",
+        help=("run the VISION third-witness tie-break over the vision_escalate stratum "
+              "(each divergent cell's isolated bbox region re-read + graduated to exact iff two "
+              "of three independent witnesses agree). Probes the :8080 server once; falls back to "
+              "the deterministic-only report if absent. Without this flag the run is byte-identical "
+              "to the pure deterministic lane."))
+    appendix_p.add_argument(
+        "--vision-cap", type=int, default=None, dest="vision_cap", metavar="N",
+        help=("ceiling on the routed cells the vision witness re-reads PER PDF (a bounded vision "
+              "spend; default: unbounded). The un-read routed cells stay typed, never silently "
+              "dropped."))
+    appendix_p.add_argument(
+        "--vision-read-store", default=None, dest="vision_read_store", metavar="PATH",
+        help=("determinism-firewall cache farchive for the (non-deterministic) blind vision reads "
+              "(content-addressed by model-id + prompt + render-params + image-hash) so replay is "
+              "byte-identical; default: data/fi_vision_region_reads.farchive (gitignored)."))
+    appendix_p.add_argument(
+        "--derived-store", default=None, dest="derived_store", metavar="PATH",
+        help=("CONSUMED derived-IR sink: persist every self_verified / exact_visual table into a "
+              "content-addressed sibling farchive the structured-law corpus reads BACK (keyed by "
+              "artifact_digest + table_index + quotient fingerprint). Opt-in; a pure side-store "
+              "that never perturbs the report output."))
 
     # --- fi-parse-compare ---
     parse_cmp_p = sub.add_parser(

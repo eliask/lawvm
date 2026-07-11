@@ -1285,9 +1285,12 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # discipline, token attribution (scripted fake producers, hermetic).
         "test_fi_producer_compare.py",
         # Phase-3 vision witness layer: holistic sanity screen (garble/gestalt,
-        # never graduates) + false-graduation canary ratchet (frozen mutant gold).
+        # never graduates) + false-graduation canary ratchet (frozen mutant gold) +
+        # the end-to-end vision-lane wiring proof (build_statute_report + derived-IR
+        # sink + corroborate edge, hermetic with a scripted region reader).
         "test_fi_appendix_vision_screen.py",
         "test_fi_appendix_vision_canary.py",
+        "test_fi_appendix_vision_wiring.py",
     ),
     "tools_audit_restructure": (
         "test_fi_restructure_plan.py",
