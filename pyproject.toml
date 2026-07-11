@@ -48,15 +48,13 @@ pdf = [
 # producer's docling import is lazy and `is_available()`-gated, so the pipeline
 # runs offline with this backend absent (determinism firewall, AGENTS.md §1.3).
 #
-# Pinned EXACTLY (==) so the transitive ML stack cannot silently drift.
-# transformers is forked by platform because docling-core[chunking] caps it at
-# <5.9.0 on darwin: our target (linux/py3.14) freezes at 5.12.1, darwin at the
-# highest version docling permits (5.8.1). Both forks are pinned so neither can
-# drift; a single unconditional ==5.12.1 is unsatisfiable on darwin.
+# docling is pinned EXACTLY (==) so its transitive ML stack (torch/transformers)
+# cannot silently drift — the exact transformers/torch versions are frozen in
+# uv.lock via this pin, NOT named here: the heavy VLM stack must never appear in
+# the MAIN pyproject (it lives ONLY in subprojects/nemotron_parse, reached across
+# a subprocess boundary — test_fi_nemotron_client guards that isolation).
 docling = [
   "docling==2.108.0",
-  "transformers==5.12.1; sys_platform != 'darwin'",
-  "transformers==5.8.1; sys_platform == 'darwin'",
 ]
 
 [project.scripts]

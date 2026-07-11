@@ -9,7 +9,7 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "2026-07-04T01:00:28.862423809Z"
+exclude-newer = "2026-07-04T01:54:46.632558048Z"
 exclude-newer-span = "P7D"
 
 [[package]]
@@ -1027,8 +1027,6 @@ analytics = [
 ]
 docling = [
     { name = "docling" },
-    { name = "transformers", version = "5.8.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'darwin'" },
-    { name = "transformers", version = "5.12.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'darwin'" },
 ]
 pdf = [
     { name = "pdfplumber" },
@@ -1072,8 +1070,6 @@ requires-dist = [
     { name = "python-levenshtein" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "rapidfuzz" },
-    { name = "transformers", marker = "sys_platform == 'darwin' and extra == 'docling'", specifier = "==5.8.1" },
-    { name = "transformers", marker = "sys_platform != 'darwin' and extra == 'docling'", specifier = "==5.12.1" },
     { name = "zstandard", specifier = ">=0.21" },
 ]
 provides-extras = ["analytics", "test", "pdf", "docling"]
