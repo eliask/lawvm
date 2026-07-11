@@ -1,0 +1,138 @@
+{
+  "_comment": "Frozen phase-3 vision false-graduation canary. Regenerate with `uv run python -m lawvm.tools.fi_appendix_vision_eval emit-canary`. MUST_KILL cases must never graduate (0 false graduations); MUST_ABSORB cases must graduate; the escalation rate must stay in escalation_rate_band.",
+  "cases": [
+    {
+      "case_id": "digit_sub_bd",
+      "dpi": 300,
+      "ground_truth": "must_kill",
+      "mutated_text": "3 500 mk/kg",
+      "mutation_class": "digit_substitution",
+      "stratum": "born_digital_clean",
+      "witness_text": "2 500 mk/kg"
+    },
+    {
+      "case_id": "digit_sub_cf",
+      "dpi": 300,
+      "ground_truth": "must_kill",
+      "mutated_text": "veroluokka 5",
+      "mutation_class": "digit_substitution",
+      "stratum": "corrupt_font",
+      "witness_text": "veroluokka 4"
+    },
+    {
+      "case_id": "digit_trans_bd",
+      "dpi": 300,
+      "ground_truth": "must_kill",
+      "mutated_text": "vuonna 9190",
+      "mutation_class": "digit_transposition",
+      "stratum": "born_digital_clean",
+      "witness_text": "vuonna 1990"
+    },
+    {
+      "case_id": "diacritic_bd",
+      "dpi": 300,
+      "ground_truth": "must_kill",
+      "mutated_text": "Sahkön kulutus",
+      "mutation_class": "diacritic_drop",
+      "stratum": "born_digital_clean",
+      "witness_text": "Sähkön kulutus"
+    },
+    {
+      "case_id": "diacritic_cf",
+      "dpi": 300,
+      "ground_truth": "must_kill",
+      "mutated_text": "Rajähdysaine",
+      "mutation_class": "diacritic_drop",
+      "stratum": "corrupt_font",
+      "witness_text": "Räjähdysaine"
+    },
+    {
+      "case_id": "superscript_bd",
+      "dpi": 300,
+      "ground_truth": "must_kill",
+      "mutated_text": "pinta-ala 12 m2",
+      "mutation_class": "superscript_delete",
+      "stratum": "born_digital_clean",
+      "witness_text": "pinta-ala 12 m²"
+    },
+    {
+      "case_id": "decimal_bd",
+      "dpi": 300,
+      "ground_truth": "must_kill",
+      "mutated_text": "korko 1.5 %",
+      "mutation_class": "decimal_comma_flip",
+      "stratum": "born_digital_clean",
+      "witness_text": "korko 1,5 %"
+    },
+    {
+      "case_id": "decimal_cf",
+      "dpi": 300,
+      "ground_truth": "must_kill",
+      "mutated_text": "3.14 euroa",
+      "mutation_class": "decimal_comma_flip",
+      "stratum": "corrupt_font",
+      "witness_text": "3,14 euroa"
+    },
+    {
+      "case_id": "edge_del_bd",
+      "dpi": 300,
+      "ground_truth": "must_kill",
+      "mutated_text": "markka",
+      "mutation_class": "edge_char_deletion",
+      "stratum": "born_digital_clean",
+      "witness_text": "markkaa"
+    },
+    {
+      "case_id": "thin_space_bd",
+      "dpi": 300,
+      "ground_truth": "must_kill",
+      "mutated_text": "2500 kpl",
+      "mutation_class": "thin_space_removal",
+      "stratum": "born_digital_clean",
+      "witness_text": "2 500 kpl"
+    },
+    {
+      "case_id": "digit_sub_scan",
+      "dpi": 200,
+      "ground_truth": "must_kill",
+      "mutated_text": "2 200 kg",
+      "mutation_class": "digit_substitution",
+      "stratum": "scanned",
+      "witness_text": "1 200 kg"
+    },
+    {
+      "case_id": "diacritic_scan",
+      "dpi": 200,
+      "ground_truth": "must_kill",
+      "mutated_text": "Oljy",
+      "mutation_class": "diacritic_drop",
+      "stratum": "scanned",
+      "witness_text": "Öljy"
+    },
+    {
+      "case_id": "zs_swap_bd",
+      "dpi": 300,
+      "ground_truth": "must_absorb",
+      "mutated_text": "3 000 euroa",
+      "mutation_class": "zs_space_swap",
+      "stratum": "born_digital_clean",
+      "witness_text": "3 000 euroa"
+    },
+    {
+      "case_id": "cf_zw_bd",
+      "dpi": 300,
+      "ground_truth": "must_absorb",
+      "mutated_text": "o​sakeyhtiö",
+      "mutation_class": "cf_zero_width_insert",
+      "stratum": "born_digital_clean",
+      "witness_text": "osakeyhtiö"
+    }
+  ],
+  "escalation_rate_band": [
+    0.0,
+    0.2929
+  ],
+  "escalation_rate_observed": 0.142857,
+  "fingerprint": "2c2561028aa516c99a2110751a3e61be185347d917298918deb3d67c986c2c06",
+  "n_cases": 14
+}
