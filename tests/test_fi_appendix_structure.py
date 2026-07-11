@@ -17,9 +17,15 @@ from lawvm.core.source_document.ir import (
     SourceDocumentNodeKind,
 )
 from lawvm.tools.fi_appendix_structure import (
+    GRADE_EXACT_VISUAL,
+    GRADE_SELF_VERIFIED,
     ROUTE_NO_WITNESS_DEFERRED,
     ROUTE_SELF_VERIFIED,
     ROUTE_VISION_ESCALATE,
+    VISION_OUTCOME_ESCALATED,
+    VISION_OUTCOME_OPEN,
+    VISION_PAIR_DOCLING_VISION,
+    VISION_PAIR_PDFIUM_VISION,
     StructuredCell,
     StructuredTable,
     StructuredTextBlock,
@@ -32,12 +38,18 @@ from lawvm.tools.fi_appendix_structure import (
     TextBlockVerification,
     TextBlockVisionVerification,
     TextRun,
+    VisionReadRow,
+    VisionReadStore,
+    VisionRegionRead,
     _make_per_bbox_reader,
+    cold_region_prompt_fingerprint,
     cross_witness,
+    make_cached_region_reader,
     make_vision_region_reader,
     number_tokens,
     numeric_recall,
     reconcile_table_witness,
+    render_params_fingerprint,
     should_run_text_block_lane,
     structural_sanity,
     structured_table_from_node,
@@ -48,6 +60,7 @@ from lawvm.tools.fi_appendix_structure import (
     verify_tables_vision,
     verify_text_blocks_exact,
     verify_text_blocks_vision,
+    vision_read_cache_key,
 )
 
 
@@ -410,15 +423,13 @@ def test_per_bbox_reader_inset_does_not_clip_trailing_glyph() -> None:
 # VISION THIRD-WITNESS TIE-BREAK seam (injected reader — no model / PDF).        #
 # --------------------------------------------------------------------------- #
 #
-# On the born-digital appendix-table stratum the pdfium-in-bbox witness is the RELIABLE
-# reader and Docling's cell ``.text`` is the one that ERRS (mis-segmenting a wrapped
-# line-tail: Docling ``'raikasta- 2 500 mg/kg'`` where pdfium correctly reads
-# ``'2 500 mg/kg'``). The tie-break renders the divergent cell and reads it with an
-# INDEPENDENT vision witness, GRADUATING the cell to exact iff vision ≡ the PDFIUM
-# witness modulo the inert quotient (two witnesses agree, Docling outvoted). The 2003/917
-# corrupt-font pathology is the OPPOSITE polarity (pdfium ä->‰ garbled, vision ≡ Docling):
-# a witness_disagreement, NOT a graduation. These drive the seam (route -> re-read routed
-# cells -> tie-break) with a scripted reader; the pdfium/vision transport is LIVE-only.
+# SYMMETRIC two-of-three graduation: the divergent cell is re-read by an INDEPENDENT BLIND vision
+# witness and GRADUATES to exact (grade exact_visual) iff TWO of the three witnesses {docling,
+# pdfium, vision} agree modulo the inert quotient — ``pdfium≡vision`` (Docling the wrapped-tail
+# dissenter: Docling ``'raikasta- 2 500 mg/kg'`` vs pdfium ``'2 500 mg/kg'``) OR ``docling≡vision``
+# (the 2003/917 corrupt-font pathology: pdfium ä->‰ garbled is the outvoted dissenter). A vision
+# ABSTAIN is terminal ``escalated`` (never graduated), all-three-disagree is ``open``. These drive
+# the seam (route -> re-read routed cells -> tie-break) with a scripted reader; transport is LIVE-only.
 
 # bbox convention: top-left points; distinct per cell so the reader map keys are unique.
 _B00 = (0.0, 0.0, 1.0, 1.0)
@@ -479,23 +490,27 @@ def test_vision_tiebreak_graduates_cell_when_vision_corroborates_pdfium() -> Non
     assert isinstance(g, TableCellGraduation)
     assert (g.row, g.col) == (0, 0)
     assert g.corroborated_text == "2 500 mg/kg"  # pdfium reading, NOT Docling's text
-    assert not vv.witness_disagreement and not vv.open_divergences
+    assert g.agreeing_pair == VISION_PAIR_PDFIUM_VISION  # pdfium≡vision, Docling outvoted
+    assert g.grade == GRADE_EXACT_VISUAL  # exact-modulo-render, NOT free-lane self_verified
+    assert not vv.escalated and not vv.open_divergences
 
 
-def test_vision_tiebreak_witness_disagreement_when_vision_sides_with_docling() -> None:
-    # Corrupt-font sub-case: the pdfium witness is garbled (ä->‰), Docling read the cell
-    # right, and vision reproduces DOCLING (not pdfium) → NOT a graduation; the cell is a
-    # typed witness_disagreement (the pdfium text-layer witness is the odd one out).
+def test_vision_tiebreak_corrupt_font_graduates_on_docling_vision_pair() -> None:
+    # SYMMETRIC two-of-three: on a corrupt-font page the pdfium witness is garbled (ä->‰), so
+    # a ``vision≡pdfium``-only rule could NEVER graduate this cell. Docling read it right and
+    # the INDEPENDENT vision read reproduces DOCLING → GRADUATE as exact_visual with the Docling
+    # reading as content (pdfium is the outvoted corrupt dissenter).
     table, det = _vision_case([(0, 0, "Sähkö 1,2", "S‰hk‰ 1,2", _B00)])
     reader_map = {_B00: "Sähkö  1,2"}  # inert-equal to Docling, differs from corrupt pdfium
     vvs = verify_tables_vision([table], [det], lambda _pn, bb: reader_map[bb])
     vv = vvs[0]
-    assert vv.n_graduated == 0
-    assert not vv.all_graduated
-    assert len(vv.witness_disagreement) == 1 and not vv.open_divergences
-    d = vv.witness_disagreement[0]
-    assert (d.row, d.col) == (0, 0)
-    assert d.docling_text == "Sähkö 1,2" and d.witness_text == "Sähkö  1,2"
+    assert vv.n_graduated == 1 and vv.all_graduated
+    g = vv.graduated[0]
+    assert (g.row, g.col) == (0, 0)
+    assert g.agreeing_pair == VISION_PAIR_DOCLING_VISION  # corrupt-font sub-case
+    assert g.corroborated_text == "Sähkö 1,2"  # Docling reading is the trusted content
+    assert g.grade == GRADE_EXACT_VISUAL
+    assert not vv.escalated and not vv.open_divergences
 
 
 def test_vision_tiebreak_all_three_disagree_stays_open() -> None:
@@ -505,7 +520,7 @@ def test_vision_tiebreak_all_three_disagree_stays_open() -> None:
     reader_map = {_B00: "Kaasu 9,9"}
     vvs = verify_tables_vision([table], [det], lambda _pn, bb: reader_map[bb])
     vv = vvs[0]
-    assert vv.n_graduated == 0 and not vv.witness_disagreement
+    assert vv.n_graduated == 0 and not vv.escalated
     assert len(vv.open_divergences) == 1
     d = vv.open_divergences[0]
     assert d.docling_text == "Kaasu 3,4" and d.witness_text == "Kaasu 9,9"
@@ -540,6 +555,220 @@ def test_vision_tiebreak_requires_full_text_not_numeric_only() -> None:
     vv = vvs[0]
     assert vv.n_graduated == 0  # numeric-only agreement must NOT graduate
     assert len(vv.open_divergences) == 1
+
+
+def test_vision_read_is_blind_no_candidates_reach_the_model(monkeypatch) -> None:
+    # PASS-1 BLIND: the production wiring must transcribe ONLY the rendered pixels — the
+    # pdfium/Docling candidate texts must NEVER be shown to the model (that would let it echo a
+    # candidate and destroy witness independence). Record everything read_region_cold receives and
+    # assert no candidate string is among the args; also assert the frozen prompt names no candidate.
+    import lawvm.tools.fi_appendix_structure as mod
+    from lawvm.ingest.llm_backends.vision_producer import _COLD_REGION_SYSTEM_PROMPT
+
+    monkeypatch.setattr(mod, "_pdf_page_heights", lambda _b: {1: 100.0})
+    seen: dict[str, object] = {}
+
+    class _RecordingProducer:
+        def read_region_cold(self, manifestation, page_num, bbox, *, dpi, expected_lines) -> str:
+            seen["args"] = (manifestation, page_num, bbox, dpi, expected_lines)
+            return "blindly-read"
+
+    reader = make_vision_region_reader(
+        _RecordingProducer(), b"%PDF", artifact_digest="a" * 64, locator="loc://x"
+    )
+    out = reader(1, (10.0, 20.0, 30.0, 40.0))
+    assert out.text == "blindly-read"
+    # No positional/keyword the model sees carries a candidate transcription — only geometry +
+    # render params reach read_region_cold (which itself sends only the crop image + the prompt).
+    flat = " ".join(str(a) for a in seen["args"])  # type: ignore[arg-type]
+    for candidate_marker in ("raikasta", "2 500 mg/kg", "docling_candidate", "pdfium_candidate"):
+        assert candidate_marker not in flat
+    # The frozen blind prompt is a pure transcription instruction — it references no candidate text.
+    low = _COLD_REGION_SYSTEM_PROMPT.lower()
+    assert "candidate" not in low and "pdfium" not in low and "docling" not in low
+
+
+def test_free_lane_exact_is_self_verified_grade_distinct_from_exact_visual() -> None:
+    # A two-decoder A≡B cell (Docling ≡ pdfium-in-bbox) is free-lane exact: grade self_verified,
+    # route self_verified, and it spends ZERO vision reads. The vision-graduated grade exact_visual
+    # is a DISTINCT, weaker (homoglyph-blind) grade — the two must never be conflated.
+    assert GRADE_SELF_VERIFIED != GRADE_EXACT_VISUAL
+    cells = [StructuredCell(0, 0, "Sähkö 1,2", is_header=False, bbox=_B00)]
+    table = StructuredTable(
+        locator="finlex://sd/1997/1217/fin/media/x.pdf",
+        page_num=1, table_index=0, n_rows=1, n_cols=1, caption="", cells=tuple(cells),
+    )
+    det = verify_table_exact(table, lambda _pn, _bb: "Sähkö  1,2")  # inert-equal → exact
+    assert det.exact and det.n_exact == 1
+    assert table_escalation_route(det) == ROUTE_SELF_VERIFIED
+
+    seen: list[object] = []
+    vvs = verify_tables_vision([table], [det], lambda _pn, bb: seen.append(bb) or "x")
+    assert vvs == () and seen == []  # self_verified spends no vision reads; not graduated
+
+
+def test_vision_tiebreak_single_witness_never_graduates() -> None:
+    # A lone vision witness can NEVER graduate: with the pdfium witness EMPTY (dropped the cell)
+    # and the vision read agreeing with NEITHER pdfium (empty) nor Docling, the cell stays open —
+    # graduation always requires TWO of the three independent witnesses to agree.
+    table, det = _vision_case([(0, 0, "Docling-A", "", _B00)])  # pdfium witness empty
+    vvs = verify_tables_vision([table], [det], lambda _pn, bb: "Vision-Z")  # matches no one
+    vv = vvs[0]
+    assert vv.n_graduated == 0 and not vv.escalated
+    assert len(vv.open_divergences) == 1  # single witness → open, never exact
+
+    # And a BLANK pdfium witness the vision read happens to "match" (both empty-ish) does not
+    # graduate either — the .strip() gate blocks graduating on an empty agreed side.
+    table2, det2 = _vision_case([(0, 0, "Docling-A", "   ", _B00)])
+    vvs2 = verify_tables_vision([table2], [det2], lambda _pn, bb: "   ")
+    assert vvs2[0].n_graduated == 0 and len(vvs2[0].open_divergences) == 1
+
+
+def test_vision_tiebreak_abstain_is_escalated_never_graduated() -> None:
+    # ADDENDUM: a reader that ABSTAINS (the model punts rather than force an unsure blind read) is
+    # a TERMINAL escalated status — NEVER graduated, distinct from open — and its descriptor is
+    # recorded on the divergence record for downstream adjudication.
+    table, det = _vision_case([(0, 0, "Sähkö 1,2", "S‰hk‰ 1,2", _B00)])
+    punt = VisionRegionRead(text="", abstain=True, descriptor="glyph ambiguous under ‰ artifact")
+    vvs = verify_tables_vision([table], [det], lambda _pn, _bb: punt)
+    vv = vvs[0]
+    assert vv.n_graduated == 0 and not vv.open_divergences
+    assert len(vv.escalated) == 1 and not vv.all_graduated
+    esc = vv.escalated[0]
+    assert (esc.row, esc.col) == (0, 0)
+    assert esc.descriptor == "glyph ambiguous under ‰ artifact"  # model reason recorded
+    # the escalated bucket surfaces the distinct terminal outcome in the JSON (never "open").
+    js = vv.to_jsonable()
+    assert [e["outcome"] for e in js["escalated"]] == [VISION_OUTCOME_ESCALATED]  # type: ignore[index]
+    assert js["open_divergences"] == []
+
+
+def test_tb_vision_tiebreak_abstain_is_escalated_never_graduated() -> None:
+    # The text-block lane honours the same abstain → escalated discipline (block-for-cell).
+    blocks, v = _tb_vision_case([("kohde", "1) kohde", _TB0)])
+    punt = VisionRegionRead(text="", abstain=True, descriptor="crop too faint to read")
+    bvv = verify_text_blocks_vision(blocks, v, lambda _pn, _bb: punt)
+    assert bvv is not None
+    assert bvv.n_graduated == 0 and not bvv.open_divergences and len(bvv.escalated) == 1
+    assert bvv.escalated[0].descriptor == "crop too faint to read"
+
+
+def test_vision_tiebreak_born_digital_gate_holds_under_abstain_and_open() -> None:
+    # Sanity that outcomes are exhaustive & disjoint: born_digital=False never graduates, and an
+    # abstain still escalates (the sparse guard gates graduation, not the abstain routing).
+    table, det = _vision_case([(0, 0, "A", "A-pdf", _B00)])
+    punt = VisionRegionRead(text="", abstain=True, descriptor="punt")
+    vvs = verify_tables_vision([table], [det], lambda _pn, _bb: punt, born_digital=False)
+    assert vvs[0].n_graduated == 0 and len(vvs[0].escalated) == 1
+
+
+# --------------------------------------------------------------------------- #
+# DETERMINISM-FIREWALL CACHE for the non-deterministic blind vision reads.      #
+# --------------------------------------------------------------------------- #
+#
+# Vision is not byte-deterministic; the pipeline's replay / self-consistency invariants require a
+# content-addressed evidence record so a re-run reproduces the SAME reads (hence the SAME
+# graduation verdicts). The reads are keyed by (model-id, prompt-fingerprint, render-params,
+# image-bytes-hash): a HIT rehydrates without invoking the model; a model bump re-keys. All
+# hermetic: a counting fake reader + a scripted crop-digest + a tmp-path store.
+
+
+def test_vision_read_cache_key_rekeys_on_each_component() -> None:
+    base = dict(
+        model_id="m1", prompt_fingerprint="p1", render_fingerprint="r1", image_sha256="img1"
+    )
+    k0 = vision_read_cache_key(**base)
+    assert k0 == vision_read_cache_key(**base)  # pure / stable
+    # every component is load-bearing — flipping any one re-keys
+    for field, other in [
+        ("model_id", "m2"),
+        ("prompt_fingerprint", "p2"),
+        ("render_fingerprint", "r2"),
+        ("image_sha256", "img2"),
+    ]:
+        assert vision_read_cache_key(**{**base, field: other}) != k0
+
+
+def test_vision_read_store_cache_through_is_byte_identical_and_rekeys_on_model(tmp_path) -> None:
+    store = VisionReadStore(str(tmp_path / "vr.farchive"))
+    try:
+        calls: list[tuple[int, tuple[float, float, float, float]]] = []
+
+        def inner(page_num, bbox):
+            calls.append((page_num, bbox))
+            # a rich read: text + abstain + descriptor must ALL round-trip through the cache
+            return VisionRegionRead(
+                text="2 500 mg/kg", abstain=False, descriptor="", model_id="m1"
+            )
+
+        digest_map = {_B00: "imgHASHaaa"}
+        cached = make_cached_region_reader(
+            inner,
+            store=store,
+            model_id="m1",
+            prompt_fingerprint="pf",
+            render_fingerprint=render_params_fingerprint(300),
+            crop_digest=lambda _pn, bb: digest_map[bb],
+        )
+        first = cached(1, _B00)
+        assert first.text == "2 500 mg/kg" and len(calls) == 1  # MISS: model ran once
+
+        second = cached(1, _B00)
+        assert len(calls) == 1  # HIT: model did NOT run again
+        assert (second.text, second.abstain, second.descriptor, second.model_id) == (
+            first.text, first.abstain, first.descriptor, first.model_id
+        )  # byte-identical replay
+
+        # A MODEL BUMP re-keys → a fresh MISS (the cache must invalidate on model-id change).
+        cached_m2 = make_cached_region_reader(
+            inner,
+            store=store,
+            model_id="m2",  # bumped
+            prompt_fingerprint="pf",
+            render_fingerprint=render_params_fingerprint(300),
+            crop_digest=lambda _pn, bb: digest_map[bb],
+        )
+        cached_m2(1, _B00)
+        assert len(calls) == 2  # re-keyed under m2 → model ran again
+    finally:
+        store.close()
+
+
+def test_vision_read_cache_persists_abstain_and_descriptor(tmp_path) -> None:
+    # The abstain flag + descriptor are part of the materialized evidence record, so a cached
+    # ESCALATED read replays identically (never silently downgraded to a confident empty).
+    store = VisionReadStore(str(tmp_path / "vr.farchive"))
+    try:
+        calls: list[int] = []
+
+        def inner(_pn, _bb):
+            calls.append(1)
+            return VisionRegionRead(
+                text="", abstain=True, descriptor="unsure: minus vs hyphen", model_id="m1"
+            )
+
+        cached = make_cached_region_reader(
+            inner,
+            store=store,
+            model_id="m1",
+            prompt_fingerprint="pf",
+            render_fingerprint="rf",
+            crop_digest=lambda _pn, _bb: "imgX",
+        )
+        a = cached(1, _B00)
+        b = cached(1, _B00)
+        assert len(calls) == 1  # HIT on replay
+        assert a.abstain is True and a.descriptor == "unsure: minus vs hyphen"
+        assert (b.abstain, b.descriptor) == (a.abstain, a.descriptor)
+        # the persisted row is the typed evidence carrier (not a bare dict)
+        key = vision_read_cache_key(
+            model_id="m1", prompt_fingerprint="pf", render_fingerprint="rf", image_sha256="imgX"
+        )
+        row = store.get(key)
+        assert isinstance(row, VisionReadRow)
+        assert row.abstain is True and row.descriptor == "unsure: minus vs hyphen"
+    finally:
+        store.close()
 
 
 def test_vision_tiebreak_only_reads_routed_cells_and_skips_self_verified() -> None:
@@ -625,13 +854,15 @@ def test_make_vision_region_reader_flips_topleft_bbox_to_bottomleft(monkeypatch)
     )
     # top-left cell bbox (10,20)-(30,40) on a 100-pt-tall page -> bottom-left (10,60)-(30,80)
     out = reader(1, (10.0, 20.0, 30.0, 40.0))
-    assert out == "read-ok"
+    assert isinstance(out, VisionRegionRead)
+    assert out.text == "read-ok" and out.abstain is False
     bb = captured["bbox"]
     assert (bb.x0, bb.y0, bb.x1, bb.y1) == (10.0, 60.0, 30.0, 80.0)
 
 
-def test_make_vision_region_reader_swallows_failure_to_empty(monkeypatch) -> None:
-    # A render/read failure is an empty read (-> a typed open divergence), never a crash.
+def test_make_vision_region_reader_swallows_failure_to_abstain(monkeypatch) -> None:
+    # A render/read FAILURE is a PUNT (abstain → terminal escalated), never a crash and never a
+    # silent empty that could graduate. The failure reason rides on the descriptor.
     import lawvm.tools.fi_appendix_structure as mod
     from lawvm.ingest.llm_backends.vision_producer import VisionProducerFailure
 
@@ -644,9 +875,29 @@ def test_make_vision_region_reader_swallows_failure_to_empty(monkeypatch) -> Non
     reader = make_vision_region_reader(
         _FailingProducer(), b"%PDF", artifact_digest="e" * 64, locator="loc://x"
     )
-    assert reader(1, (10.0, 20.0, 30.0, 40.0)) == ""
-    # a page with no known height also yields an empty read, not a KeyError
-    assert reader(99, (10.0, 20.0, 30.0, 40.0)) == ""
+    out = reader(1, (10.0, 20.0, 30.0, 40.0))
+    assert out.text == "" and out.abstain is True
+    assert "VisionProducerFailure" in out.descriptor
+    # a page with no known height also abstains (never a KeyError)
+    assert reader(99, (10.0, 20.0, 30.0, 40.0)).abstain is True
+
+
+def test_make_vision_region_reader_declined_read_is_abstain(monkeypatch) -> None:
+    # The model DECLINING (empty / UNREADABLE → read_region_cold returns "") is mapped to an
+    # abstain, not a graduating empty string.
+    import lawvm.tools.fi_appendix_structure as mod
+
+    monkeypatch.setattr(mod, "_pdf_page_heights", lambda _b: {1: 100.0})
+
+    class _DecliningProducer:
+        def read_region_cold(self, *a, **k) -> str:
+            return ""  # UNREADABLE / empty collapses to "" in read_region_cold
+
+    reader = make_vision_region_reader(
+        _DecliningProducer(), b"%PDF", artifact_digest="f" * 64, locator="loc://x"
+    )
+    out = reader(1, (10.0, 20.0, 30.0, 40.0))
+    assert out.text == "" and out.abstain is True and out.descriptor
 
 
 # --------------------------------------------------------------------------- #
@@ -836,20 +1087,23 @@ def test_tb_vision_tiebreak_graduates_block_when_vision_corroborates_pdfium() ->
     assert isinstance(g, TextBlockGraduation)
     assert (g.block_index, g.page_num, g.kind) == (0, 1, "paragraph")
     assert g.corroborated_text == "1) kohde, kun"  # pdfium reading, NOT Docling's dropped text
-    assert not bvv.witness_disagreement and not bvv.open_divergences
+    assert g.agreeing_pair == VISION_PAIR_PDFIUM_VISION and g.grade == GRADE_EXACT_VISUAL
+    assert not bvv.escalated and not bvv.open_divergences
 
 
-def test_tb_vision_tiebreak_witness_disagreement_when_vision_sides_with_docling() -> None:
-    # Corrupt-font sub-case: the pdfium witness is garbled (ä->‰), Docling read it right, and
-    # vision reproduces DOCLING → NOT a graduation; a typed witness_disagreement.
+def test_tb_vision_tiebreak_corrupt_font_graduates_on_docling_vision_pair() -> None:
+    # SYMMETRIC two-of-three (block-for-cell): the pdfium witness is garbled (ä->‰), Docling read
+    # it right, and vision reproduces DOCLING → GRADUATE as exact_visual with the Docling reading
+    # as content (pdfium the outvoted corrupt dissenter). A vision≡pdfium-only rule could not.
     blocks, v = _tb_vision_case([("Sähköä 1,2", "S‰hk‰‰ 1,2", _TB0)])
     reader_map = {_TB0: "Sähköä  1,2"}  # inert-equal to Docling, differs from corrupt pdfium
     bvv = verify_text_blocks_vision(blocks, v, lambda _pn, bb: reader_map[bb])
     assert bvv is not None
-    assert bvv.n_graduated == 0 and not bvv.all_graduated
-    assert len(bvv.witness_disagreement) == 1 and not bvv.open_divergences
-    d = bvv.witness_disagreement[0]
-    assert d.block_index == 0 and d.docling_text == "Sähköä 1,2" and d.witness_text == "Sähköä  1,2"
+    assert bvv.n_graduated == 1 and bvv.all_graduated
+    g = bvv.graduated[0]
+    assert g.block_index == 0 and g.agreeing_pair == VISION_PAIR_DOCLING_VISION
+    assert g.corroborated_text == "Sähköä 1,2" and g.grade == GRADE_EXACT_VISUAL
+    assert not bvv.escalated and not bvv.open_divergences
 
 
 def test_tb_vision_tiebreak_all_three_disagree_stays_open() -> None:
@@ -858,7 +1112,7 @@ def test_tb_vision_tiebreak_all_three_disagree_stays_open() -> None:
     reader_map = {_TB0: "kerroin 9,9"}
     bvv = verify_text_blocks_vision(blocks, v, lambda _pn, bb: reader_map[bb])
     assert bvv is not None
-    assert bvv.n_graduated == 0 and not bvv.witness_disagreement
+    assert bvv.n_graduated == 0 and not bvv.escalated
     assert len(bvv.open_divergences) == 1
     d = bvv.open_divergences[0]
     assert d.docling_text == "kerroin 3,4" and d.witness_text == "kerroin 9,9"
