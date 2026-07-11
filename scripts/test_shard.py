@@ -1269,6 +1269,10 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # WER / word-coverage scorers + per-page union combo, typed-failure
         # discipline, token attribution (scripted fake producers, hermetic).
         "test_fi_producer_compare.py",
+        # Phase-3 vision witness layer: holistic sanity screen (garble/gestalt,
+        # never graduates) + false-graduation canary ratchet (frozen mutant gold).
+        "test_fi_appendix_vision_screen.py",
+        "test_fi_appendix_vision_canary.py",
     ),
     "tools_audit_restructure": (
         "test_fi_restructure_plan.py",
@@ -1552,6 +1556,11 @@ TOOL_SOURCE_SHARD_GROUPS: dict[tuple[str, ...], tuple[str, ...]] = {
         "src/lawvm/tools/fi_he_payload_adjudicate.py",
         "src/lawvm/tools/fi_appendix_structure.py",
         "src/lawvm/tools/fi_producer_compare.py",
+        # Phase-3 vision witness layer (siblings of fi_appendix_structure): the
+        # holistic sanity SCREEN (garble-scan + gestalt predicate, recall-critical,
+        # never graduates) and the false-graduation validation harness/canary.
+        "src/lawvm/tools/fi_appendix_vision_screen.py",
+        "src/lawvm/tools/fi_appendix_vision_eval.py",
         "src/lawvm/tools/export_fi_he_branch_ops.py",
         "src/lawvm/tools/export_fi_he_corpus.py",
         "src/lawvm/tools/export_fi_inline_citations.py",

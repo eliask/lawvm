@@ -40,6 +40,18 @@ _SCRIPT_PATH = _REPO_ROOT / "scripts" / "inventory_module_roles.py"
 # can be intentionally retained dead WITHOUT re-baselining (e.g. a freshly added
 # frontier module pending wiring), with the reason recorded here.
 DEAD_ALLOWLIST: dict[str, str] = {
+    "lawvm.tools.fi_appendix_vision_screen": (
+        "Phase-3 holistic sanity SCREEN (garble-scan + gestalt predicate, "
+        "recall-critical, never graduates) — built + hermetically tested; "
+        "production wiring into structure_statute_pdf is the next integration "
+        "wave (pairs with the structural-witness build pending its audit)."
+    ),
+    "lawvm.tools.fi_appendix_vision_eval": (
+        "Phase-3 vision false-graduation validation harness (mutation gold + "
+        "Clopper-Pearson bound + live-canary ratchet); exercised by "
+        "test_fi_appendix_vision_canary, run manually / in the canary gate — a "
+        "validation tool, not a production-pipeline importer by design."
+    ),
     "lawvm.core.cross_act_same_moment": (
         "Shared same-moment conflict detector frontier; synthetic coverage exists, "
         "production EE/UK wiring is intentionally deferred to the refactor wave."
