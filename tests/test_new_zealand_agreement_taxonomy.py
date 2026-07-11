@@ -209,6 +209,51 @@ def test_refusal_residual_status_tracks_family() -> None:
     assert frontier.missing_proofs == (NZ_DRY_RUN_REFUSED_SOURCE_CHANGE_ONLY_RULE_ID,)
 
 
+def test_classify_refusal_family_is_total_over_declared_refusal_reasons() -> None:
+    """TOTALITY: every declared actual-replay refusal reason is explicitly typed.
+
+    The classifier is fail-CLOSED — an UNMAPPED rule id (a new refusal constant
+    nobody typed) resolves to the CTSF-failing ``unknown`` family, never a silent
+    benign default. This test enumerates every ``NZ_ACTUAL_REPLAY_REFUSED_*``
+    constant declared on the actual-replay module (plus the carried family-level
+    receipt) and proves each has an explicit, non-``unknown`` typing, so adding a
+    new refusal reason without typing it in ``classify_refusal_family`` FAILS red.
+    """
+    import lawvm.new_zealand.actual_replay as ar
+
+    declared = {
+        name: getattr(ar, name)
+        for name in dir(ar)
+        if name.startswith("NZ_ACTUAL_REPLAY_REFUSED_") and name.endswith("_RULE_ID")
+    }
+    # Sanity: the module actually declares the refusal vocabulary we sweep.
+    assert declared, "no NZ_ACTUAL_REPLAY_REFUSED_* rule-id constants found"
+
+    for name, rule_id in sorted(declared.items()):
+        family = classify_refusal_family(refusal_rule_id=rule_id)
+        assert family != "unknown", (
+            f"declared refusal reason {name} is not typed by classify_refusal_family "
+            f"(fell through to the fail-closed 'unknown' family) — add an explicit "
+            f"mapping"
+        )
+
+    # The carried family-level dry-run refusal receipt also reaches the classifier
+    # and must be typed (never 'unknown').
+    assert (
+        classify_refusal_family(
+            refusal_rule_id=ar.NZ_ACTUAL_REPLAY_CARRIED_FAMILY_LEVEL_DRY_RUN_REFUSAL_RULE_ID
+        )
+        != "unknown"
+    )
+
+    # BITE: an unmapped / bogus rule id fails CLOSED to the CTSF-failing family.
+    assert (
+        classify_refusal_family(refusal_rule_id="nz_actual_replay_refused_totally_new_unmapped_reason")
+        == "unknown"
+    )
+    assert classify_refusal_family(refusal_rule_id="") == "unknown"
+
+
 # --- 3. ``--from-actual-replay`` feed on the real canary --------------------
 
 

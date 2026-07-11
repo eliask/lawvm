@@ -172,8 +172,15 @@ def test_eu_ledger_inputs_firings_and_divergences(monkeypatch):
     assert by_article["article:6"].disposition == "unknown"
     assert by_article["article:7"].diagnosis == "deterministic_gap"
     assert by_article["article:7"].disposition == "lawvm_wrong"
-    assert by_article["article:8"].diagnosis == "manual_frontier"
-    assert by_article["article:8"].disposition == "missing_source"
+    # FAIL-CLOSED only-oracle default (audit fix #3): an only-oracle article
+    # (``present_in_oracle_absent_in_replay``) now DEFAULTS to ``deterministic_gap``
+    # (a deterministic replay miss), not a benign ``manual_frontier`` — the
+    # ledger adapter consumes ``_KIND_TO_CLASS`` and carries no manual-compilation
+    # evidence, so it fails closed rather than laundering the miss into
+    # ``missing_source``. Promotion to ``manual_frontier`` is evidence-gated in
+    # ``CorpusDivergenceAccount.add`` (see test_eu_increment3).
+    assert by_article["article:8"].diagnosis == "deterministic_gap"
+    assert by_article["article:8"].disposition == "lawvm_wrong"
 
 
 def test_eu_ledger_inputs_records_firings_when_oracle_unreachable(monkeypatch):

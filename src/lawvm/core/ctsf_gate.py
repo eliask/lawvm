@@ -103,6 +103,7 @@ from typing import Any, Iterable, Literal, Optional
 
 _LOG = logging.getLogger(__name__)
 
+from lawvm.core.agreement_residual import AgreementResidual
 from lawvm.core.ctsf_corpus_cache import memoize_default_corpus
 from lawvm.core.ctsf_residual_report import (
     RESIDUAL_VERDICT_FAMILIES,
@@ -154,6 +155,87 @@ SCALAR_GATE_STATUS = "telemetry_no_gate_to_retire_tool_kept_as_diagnostic"
 FAIL_FAMILIES: tuple[str, ...] = ("replay_bug", "unknown")
 
 GateVerdict = Literal["PASS", "WARN", "FAIL"]
+
+
+# ---------------------------------------------------------------------------
+# Secondary fail-closed audit — the family-typing MIS-TYPING canary.
+#
+# The primary gate is a diff over the CTSF residual VERDICT (a family-count
+# multiset). It fails only when a NEW ``replay_bug`` / ``unknown`` family count
+# appears. That makes it blind to ONE failure mode: a genuine, materialized replay
+# defect whose per-frontend classifier MIS-TYPED it into a non-failing family
+# (e.g. NZ's old fail-open ``accepted_non_executable_frontier`` default, US's old
+# ``oracle_suspect`` length-ratio launder, EU's old blanket ``manual_frontier``).
+# Such a defect never increments a FAIL family, so it rides a benign family to a
+# green gate — exactly the anti-slop hole this audit closes.
+#
+# The audit is INDEPENDENT of the classifier's ``family`` verdict: it re-derives
+# billability from the residual's ``rule_id`` (the raw diagnostic of WHAT the
+# kernel observed) via a canonical registry of rule ids whose evidence is a
+# genuine, landed replay-direction defect. Any residual carrying such a rule id
+# but typed into a NON-failing family is a mis-typing and is surfaced.
+# ---------------------------------------------------------------------------
+
+
+def canonical_billable_replay_defect_rule_ids() -> frozenset[str]:
+    """Rule ids whose EVIDENCE is a genuine, materialized replay-direction defect.
+
+    These MUST be typed into a FAIL family (``replay_bug`` / ``unknown``). The set
+    is the INDEPENDENT witness the secondary family-typing audit uses — curated
+    from the canonical owners across frontends and derived from the diagnostic
+    (what the kernel observed), NOT from the classifier's family label. So a
+    frontend classifier that mis-types one of these into a benign family is caught.
+    Lazy-imported to avoid an import cycle with the jurisdiction kernels.
+    """
+    from lawvm.new_zealand.actual_replay import (
+        NZ_ACTUAL_REPLAY_REFUSED_MATERIALIZED_SLICE_DIVERGES_RULE_ID,
+        NZ_ACTUAL_REPLAY_REFUSED_OP_DRY_RUN_RESIDUAL_RULE_ID,
+    )
+    from lawvm.new_zealand.dry_run_oracle import (
+        NZ_DRY_RUN_ORACLE_REPEAL_TARGET_DIVERGES_RULE_ID,
+    )
+    from lawvm.us_federal.dry_run import (
+        US_DRY_RUN_RESIDUAL_OVER_MATERIALIZED_MIS_ROUTE_RULE_ID,
+    )
+
+    return frozenset(
+        {
+            # NZ actual-replay: a materialized mutation disagreed with the oracle.
+            NZ_ACTUAL_REPLAY_REFUSED_OP_DRY_RUN_RESIDUAL_RULE_ID,
+            NZ_ACTUAL_REPLAY_REFUSED_MATERIALIZED_SLICE_DIVERGES_RULE_ID,
+            # NZ whole-tree: at a node we repealed, the oracle is NOT a tombstone.
+            NZ_DRY_RUN_ORACLE_REPEAL_TARGET_DIVERGES_RULE_ID,
+            # US: an over-materialized mis-route on an unchanged section.
+            US_DRY_RUN_RESIDUAL_OVER_MATERIALIZED_MIS_ROUTE_RULE_ID,
+        }
+    )
+
+
+def audit_agreement_residual_family_typing(
+    residuals: Iterable[AgreementResidual],
+    *,
+    billable_rule_ids: frozenset[str] | None = None,
+) -> tuple[AgreementResidual, ...]:
+    """Secondary fail-closed audit: surface residuals whose family MIS-TYPES a bug.
+
+    A residual whose ``rule_id`` is a canonical genuine replay-defect (see
+    :func:`canonical_billable_replay_defect_rule_ids`) MUST carry a FAIL family
+    (``replay_bug`` / ``unknown``). Any such residual carrying a NON-failing family
+    is a mis-typing — a real defect laundered into a benign family that the primary
+    verdict-diff gate cannot see — and is returned so the gate surfaces it rather
+    than passing green. Independent of the classifier's ``family`` verdict by
+    construction (it keys off the raw diagnostic ``rule_id``).
+    """
+    ids = (
+        billable_rule_ids
+        if billable_rule_ids is not None
+        else canonical_billable_replay_defect_rule_ids()
+    )
+    return tuple(
+        residual
+        for residual in residuals
+        if residual.rule_id in ids and residual.family not in FAIL_FAMILIES
+    )
 
 
 # ---------------------------------------------------------------------------

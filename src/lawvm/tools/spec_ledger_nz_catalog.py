@@ -148,6 +148,13 @@ NZ_NON_RULE_LITERALS: FrozenSet[str] = frozenset(
         # on a family-level receipt that projection deliberately drops.
         "nz_actual_replay_refused_some_new_kind",
         "nz_dry_run_refused_no_insert_candidate",
+        # Deliberately-bogus UNMAPPED refusal reason: the fail-closed BITE input for
+        # the classify_refusal_family totality test
+        # (tests/test_new_zealand_agreement_taxonomy.py:
+        # test_classify_refusal_family_is_total_over_declared_refusal_reasons).
+        # It MUST stay uncataloged — it is not a production rule, it only proves an
+        # unmapped rule id resolves to the fail-closed 'unknown' family.
+        "nz_actual_replay_refused_totally_new_unmapped_reason",
     }
 )
 

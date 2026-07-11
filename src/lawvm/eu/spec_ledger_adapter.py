@@ -69,6 +69,15 @@ _EU_COMPARE_AS_OF = "2024-01-01"
 # (both carry the article, text differs) stays loud ``unknown`` pending per-text
 # analysis; ``oracle_suspect`` (a caller-flagged known editorial artifact) is
 # ``oracle_suspect``. ``agreement`` never reaches a divergence row.
+#
+# FAIL-CLOSED only-oracle default (audit fix #3): ``_KIND_TO_CLASS`` now defaults an
+# only-oracle article (``present_in_oracle_absent_in_replay``) to ``deterministic_gap``
+# (→ ``lawvm_wrong`` here), NOT to a benign ``manual_frontier``. This adapter carries no
+# manual-compilation evidence, so an only-oracle article fails closed to
+# ``deterministic_gap`` rather than laundering a genuine replay miss into
+# ``missing_source``; the evidence-gated ``manual_frontier`` promotion lives in
+# ``CorpusDivergenceAccount.add``. ``manual_frontier`` is kept mapped here for that
+# evidence-backed path.
 _EU_CLASS_DISPOSITION: Dict[str, WitnessDisposition] = {
     "agreement": "unknown",  # filtered before disposition (corroboration, not divergence)
     "text_diff": "unknown",

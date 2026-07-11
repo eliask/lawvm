@@ -735,13 +735,53 @@ def test_corpus_divergence_account_typed_classes_and_denominator() -> None:
     assert acct.act_count == 2
     assert counts["agreement"] == 4
     assert counts["text_diff"] == 1
-    assert counts["deterministic_gap"] == 1
-    assert counts["manual_frontier"] == 1
+    # FAIL-CLOSED only-oracle default: an only-oracle article
+    # (``present_in_oracle_absent_in_replay``, Article 4) is a deterministic replay
+    # MISS by default — it is NOT laundered into the benign ``manual_frontier``
+    # bucket absent explicit manual-compilation evidence. So both one-sided
+    # articles land in ``deterministic_gap`` and ``manual_frontier`` stays 0.
+    assert counts["deterministic_gap"] == 2
+    assert counts["manual_frontier"] == 0
     assert counts["oracle_suspect"] == 0
     # The denominator and conservation.
     assert acct.article_total == 7
     assert acct.article_total == sum(counts[c] for c in CORPUS_DIVERGENCE_CLASSES)
     assert acct.divergence_total == 3
+
+
+def test_corpus_only_oracle_promotes_to_manual_frontier_only_on_explicit_evidence() -> None:
+    """The only-oracle → ``manual_frontier`` promotion is EVIDENCE-GATED.
+
+    An only-oracle article defaults to ``deterministic_gap`` (a deterministic
+    replay miss). It is promoted to ``manual_frontier`` ONLY when the caller passes
+    its label in ``manual_frontier_labels`` (positive manual-compilation evidence),
+    mirroring the kernel only-oracle policy. This proves the promotion is a
+    deliberate, evidence-backed override — never a fail-open default.
+    """
+    replayed = _replay_corpus_base()
+    cmp2 = build_consolidation_oracle(
+        replayed,
+        base_celex="32099R0001",
+        as_of="2099-06-01",
+        fetch_consolidation=_fetch_fixture("corpus_cons_pit2.fmx4.xml"),
+    )
+
+    # Default (no evidence): Article 4 (only-oracle) stays a deterministic_gap.
+    default_acct = CorpusDivergenceAccount()
+    default_acct.add(cmp2)
+    assert default_acct.class_counts["manual_frontier"] == 0
+    assert default_acct.class_counts["deterministic_gap"] == 2
+
+    # Explicit evidence: promote Article 4 to manual_frontier.
+    promoted_acct = CorpusDivergenceAccount()
+    promoted_acct.add(cmp2, manual_frontier_labels=frozenset({"4"}))
+    assert promoted_acct.class_counts["manual_frontier"] == 1
+    assert promoted_acct.class_counts["deterministic_gap"] == 1
+    # Conservation holds under either typing (nothing dropped or double counted).
+    for acct in (default_acct, promoted_acct):
+        assert acct.article_total == sum(
+            acct.class_counts[c] for c in CORPUS_DIVERGENCE_CLASSES
+        )
     assert acct.to_dict()["conserved"] is True
 
 

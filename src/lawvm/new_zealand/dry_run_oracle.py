@@ -144,54 +144,86 @@ def classify_refusal_family(
       the amending payload XML could not be read → ``source_footing_gap``.
     * The before/on-or-after version window is missing for the transition's date
       → ``temporal_mismatch``.
+
+    Fail-CLOSED totality: the classifier is EXHAUSTIVE over every declared
+    actual-replay refusal reason. An unmapped ``refusal_rule_id`` (a NEW refusal
+    constant nobody typed here) returns the CTSF-failing ``unknown`` family, NOT
+    a silent benign default that would launder a real defect into a pass — the
+    same fail-loud discipline as EU's ``_KIND_TO_CLASS`` KeyError idiom.
     """
 
     # Imported lazily to avoid an import cycle: ``actual_replay`` imports this
     # classifier, so its rule-id constants are read at call time, not load time.
     from lawvm.new_zealand.actual_replay import (
+        NZ_ACTUAL_REPLAY_CARRIED_FAMILY_LEVEL_DRY_RUN_REFUSAL_RULE_ID,
         NZ_ACTUAL_REPLAY_REFUSED_BEFORE_XML_UNREADABLE_RULE_ID,
+        NZ_ACTUAL_REPLAY_REFUSED_FAMILY_NOT_PROMOTABLE_RULE_ID,
         NZ_ACTUAL_REPLAY_REFUSED_MATERIALIZED_SLICE_DIVERGES_RULE_ID,
         NZ_ACTUAL_REPLAY_REFUSED_MISSING_VERSION_WINDOW_RULE_ID,
         NZ_ACTUAL_REPLAY_REFUSED_OP_DRY_RUN_RESIDUAL_RULE_ID,
+        NZ_ACTUAL_REPLAY_REFUSED_OP_NEIGHBOURS_PERTURBED_RULE_ID,
+        NZ_ACTUAL_REPLAY_REFUSED_OP_NOT_DRY_RUN_VERIFIED_RULE_ID,
         NZ_ACTUAL_REPLAY_REFUSED_ORACLE_XML_UNREADABLE_RULE_ID,
+        NZ_ACTUAL_REPLAY_REFUSED_STRUCTURAL_MATERIALIZATION_FAILED_RULE_ID,
+        NZ_ACTUAL_REPLAY_REFUSED_SURFACE_MISSING_RULE_ID,
     )
 
     rule = refusal_rule_id or ""
     dry_rule = dry_run_refusal_rule_id or ""
 
-    # Genuine replay-direction divergence: a mutation was materialized and its
-    # result disagreed with the oracle (in isolation, or after compositing).
-    if rule in {
-        NZ_ACTUAL_REPLAY_REFUSED_OP_DRY_RUN_RESIDUAL_RULE_ID,
-        NZ_ACTUAL_REPLAY_REFUSED_MATERIALIZED_SLICE_DIVERGES_RULE_ID,
-    }:
-        return "replay_bug"
+    # A per-op dry-run block carries no mutation of its own: its family is that of
+    # the UNDERLYING dry-run refusal reason. A dry-run refusal is ALWAYS a
+    # pre-mutation decline (nothing was materialized) so it can never be a
+    # ``replay_bug``; temporal / footing are lifted out and everything else is a
+    # source-honest frontier. This is the ONLY case ``dry_run_refusal_rule_id`` is
+    # consulted, and the frontier default here is safe-by-construction (a
+    # pre-mutation decline cannot be a landed replay defect), NOT a fail-open
+    # catch-all over the actual-replay refusal vocabulary.
+    if rule == NZ_ACTUAL_REPLAY_REFUSED_OP_NOT_DRY_RUN_VERIFIED_RULE_ID:
+        if dry_rule == NZ_DRY_RUN_REFUSED_MISSING_VERSION_WINDOW_RULE_ID:
+            return "temporal_mismatch"
+        if (
+            dry_rule
+            in {
+                NZ_DRY_RUN_REFUSED_BEFORE_XML_UNREADABLE_RULE_ID,
+                NZ_DRY_RUN_REFUSED_ORACLE_XML_UNREADABLE_RULE_ID,
+            }
+            or "amending_act_xml_unreadable" in dry_rule
+        ):
+            return "source_footing_gap"
+        return "accepted_non_executable_frontier"
 
-    # Temporal: the change window for the transition's date is absent.
-    if rule == NZ_ACTUAL_REPLAY_REFUSED_MISSING_VERSION_WINDOW_RULE_ID:
-        return "temporal_mismatch"
-    if dry_rule == NZ_DRY_RUN_REFUSED_MISSING_VERSION_WINDOW_RULE_ID:
-        return "temporal_mismatch"
-
-    # Footing: the replay's before/oracle XML or the amending payload XML could
-    # not be read. The source is present in principle but its footing is missing.
-    if rule in {
-        NZ_ACTUAL_REPLAY_REFUSED_BEFORE_XML_UNREADABLE_RULE_ID,
-        NZ_ACTUAL_REPLAY_REFUSED_ORACLE_XML_UNREADABLE_RULE_ID,
-    }:
-        return "source_footing_gap"
-    if dry_rule in {
-        NZ_DRY_RUN_REFUSED_BEFORE_XML_UNREADABLE_RULE_ID,
-        NZ_DRY_RUN_REFUSED_ORACLE_XML_UNREADABLE_RULE_ID,
-    } or "amending_act_xml_unreadable" in dry_rule:
-        return "source_footing_gap"
-
-    # Everything else is source-honest: the op was correctly declined before any
-    # mutation because the source does not license a clean, exact replay. This
-    # includes target-recovery refusals, source-change-only payloads, family not
-    # promotable, missing operation surface, sibling-blocked transitions, and the
-    # structural payload/anchor-derivation refusals.
-    return "accepted_non_executable_frontier"
+    # EXHAUSTIVE, fail-CLOSED map over every OTHER declared actual-replay refusal
+    # reason. A rule id absent here is a NEW, untyped refusal reason: it MUST fall
+    # to the CTSF-failing ``unknown`` family via ``.get(rule, "unknown")`` — NOT a
+    # silent benign default that would launder a genuine replay defect into a
+    # pass. The paired totality test
+    # (``test_classify_refusal_family_is_total_over_declared_refusal_reasons``)
+    # proves every declared ``NZ_ACTUAL_REPLAY_REFUSED_*`` constant is typed here
+    # (or by the delegation branch above), so adding a new one without typing it
+    # fails red.
+    family_by_rule: dict[str, AgreementResidualFamily] = {
+        # Genuine replay-direction divergence: a mutation was materialized and its
+        # result disagreed with the oracle (in isolation, or after compositing).
+        NZ_ACTUAL_REPLAY_REFUSED_OP_DRY_RUN_RESIDUAL_RULE_ID: "replay_bug",
+        NZ_ACTUAL_REPLAY_REFUSED_MATERIALIZED_SLICE_DIVERGES_RULE_ID: "replay_bug",
+        # Temporal: the change window for the transition's date is absent.
+        NZ_ACTUAL_REPLAY_REFUSED_MISSING_VERSION_WINDOW_RULE_ID: "temporal_mismatch",
+        # Footing: the replay's before / on-or-after oracle XML could not be read.
+        NZ_ACTUAL_REPLAY_REFUSED_BEFORE_XML_UNREADABLE_RULE_ID: "source_footing_gap",
+        NZ_ACTUAL_REPLAY_REFUSED_ORACLE_XML_UNREADABLE_RULE_ID: "source_footing_gap",
+        # Source-honest frontier: the op was correctly declined (before or at the
+        # mutation boundary) because the source does not license a clean, exact
+        # replay — a perturbed mutation boundary, a non-promotable family, a
+        # structural payload that could not be re-materialized, a missing
+        # operation surface, or a carried family-level "nothing to replay" receipt.
+        NZ_ACTUAL_REPLAY_REFUSED_OP_NEIGHBOURS_PERTURBED_RULE_ID: "accepted_non_executable_frontier",
+        NZ_ACTUAL_REPLAY_REFUSED_FAMILY_NOT_PROMOTABLE_RULE_ID: "accepted_non_executable_frontier",
+        NZ_ACTUAL_REPLAY_REFUSED_STRUCTURAL_MATERIALIZATION_FAILED_RULE_ID: "accepted_non_executable_frontier",
+        NZ_ACTUAL_REPLAY_REFUSED_SURFACE_MISSING_RULE_ID: "accepted_non_executable_frontier",
+        NZ_ACTUAL_REPLAY_CARRIED_FAMILY_LEVEL_DRY_RUN_REFUSAL_RULE_ID: "accepted_non_executable_frontier",
+    }
+    return family_by_rule.get(rule, "unknown")
 
 
 # Comparator node-status (agreement.py ``_node_agreement_status`` plus the

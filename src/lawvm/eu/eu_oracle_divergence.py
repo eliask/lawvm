@@ -192,21 +192,35 @@ def _label_sort_key(label: str) -> tuple[int, str]:
 #                                              an article the editorial
 #                                              consolidation does not render —
 #                                              a deterministic-replay surplus)
-#   * ``present_in_oracle_absent_in_replay`` → ``manual_frontier`` (the editorial
-#                                              consolidation carries an article the
-#                                              native replay has not reconstructed —
-#                                              the manual-compilation frontier)
+#   * ``present_in_oracle_absent_in_replay`` → ``deterministic_gap`` by DEFAULT (an
+#                                              article the native replay has not
+#                                              reconstructed is, absent evidence, a
+#                                              deterministic replay MISS), PROMOTED
+#                                              to ``manual_frontier`` ONLY when the
+#                                              caller supplies explicit
+#                                              manual-compilation evidence for that
+#                                              label (see ``add``)
+#
+# The only-oracle default mirrors the kernel policy in
+# :func:`lawvm.core.oracle_divergence.classify_divergences` (only_oracle defaults to
+# ``deterministic_gap``; it is promoted to ``manual_frontier`` only behind an
+# explicit MF-evidence predicate). A BLANKET ``manual_frontier`` default is
+# fail-open: it launders a genuine deterministic replay miss into a benign
+# editorial-frontier bucket, so it is NOT centralised in ``_KIND_TO_CLASS``.
 #
 # ``oracle_suspect`` is reserved for an article the corpus marks as a known
 # editorial artifact of the consolidation; the comparator does not synthesise it
 # (it never repairs), so its count is 0 unless a caller supplies suspect labels.
 
-#: Map from the per-article ``DivergenceKind`` to the corpus divergence class.
+#: Map from the per-article ``DivergenceKind`` to the DEFAULT corpus divergence
+#: class. Only-oracle articles default to ``deterministic_gap``; the
+#: ``manual_frontier`` promotion is an explicit, evidence-gated override applied in
+#: :meth:`CorpusDivergenceAccount.add`, never a fail-open default here.
 _KIND_TO_CLASS: dict[str, str] = {
     "agreement": "agreement",
     "text_divergence": "text_diff",
     "present_in_replay_absent_in_oracle": "deterministic_gap",
-    "present_in_oracle_absent_in_replay": "manual_frontier",
+    "present_in_oracle_absent_in_replay": "deterministic_gap",
 }
 
 #: The corpus divergence classes, in a stable reporting order (denominator-first).
@@ -250,6 +264,7 @@ class CorpusDivergenceAccount:
         comparison: OracleComparison,
         *,
         oracle_suspect_labels: frozenset[str] = frozenset(),
+        manual_frontier_labels: frozenset[str] = frozenset(),
     ) -> None:
         """Fold one act's comparison into the corpus account.
 
@@ -259,6 +274,17 @@ class CorpusDivergenceAccount:
         article is counted as ``oracle_suspect`` regardless of its raw kind — the
         only place a label leaves its mechanical class, and only on explicit
         caller assertion (the comparator itself never repairs/relabels).
+
+        ``manual_frontier_labels`` are only-oracle article labels the caller has
+        POSITIVE manual-compilation evidence for (the editorial consolidation
+        genuinely carries something the deterministic replay structurally cannot
+        reconstruct — e.g. a manual corrigendum). An only-oracle article
+        (``present_in_oracle_absent_in_replay``) DEFAULTS to ``deterministic_gap``
+        (a deterministic replay miss) and is PROMOTED to ``manual_frontier`` ONLY
+        when its label is in this set — mirroring the kernel only-oracle policy
+        (:func:`lawvm.core.oracle_divergence.classify_divergences`). Absent
+        evidence there is no blanket ``manual_frontier`` default that would launder
+        a genuine replay miss into a benign editorial-frontier bucket.
         """
         self.comparisons.append(comparison)
         suspect_here: set[str] = set()
@@ -277,8 +303,16 @@ class CorpusDivergenceAccount:
                 raise ValueError(
                     f"unmapped DivergenceKind {d.kind!r} in corpus divergence "
                     "accounting; add it to _KIND_TO_CLASS rather than defaulting "
-                    "it to manual_frontier"
+                    "it to a benign class"
                 ) from None
+            # Only-oracle promotion: the map DEFAULTS an only-oracle article to
+            # ``deterministic_gap``; promote it to ``manual_frontier`` ONLY behind
+            # explicit manual-compilation evidence (never a fail-open default).
+            if (
+                d.kind == "present_in_oracle_absent_in_replay"
+                and d.article_label in manual_frontier_labels
+            ):
+                cls = "manual_frontier"
             self.class_counts[cls] += 1
         if suspect_here:
             self.suspect_labels[f"{comparison.base_celex}@{comparison.as_of}"] = (

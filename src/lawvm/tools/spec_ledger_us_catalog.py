@@ -485,6 +485,16 @@ _US_RULE_SPECS: Dict[str, str] = {
         "Contradiction: the kernel claimed (materialized) a section the oracle did not "
         "change at all — a spurious claim, never an agreement."
     ),
+    "us_dry_run_residual_claimed_section_over_materialized_vs_unchanged_oracle_mis_route": (
+        "Contradiction (over-materialization mis-route): the kernel claimed a section "
+        "the oracle did NOT change AND its materialized text is grossly longer than the "
+        "unchanged oracle body (>1.5x) — the op appended a full section block the oracle "
+        "never recorded, the signature of a classification-table mis-route onto a section "
+        "the Public Law did not amend. A LawVM-side landed replay defect: typed to its "
+        "own gate-BILLABLE disposition (projects to replay_bug), NOT laundered into the "
+        "benign oracle_suspect family. The before text is preserved; never repaired to "
+        "the oracle."
+    ),
     "us_dry_run_residual_oracle_changed_section_not_claimed": (
         "Contradiction (missing_source): the oracle changed a section the kernel never "
         "claimed — the honest lowering/coverage gap, no op was emitted for it."

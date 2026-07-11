@@ -68,6 +68,7 @@ from lawvm.us_federal.dry_run import (
     DISPOSITION_LAWVM_WRONG,
     DISPOSITION_MISSING_SOURCE,
     DISPOSITION_ORACLE_SUSPECT,
+    DISPOSITION_OVER_MATERIALIZED,
     USDryRunReport,
 )
 from lawvm.us_federal.sources import UsArchiveReader
@@ -87,6 +88,9 @@ US_LEGACY_UNKNOWN = "legacy_unknown"
 # source/window, not a lowering bug). Anything unmapped falls to "unknown" (loud).
 _US_DISPOSITION: Dict[str, WitnessDisposition] = {
     DISPOSITION_LAWVM_WRONG: "lawvm_wrong",
+    # An over-materialized mis-route is a LawVM-side wrong materialization, so its
+    # neutral witness disposition is ``lawvm_wrong`` (never ``oracle_suspect``).
+    DISPOSITION_OVER_MATERIALIZED: "lawvm_wrong",
     DISPOSITION_ORACLE_SUSPECT: "oracle_suspect",
     DISPOSITION_MISSING_SOURCE: "missing_source",
     "sunset_reversion": "oracle_suspect",

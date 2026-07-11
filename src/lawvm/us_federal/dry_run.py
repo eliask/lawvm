@@ -134,6 +134,18 @@ US_DRY_RUN_RESIDUAL_TEXT_MISMATCH_RULE_ID = "us_dry_run_residual_materialized_te
 US_DRY_RUN_RESIDUAL_CLAIMED_BUT_ORACLE_UNCHANGED_RULE_ID = (
     "us_dry_run_residual_claimed_section_unchanged_in_oracle"
 )
+# A claimed section the oracle did NOT change, whose materialized text is grossly
+# longer than the (unchanged) oracle body — the op appended a full section block
+# the oracle never recorded, the signature of a MIS-ROUTE by the classification
+# table (the op landed on a section the PL did not actually amend). This is a
+# LawVM-side over-materialization, NOT an oracle pathology: typing it
+# ``oracle_suspect`` would launder a real replay defect into a benign,
+# non-billable family. It carries its own billable rule id + disposition so the
+# length-ratio anomaly is surfaced and CHARGED (a ``replay_bug`` gate family),
+# not absorbed. Never repaired to the oracle (§0 over-retention is the safe wrong).
+US_DRY_RUN_RESIDUAL_OVER_MATERIALIZED_MIS_ROUTE_RULE_ID = (
+    "us_dry_run_residual_claimed_section_over_materialized_vs_unchanged_oracle_mis_route"
+)
 # The oracle changed a section we never claimed: the honest lowering gap.
 US_DRY_RUN_RESIDUAL_ORACLE_CHANGED_NOT_CLAIMED_RULE_ID = (
     "us_dry_run_residual_oracle_changed_section_not_claimed"
@@ -270,6 +282,13 @@ US_DRY_RUN_REFUSED_EACH_PLACE_EXCEPTIONS_UNUSABLE_RULE_ID = (
 # carries which side the gap is on, never a silent repair-to-oracle.
 DISPOSITION_LAWVM_WRONG = "lawvm_wrong"
 DISPOSITION_ORACLE_SUSPECT = "oracle_suspect"
+# A LawVM-side over-materialization on a section the oracle did NOT change: the op
+# appended a full section body the oracle never recorded (a classification-table
+# mis-route). A distinct, gate-BILLABLE disposition (projects to ``replay_bug``,
+# witness ``lawvm_wrong``) — kept separate from a plain ``lawvm_wrong`` text
+# mismatch so the length-ratio mis-route is identifiable, but NOT downgraded to
+# the benign ``oracle_suspect`` family that would absorb it out of the gate.
+DISPOSITION_OVER_MATERIALIZED = "over_materialized_mis_route"
 DISPOSITION_MISSING_SOURCE = "missing_source"
 # A CLAIMED section whose composed text mismatches the oracle while at least one
 # on-target op was DEFERRED on temporal grounds (not yet effective / pending a
@@ -1219,7 +1238,7 @@ class USDryRunReport:
             for s in self.lowering_deferred_sections
             if s in agreeing_changed
             or row_disposition_by_section.get(s)
-            in (DISPOSITION_LAWVM_WRONG, DISPOSITION_ORACLE_SUSPECT)
+            in (DISPOSITION_LAWVM_WRONG, DISPOSITION_OVER_MATERIALIZED, DISPOSITION_ORACLE_SUSPECT)
         }
         deferred = tuple(
             sorted((changed & deferred_keys) - lowering_deferred_owned_elsewhere)
@@ -1529,6 +1548,11 @@ def build_us_dry_run_conserved_account(report: USDryRunReport) -> USDryRunConser
 
 def _residual_family(disposition: str) -> AgreementResidualFamily:
     if disposition == DISPOSITION_LAWVM_WRONG:
+        return "replay_bug"
+    if disposition == DISPOSITION_OVER_MATERIALIZED:
+        # Gate-billable: an over-materialized mis-route is a landed replay defect,
+        # not an oracle editorial pathology. Charged as ``replay_bug`` (distinct
+        # rule id keeps it identifiable), never absorbed into a benign family.
         return "replay_bug"
     if disposition == DISPOSITION_ORACLE_SUSPECT:
         return "oracle_editorial_pathology"
@@ -4214,16 +4238,20 @@ def build_us_dry_run(
                 # table to a section the PL didn't actually amend. A genuine
                 # text_mismatch on an unchanged section would have a ratio
                 # close to 1.0 (the op altered text that the oracle preserved);
-                # a mis-route lands at >2.0x (the op appended a full new
-                # section body). Reclassify as oracle_suspect (not lawvm_wrong)
-                # so the bench doesn't penalize the classification table
-                # resolver for incomplete PL→USC mappings, and the before text
-                # is preserved (§0: over-retention is the safe wrong).
+                # a mis-route lands at >1.5x (the op appended a full new
+                # section body). This is a LawVM-side over-materialization — a
+                # landed replay defect, NOT an oracle pathology — so it is typed
+                # to its OWN gate-BILLABLE disposition (distinct rule id, projects
+                # to ``replay_bug``) rather than laundered into the benign
+                # ``oracle_suspect`` family that would absorb it out of the gate.
+                # The before text is still preserved (§0: over-retention is the
+                # safe wrong); we never repair the over-materialized text to the
+                # oracle. A near-ratio mismatch stays a plain ``lawvm_wrong``.
                 mat_len = len(materialized or "")
                 orc_len = max(len(oracle_text or ""), 1)
                 if mat_len > orc_len * 1.5 and oracle_changed_here is False:
-                    rule_id = US_DRY_RUN_RESIDUAL_CLAIMED_BUT_ORACLE_UNCHANGED_RULE_ID
-                    disposition = DISPOSITION_ORACLE_SUSPECT
+                    rule_id = US_DRY_RUN_RESIDUAL_OVER_MATERIALIZED_MIS_ROUTE_RULE_ID
+                    disposition = DISPOSITION_OVER_MATERIALIZED
                 else:
                     rule_id = US_DRY_RUN_RESIDUAL_CLAIMED_BUT_ORACLE_UNCHANGED_RULE_ID
                     disposition = DISPOSITION_LAWVM_WRONG
