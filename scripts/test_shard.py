@@ -744,6 +744,12 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # segmentation + coverage gate + struct_geom fast-path on synthetic
         # PageElements (hermetic, no PDF lib / model). Ingest-carrier family.
         "test_ingest_born_digital.py",
+        # Deterministic OMISSION census (ingest.coverage_census): the coverage-ledger
+        # verifier that audits DROPPED units (the blind spot every extracted-unit
+        # verifier misses) — unclaimed source ink -> pdf.omission_suspect, page/§
+        # ordinal gaps -> pdf.sequence_gap, furniture distinguished by geometry.
+        # Seeded-drop proof + clean-page no-false-flag (hermetic). Ingest-carrier.
+        "test_ingest_coverage_census.py",
         # Jurisdiction-agnostic glyph-substitution text-layer repair primitive
         # (ingest.text_layer_repair): validated re.sub against a known shape +
         # independent-constraint validator (the general multi-witness token

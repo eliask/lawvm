@@ -707,11 +707,44 @@ def build_born_digital_simulacra(
     return tuple(out)
 
 
+def census_born_digital_coverage(
+    manifestation,
+    page_elements: Sequence[PageElements],
+    born_pages: Sequence[Optional[BornDigitalPage]],
+    *,
+    recurrence: Optional[Mapping[str, int]] = None,
+):
+    """OPT-IN omission verify pass over the born-digital lane's output (ADDITIVE).
+
+    Audits what the geom lane DROPPED — the blind spot every extracted-unit verifier
+    misses. For each page, the source ink ledger (text-layer line geometry) is checked
+    against the emitted units' claimed spans; unclaimed non-furniture ink -> a typed
+    ``pdf.omission_suspect`` residual, and a gap in the page-number / ``§``-ordinal
+    sequence -> ``pdf.sequence_gap`` (``lawvm.ingest.coverage_census``).
+
+    Purely a SEPARATE consumer of the already-produced ``born_pages``: it touches no
+    simulacrum, so the no-census path is byte-identical (the whole point — a verify
+    pass, never a mutation). Returns a ``CensusLedger``; the caller routes its typed
+    residuals into the SAME coverage/residual channel as every other ingest finding.
+    """
+    from lawvm.ingest.coverage_census import CensusLedger, run_census
+
+    sims = [bp.simulacrum if bp is not None else None for bp in born_pages]
+    ledger: CensusLedger = run_census(
+        page_elements,
+        sims,
+        artifact_digest=manifestation.artifact_digest,
+        recurrence=recurrence,
+    )
+    return ledger
+
+
 __all__ = [
     "BornDigitalPage",
     "GeomFallbackRegion",
     "born_digital_page",
     "build_born_digital_simulacra",
+    "census_born_digital_coverage",
     "page_is_born_digital",
     "page_stripped_char_count",
 ]

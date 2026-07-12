@@ -60,6 +60,13 @@ class ResidualFamily(Enum):
     PDF_TABLE_GRID_UNOWNED = "pdf.table_grid_unowned"
     PDF_FOOTNOTE_UNCOLLATED = "pdf.footnote_uncollated"
     PDF_READING_ORDER_AMBIGUOUS = "pdf.reading_order_ambiguous"
+    # OMISSION census (lawvm.ingest.coverage_census): a source ink region claimed by
+    # NO emitted unit (a silent-drop suspect — the blind spot every EXTRACTED-unit
+    # verifier misses). A geometry-distinguished furniture region is NOT flagged.
+    PDF_OMISSION_SUSPECT = "pdf.omission_suspect"
+    # OMISSION census: a gap in the page-number / §-ordinal sequence — a dropped
+    # page or section — derived deterministically from the source ordinals.
+    PDF_SEQUENCE_GAP = "pdf.sequence_gap"
     DOCX_STRUCTURE_UNTRUSTED = "docx.structure_untrusted"
     GOVERNMENT_PROPOSAL_DRAFT_OP_SET_UNEXTRACTED = "government_proposal_draft.op_set_unextracted"
 
