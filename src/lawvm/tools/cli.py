@@ -10178,6 +10178,48 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
     sweep_p.add_argument("--json-out", default=None, metavar="PATH", dest="json_out",
                          help="also write the JSON payload to this path")
 
+    # --- fi-vision-read-calibration ---
+    vread_p = sub.add_parser(
+        "fi-vision-read-calibration",
+        help="vision transcription-error calibration: min-error render+read config + which "
+             "verification mechanisms are load-bearing",
+        description=(
+            "MEASUREMENT harness that finds the vision-LLM render+read configuration MINIMIZING "
+            "transcription error on PDF page text, and measures which verification mechanisms "
+            "(multi-read consensus, agreement->correctness) are load-bearing — on CLEAN "
+            "born-digital HE pages where the pdfium text layer is FREE, EXACT ground truth. GT "
+            "is read in READING ORDER (never per-glyph stitched) and VALIDATED (no PUA/control/"
+            "U+FFFD garble) before use; corrupt-font pages are skipped. Sweeps one axis at a "
+            "time (render scale, crop granularity full-page->single-line, single-line aspect "
+            "handling incl. pad-to-square + word-gap reflow-stack + overlap tiles, temperature, "
+            "prompt, and single vs 2-read/3-read consensus) and reports CER/WER/hallucination "
+            "DISTRIBUTIONS (median/p90/max, per-item rows) plus the agreement<->error "
+            "correlation. Reuses the systemic pdfium lock, suspect_region garble check, the "
+            "content-addressed RecoveredTextStore read cache, and the fi-calibration metrics. "
+            "ADDITIVE / read-only — never touches a production read path. The full sweep needs "
+            "the GPU and is OPERATOR-invoked via --live; CI drives it hermetically with a stub."
+        ),
+    )
+    vread_p.add_argument("--farchive", default=None, metavar="PATH",
+                         help="HE government-proposal farchive (default: data/fi_government_proposal.farchive)")
+    vread_p.add_argument("--live", action="store_true",
+                         help="operator GPU sweep (else replay-only: cold cache -> no backend call)")
+    vread_p.add_argument("--base-url", dest="base_url", default="http://localhost:8080",
+                         help="vision backend base URL (default: http://localhost:8080)")
+    vread_p.add_argument("--model", default="unsloth/Qwen3.6-35B-A3B-MTP-GGUF:UD-Q4_K_XL",
+                         help="served multimodal model id (folded into the read cache key)")
+    vread_p.add_argument("--sample", type=int, default=4, metavar="N",
+                         help="HE units to sample (default: 4)")
+    vread_p.add_argument("--seed", type=int, default=1, help="deterministic sample seed")
+    vread_p.add_argument("--max-pages", dest="max_pages", type=int, default=12,
+                         help="pages to scan per HE for clean GT pages (default: 12)")
+    vread_p.add_argument("--cache", default=None, metavar="PATH",
+                         help="read-cache farchive (gitignored; warm hits replay free)")
+    vread_p.add_argument("--jsonl-out", dest="jsonl_out", default=None, metavar="PATH",
+                         help="stream per-item result rows to this JSONL")
+    vread_p.add_argument("--report-out", dest="report_out", default=None, metavar="PATH",
+                         help="write the ranked per-config summary to this path")
+
     # --- fi-producer-compare ---
     prodcmp_p = sub.add_parser(
         "fi-producer-compare",
@@ -14965,6 +15007,11 @@ def _main_impl() -> None:
         from lawvm.tools.fi_sweep import main as fi_sweep_main
 
         fi_sweep_main(args)
+
+    elif args.command == "fi-vision-read-calibration":
+        from lawvm.tools.fi_vision_read_calibration import main as fi_vision_read_calibration_main
+
+        fi_vision_read_calibration_main(args)
 
     elif args.command == "fi-producer-compare":
         from lawvm.tools.fi_producer_compare import main as fi_producer_compare_main

@@ -1250,6 +1250,11 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # fold, and proxy validation (fake reader, hermetic — the live GPU sweep
         # is operator-invoked, not CI).
         "test_fi_calibration.py",
+        # Vision transcription-error calibration harness (fi-vision-read-calibration):
+        # GT extraction/validation, CER/WER/hallucination metrics, crop/reflow geometry,
+        # read-cache keying, and the config-grid runner + multi-read consensus (stub
+        # backend, hermetic — no :8080 / libvoikko call in CI).
+        "test_fi_vision_read_calibration.py",
         # VoI-staged corpus reliability sweep driver (fi-sweep): escalating
         # superset-nested stratified stages, the per-stage NUMERIC-exact + accept-
         # regression gate (PROCEED clean / STOP on regression, dropping the next
@@ -1565,6 +1570,13 @@ TOOL_SOURCE_SHARD_GROUPS: dict[tuple[str, ...], tuple[str, ...]] = {
         "src/lawvm/tools/fi_parse_corpus.py",
         "src/lawvm/tools/fi_calibration.py",
         "src/lawvm/tools/fi_sweep.py",
+        # Vision transcription-error calibration harness (fi-vision-read-calibration):
+        # reading-order GT extraction + validation, render/aspect geometry (band/
+        # single-line crops, pad-to-square, word-gap reflow-stack, overlap tiles), the
+        # content-addressed read cache, the config-grid runner, and the multi-read
+        # consensus + agreement-predicts-correctness measurement (stub reader, hermetic
+        # — the live GPU sweep is operator-invoked, not CI).
+        "src/lawvm/tools/fi_vision_read_calibration.py",
         # PDF→IR EXACTNESS eval harnesses (siblings of fi_parse_compare/corpus):
         # amendment-IR + HE proposed-effect IR compare/corpus drivers, the HE
         # payload-divergence adjudicator, the phase-3 appendix-structure tool, and
