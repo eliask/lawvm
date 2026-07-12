@@ -9763,6 +9763,32 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
     scan_stratum_p.add_argument("--out", default=None, metavar="PATH",
                                 help="write to PATH instead of stdout")
 
+    # --- fi-verification-canary ---
+    verification_canary_p = sub.add_parser(
+        "fi-verification-canary",
+        help="the error bar on 'verified': seed known errors, drive the real gates, report false-graduation rate",
+        description=(
+            "FALSE-GRADUATION CANARY. Seeds KNOWN errors (the truth is "
+            "deliberately corrupted) and drives the ACTUAL shipped fidelity gates "
+            "with those seeded inputs, then measures the fraction that FALSELY "
+            "GRADUATES (accepted / corroborated / cell-exact when the truth is "
+            "wrong) versus what is correctly TYPED as a divergence. Three gates, "
+            "one seeded-error class each: the op-equivalence fold quotient "
+            "(single-glyph / diacritic Å→Ä / citation l-1,O-0 substitutions — does "
+            "a fold MASK it?), the vision consensus gate (Gate A single witness + "
+            "Gate B two-witness consensus — do two SAME-LINEAGE correlated "
+            "misreads FALSELY corroborate?), and the MinerU table verify gate (a "
+            "wrong cell — typed, good — vs an OMITTED cell — the census "
+            "blind-spot). QA/measurement scaffolding: witnesses are STUBBED "
+            "(seeded strings), so no :8080 / MinerU subprocess / network — fully "
+            "deterministic. REUSES the shipped gates, never reimplements them."
+        ),
+    )
+    verification_canary_p.add_argument("--json", action="store_true",
+                                       help="emit the report as JSON instead of text")
+    verification_canary_p.add_argument("--out", default=None, metavar="PATH",
+                                       help="write the report to PATH instead of stdout")
+
     # --- fi-appendix-structure ---
     appendix_p = sub.add_parser(
         "fi-appendix-structure",
@@ -14978,6 +15004,11 @@ def _main_impl() -> None:
         from lawvm.tools.fi_scan_stratum import main as fi_scan_stratum_main
 
         fi_scan_stratum_main(args)
+
+    elif args.command == "fi-verification-canary":
+        from lawvm.tools.fi_verification_canary import main as fi_verification_canary_main
+
+        fi_verification_canary_main(args)
 
     elif args.command == "fi-appendix-structure":
         from lawvm.tools.fi_appendix_structure import main as fi_appendix_structure_main

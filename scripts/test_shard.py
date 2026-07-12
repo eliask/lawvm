@@ -1303,6 +1303,12 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # errors typed, never graduated) + store-replay / cold-offline control flow. The
         # subprocess seam (external py3.12 venv) is never driven in CI.
         "test_mineru_producer.py",
+        # False-graduation canary (fi-verification-canary): the error bar on "verified".
+        # Seeds known errors and drives the REAL gates — op-equivalence quotient, vision
+        # consensus reconcile (Gate A/B), MinerU table verify — measuring the per-class
+        # false-graduation rate (fold non-masking, Gate-B correlated false-corroboration,
+        # the omitted-cell census blind-spot). Stub witnesses, hermetic (no :8080/subprocess).
+        "test_fi_verification_canary.py",
     ),
     "tools_audit_restructure": (
         "test_fi_restructure_plan.py",
@@ -1592,6 +1598,9 @@ TOOL_SOURCE_SHARD_GROUPS: dict[tuple[str, ...], tuple[str, ...]] = {
         "src/lawvm/tools/fi_he_ir_corpus.py",
         "src/lawvm/tools/fi_he_payload_adjudicate.py",
         "src/lawvm/tools/fi_appendix_structure.py",
+        # False-graduation canary (test_fi_verification_canary.py): drives the real
+        # op-equivalence / vision-reconcile / MinerU-verify gates on seeded known errors.
+        "src/lawvm/tools/fi_verification_canary.py",
         "src/lawvm/tools/fi_producer_compare.py",
         # Phase-3 vision witness layer (siblings of fi_appendix_structure): the
         # holistic sanity SCREEN (garble-scan + gestalt predicate, recall-critical,
