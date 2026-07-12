@@ -427,6 +427,7 @@ def make_comparer(
     johtolause_cache: str = FI_HE_JOHTOLAUSE_TAG_STORE,
     base_url: Optional[str] = None,
     vision_reader: Optional[VisionReader] = None,
+    vision_reader_2: Optional[VisionReader] = None,
     witness_prompt: str = "",
     witness_model: str = "",
 ) -> Callable[[HEUnit], HECompareResult]:
@@ -442,7 +443,10 @@ def make_comparer(
     :func:`~lawvm.tools.fi_he_ir_compare.compare_he_from_farchive`. ``None`` (default) is the
     free offline sweep — every result is byte-identical to today. When injected, an
     escalation-pending unit is corroborated and carries the receipt (fingerprinted by
-    ``witness_prompt`` / ``witness_model``).
+    ``witness_prompt`` / ``witness_model``). ``vision_reader_2`` is an OPTIONAL SECOND
+    independent reader (a different render scale / blind prompt); when supplied it enables
+    the multi-character pixel-consensus payload gate (both reads must AGREE on the
+    replacement token) — ``None`` keeps the single-letter-only behaviour.
     """
     classify_fn: Optional[Callable[[str], object]] = None
     if llm_johtolause:
@@ -459,6 +463,7 @@ def make_comparer(
             max_pages=max_pages,
             classify_fn=classify_fn,
             vision_reader=vision_reader,
+            vision_reader_2=vision_reader_2,
             witness_prompt=witness_prompt,
             witness_model=witness_model,
         )

@@ -1379,6 +1379,98 @@ def test_payload_stays_mismatch_when_vision_silent() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# MULTI-CHARACTER corrupt-font payload corroboration (Gate B): a WHOLE-cluster   #
+# garble the single-letter gate cannot touch, recovered ONLY when TWO INDEPENDENT #
+# vision reads AGREE on the pixel-consensus token — never a lexicon, never the XML. #
+# --------------------------------------------------------------------------- #
+
+# op-5 body: the geom read garbles "perimisestä" as the MULTI-char "periruisestä"
+# (lexically plausible → suspect_region silent; not single-letter → Gate A cannot fix it).
+_XML_BODY5_MC = "Korvausoikeuden edellytykset perimisestä suoritetaan riittavan pitkasti vertailua varten"
+_PDF_BODY5_MC = "Korvausoikeuden edellytykset periruisestä suoritetaan riittavan pitkasti vertailua varten"
+_BODY7 = "Uusi seitsemannen pykalan sisalto tassa riittavan pitkana."
+
+
+def _multichar_corrupt_font_he():
+    xml = _he_xml(_CLAUSE, bodies={"5": f"5 {_SEC} {_XML_BODY5_MC}", "7": f"7 {_SEC} {_BODY7}"})
+    pdf = _pdf_page(_CLAUSE, body5=_PDF_BODY5_MC, body7=_BODY7)
+    return xml, pdf
+
+
+def test_multichar_payload_corroborated_by_two_agreeing_reads() -> None:
+    """(a) TWO independent reads AGREE on the multi-char token → payload_corroborated (NOT exact)."""
+    xml, pdf = _multichar_corrupt_font_he()
+    # Two INDEPENDENT page reads (different render scale) — both read the intended word.
+    page1 = f"HE 99/2020 vp 5 {_SEC} {_XML_BODY5_MC}"
+    page2 = f"5 {_SEC} {_XML_BODY5_MC} jäljempänä säädetään"
+    r = compare_he(
+        xml, pdf, he_year=2020, he_number=99,
+        vision_reader=lambda pending: page1,
+        vision_reader_2=lambda pending: page2,
+        pdf_locator="akn/.../main.pdf",
+        witness_model="stub-vision", witness_prompt="transcribe",
+    )
+    assert r.counts["payload_mismatch"] == 0
+    assert r.counts[_PDF_PAYLOAD_CORROBORATED] == 1
+    assert r.corroborated == 1
+    assert not r.exact_equivalent  # a vision recovery is NEVER folded into deterministic exact
+    rcpt = r.payload_receipts[0]
+    assert rcpt.verdict_changed is True and rcpt.agreed is False
+
+
+def test_multichar_single_reader_stays_mismatch() -> None:
+    """(d) Only ONE witness (no ``vision_reader_2``) → Gate B never fires → open payload_mismatch."""
+    xml, pdf = _multichar_corrupt_font_he()
+    page1 = f"HE 99/2020 vp 5 {_SEC} {_XML_BODY5_MC}"
+    r = compare_he(
+        xml, pdf, he_year=2020, he_number=99,
+        vision_reader=lambda pending: page1,  # a single read cannot corroborate a multi-char garble
+    )
+    assert r.counts["payload_mismatch"] == 1
+    assert r.corroborated == 0
+
+
+def test_multichar_disagreeing_reads_stays_mismatch() -> None:
+    """(b) The two reads DISAGREE with each other → uncertain → stays payload_mismatch."""
+    xml, pdf = _multichar_corrupt_font_he()
+    page1 = f"HE 99/2020 vp 5 {_SEC} {_XML_BODY5_MC}"  # reads "perimisestä"
+    page2 = f"5 {_SEC} " + _XML_BODY5_MC.replace("perimisestä", "perinnöstä")  # reads differently
+    r = compare_he(
+        xml, pdf, he_year=2020, he_number=99,
+        vision_reader=lambda pending: page1,
+        vision_reader_2=lambda pending: page2,
+    )
+    assert r.counts["payload_mismatch"] == 1
+    assert r.corroborated == 0
+
+
+def test_multichar_genuine_pdf_xml_difference_survives_non_masking() -> None:
+    """(c) NON-MASKING: pixels genuinely differ from XML (P≠X) → after substitution STILL mismatch.
+
+    The PDF proposes a genuinely different word: its pixels show P="perimiseksi" (≠ the XML's
+    X="perimisestä"), and the geom read garbled P as "periruiseksi". Both vision reads read P;
+    reconciliation substitutes the garble toward P (the PIXELS) — NOT toward X. The op body then
+    holds P ≠ X, so the genuine difference SURVIVES as an honest payload_mismatch. It is corrected
+    toward the pixels, never the answer key — the substitute-toward-consensus non-masking proof.
+    """
+    xml_body = "Korvausoikeuden edellytykset perimisestä suoritetaan riittavan pitkasti vertailua varten"
+    pdf_body = "Korvausoikeuden edellytykset periruiseksi suoritetaan riittavan pitkasti vertailua varten"
+    p = "perimiseksi"  # what the PIXELS genuinely show — a real word, ≠ the XML's "perimisestä"
+    xml = _he_xml(_CLAUSE, bodies={"5": f"5 {_SEC} {xml_body}", "7": f"7 {_SEC} {_BODY7}"})
+    pdf = _pdf_page(_CLAUSE, body5=pdf_body, body7=_BODY7)
+    page1 = f"HE 99/2020 vp 5 {_SEC} " + pdf_body.replace("periruiseksi", p)
+    page2 = f"5 {_SEC} " + pdf_body.replace("periruiseksi", p) + " jäljempänä"
+    r = compare_he(
+        xml, pdf, he_year=2020, he_number=99,
+        vision_reader=lambda pending: page1,
+        vision_reader_2=lambda pending: page2,
+    )
+    assert r.counts["payload_mismatch"] == 1  # the genuine PDF≠XML difference is NOT masked
+    assert r.counts.get(_PDF_PAYLOAD_CORROBORATED, 0) == 0
+    assert r.corroborated == 0
+
+
+# --------------------------------------------------------------------------- #
 # proposed-body boundary: strip enacting furniture, do not bleed into the next  #
 # section / law (the payload analog of the op-level span-overreach guard).      #
 # --------------------------------------------------------------------------- #

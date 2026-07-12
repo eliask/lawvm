@@ -171,3 +171,88 @@ def test_reconcile_does_not_mutate_a_digit_or_cite_difference() -> None:
     res = reconcile_vision_tokens(geom, vision)
     assert not res.changed
     assert res.repaired_text == geom
+
+
+# --------------------------------------------------------------------------- #
+# Gate B — MULTI-CHARACTER pixel-consensus (TWO independent reads must AGREE).   #
+# A broken CMap maps a CLUSTER of glyphs ("periruisestä" for "perimisestä"), not #
+# a single letter, so Gate A cannot touch it; the correction is toward the       #
+# CONSENSUS of two independent reads (the pixels), never a lexicon / the XML.     #
+# --------------------------------------------------------------------------- #
+
+# The corrupt-font geom body: "periruisestä" is a MULTI-character garble of "perimisestä".
+_GB_GEOM = "Korvausoikeuden edellytykset periruisestä suoritetaan viivytyksettä"
+# TWO independent vision reads (different render scale) — each covers the body plus the
+# page's running header / heading, and BOTH read the intended word "perimisestä".
+_GB_VIS_1 = "HE 91/1998 vp 2 § Korvausoikeuden edellytykset perimisestä suoritetaan viivytyksettä"
+_GB_VIS_2 = "2 § Korvausoikeuden edellytykset perimisestä suoritetaan viivytyksettä jäljempänä"
+
+
+def test_multichar_two_agreeing_reads_substitutes_toward_pixels() -> None:
+    """(a) TWO independent reads AGREE on the multi-char token → substitute to the consensus."""
+    res = reconcile_vision_tokens(_GB_GEOM, _GB_VIS_1, vision_text_2=_GB_VIS_2)
+    assert res.changed
+    assert [(s.geom_token, s.vision_token) for s in res.substitutions] == [
+        ("periruisestä", "perimisestä")
+    ]
+    assert res.repaired_text == _GB_GEOM.replace("periruisestä", "perimisestä")
+
+
+def test_multichar_single_read_never_substitutes() -> None:
+    """(d) ONE witness only (``vision_text_2=None``) → Gate B never fires (single-letter only)."""
+    res = reconcile_vision_tokens(_GB_GEOM, _GB_VIS_1)
+    assert not res.changed
+    assert res.repaired_text == _GB_GEOM
+
+
+def test_multichar_reads_disagreeing_with_each_other_is_uncertain_noop() -> None:
+    """(b) The two reads DISAGREE on the replacement → uncertain → NO substitution.
+
+    Consensus is the whole non-masking mechanism: if two independent reads do not agree on
+    what the pixels show, the garbled token is left byte-identical (never a lone-read guess).
+    """
+    vis_2_other = "2 § Korvausoikeuden edellytykset perinnöstä suoritetaan viivytyksettä"
+    res = reconcile_vision_tokens(_GB_GEOM, _GB_VIS_1, vision_text_2=vis_2_other)
+    assert not res.changed
+    assert res.repaired_text == _GB_GEOM
+
+
+def test_multichar_agreement_with_geom_is_byte_identical() -> None:
+    """(e) Where both reads AGREE WITH THE GEOM token, nothing is a candidate → unchanged."""
+    both = "2 § Korvausoikeuden edellytykset periruisestä suoritetaan viivytyksettä jäljempänä"
+    res = reconcile_vision_tokens(_GB_GEOM, both, vision_text_2=both)
+    assert not res.changed
+    assert res.repaired_text == _GB_GEOM
+
+
+def test_multichar_substitutes_toward_pixels_not_toward_a_reference() -> None:
+    """(c-core) NON-MASKING: the consensus is what the PIXELS show, which may be ≠ any reference.
+
+    Both reads show P="perimiseksi" (the PDF's genuine content); the geom holds a corrupt read
+    "periruiseksi". Reconciliation substitutes toward P — NOT toward some other word — so a
+    later equality check against a reference X≠P still sees the genuine difference (proved
+    end-to-end at the ``compare_he`` layer). Here we assert the substitution lands on the
+    pixel consensus P and nothing else.
+    """
+    geom = "Korvausoikeuden edellytykset periruiseksi suoritetaan viivytyksettä"
+    p = "perimiseksi"
+    vis1 = f"2 § Korvausoikeuden edellytykset {p} suoritetaan viivytyksettä"
+    vis2 = f"Korvausoikeuden edellytykset {p} suoritetaan viivytyksettä jäljempänä"
+    res = reconcile_vision_tokens(geom, vis1, vision_text_2=vis2)
+    assert res.changed
+    assert res.repaired_text == geom.replace("periruiseksi", p)  # toward the pixels (P)
+
+
+def test_multichar_wholesale_different_word_rejected_by_similarity_bound() -> None:
+    """A genuinely DIFFERENT token (low char-similarity) is NOT adopted even with two agreeing reads.
+
+    The conservative similarity guard keeps a wholesale-different word (keskus vs yhdistys —
+    ratio ≈ 0.68 < 0.75) from being rewritten. (Substituting toward a true pixel consensus is
+    non-masking regardless; this bound just refuses wholesale token replacement so the recovery
+    stays a corrupt READ of the same word.)
+    """
+    geom = "tekee Potilasvakuutuskeskus asiassa"
+    diff = "tekee potilasvakuutusyhdistys asiassa"  # a DIFFERENT word, both reads agree on it
+    res = reconcile_vision_tokens(geom, diff, vision_text_2=diff)
+    assert not res.changed
+    assert res.repaired_text == geom

@@ -123,35 +123,54 @@ def repair_glyph_substitution(
 # produced INDEPENDENTLY of the broken CMap, recovers the intended text.
 #
 # This function is the PURE, deterministic reconciliation core: given the geom read
-# of a span and an independent vision read that COVERS it, it token-aligns the two
-# and substitutes a geom token with the vision token ONLY where the substitution is a
-# provably-safe, single-character LETTER glyph confusion. It performs NO I/O and calls
-# NO model — the caller supplies the vision text (from a content-addressed store; see
-# the FI wiring in ``fi_he_ir_compare`` and the store in ``recovered_text_store``).
+# of a span and one (or two) independent vision read(s) that COVER it, it token-aligns
+# the reads and substitutes a geom token with the vision token ONLY where the
+# substitution is provably-safe. It performs NO I/O and calls NO model — the caller
+# supplies the vision text (from a content-addressed store; see the FI wiring in
+# ``fi_he_ir_compare`` and the store in ``recovered_text_store``).
 #
 # PRECISION-FIRST / NON-MASKING is the binding constraint. A false substitution that
-# could hide a genuine PDF-vs-XML difference is FORBIDDEN. Three structural guards make
-# it safe:
-#   (1) AGREEMENT PRESERVES. Substitution happens ONLY where the two independent reads
-#       DISAGREE at a token. Where they agree, the geom token is byte-identical — so a
-#       genuine difference (the PDF proposes different text, the pixels show it, and the
-#       vision read CORROBORATES the geom read) is never touched.
-#   (2) SINGLE-LETTER GLYPH SHAPE. A disagreement is repaired only when the two tokens
-#       are the SAME length and differ in EXACTLY ONE position, and that position is a
-#       LETTER in both (a font mapping one glyph to another). A different word, a
-#       multi-character corruption, or a digit/cite difference is left byte-identical —
-#       so a real content difference (a different word) is never rewritten, and a cite
-#       year is never mutated (that repair has its own value-band validator above).
-#   (3) NON-WORSENING. The vision token must not be strictly LESS plausible than the
-#       geom token (``not more_plausible(geom, vision)``, reusing the canonical
-#       ``suspect_region`` primitive) — so a vision MISREAD that produces a degenerate
-#       token is rejected, and the geom token survives.
-# The residual (acknowledged) risk is a vision MISREAD that lands, by a single-letter
-# coincidence, exactly on the XML form while the geom token held the PDF's genuine
-# (different) content. Guards (2)+(3) bound it to single-letter letter confusions where
-# vision is not less plausible; the CALLER additionally never folds a reconciled body
-# into the deterministic ``exact`` headline — a vision recovery is a SEPARATELY-bucketed,
-# receipted ``corroborated`` candidate, not a certification.
+# could hide a genuine PDF-vs-XML difference is FORBIDDEN. There are TWO gates, each
+# non-masking by its own structural argument; a caller enables the second by passing a
+# second independent read.
+#
+# GATE A — SINGLE-LETTER glyph confusion (one vision read; the shipped behaviour, kept
+# byte-identical). A geom↔vision disagreement is repaired only when:
+#   (A1) AGREEMENT PRESERVES. Substitution happens ONLY where the reads DISAGREE at a
+#        token (an isolated 1:1 REPLACE opcode). Where they agree, the geom token is
+#        byte-identical — a genuine difference the pixels corroborate is never touched.
+#   (A2) SINGLE-LETTER GLYPH SHAPE. The two tokens are the SAME length and differ in
+#        EXACTLY ONE position, a LETTER in both (a font mapping one glyph to another).
+#        A different word, a multi-character corruption, or a digit is left untouched.
+#   (A3) NON-WORSENING. The vision token is not strictly LESS plausible than the geom
+#        token (``not more_plausible(geom, vision)``) — a degenerate MISREAD is rejected.
+#
+# GATE B — MULTI-CHARACTER corrupt-font confusion (requires TWO independent reads). A
+# broken CMap can map a whole cluster of glyphs (``periruisestä`` for ``perimisestä``,
+# ``työttömyyskassaha`` for ``työttömyyskassalta``) — legible, so ``suspect_region`` never
+# fires, and NOT a single-letter shape, so Gate A cannot touch it. We correct the geom
+# token to WHAT THE PIXELS SHOW (the vision reads), NEVER to a lexicon "valid word" and
+# NEVER to anything derived from the XML answer key. It is non-masking BY CONSTRUCTION:
+# if the pixels genuinely show word P (≠ the XML's X), the vision reads P, we substitute
+# P, and the op body still holds P ≠ X — the genuine difference SURVIVES (we corrected
+# toward the pixels, not the answer key). The ONE residual hole is a vision MISREAD of P
+# landing exactly on X; it is closed by requiring TWO INDEPENDENT reads to AGREE on the
+# replacement (two independent misreads coinciding on X is vanishingly unlikely — the
+# goal's "≥2 independent readers agree" corroboration standard). A geom token is replaced
+# only when ALL hold:
+#   (B1) an isolated 1:1 REPLACE opcode vs BOTH reads (agreement preserves, as A1);
+#   (B2) the two independent reads AGREE on the replacement token (consensus), the reads
+#        being independent via a DIFFERENT render scale (and/or a second blind prompt);
+#   (B3) HIGH char-similarity between the geom token and the consensus token
+#        (:func:`_high_char_similarity` — a bounded difflib ratio), so the replacement is
+#        a corrupt READ of the SAME underlying word, not a wholesale different token.
+#   The replacement is the CONSENSUS vision token — never anything read from the XML.
+# This is language-, script- and jurisdiction-agnostic: it uses only pixel consensus and
+# a generic character-similarity bound, no dictionary / morphology / lexicon oracle.
+#
+# For BOTH gates the CALLER additionally never folds a reconciled body into the
+# deterministic ``exact`` headline — a vision recovery is a SEPARATELY-bucketed, receipted
+# ``corroborated`` candidate, not a certification.
 
 
 @dataclass(frozen=True, slots=True)
@@ -175,6 +194,57 @@ class ReconcileResult:
 
 
 _TOKEN_RE = re.compile(r"\S+")
+
+#: The MULTI-CHARACTER consensus gate's (Gate B) character-similarity floor: the geom
+#: token and the two-read CONSENSUS token must share at least this difflib ratio (2·M/T
+#: over matched characters M and total length T) to be adopted. A corrupt-font READ of a
+#: word preserves nearly all of it (``periruisestä``↔``perimisestä`` ≈ 0.87,
+#: ``työttömyyskassaha``↔``työttömyyskassalta`` ≈ 0.91), while a wholesale DIFFERENT word of
+#: similar length scores below (``Potilasvakuutuskeskus``↔``potilasvakuutusyhdistys`` ≈ 0.73).
+#: 0.75 sits just above that different-word band and below every genuine multi-char garble
+#: observed, so a wholesale different token cannot pass this conservative guard.
+#: (Masking is already precluded structurally — we substitute toward the pixel consensus,
+#: not the XML — so this bound is a churn/precision guard, not the non-masking mechanism.)
+_MULTICHAR_SIMILARITY_MIN = 0.75
+
+
+def _high_char_similarity(geom_tok: str, vision_tok: str) -> bool:
+    """Is the two-read consensus token a corrupt READ of the geom token (Gate B3)?
+
+    A bounded character-level :class:`difflib.SequenceMatcher` ratio ≥
+    :data:`_MULTICHAR_SIMILARITY_MIN` — high enough that only a corrupt reading of the SAME
+    underlying word passes, so a genuinely different token (which the pixel-consensus logic
+    would substitute non-maskingly anyway) is conservatively left byte-identical. Language-
+    and script-agnostic (pure character overlap; no dictionary).
+    """
+    return (
+        difflib.SequenceMatcher(None, geom_tok, vision_tok, autojunk=False).ratio()
+        >= _MULTICHAR_SIMILARITY_MIN
+    )
+
+
+def _candidate_replacements(
+    geom_tokens: list[str], vision_text: str
+) -> "dict[int, str]":
+    """Map each geom-token index to its aligned vision token at an isolated 1:1 REPLACE.
+
+    Token-aligns ``geom_tokens`` to the anchored window of ``vision_text`` and returns
+    ``{geom_index: vision_token}`` for every position where the two reads DISAGREE as an
+    ISOLATED 1:1 REPLACE opcode (guard 1 / B1) — the raw candidate disagreements, with NO
+    plausibility / shape / similarity gate applied (the caller gates). An empty/whitespace
+    read (the witness could not read the region) yields ``{}`` — absence is never a
+    candidate. Pure and deterministic; reuses :func:`_anchored_vision_window`.
+    """
+    if not vision_text.strip():
+        return {}
+    vision_window = _anchored_vision_window(geom_tokens, _TOKEN_RE.findall(vision_text))
+    out: dict[int, str] = {}
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(
+        None, geom_tokens, vision_window, autojunk=False
+    ).get_opcodes():
+        if tag == "replace" and (i2 - i1) == 1 and (j2 - j1) == 1:
+            out[i1] = vision_window[j1]
+    return out
 
 
 def _is_single_letter_glyph_confusion(geom_tok: str, vision_tok: str) -> bool:
@@ -234,29 +304,37 @@ def reconcile_vision_tokens(
     geom_text: str,
     vision_text: str,
     *,
+    vision_text_2: Optional[str] = None,
     is_glyph_confusion: Optional[Callable[[str, str], bool]] = None,
 ) -> ReconcileResult:
-    """Reconcile a geom span against an independent vision read (the second-reader validator).
+    """Reconcile a geom span against one (or two) independent vision read(s).
 
     Token-aligns ``geom_text`` (the deterministic geom read, produced through a possibly
-    CORRUPT font CMap) to ``vision_text`` (an INDEPENDENT read of the same rendered
-    region, produced from PIXELS) and returns ``geom_text`` with each safely-identified
-    glyph confusion substituted by the vision token — every other token BYTE-IDENTICAL.
+    CORRUPT font CMap) to ``vision_text`` (an INDEPENDENT read of the same rendered region,
+    produced from PIXELS) and returns ``geom_text`` with each safely-identified glyph
+    confusion substituted by the vision token — every other token BYTE-IDENTICAL.
 
     Pure and deterministic: no I/O, no model. An empty/whitespace ``vision_text`` (the
     witness could not read the region) yields the geom text UNCHANGED — absence of a
     second read is never treated as a correction.
 
-    A geom token is replaced by its aligned vision token ONLY when all hold (see the
-    module section header for why each is non-masking):
-      * the aligned opcode is a 1:1 token REPLACE (the reads disagree at that token;
-        agreement leaves it untouched — guard 1),
-      * ``is_glyph_confusion(geom_tok, vision_tok)`` — default
-        :func:`_is_single_letter_glyph_confusion`, a same-length single-LETTER difference
-        (guard 2), and
-      * ``not more_plausible(geom_tok, vision_tok)`` — the vision token is not strictly
-        less plausible than the geom token (guard 3, reusing the canonical
-        ``suspect_region`` primitive).
+    Two gates run per disagreeing token (module section header proves each non-masking):
+
+    * **Gate A — single-letter** (``vision_text`` only; the shipped behaviour, byte-identical
+      to before when ``vision_text_2`` is ``None``): an isolated 1:1 REPLACE where
+      ``is_glyph_confusion(geom, vision)`` (default :func:`_is_single_letter_glyph_confusion`,
+      a same-length single-LETTER difference) AND ``not more_plausible(geom, vision)``.
+    * **Gate B — multi-character consensus** (needs ``vision_text_2``): an isolated 1:1
+      REPLACE vs BOTH reads where the two INDEPENDENT reads AGREE on the replacement token
+      and it is a HIGH-char-similarity (:func:`_high_char_similarity`) corrupt read of the
+      geom token. The replacement is the CONSENSUS vision token (what the pixels show), never
+      anything derived from the XML — so a genuine PDF≠XML difference survives (we correct
+      toward the pixels, not the answer key). ``vision_text_2`` blank / ``None`` disables
+      Gate B, so a single witness never triggers a multi-char substitution.
+
+    Gate A is tried first; a token it adopts is not re-considered by Gate B (single-letter
+    confusions keep their exact shipped behaviour). Language-/script-agnostic throughout: no
+    dictionary, morphology, or lexicon — only pixel consensus and character similarity.
     """
     gate = is_glyph_confusion or _is_single_letter_glyph_confusion
     if not vision_text.strip():
@@ -264,19 +342,31 @@ def reconcile_vision_tokens(
     geom_tokens = _TOKEN_RE.findall(geom_text)
     if not geom_tokens:
         return ReconcileResult(geom_text, ())
-    vision_window = _anchored_vision_window(
-        geom_tokens, _TOKEN_RE.findall(vision_text)
+    cand1 = _candidate_replacements(geom_tokens, vision_text)
+    cand2 = (
+        _candidate_replacements(geom_tokens, vision_text_2)
+        if vision_text_2 is not None
+        else {}
     )
     out = list(geom_tokens)
     subs: list[TokenSubstitution] = []
-    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(
-        None, geom_tokens, vision_window, autojunk=False
-    ).get_opcodes():
-        if tag != "replace" or (i2 - i1) != 1 or (j2 - j1) != 1:
-            continue  # only isolated 1:1 disagreements are candidate glyph confusions
-        geom_tok, vision_tok = geom_tokens[i1], vision_window[j1]
+    for i, geom_tok in enumerate(geom_tokens):
+        vision_tok = cand1.get(i)
+        if vision_tok is None:
+            continue  # reads AGREE here (or no isolated 1:1 opcode) → untouched (A1/B1)
+        # Gate A — single-letter glyph confusion, non-worsening (one read).
         if gate(geom_tok, vision_tok) and not more_plausible(geom_tok, vision_tok):
-            out[i1] = vision_tok
+            out[i] = vision_tok
+            subs.append(TokenSubstitution(geom_tok, vision_tok))
+            continue
+        # Gate B — multi-character pixel consensus: the SECOND independent read must AGREE
+        # on the SAME replacement token, which must be a high-similarity corrupt read of the
+        # geom token. Substitute toward that consensus (the pixels), never toward the XML.
+        if (
+            cand2.get(i) == vision_tok
+            and _high_char_similarity(geom_tok, vision_tok)
+        ):
+            out[i] = vision_tok
             subs.append(TokenSubstitution(geom_tok, vision_tok))
     if not subs:
         return ReconcileResult(geom_text, ())

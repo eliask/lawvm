@@ -2224,6 +2224,7 @@ def diff_proposed_payloads(
     matched_ops: tuple[HEFlatOp, ...],
     *,
     vision_reader: "Optional[VisionReader]" = None,
+    vision_reader_2: "Optional[VisionReader]" = None,
     he_id: str = "",
     pdf_locator: str = "",
     witness_prompt: str = "",
@@ -2292,6 +2293,7 @@ def diff_proposed_payloads(
             xml_text,
             pdf_text,
             vision_reader=vision_reader,
+            vision_reader_2=vision_reader_2,
             he_id=he_id,
             target_ref=op.target_ref,
             pdf_locator=pdf_locator,
@@ -2327,22 +2329,25 @@ def _corroborate_payload(
     pdf_text: str,
     *,
     vision_reader: "Optional[VisionReader]",
+    vision_reader_2: "Optional[VisionReader]" = None,
     he_id: str,
     target_ref: str,
     pdf_locator: str,
     witness_prompt: str,
     witness_model: str,
 ) -> "Optional[tuple[OpDivergence, CorroborationReceipt]]":
-    """Try to reconcile a corrupt-font ``payload_mismatch`` via an independent vision read.
+    """Try to reconcile a corrupt-font ``payload_mismatch`` via independent vision read(s).
 
     Returns ``(payload_corroborated divergence, receipt)`` iff a vision witness is present,
     reads the op body's page, and its token-reconciliation of the geom body reaches
     XML-EQUALITY; otherwise ``None`` (the caller keeps the byte-identical ``payload_mismatch``).
     The vision witness is confronted through the reused
     :class:`~lawvm.ingest.corroboration.EscalationPending` seam (``PAYLOAD_DISPUTE``); the
-    substitutions are single-letter glyph confusions decided WITHOUT the XML. The emitted
-    receipt RECORDS the confrontation (``verdict_changed`` — the deterministic geom candidate
-    was a corrupt read the vision witness corrected); it is a candidate, not a certification.
+    substitutions are decided WITHOUT the XML (single-letter glyph confusions off the first
+    read, plus — when a SECOND independent reader is supplied — multi-character corrupt-font
+    confusions where BOTH reads AGREE on the pixel-consensus token). The emitted receipt
+    RECORDS the confrontation (``verdict_changed`` — the deterministic geom candidate was a
+    corrupt read the vision witness corrected); it is a candidate, not a certification.
     """
     if vision_reader is None:
         return None
@@ -2357,20 +2362,24 @@ def _corroborate_payload(
     vision_text = vision_reader(pending) or ""
     if not vision_text.strip():
         return None  # cold store / witness could not read the page → no-op (byte-identical)
-    rec = reconcile_vision_tokens(pdf_text, vision_text)
+    # A SECOND independent read (a different render scale / blind prompt) enables the
+    # multi-character pixel-consensus gate; ``None`` keeps the single-letter-only behaviour.
+    vision_text_2 = vision_reader_2(pending) if vision_reader_2 is not None else None
+    rec = reconcile_vision_tokens(pdf_text, vision_text, vision_text_2=vision_text_2)
     if not rec.changed:
         return None
     if text_equivalence(xml_text, rec.repaired_text).residual:
         return None  # the reconcile did not reach XML-equality → keep the payload_mismatch
     subs = ", ".join(f"{s.geom_token}→{s.vision_token}" for s in rec.substitutions)
+    reads = "two independent vision reads (pixel consensus)" if vision_text_2 else "an independent vision read"
     divergence = OpDivergence(
         kind=_PDF_PAYLOAD_CORROBORATED,
         target_ref=target_ref,
         xml_op=None,
         pdf_op=None,
         detail=(
-            "corrupt-font geom body reconciled to XML-equality by an independent vision "
-            f"read ({len(rec.substitutions)} glyph substitution(s): {subs}) — "
+            f"corrupt-font geom body reconciled to XML-equality by {reads} "
+            f"({len(rec.substitutions)} glyph substitution(s): {subs}) — "
             "vision-corroborated, NOT deterministic-exact"
         ),
     )
@@ -2516,6 +2525,7 @@ def compare_he(
     he_id: Optional[str] = None,
     classify_fn: "Optional[Callable[[str], object]]" = None,
     vision_reader: "Optional[VisionReader]" = None,
+    vision_reader_2: "Optional[VisionReader]" = None,
     pdf_locator: str = "",
     witness_prompt: str = "",
     witness_model: str = "",
@@ -2559,7 +2569,7 @@ def compare_he(
     # SAME ``_parse_one_clause`` and EXACT-diff them against the trusted XML.
     result = _compare_pdf_witness(
         xml_bytes, reading_text, xml_flat, hid, branch_id, classify_fn, aggressive=False,
-        vision_reader=vision_reader, pdf_locator=pdf_locator,
+        vision_reader=vision_reader, vision_reader_2=vision_reader_2, pdf_locator=pdf_locator,
         witness_prompt=witness_prompt, witness_model=witness_model,
     )
     # Retry the reading-fidelity recoveries only for a RECOVERABLE no-clause cause (a
@@ -2569,7 +2579,7 @@ def compare_he(
     if result.compare_status in _PDF_NO_CLAUSE_RETRYABLE:
         recovered = _compare_pdf_witness(
             xml_bytes, reading_text, xml_flat, hid, branch_id, classify_fn, aggressive=True,
-            vision_reader=vision_reader, pdf_locator=pdf_locator,
+            vision_reader=vision_reader, vision_reader_2=vision_reader_2, pdf_locator=pdf_locator,
             witness_prompt=witness_prompt, witness_model=witness_model,
         )
         if recovered.compare_status == "compared":
@@ -2634,6 +2644,7 @@ def _compare_pdf_witness(
     *,
     aggressive: bool,
     vision_reader: "Optional[VisionReader]" = None,
+    vision_reader_2: "Optional[VisionReader]" = None,
     pdf_locator: str = "",
     witness_prompt: str = "",
     witness_model: str = "",
@@ -2679,7 +2690,8 @@ def _compare_pdf_witness(
     pdf_bodies = _pdf_proposed_bodies(reading_text, aggressive=aggressive)
     payload = diff_proposed_payloads(
         xml_bodies, pdf_bodies, matched_ops,
-        vision_reader=vision_reader, he_id=hid, pdf_locator=pdf_locator,
+        vision_reader=vision_reader, vision_reader_2=vision_reader_2,
+        he_id=hid, pdf_locator=pdf_locator,
         witness_prompt=witness_prompt, witness_model=witness_model,
     )
 
@@ -2854,6 +2866,7 @@ def compare_he_from_farchive(
     max_pages: int = 5000,
     classify_fn: "Optional[Callable[[str], object]]" = None,
     vision_reader: "Optional[VisionReader]" = None,
+    vision_reader_2: "Optional[VisionReader]" = None,
     witness_prompt: str = "",
     witness_model: str = "",
 ) -> HECompareResult:
@@ -2943,6 +2956,7 @@ def compare_he_from_farchive(
         he_id=he_id,
         classify_fn=classify_fn,
         vision_reader=vision_reader,
+        vision_reader_2=vision_reader_2,
         pdf_locator=base + "main.pdf",
         witness_prompt=witness_prompt,
         witness_model=witness_model,
@@ -3010,6 +3024,14 @@ _VISION_TRANSCRIBE_SYSTEM = (
 )
 #: Raster scale for the page render (folded into the store fingerprint).
 _VISION_RENDER_SCALE = 2.5
+#: A SECOND, independent raster scale for the multi-character pixel-consensus payload gate
+#: (Gate B in :mod:`lawvm.ingest.text_layer_repair`). A build of
+#: :func:`make_he_page_vision_reader` at this scale yields a genuinely INDEPENDENT second
+#: read (a different rasterization the model transcribes blind), whose store fingerprint
+#: differs (the scale is folded in) so both reads are frozen separately. The multi-char gate
+#: substitutes a garbled geom token ONLY when the two independent reads AGREE — two coincident
+#: identical misreads across different scales being the vanishingly-unlikely masking hole.
+_VISION_RENDER_SCALE_2 = 3.3
 
 
 def vision_witness_fingerprint(model: str, scale: float = _VISION_RENDER_SCALE) -> str:

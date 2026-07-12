@@ -196,10 +196,11 @@ def test_make_comparer_default_threads_no_classify_fn(monkeypatch) -> None:
 
     def fake_compare(
         farchive, yr, num, *, he_id, max_pages, classify_fn,
-        vision_reader=None, witness_prompt="", witness_model="",
+        vision_reader=None, vision_reader_2=None, witness_prompt="", witness_model="",
     ):
         seen["classify_fn"] = classify_fn
         seen["vision_reader"] = vision_reader
+        seen["vision_reader_2"] = vision_reader_2
         return HECompareResult(he_id, f"fi/he/{yr}/{num}", "not_applicable", (), 0, 0, "")
 
     monkeypatch.setattr(corpus, "compare_he_from_farchive", fake_compare)
@@ -221,10 +222,11 @@ def test_make_comparer_llm_threads_the_built_classify_fn(monkeypatch) -> None:
 
     def fake_compare(
         farchive, yr, num, *, he_id, max_pages, classify_fn,
-        vision_reader=None, witness_prompt="", witness_model="",
+        vision_reader=None, vision_reader_2=None, witness_prompt="", witness_model="",
     ):
         seen["classify_fn"] = classify_fn
         seen["vision_reader"] = vision_reader
+        seen["vision_reader_2"] = vision_reader_2
         return HECompareResult(he_id, f"fi/he/{yr}/{num}", "not_applicable", (), 0, 0, "")
 
     monkeypatch.setattr(corpus, "compare_he_from_farchive", fake_compare)
