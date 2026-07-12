@@ -26,6 +26,7 @@ from lawvm.tools.fi_he_ir_compare import (
     HECompareResult,
     HEFlatOp,
     _asetusluonnos_region,
+    _canon_ordinal_homograph_key,
     _flatten_reading_text,
     _lakiehdotus_region,
     _looks_like_chapter_heading,
@@ -945,6 +946,58 @@ def test_diff_missing_extra_and_kind_mismatch() -> None:
     assert by_ref["123/2020/10"].kind == "op_missing_in_pdf"
     assert by_ref["123/2020/7"].kind == "matched"
     assert by_ref["123/2020/99"].kind == "op_extra_in_pdf"
+
+
+# --------------------------------------------------------------------------- #
+# capital-I / digit-1 ordinal glyph-homograph matching-layer fold             #
+# --------------------------------------------------------------------------- #
+
+
+def test_ordinal_homograph_key_folds_I_run_to_digit_run() -> None:
+    # Pure capital-I runs (chapter or section token) fold to the same-length digit-1 run;
+    # the luku_ prefix and non-I tokens are preserved; Roman V/X/L tokens are untouched.
+    assert _canon_ordinal_homograph_key("1062/1979/luku_II/3/2") == "1062/1979/luku_11/3/2"
+    assert _canon_ordinal_homograph_key("180/1958/II") == "180/1958/11"
+    assert _canon_ordinal_homograph_key("1062/1979/luku_2/II") == "1062/1979/luku_2/11"
+    assert _canon_ordinal_homograph_key("1062/1979/luku_11/3/2") == "1062/1979/luku_11/3/2"
+    assert _canon_ordinal_homograph_key("123/2020/luku_XI/5") == "123/2020/luku_XI/5"
+    assert _canon_ordinal_homograph_key("123/2020/luku_5/10") == "123/2020/luku_5/10"
+
+
+def test_diff_homograph_chapter_pairs_are_one_matched_op() -> None:
+    # The SAME chapter is derived luku_11 by one witness and luku_II (glyph read of "11") by
+    # the other; the fold makes them a single matched op, not a spurious op_missing+op_extra dual.
+    xml = (
+        HEFlatOp("replace", "1062/1979/luku_11/3/2"),
+        HEFlatOp("replace", "1062/1979/luku_11/8"),
+    )
+    pdf = (
+        HEFlatOp("replace", "1062/1979/luku_II/3/2"),
+        HEFlatOp("replace", "1062/1979/luku_II/8"),
+    )
+    div = diff_proposed_ops(xml, pdf)
+    assert [d.kind for d in div] == ["matched", "matched"]
+    # The emitted target_ref stays each witness's OWN derived text (fold is matching-key only).
+    assert div[0].xml_op == "replace 1062/1979/luku_11/3/2"
+    assert div[0].pdf_op == "replace 1062/1979/luku_II/3/2"
+
+
+def test_diff_homograph_duplicate_reread_collapses_not_a_new_op() -> None:
+    # A witness that read one op twice — once "11", once as the glyph "II" — collapses the
+    # re-read into the matched op (first-wins on the folded key), not a phantom op_extra.
+    xml = (HEFlatOp("replace", "180/1958/11"),)
+    pdf = (HEFlatOp("replace", "180/1958/11"), HEFlatOp("replace", "180/1958/II"))
+    div = diff_proposed_ops(xml, pdf)
+    assert [d.kind for d in div] == ["matched"]
+
+
+def test_diff_roman_two_stays_distinct_from_eleven_no_false_merge() -> None:
+    # NON-MASKING: a genuine Roman-II chapter arabicizes to its VALUE ("2"), never "11"; the
+    # fold folds II→11 but 2 stays 2, so two genuinely-different chapters remain distinct ops.
+    xml = (HEFlatOp("replace", "123/2020/luku_2/5"),)
+    pdf = (HEFlatOp("replace", "123/2020/luku_II/5"),)
+    div = diff_proposed_ops(xml, pdf)
+    assert {d.kind for d in div} == {"op_missing_in_pdf", "op_extra_in_pdf"}
 
 
 # --------------------------------------------------------------------------- #

@@ -1146,22 +1146,59 @@ def flatten_branch_ops(ops) -> tuple[HEFlatOp, ...]:
     return tuple(out)
 
 
+def _canon_ordinal_homograph_key(target_ref: str) -> str:
+    """Fold the capital-``I``/digit-``1`` glyph HOMOGRAPH in a ``target_ref``'s ordinal tokens.
+
+    An old-format born-digital HE text layer renders an arabic ordinal run of ``1`` digits
+    ("11 luku", "11 §") with the capital-letter-I glyph ("II luku", "II §"), so one witness
+    derives ``…/luku_11/…`` while the other derives ``…/luku_II/…`` for the SAME provision —
+    spurious ``op_missing`` + ``op_extra`` DUALS of a single op (HE 233/1998 ``1062/1979/luku_11``
+    ↔ ``luku_II``; HE 259/1996 ``180/1958/11`` ↔ ``180/1958/II``). This is a MATCHING-LAYER
+    normalization ONLY: it rewrites the KEY the op-diff pairs on, never the emitted
+    ``target_ref`` (which stays each witness's own derived text), and is applied IDENTICALLY to
+    both witnesses — it never consults the other witness's value to pick a form.
+
+    A ``/``-segment that is a pure capital-``I`` run — optionally after the ``luku_`` prefix —
+    is folded to the same-length ``1`` run (``I``→``1``, ``II``→``11``, ``III``→``111``). This is
+    the GLYPH reading (per-character ``I``≡``1``), not the Roman VALUE (``II``=2): the fold only
+    ever CREATES a match when the OTHER witness independently derived the ``1``-run form, and a
+    ``1``-run form only arises from an arabic ordinal — a genuine Roman-numbered unit arabicizes
+    to its minimal value (Roman ``II`` → ``2``, never ``11``), so a ``11``↔``II`` disagreement is
+    necessarily the glyph corruption while a ``2``↔``II`` disagreement stays distinct (precision:
+    two genuinely-different ordinals are never merged). Sections/kohta are always arabic, so an
+    ``II`` there is unambiguously the glyph ``11``. Roman-``V``/``X``/``L`` tokens are untouched.
+    """
+    out: list[str] = []
+    for seg in target_ref.split("/"):
+        prefix = ""
+        body = seg
+        if seg.startswith("luku_"):
+            prefix, body = "luku_", seg[5:]
+        if body and set(body) == {"I"}:  # pure capital-I run: I / II / III …
+            out.append(prefix + "1" * len(body))
+        else:
+            out.append(seg)
+    return "/".join(out)
+
+
 def diff_proposed_ops(
     xml_ops: tuple[HEFlatOp, ...], pdf_ops: tuple[HEFlatOp, ...]
 ) -> tuple[OpDivergence, ...]:
     """Op-level diff of the XML (reference) proposed ops against the PDF (under-test) ops.
 
-    Ops are matched by ``target_ref``; a matched pair with the same action is
-    ``matched``, a different action is ``kind_mismatch``.  A target only on the XML side
-    is ``op_missing_in_pdf``; only on the PDF side is ``op_extra_in_pdf``.  Ordering is
-    deterministic (XML reading order first, then PDF-only ops).  First-wins on a
-    duplicate target within one witness (rare; rinnakkaistekstit dupes collapse here).
+    Ops are matched by ``target_ref`` (canonicalized through
+    :func:`_canon_ordinal_homograph_key` so the capital-``I``/digit-``1`` glyph homograph in an
+    old-format ordinal token pairs); a matched pair with the same action is ``matched``, a
+    different action is ``kind_mismatch``.  A target only on the XML side is ``op_missing_in_pdf``;
+    only on the PDF side is ``op_extra_in_pdf``.  Ordering is deterministic (XML reading order
+    first, then PDF-only ops).  First-wins on a duplicate target within one witness (rare;
+    rinnakkaistekstit dupes and a glyph-homograph re-read of one op collapse here).
     """
 
     def _index(flat: tuple[HEFlatOp, ...]) -> dict[str, HEFlatOp]:
         idx: dict[str, HEFlatOp] = {}
         for op in flat:
-            idx.setdefault(op.target_ref, op)
+            idx.setdefault(_canon_ordinal_homograph_key(op.target_ref), op)
         return idx
 
     pdf_idx = _index(pdf_ops)
@@ -1170,10 +1207,11 @@ def diff_proposed_ops(
 
     for op in xml_ops:
         ref = op.target_ref
-        if ref in seen:
+        key = _canon_ordinal_homograph_key(ref)
+        if key in seen:
             continue
-        seen.add(ref)
-        pdf_op = pdf_idx.get(ref)
+        seen.add(key)
+        pdf_op = pdf_idx.get(key)
         if pdf_op is None:
             out.append(
                 OpDivergence(
@@ -1203,9 +1241,10 @@ def diff_proposed_ops(
 
     for op in pdf_ops:
         ref = op.target_ref
-        if ref in seen:
+        key = _canon_ordinal_homograph_key(ref)
+        if key in seen:
             continue
-        seen.add(ref)
+        seen.add(key)
         out.append(
             OpDivergence(
                 kind="op_extra_in_pdf",
