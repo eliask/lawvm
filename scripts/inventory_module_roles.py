@@ -150,6 +150,11 @@ OPTIONAL_BACKEND_MODULES: frozenset[str] = frozenset(
         # heavy tree kept out of the lock), 0% coverage EXPECTED when absent —
         # optional, never dead (like vision_producer).
         "lawvm.ingest.llm_backends.docling_producer",
+        # MinerU2.5-Pro table producer: FIREWALLED external py3.12 venv (mineru is
+        # <3.14, so never a repo dep), invoked as a SUBPROCESS and content-addressed;
+        # the pure lowering / verify-gate are tested but the subprocess seam is 0%
+        # coverage EXPECTED offline — optional, never dead (like docling_producer).
+        "lawvm.ingest.llm_backends.mineru_producer",
     }
 )
 

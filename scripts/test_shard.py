@@ -1298,6 +1298,11 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_appendix_vision_screen.py",
         "test_fi_appendix_vision_canary.py",
         "test_fi_appendix_vision_wiring.py",
+        # MinerU firewalled table producer: pure HTML grid-occupancy parse + MineruTable
+        # → StructuredTable lowering + the born-digital text-layer VERIFY GATE (glyph
+        # errors typed, never graduated) + store-replay / cold-offline control flow. The
+        # subprocess seam (external py3.12 venv) is never driven in CI.
+        "test_mineru_producer.py",
     ),
     "tools_audit_restructure": (
         "test_fi_restructure_plan.py",

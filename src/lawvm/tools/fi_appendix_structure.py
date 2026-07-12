@@ -65,6 +65,7 @@ from lawvm.ingest.corroboration import (
     EscalationPending,
     corroborate,
 )
+from lawvm.ingest.llm_backends.mineru_producer import MINERU_TABLE_STORE_DEFAULT
 from lawvm.ingest.llm_backends.prompt_fingerprint import prompt_fingerprint
 from lawvm.tools.fi_appendix_vision_screen import (
     GestaltRegionReader,
@@ -3513,6 +3514,119 @@ def write_tables_jsonl(reports: Sequence[StatuteTableReport], path: str) -> int:
     return n
 
 
+def run_mineru_lane(
+    locators: Sequence[str],
+    *,
+    finlex_path: str,
+    store_path: str,
+    jsonl_out: Optional[str] = None,
+    live: bool = False,
+    max_pages: int = 200,
+) -> Dict[str, object]:
+    """OPT-IN ADDITIVE MinerU lane: firewalled producer → VERIFY GATE → verified tables.
+
+    Strictly additive and separate from the Docling report path (so the default run stays
+    byte-identical): for each media PDF it reads every page's born-digital text layer,
+    asks the firewalled :class:`~lawvm.ingest.llm_backends.mineru_producer.MineruProducer`
+    for that page's MinerU ``content_list`` (store-replayed; a subprocess ONLY when
+    ``live`` and the page is cold), lowers each table into ``StructuredTable`` IR, and runs
+    the text-layer VERIFY GATE
+    (:func:`~lawvm.ingest.llm_backends.mineru_producer.verify_mineru_table_textlayer`) —
+    every cell either ``cell_exact`` or a TYPED divergence (the ``Å→Ä`` / ``É`` glyph
+    errors surface here, never silently graduated). Returns a JSON-able per-table summary;
+    when ``jsonl_out`` is set the ``self_verified`` tables' cell grids are persisted.
+
+    The mineru_producer import is lazy (function body) so the heavy tree stays optional and
+    the appendix module imports offline; a cold store + ``live=False`` makes NO subprocess
+    call, so this lane is deterministic and offline-safe.
+    """
+    from farchive import Farchive
+
+    from lawvm.ingest.llm_backends.mineru_producer import (
+        MineruProducer,
+        MineruTableStore,
+        mineru_tables_for_page,
+    )
+
+    store = MineruTableStore(store_path)
+    producer = MineruProducer(store=store)
+    per_table: List[Dict[str, object]] = []
+    verified_rows: List[Dict[str, object]] = []
+    n_pages_probed = 0
+    try:
+        for locator in locators:
+            fa = Farchive(finlex_path)
+            try:
+                span = fa.resolve(locator)
+                if span is None:
+                    continue
+                pdf_bytes = fa.read(span.digest)
+                if not pdf_bytes:
+                    continue
+                digest = getattr(span, "digest", "") or "0" * 64
+                page_texts = _page_texts(pdf_bytes)
+            finally:
+                fa.close()
+            for page_index, region_text in enumerate(page_texts[:max_pages]):
+                content_list = producer.propose_page(
+                    pdf_bytes, page_index, digest, live=live
+                )
+                if content_list is None:
+                    continue  # cold/offline: no MinerU output for this page
+                n_pages_probed += 1
+                structured, verifications, routes, deferred = mineru_tables_for_page(
+                    content_list, region_text, locator=locator
+                )
+                for table, verif, route in zip(
+                    structured, verifications, routes, strict=True
+                ):
+                    per_table.append(
+                        {
+                            "locator": locator,
+                            "page_num": table.page_num,
+                            "table_index": table.table_index,
+                            "n_cells": verif.n_cells,
+                            "n_exact": verif.n_exact,
+                            "n_divergent": len(verif.divergences),
+                            "n_no_witness": verif.n_no_witness,
+                            "route": route,
+                            "divergences": [
+                                {
+                                    "row": d.row,
+                                    "col": d.col,
+                                    "mineru_text": d.docling_text,
+                                    "descriptor": d.descriptor,
+                                }
+                                for d in verif.divergences
+                            ],
+                        }
+                    )
+                    if route == ROUTE_SELF_VERIFIED:
+                        verified_rows.append(table.to_jsonable())
+                for d in deferred:
+                    per_table.append(
+                        {
+                            "locator": locator,
+                            "page_num": d.page_num,
+                            "table_index": d.table_index,
+                            "route": "type_deferred",
+                            "reason": d.reason,
+                        }
+                    )
+    finally:
+        store.close()
+    if jsonl_out is not None:
+        with open(jsonl_out, "w", encoding="utf-8") as fh:
+            for row in verified_rows:
+                fh.write(json.dumps(row, ensure_ascii=False, sort_keys=True))
+                fh.write("\n")
+    return {
+        "pages_with_mineru": n_pages_probed,
+        "tables": per_table,
+        "n_self_verified": len(verified_rows),
+    }
+
+
 def main(args: argparse.Namespace) -> None:
     """CLI handler for ``lawvm fi-appendix-structure``."""
     finlex_path = args.finlex or _FINLEX_DEFAULT
@@ -3525,6 +3639,27 @@ def main(args: argparse.Namespace) -> None:
         if not found:
             print(f"# no media PDF for {statute} (lang={args.lang})")
         locators.extend(found)
+
+    # OPT-IN, STRICTLY ADDITIVE MinerU lane (``--mineru``): the firewalled MinerU producer
+    # (external py3.12 venv, subprocess) proposes dense/nested appendix-table cell grids the
+    # Docling lane collapses on, VERIFIED against the born-digital text layer (the independent,
+    # non-Qwen glyph leg). Separate output; the default (no --mineru) path below is byte-identical
+    # to today. A cold store without ``--mineru-live`` makes NO subprocess call.
+    if getattr(args, "mineru", False):
+        summary = run_mineru_lane(
+            locators,
+            finlex_path=finlex_path,
+            store_path=getattr(args, "mineru_store", None) or MINERU_TABLE_STORE_DEFAULT,
+            jsonl_out=getattr(args, "mineru_jsonl_out", None),
+            live=getattr(args, "mineru_live", False),
+        )
+        print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True))
+        if getattr(args, "mineru_jsonl_out", None):
+            print(
+                f"# mineru self_verified tables → {args.mineru_jsonl_out} "
+                f"({summary['n_self_verified']} tables)"
+            )
+        return
 
     # Optional VISION third-witness tie-break over the vision_escalate stratum. Requested via
     # ``--vision`` (read forward-compatibly; the argparse flag lives in the CLI module,

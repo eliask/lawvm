@@ -9820,6 +9820,27 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
               "content-addressed sibling farchive the structured-law corpus reads BACK (keyed by "
               "artifact_digest + table_index + quotient fingerprint). Opt-in; a pure side-store "
               "that never perturbs the report output."))
+    appendix_p.add_argument(
+        "--mineru", action="store_true",
+        help=("OPT-IN, STRICTLY ADDITIVE MinerU lane: the firewalled MinerU2.5-Pro producer "
+              "(external py3.12 venv, subprocess, content-addressed) proposes dense/nested "
+              "appendix-table cell grids the Docling lane collapses on, VERIFIED cell-by-cell "
+              "against the born-digital text layer (the independent non-Qwen glyph leg — a MinerU "
+              "Å->Ä error surfaces as a TYPED divergence, never graduated). Emits a separate "
+              "summary; without this flag the run is byte-identical to the deterministic lane."))
+    appendix_p.add_argument(
+        "--mineru-store", default=None, dest="mineru_store", metavar="PATH",
+        help=("content-addressed MinerU output store farchive (keyed by artifact-digest + page + "
+              "model/device/dtype/transformers-version pins); a cold store makes NO subprocess "
+              "call. Default: data/fi_mineru_tables.farchive (gitignored)."))
+    appendix_p.add_argument(
+        "--mineru-jsonl-out", default=None, dest="mineru_jsonl_out", metavar="PATH",
+        help="persist the MinerU self_verified table cell grids as JSONL to PATH.")
+    appendix_p.add_argument(
+        "--mineru-live", action="store_true", dest="mineru_live",
+        help=("permit a LIVE MinerU subprocess (CPU-only, ~3 min/page) on a store MISS; without "
+              "it a cold page is skipped (offline/deterministic). Requires the external py3.12 "
+              "mineru venv (LAWVM_MINERU_VENV)."))
 
     # --- fi-parse-compare ---
     parse_cmp_p = sub.add_parser(
