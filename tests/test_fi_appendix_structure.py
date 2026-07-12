@@ -45,6 +45,7 @@ from lawvm.tools.fi_appendix_structure import (
     VisionReadStore,
     VisionRegionRead,
     _make_per_bbox_reader,
+    _normalize_pdfium_bounded_sentinel,
     cross_witness,
     make_cached_region_reader,
     make_vision_region_reader,
@@ -421,6 +422,41 @@ def test_per_bbox_reader_inset_does_not_clip_trailing_glyph() -> None:
     out = read((0.0, 0.0, 50.0, 10.0))
     assert out == "Nimi"                       # full trailing glyph preserved
     assert tp.calls[0][2] == 49.5              # right edge inset by only 0.5 pt, not 2.0
+
+
+def test_pdfium_bounded_soft_hyphen_sentinel_normalized_to_canonical() -> None:
+    # pypdfium2's ``get_text_bounded`` renders an UNMAPPED soft/discretionary-hyphen glyph as
+    # U+0002 (STX), whereas every other pdfium read (and the canonical ``dehyphenate``) uses
+    # U+FFFE. Left raw, U+0002 is stripped as C0 control noise and the wrap collapses to a
+    # SPACE, splitting a word both the source PDF and Docling's cell text join. The per-cell
+    # reader normalizes it to the canonical U+FFFE so the EXISTING dehyphenate resolves it.
+    soh, fffe = "\u0002", "\uFFFE"
+    assert _normalize_pdfium_bounded_sentinel("t\xf6ym\xe4a" + soh + "asunnot") == (
+        "t\xf6ym\xe4a" + fffe + "asunnot"
+    )
+    assert _normalize_pdfium_bounded_sentinel("ANIMO" + soh + "\r\nkoodi") == (
+        "ANIMO" + fffe + "\r\nkoodi"
+    )
+    assert _normalize_pdfium_bounded_sentinel("no sentinel here") == "no sentinel here"
+
+    class _FakeTextpage:
+        def get_text_bounded(self, *, left: float, bottom: float, right: float, top: float) -> str:
+            return "t\xf6ym\xe4a" + soh + "asunnot"
+
+    witness = _make_per_bbox_reader(_FakeTextpage(), 100.0)((0.0, 0.0, 50.0, 10.0))
+    assert witness == "t\xf6ym\xe4a" + fffe + "asunnot"  # U+0002 -> U+FFFE at the reader boundary
+
+    # END-TO-END: the Docling cell (hyphen-at-wrap form) now verifies EXACT against the
+    # normalized witness -- ``text_equivalence``'s canonical dehyphenate fuses both to the same
+    # ``ty\xf6maa-asunnot`` (a real compound hyphen at a wrap, PRESERVED, not lost).
+    cell = StructuredCell(0, 0, "t\xf6ym\xe4a- asunnot", is_header=False, bbox=(0.0, 0.0, 50.0, 10.0))
+    assert verify_table_exact(_grid_table([cell]), lambda _pn, _bb: witness).exact
+
+    # MOTIVATION / NON-REGRESSION anchor: the RAW bounded sentinel (unnormalized U+0002) does
+    # NOT verify -- CONTROL_STRIP eats it and the wrap collapses to a word-splitting space.
+    assert not verify_table_exact(
+        _grid_table([cell]), lambda _pn, _bb: "t\xf6ym\xe4a" + soh + "asunnot"
+    ).exact
 
 
 # --------------------------------------------------------------------------- #

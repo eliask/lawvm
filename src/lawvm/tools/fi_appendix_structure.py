@@ -2089,6 +2089,34 @@ def _page_texts(pdf_bytes: bytes) -> List[str]:
 #: path is handled by x-band assignment, not by an inset, which is why this can shrink.
 _BBOX_INSET = 0.5
 
+#: pypdfium2 renders an UNMAPPED soft/discretionary-hyphen glyph (a font layout hint with no
+#: ToUnicode entry) as a NONCHARACTER placeholder. Its two text-extraction APIs disagree on
+#: WHICH placeholder: ``get_text_range`` (the per-CHAR run harvest + every other pdfium read in
+#: the pipeline) emits U+FFFE — the sentinel the canonical :func:`dehyphenate` already resolves,
+#: FUSING a genuine soft break while PRESERVING a real compound ("työmaa-asunnot") via its
+#: corroboration — whereas ``get_text_bounded`` (the per-cell bbox witness) emits U+0002 (STX)
+#: for the SAME glyph. Left as-is, that U+0002 is not a soft-hyphen to ``dehyphenate``; it is
+#: stripped as C0 control noise (``CONTROL_STRIP``) and the wrap collapses to a SPACE, splitting
+#: a word both the source PDF and Docling's cell text join ("työmaa-asunnot" → "työmaa asunnot")
+#: — a spurious cell divergence. Normalizing the bounded read's sentinel to the canonical U+FFFE
+#: makes the two pdfium APIs consistent and lets the EXISTING dehyphenate handle it identically to
+#: every other read — no new hyphen policy, no reinvented primitive. U+0002 never occurs as
+#: legitimate text-layer content, so the map is unconditional (``dehyphenate``'s compound
+#: corroboration still guards genuine hyphens); it can only turn a spuriously-split witness into
+#: one that matches Docling, so it is strictly non-regressive on the EXACT verdict.
+_PDFIUM_BOUNDED_SOFT_HYPHEN = "\u0002"
+_PDFIUM_CANONICAL_SOFT_HYPHEN = "\uFFFE"
+
+
+def _normalize_pdfium_bounded_sentinel(text: str) -> str:
+    """Map ``get_text_bounded``'s U+0002 soft-hyphen sentinel to the canonical U+FFFE (pure).
+
+    Makes the bounded per-cell witness consistent with every other pdfium read so the canonical
+    :func:`~lawvm.ingest.page_elements.dehyphenate` (run by ``text_equivalence``) resolves a
+    wrapped soft-hyphen instead of the C0-control strip collapsing it to a word-splitting space.
+    """
+    return text.replace(_PDFIUM_BOUNDED_SOFT_HYPHEN, _PDFIUM_CANONICAL_SOFT_HYPHEN)
+
 
 def _page_text_runs(textpage: Any, page_height: float) -> List[TextRun]:
     """Harvest the page text layer as PER-CHARACTER :class:`TextRun`s in TOP-LEFT points.
@@ -2148,12 +2176,15 @@ def _make_per_bbox_reader(
         mx = min(_BBOX_INSET, (hi_x - lo_x) / 3.0)
         my = min(_BBOX_INSET, (hi_y - lo_y) / 3.0)
         try:  # pdfium wants (left, bottom, right, top) in bottom-left origin
-            return textpage.get_text_bounded(
+            raw = textpage.get_text_bounded(
                 left=lo_x + mx, bottom=page_height - (hi_y - my),
                 right=hi_x - mx, top=page_height - (lo_y + my),
             )
         except Exception:
             return ""
+        # ``get_text_bounded`` renders an unmapped soft-hyphen glyph as U+0002; normalise it to the
+        # canonical U+FFFE the pipeline's ``dehyphenate`` resolves (see the sentinel constant above).
+        return _normalize_pdfium_bounded_sentinel(raw)
 
     return read
 
